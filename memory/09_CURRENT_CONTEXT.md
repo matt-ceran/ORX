@@ -32,6 +32,19 @@ Current files:
 
 ## Latest Work
 
+Implemented and independently verified the Phase 3 interactive chat MVP:
+
+- `orx chat` starts a readline-based interactive session.
+- Chat uses the existing OpenRouter streaming client and request builder.
+- Header/footer show cwd, mode, model, API key presence/source, and permission posture.
+- `orx>` composer prompt accepts user messages.
+- Assistant responses stream as chunks arrive.
+- In-session history is preserved for follow-up turns during the current process.
+- MVP slash commands are `/help`, `/status`, `/model <slug>`, `/clear`, `/quit`, and `/exit`.
+- Ctrl+C aborts an active request through `AbortController` or exits when idle.
+- `ask`, `status`, `--help`, and `--version` remain intact.
+- Verified with mocked fetch/stream tests and a real short OpenRouter chat smoke test.
+
 Implemented and independently verified the Phase 2 OpenRouter streaming command:
 
 - `src/openrouter/` client, request builder, metadata formatter, and types
@@ -86,21 +99,23 @@ Recorded future orchestration/delegation support:
 - delegation should run through an ORX-owned `delegate_task` tool
 - roadmap, architecture, OpenRouter notes, TUI command notes, sessions, backlog, and decisions now reference this direction
 
+Recorded MCP/tooling research conclusions:
+
+- keep file/search/shell/git/patch native instead of relying on MCP for core local work
+- use official OpenRouter MCP or equivalent for live models, pricing, rankings, credits, benchmarks, docs, and generation lookup
+- add profile-scoped MCP presets for docs, browser, GitHub read-only, Sentry read-only, Figma, database dev, and cloud read-only/write modes
+- prefer official/first-party MCP servers; treat community registries as discovery, not trust
+- show MCP server risk metadata in `/status`
+- require explicit config for auth-bearing, write-capable, cloud, database, browser, and web-fetch tools
+
 ## Next Likely Task
 
-Manually test the current CLI with a real OpenRouter API key:
+Start Phase 4 slash command expansion:
 
-```bash
-OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello from ORX"
-```
-
-Then start Phase 3 TUI MVP:
-
-- message list
-- streaming output display
-- composer
-- footer/status indicators
-- interrupt and quit handling
+- Extract the inline chat slash handling into a registry/parser.
+- Add `/mode auto`, `/mode fusion`, `/fusion <preset>`, `/models`, `/new`, and improved `/status`.
+- Keep `/model`, `/clear`, `/help`, `/quit`, and `/exit` working.
+- Add focused parser/handler tests before commit.
 
 Do not implement orchestration before the core OpenRouter streaming loop, tool-call loop, and session metadata exist.
 

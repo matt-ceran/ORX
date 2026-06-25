@@ -4,6 +4,18 @@ Last updated: 2026-06-25
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-25: Prefer Native Core Tools And Profile-Scoped MCP
+
+Decision: ORX should implement core local coding capabilities natively and use MCP as an explicit, profile-scoped integration layer for external systems.
+
+Reasoning: File/search/shell/git/patch operations are central to ORX and need predictable behavior, concise schemas, diff visibility, and tight session metadata. MCP is better for vendor APIs, docs, provider metadata, SaaS tools, databases, cloud services, and optional browser/debug integrations, but each server expands tool surface, token load, credential exposure, and prompt-injection risk.
+
+## 2026-06-25: Use Official MCP Servers First
+
+Decision: ORX should prefer official or first-party MCP servers and avoid low-signal community wrappers unless there is a specific need and the package is pinned/audited.
+
+Reasoning: Current MCP discovery is fragmented. Official registries and community directories are useful for discovery but are not sufficient trust signals. Mature first-party sources now exist for GitHub, Playwright, Chrome DevTools, Context7, Figma, Supabase, Linear, Atlassian, Sentry, Cloudflare, AWS, Azure, and others.
+
 ## 2026-06-25: Commit Verified Implementation Steps
 
 Decision: Each bounded implementation step should be independently verified, then committed and pushed to GitHub before the next step begins.

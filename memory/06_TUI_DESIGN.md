@@ -28,12 +28,22 @@ composer
 footer: cwd | mode | model | cost | context | permissions
 ```
 
+Current MVP:
+
+- `orx chat` uses a readline-based terminal loop.
+- The header/footer show cwd, mode, model, API key presence/source, and permission posture.
+- The composer prompt is `orx>`.
+- Assistant responses stream inline as chunks arrive.
+- In-process user/assistant history is sent with follow-up turns.
+- Ctrl+C aborts an active response or exits when idle.
+
 ## Slash Commands
 
 Initial commands:
 
 ```text
 /model
+/help
 /models
 /mode auto
 /mode fusion
@@ -54,6 +64,17 @@ Initial commands:
 /clear
 /new
 /quit
+```
+
+Implemented MVP commands:
+
+```text
+/help
+/status
+/model <slug>
+/clear
+/quit
+/exit
 ```
 
 Future orchestration commands:

@@ -46,9 +46,10 @@ export interface OpenRouterStreamCallbacks {
 export interface OpenRouterAskOptions {
   apiKey: string;
   baseUrl?: string;
-  prompt: string;
+  prompt?: string;
   request: OpenRouterChatRequest;
   requestMetadata: OpenRouterRequestMetadata;
+  signal?: AbortSignal;
   fetch?: typeof fetch;
 }
 

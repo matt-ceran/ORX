@@ -54,6 +54,25 @@ OPENROUTER_API_KEY=... npm run dev -- ask "Say hello" --mode fusion --fusion gen
 
 After the streamed assistant text, ORX prints a compact metadata summary when OpenRouter provides details such as requested/resolved model, generation id, token counts, reasoning tokens, and cost. Secrets are never printed.
 
+Start an interactive chat session with:
+
+```sh
+OPENROUTER_API_KEY=... npm run dev -- chat
+```
+
+The chat UI keeps in-session message history for the current process, streams assistant text as it arrives, and shows a compact header/footer with cwd, mode, model, API key presence, and permission posture. Supported MVP slash commands:
+
+```text
+/help
+/status
+/model <openrouter-model-slug>
+/clear
+/quit
+/exit
+```
+
+Ctrl+C aborts the active OpenRouter request when one is streaming, or exits the chat when idle.
+
 ## Project Memory
 
 This repo includes a Codex-friendly memory system:

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { Readable } from "node:stream";
 import { runCli } from "./cli.js";
 
 const encoder = new TextEncoder();
@@ -18,12 +19,20 @@ test("help, version, and status work without an API key", async () => {
   assert.match(status.stdout(), /api_key_present: no/);
 });
 
-test("ask requires an OpenRouter API key", async () => {
+test("ask and chat require an OpenRouter API key", async () => {
   const capture = createIo();
   const exitCode = await runCli(["node", "cli", "ask", "Say hello"], {}, capture.io);
 
   assert.equal(exitCode, 1);
   assert.match(capture.stderr(), /OpenRouter API key not found/);
+
+  const chat = createIo({
+    stdin: Readable.from(["/exit\n"]),
+  });
+  const chatExitCode = await runCli(["node", "cli", "chat"], {}, chat.io);
+
+  assert.equal(chatExitCode, 1);
+  assert.match(chat.stderr(), /OpenRouter API key not found/);
 });
 
 test("ask streams text and prints compact metadata summary", async () => {
@@ -91,12 +100,74 @@ test("ask supports Fusion preset override", async () => {
   assert.match(capture.stdout(), /requested_model: openrouter\/fusion/);
 });
 
-function createIo(options: { fetch?: typeof fetch } = {}) {
+test("chat streams turns, keeps history, and handles slash commands", async () => {
+  const requests: unknown[] = [];
+  let callCount = 0;
+  const capture = createIo({
+    stdin: Readable.from([
+      "Hello\n",
+      "/status\n",
+      "/model example/test-model\n",
+      "Follow up\n",
+      "/clear\n",
+      "/exit\n",
+    ]),
+    fetch: async (_input, init) => {
+      const body = JSON.parse(String(init?.body));
+      requests.push(body);
+      const text = callCount === 0 ? "First reply" : "Second reply";
+      callCount += 1;
+
+      return new Response(
+        streamFrom([
+          `data: {"model":"${body.model}","choices":[{"delta":{"content":"${text}"}}]}\n\n`,
+          "data: [DONE]\n\n",
+        ]),
+        { status: 200 },
+      );
+    },
+  });
+
+  const exitCode = await runCli(
+    ["node", "cli", "chat"],
+    {
+      OPENROUTER_API_KEY: "test-key",
+    },
+    capture.io,
+  );
+
+  assert.equal(exitCode, 0);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[0], {
+    model: "openrouter/auto",
+    messages: [{ role: "user", content: "Hello" }],
+    stream: true,
+  });
+  assert.deepEqual(requests[1], {
+    model: "example/test-model",
+    messages: [
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "First reply" },
+      { role: "user", content: "Follow up" },
+    ],
+    stream: true,
+  });
+  assert.match(capture.stdout(), /ORX chat/);
+  assert.match(capture.stdout(), /assistant: First reply/);
+  assert.match(capture.stdout(), /history_messages: 2/);
+  assert.match(capture.stdout(), /Model set to example\/test-model/);
+  assert.match(capture.stdout(), /Conversation history cleared/);
+  assert.match(capture.stdout(), /Exiting ORX chat/);
+  assert.equal(capture.stderr(), "");
+});
+
+function createIo(options: { fetch?: typeof fetch; stdin?: NodeJS.ReadableStream } = {}) {
   let stdoutText = "";
   let stderrText = "";
 
   return {
     io: {
+      stdin: options.stdin,
       stdout: {
         write(chunk: string | Uint8Array) {
           stdoutText += String(chunk);

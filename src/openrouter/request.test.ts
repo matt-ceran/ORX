@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildAskRequest } from "./request.js";
+import { buildAskRequest, buildChatRequest } from "./request.js";
 import type { OrxConfig } from "../config/types.js";
 
 const baseConfig: OrxConfig = {
@@ -52,4 +52,22 @@ test("fusion preset override sends OpenRouter Fusion plugin config", () => {
   assert.deepEqual(built.request.plugins, [{ id: "fusion", preset: "general-budget" }]);
   assert.equal(built.metadata.mode, "fusion");
   assert.equal(built.metadata.fusionPreset, "general-budget");
+});
+
+test("builds chat request from existing message history", () => {
+  const built = buildChatRequest({
+    config: baseConfig,
+    messages: [
+      { role: "user", content: "First" },
+      { role: "assistant", content: "Reply" },
+      { role: "user", content: "Follow up" },
+    ],
+  });
+
+  assert.deepEqual(built.request.messages, [
+    { role: "user", content: "First" },
+    { role: "assistant", content: "Reply" },
+    { role: "user", content: "Follow up" },
+  ]);
+  assert.equal(built.request.model, "openrouter/auto");
 });

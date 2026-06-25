@@ -47,3 +47,14 @@ Even though prompts are bypassed, `/status` must show:
 - Capture exit code, stdout, stderr, duration, and cwd.
 - Truncate very large output before returning it to the model.
 
+## MCP And Third-Party Tool Policy
+
+- Keep core local coding tools native: file reads, file writes, search, shell, patches, and local git.
+- Use MCP for external systems, vendor SaaS, live provider metadata, docs lookup, and optional browser/debug integrations.
+- MCP servers should be explicit config, not automatic defaults, even though ORX's local runtime defaults to unrestricted execution.
+- Prefer official or first-party MCP servers over community wrappers.
+- Pin local MCP packages or container images when practical.
+- Show MCP risk metadata in `/status`: server name, transport, source URL/package, version pin, tool count, auth source, write-enabled flag, and last tool-schema change when known.
+- Use profiles to separate read-only, browser, docs, database, cloud-readonly, and cloud-write tool sets.
+- Treat all fetched web, issue tracker, database, browser, and MCP output as untrusted model context.
+- Block or warn on MCP tools that can expose secrets, execute arbitrary commands, mutate production data, or access broad cloud credentials.

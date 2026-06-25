@@ -9,12 +9,14 @@ import { buildAskRequest, type AskRequestOverrides } from "./openrouter/request.
 import { streamOpenRouterAsk } from "./openrouter/client.js";
 import { formatOpenRouterMetadata } from "./openrouter/summary.js";
 import { formatStatus } from "./status.js";
+import { runChat } from "./tui/chat.js";
 
 interface PackageJson {
   version: string;
 }
 
 interface CliIo {
+  stdin?: NodeJS.ReadableStream;
   stdout: Pick<NodeJS.WriteStream, "write">;
   stderr: Pick<NodeJS.WriteStream, "write">;
   cwd: string;
@@ -34,6 +36,7 @@ export async function runCli(
   io: CliIo = {
     stdout: process.stdout,
     stderr: process.stderr,
+    stdin: process.stdin,
     cwd: process.cwd(),
     fetch: globalThis.fetch,
   },
@@ -52,7 +55,7 @@ export async function runCli(
   }
 
   if (first === "status") {
-    const loadedConfig = loadConfig({ env });
+    const loadedConfig = loadConfig({ env, cwd: io.cwd });
     writeLine(
       io.stdout,
       formatStatus({
@@ -63,7 +66,7 @@ export async function runCli(
     return 0;
   }
 
-  const loadedConfig = loadConfig({ env });
+  const loadedConfig = loadConfig({ env, cwd: io.cwd });
   const apiKeyError = validateApiKey(loadedConfig);
   if (apiKeyError) {
     writeLine(io.stderr, apiKeyError);
@@ -72,6 +75,20 @@ export async function runCli(
 
   if (first === "ask") {
     return runAskCommand(args.slice(1), loadedConfig.config.apiKey ?? "", loadedConfig.config, io);
+  }
+
+  if (first === "chat") {
+    return runChat({
+      apiKey: loadedConfig.config.apiKey ?? "",
+      loadedConfig,
+      io: {
+        stdin: io.stdin ?? process.stdin,
+        stdout: io.stdout,
+        stderr: io.stderr,
+        cwd: io.cwd,
+        fetch: io.fetch,
+      },
+    });
   }
 
   writeLine(io.stderr, `Unknown command: ${first}\n\n${helpText()}`);
@@ -89,6 +106,7 @@ function helpText(): string {
     "",
     "Commands:",
     '  ask "prompt"  Send one prompt to OpenRouter and stream the answer',
+    "  chat          Start an interactive OpenRouter chat session",
     "  status        Show runtime status and config defaults",
     "  help          Show this help message",
     "  version       Show the current version",

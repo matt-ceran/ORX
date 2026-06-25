@@ -15,11 +15,19 @@ Completed:
 
 ## P1
 
-- Add TUI composer, scrollback, footer, and streaming output.
-- Add slash command parser.
-- Add `/model`, `/models`, `/mode auto`, `/mode fusion`, and `/fusion`.
-- Add exact model, auto-router, and Fusion request support.
-- Add token and cost display.
+Completed:
+
+- Add TUI composer, in-process history, footer/status, and streaming output.
+- Add initial inline slash handling.
+- Add `/model`, `/status`, `/clear`, `/help`, `/quit`, and `/exit`.
+- Add exact model, auto-router, and Fusion request support for `ask`.
+- Add token and cost display for streamed responses.
+
+Remaining:
+
+- Extract slash command parser/registry.
+- Add `/models`, `/mode auto`, `/mode fusion`, `/fusion`, and `/new`.
+- Add richer chat status for mode/Fusion changes.
 
 ## P2
 
@@ -36,6 +44,9 @@ Completed:
 - Add `/compact`.
 - Add OpenRouter MCP integration.
 - Add `/credits` and generation lookup.
+- Add MCP client registry/config support with explicit profiles.
+- Add `/mcp` status/list/enable/disable command design.
+- Add `/status` fields for MCP server risk metadata.
 - Persist active orchestrator and delegate metadata in sessions.
 
 ## P4
@@ -43,6 +54,12 @@ Completed:
 - Add web search.
 - Add Playwright browser automation.
 - Add prompt-injection safeguards for fetched content.
+- Add MCP presets: `openrouter`, `context7`, `github-readonly`, `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
+- Add docs/retrieval providers: Context7, DeepWiki, OpenAI Docs, Microsoft Learn, AWS docs, Google Developer Knowledge.
+- Add official GitHub MCP read-only integration before write-capable GitHub operations.
+- Add optional Chrome DevTools MCP profile for frontend debugging and performance traces.
+- Add database profiles with read-only defaults, row limits, query logging, and explicit connection names.
+- Add cloud/devops profiles only as explicit opt-ins with account/project/region visible in `/status`.
 - Add orchestration profiles: `/orchestrator`, `/delegate`, `/delegates`, and `/team`.
 - Add OpenRouter delegate adapter.
 - Add Codex delegate adapter.

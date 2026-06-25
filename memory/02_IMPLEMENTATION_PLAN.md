@@ -41,6 +41,8 @@ Status: complete and independently verified on 2026-06-25.
 
 Done when a user can chat interactively in the TUI.
 
+Status: complete and independently verified on 2026-06-25.
+
 ## Phase 4: Slash Commands
 
 - Implement slash command parser and registry.

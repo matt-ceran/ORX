@@ -17,6 +17,12 @@ export interface BuildAskRequestOptions {
   overrides?: AskRequestOverrides;
 }
 
+export interface BuildChatRequestOptions {
+  config: OrxConfig;
+  messages: OpenRouterMessage[];
+  overrides?: AskRequestOverrides;
+}
+
 export interface BuiltAskRequest {
   request: OpenRouterChatRequest;
   metadata: OpenRouterRequestMetadata;
@@ -27,10 +33,21 @@ export function buildAskRequest({
   prompt,
   overrides = {},
 }: BuildAskRequestOptions): BuiltAskRequest {
+  return buildChatRequest({
+    config,
+    messages: [{ role: "user", content: prompt }],
+    overrides,
+  });
+}
+
+export function buildChatRequest({
+  config,
+  messages,
+  overrides = {},
+}: BuildChatRequestOptions): BuiltAskRequest {
   const mode = resolveMode(config.mode, overrides);
   const requestedModel = resolveModel(config, mode, overrides.model);
   const fusionPreset = resolveFusionPreset(config, mode, overrides.fusionPreset);
-  const messages: OpenRouterMessage[] = [{ role: "user", content: prompt }];
 
   return {
     request: {

@@ -157,6 +157,32 @@ test("reports non-2xx OpenRouter errors without leaking secrets", async () => {
   );
 });
 
+test("passes abort signal to the streaming fetch request", async () => {
+  const controller = new AbortController();
+  let seenSignal: AbortSignal | null | undefined;
+  const mockFetch: typeof fetch = async (_input, init) => {
+    seenSignal = init?.signal;
+    return new Response(streamFrom(["data: [DONE]\n\n"]), { status: 200 });
+  };
+
+  await streamOpenRouterAsk(
+    {
+      apiKey: "test-key",
+      baseUrl: "https://example.test",
+      prompt: "Say hello",
+      request,
+      requestMetadata,
+      fetch: mockFetch,
+      signal: controller.signal,
+    },
+    {
+      onText() {},
+    },
+  );
+
+  assert.equal(seenSignal, controller.signal);
+});
+
 function streamFrom(chunks: string[]): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     start(controller) {

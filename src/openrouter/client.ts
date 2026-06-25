@@ -46,6 +46,7 @@ export async function streamOpenRouterAsk(
       Accept: "text/event-stream",
     },
     body: JSON.stringify(options.request),
+    signal: options.signal,
   });
 
   if (!response.ok) {
@@ -78,6 +79,7 @@ export async function streamOpenRouterAsk(
       baseUrl,
       generationId: metadata.generationId,
       fetch: fetchImpl,
+      signal: options.signal,
     });
     mergeGenerationMetadata(metadata, generationMetadata);
   }
@@ -191,6 +193,7 @@ async function fetchGenerationMetadata(options: {
   baseUrl: string;
   generationId: string;
   fetch: typeof fetch;
+  signal?: AbortSignal;
 }): Promise<OpenRouterGenerationMetadata | undefined> {
   try {
     const response = await options.fetch(
@@ -201,6 +204,7 @@ async function fetchGenerationMetadata(options: {
           Authorization: `Bearer ${options.apiKey}`,
           Accept: "application/json",
         },
+        signal: options.signal,
       },
     );
 
@@ -210,7 +214,10 @@ async function fetchGenerationMetadata(options: {
 
     const raw = (await response.json()) as unknown;
     return extractGenerationMetadata(raw);
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
     return undefined;
   }
 }
@@ -325,6 +332,15 @@ function sumOptional(left: number | undefined, right: number | undefined): numbe
   }
 
   return left + right;
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    (typeof DOMException !== "undefined" &&
+      error instanceof DOMException &&
+      error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError")
+  );
 }
 
 function definedOnly<T extends Record<string, unknown>>(record: T): Partial<T> {
