@@ -24,3 +24,13 @@ sandbox_mode = "danger-full-access"
 
 This should remain visible in `/status` and configurable later.
 
+## Project Memory
+
+This repo includes a Codex-friendly memory system:
+
+- `AGENTS.md` gives new Codex sessions the startup protocol.
+- `memory/00_INDEX.md` is the retrieval map.
+- `memory/09_CURRENT_CONTEXT.md` tracks the current repo state.
+- `memory/10_BACKLOG.md` tracks next implementation work.
+
+Start future sessions from the repository root and read `memory/00_INDEX.md` first.
