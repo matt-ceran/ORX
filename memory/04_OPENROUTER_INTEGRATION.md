@@ -45,11 +45,19 @@ plugins: [{ id: "fusion", preset: "general-budget" }]
 
 ## CLI Behavior
 
+- `orx ask "prompt"` sends one non-interactive streaming chat request.
+- `orx ask "prompt" --model <slug>` selects an exact model for that request.
+- `orx ask "prompt" --mode auto` selects `openrouter/auto` for that request.
+- `orx ask "prompt" --mode fusion --fusion <preset>` selects `openrouter/fusion` with plugin config for that request.
 - `/mode auto` selects `openrouter/auto`.
 - `/mode fusion` selects `openrouter/fusion`.
 - `/model <slug>` selects an exact model.
 - `/fusion <preset>` sets Fusion plugin config.
 - `/status` shows active mode, model, Fusion config, generation id, tokens, and spend.
+
+## Streaming Metadata
+
+The current CLI reads token and cost metadata from the streaming response when OpenRouter provides it, captures `X-Generation-Id`, and performs a best-effort `/generation?id=<id>` lookup without failing the main response if that lookup is unavailable.
 
 ## Orchestration Boundary
 

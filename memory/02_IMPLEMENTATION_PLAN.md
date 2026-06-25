@@ -31,6 +31,8 @@ Status: complete and independently verified on 2026-06-25.
 
 Done when the CLI can stream one response from a configured model.
 
+Status: complete and independently verified on 2026-06-25.
+
 ## Phase 3: TUI MVP
 
 - Add terminal UI with message list, streaming output, composer, footer, and status indicators.

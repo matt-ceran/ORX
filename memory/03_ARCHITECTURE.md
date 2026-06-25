@@ -58,3 +58,7 @@ fusion+cfg  -> openrouter/fusion plus plugins config
 Keep provider behavior behind `src/openrouter/` so the rest of the runtime talks in terms of model mode, request options, messages, tools, and usage.
 
 Keep cross-agent orchestration behind `src/delegation/` so OpenRouter model calls, Codex subprocess/SDK calls, Devin MCP/API calls, and future adapters share one controller/delegate contract.
+
+## Current Implementation Notes
+
+`src/openrouter/` currently owns the one-shot streaming client, request construction, SSE parsing, metadata capture, and metadata formatting used by `orx ask`.

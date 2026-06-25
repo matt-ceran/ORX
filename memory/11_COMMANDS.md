@@ -32,6 +32,17 @@ orx --model anthropic/claude-sonnet-4.5
 orx --profile deep-review
 ```
 
+## Current CLI Commands
+
+```bash
+npm run dev -- --help
+npm run dev -- --version
+npm run dev -- status
+OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello from ORX"
+OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello" --model anthropic/claude-sonnet-4.5
+OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello" --mode fusion --fusion general-budget
+```
+
 ## Planned Environment
 
 ```bash

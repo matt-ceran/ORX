@@ -4,60 +4,78 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BIN_NAME } from "./constants.js";
 import { loadConfig, validateApiKey } from "./config/index.js";
+import type { OrxConfig, OrxMode } from "./config/types.js";
+import { buildAskRequest, type AskRequestOverrides } from "./openrouter/request.js";
+import { streamOpenRouterAsk } from "./openrouter/client.js";
+import { formatOpenRouterMetadata } from "./openrouter/summary.js";
 import { formatStatus } from "./status.js";
 
 interface PackageJson {
   version: string;
 }
 
-interface CliResult {
-  exitCode: number;
-  output?: string;
-  error?: string;
+interface CliIo {
+  stdout: Pick<NodeJS.WriteStream, "write">;
+  stderr: Pick<NodeJS.WriteStream, "write">;
+  cwd: string;
+  fetch?: typeof fetch;
 }
 
-export function runCli(argv: string[], env: NodeJS.ProcessEnv = process.env): CliResult {
+interface AskCommand {
+  prompt: string;
+  overrides: AskRequestOverrides;
+}
+
+const VALID_MODES = new Set<OrxMode>(["auto", "fusion", "exact"]);
+
+export async function runCli(
+  argv: string[],
+  env: NodeJS.ProcessEnv = process.env,
+  io: CliIo = {
+    stdout: process.stdout,
+    stderr: process.stderr,
+    cwd: process.cwd(),
+    fetch: globalThis.fetch,
+  },
+): Promise<number> {
   const args = argv.slice(2);
   const first = args[0];
 
   if (!first || first === "help" || first === "--help" || first === "-h") {
-    return {
-      exitCode: 0,
-      output: helpText(),
-    };
+    writeLine(io.stdout, helpText());
+    return 0;
   }
 
   if (first === "--version" || first === "-v" || first === "version") {
-    return {
-      exitCode: 0,
-      output: getVersion(),
-    };
+    writeLine(io.stdout, getVersion());
+    return 0;
   }
 
   if (first === "status") {
     const loadedConfig = loadConfig({ env });
-    return {
-      exitCode: 0,
-      output: formatStatus({
-        cwd: process.cwd(),
+    writeLine(
+      io.stdout,
+      formatStatus({
+        cwd: io.cwd,
         loadedConfig,
       }),
-    };
+    );
+    return 0;
   }
 
   const loadedConfig = loadConfig({ env });
   const apiKeyError = validateApiKey(loadedConfig);
   if (apiKeyError) {
-    return {
-      exitCode: 1,
-      error: apiKeyError,
-    };
+    writeLine(io.stderr, apiKeyError);
+    return 1;
   }
 
-  return {
-    exitCode: 1,
-    error: `Unknown command: ${first}\n\n${helpText()}`,
-  };
+  if (first === "ask") {
+    return runAskCommand(args.slice(1), loadedConfig.config.apiKey ?? "", loadedConfig.config, io);
+  }
+
+  writeLine(io.stderr, `Unknown command: ${first}\n\n${helpText()}`);
+  return 1;
 }
 
 function helpText(): string {
@@ -70,13 +88,19 @@ function helpText(): string {
     `  ${BIN_NAME} [command] [options]`,
     "",
     "Commands:",
+    '  ask "prompt"  Send one prompt to OpenRouter and stream the answer',
     "  status        Show runtime status and config defaults",
     "  help          Show this help message",
     "  version       Show the current version",
     "",
-    "Options:",
-    "  -h, --help    Show this help message",
-    "  -v, --version Show the current version",
+    "Ask options:",
+    "  --model <slug>          Use an exact OpenRouter model slug",
+    "  --mode <auto|fusion|exact>",
+    "  --fusion <preset>       Use an OpenRouter Fusion preset",
+    "",
+    "Global options:",
+    "  -h, --help              Show this help message",
+    "  -v, --version           Show the current version",
   ].join("\n");
 }
 
@@ -86,14 +110,120 @@ function getVersion(): string {
   return packageJson.version;
 }
 
-const result = runCli(process.argv);
+async function runAskCommand(
+  args: string[],
+  apiKey: string,
+  config: OrxConfig,
+  io: CliIo,
+): Promise<number> {
+  const parsed = parseAskArgs(args);
+  if (typeof parsed === "string") {
+    writeLine(io.stderr, parsed);
+    return 1;
+  }
 
-if (result.output) {
-  console.log(result.output);
+  const built = buildAskRequest({
+    config,
+    prompt: parsed.prompt,
+    overrides: parsed.overrides,
+  });
+
+  try {
+    const result = await streamOpenRouterAsk(
+      {
+        apiKey,
+        prompt: parsed.prompt,
+        request: built.request,
+        requestMetadata: built.metadata,
+        fetch: io.fetch,
+      },
+      {
+        onText(text) {
+          io.stdout.write(text);
+        },
+      },
+    );
+
+    writeLine(io.stdout, formatOpenRouterMetadata(result.metadata));
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    writeLine(io.stderr, message);
+    return 1;
+  }
 }
 
-if (result.error) {
-  console.error(result.error);
+function parseAskArgs(args: string[]): AskCommand | string {
+  const promptParts: string[] = [];
+  const overrides: AskRequestOverrides = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === "--model") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        return "Missing value for --model.";
+      }
+      overrides.model = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--mode") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        return "Missing value for --mode.";
+      }
+      if (!VALID_MODES.has(value as OrxMode)) {
+        return `Invalid --mode value: ${value}. Expected auto, fusion, or exact.`;
+      }
+      overrides.mode = value as OrxMode;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--fusion") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        return "Missing value for --fusion.";
+      }
+      overrides.fusionPreset = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--")) {
+      return `Unknown ask option: ${arg}`;
+    }
+
+    promptParts.push(arg);
+  }
+
+  if (overrides.model && overrides.mode && overrides.mode !== "exact") {
+    return "--model can only be combined with --mode exact.";
+  }
+
+  if (overrides.fusionPreset && overrides.mode && overrides.mode !== "fusion") {
+    return "--fusion can only be combined with --mode fusion.";
+  }
+
+  const prompt = promptParts.join(" ").trim();
+  if (!prompt) {
+    return 'Missing prompt. Example: orx ask "Say hello"';
+  }
+
+  return {
+    prompt,
+    overrides,
+  };
 }
 
-process.exitCode = result.exitCode;
+function writeLine(stream: Pick<NodeJS.WriteStream, "write">, text: string) {
+  stream.write(`${text}\n`);
+}
+
+const isEntrypoint = process.argv[1] === fileURLToPath(import.meta.url);
+if (isEntrypoint) {
+  process.exitCode = await runCli(process.argv);
+}

@@ -32,6 +32,20 @@ Current files:
 
 ## Latest Work
 
+Implemented and independently verified the Phase 2 OpenRouter streaming command:
+
+- `src/openrouter/` client, request builder, metadata formatter, and types
+- `orx ask "prompt"` one-shot command
+- streaming chat completions against `https://openrouter.ai/api/v1/chat/completions`
+- `--model`, `--mode auto|fusion|exact`, and `--fusion` overrides
+- API key validation for API commands while help, version, and status remain no-key safe
+- SSE comment and `[DONE]` handling
+- generation id capture from `X-Generation-Id`
+- usage and cost metadata summary when OpenRouter returns it
+- non-2xx OpenRouter error sanitization to avoid printing secrets
+- mocked fetch/stream tests with no real API key required
+- `npm run typecheck`, `npm run build`, and `npm test` passing
+
 Scaffolded and independently verified the Phase 1 TypeScript CLI:
 
 - `orx` binary mapped to compiled `dist/cli.js`
@@ -74,13 +88,19 @@ Recorded future orchestration/delegation support:
 
 ## Next Likely Task
 
-Implement Phase 2 OpenRouter streaming:
+Manually test the current CLI with a real OpenRouter API key:
 
-- OpenRouter client for `https://openrouter.ai/api/v1`
-- a non-interactive command that sends one prompt and streams the response
-- exact model slug support plus existing default `openrouter/auto`
-- returned model, generation id, token usage, and cost metadata capture when available
-- independent verifier pass before commit
+```bash
+OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello from ORX"
+```
+
+Then start Phase 3 TUI MVP:
+
+- message list
+- streaming output display
+- composer
+- footer/status indicators
+- interrupt and quit handling
 
 Do not implement orchestration before the core OpenRouter streaming loop, tool-call loop, and session metadata exist.
 

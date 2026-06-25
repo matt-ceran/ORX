@@ -17,6 +17,7 @@
     "test": "npm run build && node --test \"dist/**/*.test.js\""
   },
   "dependencies": {
+    "eventsource-parser": "^3.1.0",
     "smol-toml": "^1.7.0"
   },
   "devDependencies": {

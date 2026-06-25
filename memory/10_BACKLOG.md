@@ -11,9 +11,6 @@ Completed:
 - Add config loader.
 - Add OpenRouter API key validation.
 - Add basic `status` command.
-
-Remaining:
-
 - Add basic OpenRouter streaming request.
 
 ## P1

@@ -26,7 +26,7 @@ This should remain visible in `/status` and configurable later.
 
 ## Local CLI
 
-Phase 1 exposes a local TypeScript CLI skeleton:
+The local TypeScript CLI can be run from source or built output:
 
 ```sh
 npm install
@@ -37,6 +37,22 @@ node dist/cli.js status
 ```
 
 Config is discovered from repo-local `.orx/config.toml` development defaults and `~/.orx/config.toml`. `OPENROUTER_API_KEY` takes precedence for API key detection. The `status` command reports whether a key is present without printing it.
+
+Send one non-interactive streaming request with:
+
+```sh
+OPENROUTER_API_KEY=... npm run dev -- ask "Say hello"
+```
+
+Useful overrides:
+
+```sh
+OPENROUTER_API_KEY=... npm run dev -- ask "Say hello" --model anthropic/claude-sonnet-4.5
+OPENROUTER_API_KEY=... npm run dev -- ask "Say hello" --mode auto
+OPENROUTER_API_KEY=... npm run dev -- ask "Say hello" --mode fusion --fusion general-budget
+```
+
+After the streamed assistant text, ORX prints a compact metadata summary when OpenRouter provides details such as requested/resolved model, generation id, token counts, reasoning tokens, and cost. Secrets are never printed.
 
 ## Project Memory
 
