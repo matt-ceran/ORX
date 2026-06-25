@@ -8,7 +8,7 @@ Last updated: 2026-06-25
 - Add README, implementation plan, and memory system.
 - Establish durable project guidance through `AGENTS.md`.
 
-Status: in progress.
+Status: complete.
 
 ## Phase 1: CLI Skeleton
 
@@ -19,6 +19,8 @@ Status: in progress.
 - Validate required `OPENROUTER_API_KEY`.
 
 Done when `orx --help` and `orx --version` work locally.
+
+Status: complete and independently verified on 2026-06-25.
 
 ## Phase 2: OpenRouter Streaming
 
@@ -63,6 +65,7 @@ Done when ORX can inspect and modify a repo end to end.
 - Add context management and message compaction.
 - Add model-aware request shaping.
 - Add interruption handling.
+- Keep the runtime structured so a future `delegate_task` tool can call model or agent adapters without changing the core loop.
 
 Done when the agent can complete multi-step coding tasks reliably.
 
@@ -82,7 +85,18 @@ Done when sessions can be resumed after terminal restart.
 
 Done when `/models`, `/credits`, and model recommendations can use live OpenRouter data.
 
-## Phase 9: Web And Browser Tools
+## Phase 9: Orchestration And Delegation
+
+- Add orchestration profiles with one controller and a delegate pool.
+- Allow the controller to be either an OpenRouter model or an external agent adapter such as Codex.
+- Add delegate adapters for OpenRouter models first, then Codex and Devin when the local/API surfaces are available.
+- Add slash commands for selecting the orchestrator, adding/removing/listing delegates, and saving/loading teams.
+- Expose delegation through an ORX-owned `delegate_task` tool so ORX enforces credentials, permissions, budgets, and result merging.
+- Persist the active orchestration profile and delegate results in session metadata.
+
+Done when an ORX session can ask a selected controller to delegate subtasks to configured models or agent adapters and summarize their results back into the main thread.
+
+## Phase 10: Web And Browser Tools
 
 - Add web search integration.
 - Add optional Playwright browser automation.
@@ -90,11 +104,10 @@ Done when `/models`, `/credits`, and model recommendations can use live OpenRout
 
 Done when ORX can research current information and cite sources in task work.
 
-## Phase 10: Polish
+## Phase 11: Polish
 
 - Improve visual design, command palette, animations, themes, and model badges.
 - Add tests for core command parsing and tool execution.
 - Package for global install.
 
 Done when `npm install -g` or equivalent exposes a stable `orx` command.
-

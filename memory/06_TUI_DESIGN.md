@@ -47,9 +47,27 @@ Initial commands:
 /mcp
 /compact
 /profile
+/orchestrator
+/delegate
+/delegates
+/team
 /clear
 /new
 /quit
+```
+
+Future orchestration commands:
+
+```text
+/orchestrator openrouter <model-slug>
+/orchestrator codex [profile]
+/delegate add <name> openrouter <model-slug>
+/delegate add <name> codex [options]
+/delegate add <name> devin [options]
+/delegate remove <name>
+/delegates
+/team save <name>
+/team load <name>
 ```
 
 ## Visual Semantics
@@ -62,6 +80,7 @@ Initial commands:
 - Warnings: yellow accent.
 - Metadata: dim.
 - Diffs: green additions, red removals.
+- Delegation: show the delegate name, adapter type, status, elapsed time, and cost or external budget when available.
 
 ## Keyboard Expectations
 
@@ -70,4 +89,3 @@ Initial commands:
 - Ctrl+C interrupts the current task before quitting.
 - Arrow keys navigate command history.
 - Slash command menu filters as the user types.
-

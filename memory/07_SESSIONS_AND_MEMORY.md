@@ -18,8 +18,11 @@ Each session should store:
 - git repo metadata
 - active model and mode
 - Fusion config
+- active orchestrator
+- configured delegates
 - messages
 - tool calls and summarized outputs
+- delegate task inputs and summarized results
 - token and cost metadata
 
 ## Resume
@@ -52,4 +55,3 @@ Use:
 - `09_CURRENT_CONTEXT.md` for the current repo state.
 - `08_DECISIONS.md` for durable decisions.
 - `10_BACKLOG.md` for next work.
-

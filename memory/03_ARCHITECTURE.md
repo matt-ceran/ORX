@@ -26,6 +26,7 @@ src/tools/                 local tools: files, shell, search, git, patch
 src/slash/                 slash command registry and handlers
 src/permissions/           permission policy, YOLO defaults, future safe modes
 src/mcp/                   MCP client and server registry
+src/delegation/            orchestration profiles, delegate adapters, result merging
 src/sessions/              transcript persistence and resume
 src/web/                   search and browser tools
 ```
@@ -41,6 +42,8 @@ src/web/                   search and browser tools
 7. Results are summarized into the next model turn.
 8. Session state, usage, and cost metadata are persisted.
 
+Future delegation uses the same loop: the active controller can request a `delegate_task` tool call, then ORX dispatches that task to a configured adapter and returns the summarized result to the controller.
+
 ## Mode Flow
 
 ```text
@@ -54,3 +57,4 @@ fusion+cfg  -> openrouter/fusion plus plugins config
 
 Keep provider behavior behind `src/openrouter/` so the rest of the runtime talks in terms of model mode, request options, messages, tools, and usage.
 
+Keep cross-agent orchestration behind `src/delegation/` so OpenRouter model calls, Codex subprocess/SDK calls, Devin MCP/API calls, and future adapters share one controller/delegate contract.

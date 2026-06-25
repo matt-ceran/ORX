@@ -51,6 +51,16 @@ plugins: [{ id: "fusion", preset: "general-budget" }]
 - `/fusion <preset>` sets Fusion plugin config.
 - `/status` shows active mode, model, Fusion config, generation id, tokens, and spend.
 
+## Orchestration Boundary
+
+ORX should support future orchestration profiles without making OpenRouter responsible for non-OpenRouter agents:
+
+- OpenRouter models can act as the primary controller.
+- OpenRouter models can also be delegates through exact model slugs, `openrouter/auto`, or `openrouter/fusion`.
+- External agents such as Codex or Devin are adapters, not OpenRouter models.
+- Delegation should be exposed to the controller as an ORX-owned `delegate_task` tool.
+- ORX owns adapter selection, credentials, permissions, budgets, execution, result truncation, and merge summaries.
+
 ## MCP Boundary
 
 OpenRouter MCP should be used for live lookup and testing:
@@ -77,4 +87,3 @@ Persist per-turn metadata when available:
 - cost
 
 Expose it through `/cost`, `/status`, and session metadata.
-

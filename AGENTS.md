@@ -23,6 +23,7 @@ This keeps startup context small while preserving a complete project memory syst
 - Default ORX runtime permissions are intended to be YOLO-style: no approval prompts and full local access. Keep that visible in `/status`.
 - Never copy Codex branding, private prompts, exact assets, or proprietary implementation details.
 - Use local structured memory files for durable project context instead of relying on chat history.
+- For implementation work, use bounded implementor/verifier loops when possible: implement a step, verify it in a separate agent context, fix any findings, then commit and push the verified step before starting the next step.
 
 ## Memory Update Rules
 
@@ -34,4 +35,3 @@ After meaningful project work:
 - Update the relevant topic file when architecture, API behavior, UI behavior, permissions, or tooling changes.
 
 Keep memory entries concise, factual, and easy to scan.
-

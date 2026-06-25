@@ -38,14 +38,13 @@ orx --profile deep-review
 export OPENROUTER_API_KEY="sk-or-..."
 ```
 
-## Planned Development Commands
+## Development Commands
 
-These commands do not exist yet. Add them during TypeScript scaffolding.
+These commands exist after the Phase 1 scaffold.
 
 ```bash
 npm run dev
 npm run build
-npm run lint
+npm run typecheck
 npm test
 ```
-

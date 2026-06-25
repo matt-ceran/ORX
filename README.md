@@ -24,6 +24,20 @@ sandbox_mode = "danger-full-access"
 
 This should remain visible in `/status` and configurable later.
 
+## Local CLI
+
+Phase 1 exposes a local TypeScript CLI skeleton:
+
+```sh
+npm install
+npm run build
+node dist/cli.js --help
+node dist/cli.js --version
+node dist/cli.js status
+```
+
+Config is discovered from repo-local `.orx/config.toml` development defaults and `~/.orx/config.toml`. `OPENROUTER_API_KEY` takes precedence for API key detection. The `status` command reports whether a key is present without printing it.
+
 ## Project Memory
 
 This repo includes a Codex-friendly memory system:
