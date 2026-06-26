@@ -1,6 +1,6 @@
 # Backlog
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 ## P0
 
@@ -32,10 +32,17 @@ Completed:
 
 - Add local tools: read file, list files, search files, shell, git diff, apply patch.
 - Add shell output truncation.
+- Create later-phase implementor handoff for plugins, MCP policy, advanced tooling, and research stack.
+- Create focused Phase 6 handoff for the OpenRouter agent runtime and tool-call loop.
 
 Next:
 
-- Add tool-call loop.
+- Read `memory/14_PHASE_6_AGENT_RUNTIME.md` before starting Phase 6 implementation.
+- Add Phase 6 `src/agent/` runtime wrapper around existing OpenRouter streaming.
+- Add OpenRouter-compatible native tool schemas.
+- Add local tool dispatch from model tool calls.
+- Add guarded multi-turn tool-call loop.
+- Wire `ask` and `chat` through the agent runtime.
 - Add visible diff summaries after file edits.
 - Keep the tool-call loop compatible with a future `delegate_task` tool.
 - Add native test-runner adapters after shell tooling exists.

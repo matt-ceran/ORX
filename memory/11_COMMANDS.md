@@ -1,6 +1,6 @@
 # Commands
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 ## Repository
 
@@ -44,6 +44,8 @@ OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello" --mode fusion --fu
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- chat
 printf '/mode fusion\n/fusion general-budget\n/models\n/status\n/new\n/exit\n' | OPENROUTER_API_KEY="sk-or-..." npm run dev -- chat
 ```
+
+If `.orx/config.toml` contains the API key, the `OPENROUTER_API_KEY=...` prefix is not needed. The `.orx/` directory is ignored and must remain uncommitted.
 
 ## Planned Environment
 

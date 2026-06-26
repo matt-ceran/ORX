@@ -1,6 +1,17 @@
 # Current Context
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
+
+## Fast Phase 6 Handoff
+
+To start Phase 6 in a fresh session, read:
+
+1. `memory/00_INDEX.md`
+2. `memory/01_PROJECT_BRIEF.md`
+3. `memory/09_CURRENT_CONTEXT.md`
+4. `memory/14_PHASE_6_AGENT_RUNTIME.md`
+
+Then retrieve supporting shards from the index as needed. The Phase 6 shard is the focused handoff for the agent runtime and tool-call loop.
 
 ## Current State
 
@@ -31,6 +42,20 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Created a focused Phase 6 handoff for the OpenRouter agent runtime:
+
+- Added `memory/14_PHASE_6_AGENT_RUNTIME.md`.
+- Indexed it as `phase6` in `memory/00_INDEX.md`.
+- The handoff records verified foundation commits, existing runtime files, Phase 6 scope, suggested bounded step slices, guardrails, and verification targets.
+- The later-phase plugin/MCP handoff remains separate as `integration-handoff`.
+
+Created the later-phase implementor handoff for full-stacking ORX with plugins, MCP, advanced programming tools, and deep research:
+
+- Added `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`.
+- The handoff defines prerequisites, phased slices, module boundaries, config sketches, plugin metadata, MCP policy, OpenRouter MCP usage, Agent Skills loading, plugin hooks, advanced code intelligence, scanner profiles, research profiles, evidence ledgers, security rules, and verification expectations.
+- Updated the memory index so future implementor sessions can discover the handoff.
+- This handoff does not change the immediate next task: Phase 6 agent runtime remains next.
 
 Implemented and independently verified the Phase 5 native local coding tools:
 
@@ -147,6 +172,7 @@ Recorded MCP/tooling research conclusions:
 
 Start Phase 6 agent runtime:
 
+- Read `memory/14_PHASE_6_AGENT_RUNTIME.md`.
 - Add model tool definitions for native local tools.
 - Add a tool-call loop around OpenRouter chat completions.
 - Add tool result truncation and summarization rules.

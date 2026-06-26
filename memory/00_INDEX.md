@@ -1,6 +1,6 @@
 # ORX Memory Index
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 This directory is the durable memory system for ORX. New Codex sessions should use this file as the routing table, then open only the memory files needed for the task.
 
@@ -28,14 +28,18 @@ Always read these first:
 | `backlog` | `10_BACKLOG.md` | Prioritized implementation tasks |
 | `commands` | `11_COMMANDS.md` | Local commands, setup steps, GitHub repo details |
 | `integrations` | `12_INTEGRATIONS_RESEARCH.md` | MCP/plugin/tool research, integration priorities, security posture |
+| `integration-handoff` | `13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md` | Later-phase implementor handoff for plugins, MCP policy, advanced tooling, and research stack |
+| `phase6` | `14_PHASE_6_AGENT_RUNTIME.md` | Focused handoff for the OpenRouter agent runtime and tool-call loop |
 
 ## Retrieval Patterns
 
 - For implementation work, read `brief`, `current`, `plan`, and the specific topic file for the change.
+- For Phase 6 agent-runtime work, read `phase6`, then `arch`, `openrouter`, and `tools`.
 - For UI work, read `ui`, `current`, and `decisions`.
 - For OpenRouter behavior, read `openrouter`, `plan`, and `decisions`.
 - For tool execution or local file editing behavior, read `tools`, `sessions`, and `decisions`.
 - For planning a new milestone, read `plan`, `backlog`, `current`, and `decisions`.
+- For plugin/MCP/research implementation, read `integrations`, `integration-handoff`, `arch`, `tools`, and `decisions`.
 
 ## Update Protocol
 

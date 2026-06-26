@@ -1,6 +1,6 @@
 # Implementation Plan
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 ## Phase 0: Project Setup
 
@@ -67,6 +67,8 @@ Done when ORX can inspect and modify a repo end to end.
 Status: complete and independently verified on 2026-06-25.
 
 ## Phase 6: Agent Runtime
+
+Handoff: `memory/14_PHASE_6_AGENT_RUNTIME.md`.
 
 - Add tool-call loop.
 - Add tool result truncation.

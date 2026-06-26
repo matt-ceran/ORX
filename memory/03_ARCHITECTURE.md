@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 ## Target Stack
 
@@ -74,3 +74,5 @@ Keep research provenance behind `src/research/` so search results, fetched pages
 `src/openrouter/` currently owns the one-shot streaming client, request construction, SSE parsing, metadata capture, and metadata formatting used by `orx ask`.
 
 `src/tools/` currently owns standalone native local coding tools for file reads, directory listing, file search, shell execution, git diff, patch application, shared truncation, and process execution. These are ready to be wired into the Phase 6 agent runtime.
+
+Phase 6 should add `src/agent/` as the integration layer between `src/openrouter/`, `src/tools/`, `src/tui/`, and future session/delegation surfaces. See `memory/14_PHASE_6_AGENT_RUNTIME.md` for the implementation handoff.
