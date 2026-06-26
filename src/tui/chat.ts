@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline";
-import { runAgentTurn } from "../agent/index.js";
+import { formatToolCallStart, formatToolResult, runAgentTurn } from "../agent/index.js";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
@@ -88,6 +88,7 @@ export async function runChat({ apiKey, loadedConfig, io }: ChatOptions): Promis
       activeAbort = new AbortController();
       writeLine(io.stdout, `\nyou: ${line}`);
       io.stdout.write("assistant: ");
+      let needsAssistantPrefix = false;
 
       try {
         const result = await runAgentTurn(
@@ -100,10 +101,19 @@ export async function runChat({ apiKey, loadedConfig, io }: ChatOptions): Promis
             signal: activeAbort.signal,
             callbacks: {
               onText(text) {
+                if (needsAssistantPrefix) {
+                  io.stdout.write("assistant: ");
+                  needsAssistantPrefix = false;
+                }
                 io.stdout.write(text);
               },
               onToolCall(toolCall) {
-                io.stdout.write(`\n[tool] ${toolCall.function.name}\nassistant: `);
+                io.stdout.write(`\n${formatToolCallStart(toolCall)}\n`);
+                needsAssistantPrefix = true;
+              },
+              onToolResult(result) {
+                io.stdout.write(`${formatToolResult(result)}\n`);
+                needsAssistantPrefix = true;
               },
             },
           },

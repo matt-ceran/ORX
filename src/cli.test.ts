@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Readable } from "node:stream";
 import { runCli } from "./cli.js";
 
@@ -102,6 +105,97 @@ test("ask supports Fusion preset override", async () => {
   assert.match(capture.stdout(), /requested_model: openrouter\/fusion/);
 });
 
+test("ask prints visible tool start and result summaries", async () => {
+  const cwd = createTempDir();
+  const patch = [
+    "*** Begin Patch",
+    "*** Add File: created.txt",
+    "+SHOULD_NOT_APPEAR_IN_TOOL_SUMMARY",
+    "*** End Patch",
+    "",
+  ].join("\n");
+  let callCount = 0;
+
+  try {
+    const capture = createIo({
+      cwd,
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        callCount += 1;
+
+        if (callCount === 1) {
+          assert.equal(body.messages.at(-1).role, "user");
+          return new Response(
+            streamFrom([
+              sse({
+                choices: [
+                  {
+                    delta: {
+                      tool_calls: [
+                        {
+                          index: 0,
+                          id: "call_patch",
+                          type: "function",
+                          function: {
+                            name: "apply_patch",
+                            arguments: JSON.stringify({ patch }),
+                          },
+                        },
+                      ],
+                    },
+                    finish_reason: "tool_calls",
+                  },
+                ],
+              }),
+              "data: [DONE]\n\n",
+            ]),
+            { status: 200 },
+          );
+        }
+
+        assert.equal(body.messages.at(-1).role, "tool");
+        assert.equal(body.messages.at(-1).tool_call_id, "call_patch");
+        return new Response(
+          streamFrom([
+            sse({
+              choices: [
+                {
+                  delta: {
+                    content: "Patched.",
+                  },
+                },
+              ],
+            }),
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runCli(
+      ["node", "cli", "ask", "Create a file"],
+      {
+        OPENROUTER_API_KEY: "test-key",
+      },
+      capture.io,
+    );
+
+    assert.equal(exitCode, 0);
+    assert.equal(readFileSync(join(cwd, "created.txt"), "utf8"), "SHOULD_NOT_APPEAR_IN_TOOL_SUMMARY\n");
+    assert.match(capture.stdout(), /\[tool\] apply_patch patch=<\d+B, 4 lines>/);
+    assert.match(
+      capture.stdout(),
+      /\[tool\] apply_patch ok duration=\d+ms changed_files=1 \["created\.txt"\]/,
+    );
+    assert.match(capture.stdout(), /Patched\./);
+    assert.doesNotMatch(capture.stdout(), /\+SHOULD_NOT_APPEAR_IN_TOOL_SUMMARY/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("chat streams turns, keeps history, and handles slash commands", async () => {
   const requests: unknown[] = [];
   let callCount = 0;
@@ -178,7 +272,87 @@ test("chat streams turns, keeps history, and handles slash commands", async () =
   assert.equal(capture.stderr(), "");
 });
 
-function createIo(options: { fetch?: typeof fetch; stdin?: NodeJS.ReadableStream } = {}) {
+test("chat prints visible tool start and result summaries", async () => {
+  const cwd = createTempDir();
+  let callCount = 0;
+
+  try {
+    writeFileSync(join(cwd, "sample.txt"), "alpha from chat\n");
+    const capture = createIo({
+      cwd,
+      stdin: Readable.from(["Read sample\n", "/exit\n"]),
+      fetch: async (_input, init) => {
+        callCount += 1;
+        const body = JSON.parse(String(init?.body));
+
+        if (callCount === 1) {
+          assert.equal(body.messages.at(-1).content, "Read sample");
+          return new Response(
+            streamFrom([
+              sse({
+                choices: [
+                  {
+                    delta: {
+                      tool_calls: [
+                        {
+                          index: 0,
+                          id: "call_read",
+                          type: "function",
+                          function: {
+                            name: "read_file",
+                            arguments: JSON.stringify({ path: "sample.txt" }),
+                          },
+                        },
+                      ],
+                    },
+                    finish_reason: "tool_calls",
+                  },
+                ],
+              }),
+              "data: [DONE]\n\n",
+            ]),
+            { status: 200 },
+          );
+        }
+
+        assert.equal(body.messages.at(-1).role, "tool");
+        return new Response(
+          streamFrom([
+            sse({
+              choices: [
+                {
+                  delta: {
+                    content: "Read sample.txt.",
+                  },
+                },
+              ],
+            }),
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runCli(
+      ["node", "cli", "chat"],
+      {
+        OPENROUTER_API_KEY: "test-key",
+      },
+      capture.io,
+    );
+
+    assert.equal(exitCode, 0);
+    assert.match(capture.stdout(), /\[tool\] read_file path="sample\.txt"/);
+    assert.match(capture.stdout(), /\[tool\] read_file ok duration=\d+ms/);
+    assert.match(capture.stdout(), /assistant: Read sample\.txt\./);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+function createIo(options: { fetch?: typeof fetch; stdin?: NodeJS.ReadableStream; cwd?: string } = {}) {
   let stdoutText = "";
   let stderrText = "";
 
@@ -197,7 +371,7 @@ function createIo(options: { fetch?: typeof fetch; stdin?: NodeJS.ReadableStream
           return true;
         },
       },
-      cwd: "/tmp/orx-test",
+      cwd: options.cwd ?? "/tmp/orx-test",
       fetch: options.fetch ?? globalThis.fetch,
     },
     stdout() {
@@ -207,6 +381,10 @@ function createIo(options: { fetch?: typeof fetch; stdin?: NodeJS.ReadableStream
       return stderrText;
     },
   };
+}
+
+function createTempDir(): string {
+  return mkdtempSync(join(tmpdir(), "orx-cli-"));
 }
 
 function streamFrom(chunks: string[]): ReadableStream<Uint8Array> {
@@ -233,4 +411,8 @@ function assertNativeTools(tools: unknown) {
     "search_files",
     "shell",
   ]);
+}
+
+function sse(value: unknown): string {
+  return `data: ${JSON.stringify(value)}\n\n`;
 }

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BIN_NAME } from "./constants.js";
-import { runAgentTurn } from "./agent/index.js";
+import { formatToolCallStart, formatToolResult, runAgentTurn } from "./agent/index.js";
 import { loadConfig, validateApiKey } from "./config/index.js";
 import type { OrxConfig, OrxMode } from "./config/types.js";
 import type { AskRequestOverrides } from "./openrouter/request.js";
@@ -157,7 +157,10 @@ async function runAskCommand(
             io.stdout.write(text);
           },
           onToolCall(toolCall) {
-            io.stdout.write(`\n[tool] ${toolCall.function.name}\n`);
+            io.stdout.write(`\n${formatToolCallStart(toolCall)}\n`);
+          },
+          onToolResult(result) {
+            io.stdout.write(`${formatToolResult(result)}\n`);
           },
         },
       },

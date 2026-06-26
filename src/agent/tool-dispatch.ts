@@ -20,6 +20,7 @@ export interface ToolDispatchOptions {
 export interface ToolDispatchResult {
   toolCall: OpenRouterToolCall;
   message: OpenRouterMessage;
+  output: unknown;
   ok: boolean;
   durationMs: number;
   truncation: TextTruncation;
@@ -77,6 +78,7 @@ export async function dispatchNativeToolCall(
       tool_call_id: toolCall.id,
       content,
     },
+    output,
     ok,
     durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
     truncation: truncated.truncation,

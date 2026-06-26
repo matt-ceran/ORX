@@ -43,6 +43,16 @@ Current files:
 
 ## Latest Work
 
+Implemented and verified the Phase 6 visible native tool summary slice:
+
+- Added reusable tool event formatting in `src/agent/tool-summaries.ts`.
+- `orx ask` and `orx chat` now print compact tool-call start summaries with tool name and bounded arguments.
+- Tool results now print success/failure, duration, result truncation when applicable, shell exit/truncation details, `git_diff` diff size/truncation metadata, and `apply_patch` changed files.
+- The model-facing tool result envelope remains compatible; dispatch now separately exposes raw native tool output for UI-only summaries.
+- Added no-network tests for compact patch argument summaries, changed-file summaries, git diff truncation summaries without diff leakage, and ask/chat visible tool summary output.
+- `npm run typecheck`, `npm run build`, `npm test`, `git diff --check`, and `npm run dev -- status` pass. The full test suite now has 51 tests.
+- Separate verifier session reviewed the uncommitted diff and the follow-up test additions; no findings were reported.
+
 Implemented and verified the first Phase 6 agent-runtime slice:
 
 - Added `src/agent/` with native tool schemas, dispatch, and a guarded multi-turn runtime.
@@ -190,9 +200,8 @@ Recorded MCP/tooling research conclusions:
 Continue Phase 6 agent runtime:
 
 - Add runtime context management and message compaction boundaries.
-- Add better visible tool execution summaries for chat and ask.
 - Add interruption handling for active local tool execution, especially shell commands.
-- Add visible diff summaries after file edits.
+- Add richer session-level diff state and `/diff` behavior after file edits.
 - Keep the runtime shaped for future `delegate_task`, sessions, and MCP/plugin policy.
 
 Do not implement orchestration before the core OpenRouter streaming loop, tool-call loop, and session metadata exist.
