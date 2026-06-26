@@ -49,6 +49,7 @@ export interface ChatOptions {
   io: ChatIo;
   contextBudget?: Partial<AgentContextBudget>;
   sessionDirectory?: string;
+  mcpAuditLogPath?: string;
 }
 
 export async function runChat({
@@ -57,6 +58,7 @@ export async function runChat({
   io,
   contextBudget = DEFAULT_CONTEXT_BUDGET,
   sessionDirectory,
+  mcpAuditLogPath,
 }: ChatOptions): Promise<number> {
   let activeConfig: OrxConfig = { ...loadedConfig.config };
   let activeCwd = io.cwd;
@@ -121,6 +123,7 @@ export async function runChat({
           getContextBudget: () => contextBudget,
           getDiffState: () => diffState,
           getSessionInfo: () => sessionInfo(session),
+          mcpAuditLogPath,
           startNewSession: async () => {
             session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
           },

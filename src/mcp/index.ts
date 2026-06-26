@@ -2,15 +2,36 @@ export {
   OPENROUTER_MCP_PROFILE,
   findMcpProfile,
   getActiveMcpProfiles,
+  getMcpToolNames,
   listMcpProfiles,
+  resetMcpProfileRuntimeState,
+  setMcpProfileRuntimeState,
+  type McpDeclaredTool,
   type McpProfile,
   type McpProfileState,
   type McpRiskLevel,
+  type McpToolRisk,
   type McpTransportKind,
 } from "./registry.js";
 export {
   formatMcpProfile,
+  getMcpProfileToolNames,
   getMcpStatusSummary,
+  renderMcpProfileInspect,
   renderMcpStatus,
   type McpStatusSummary,
 } from "./policy.js";
+export {
+  defaultMcpAuditLogPath,
+  redactSecrets,
+  writeMcpAuditEvent,
+  type McpAuditEvent,
+  type McpAuditEventType,
+  type McpAuditOptions,
+} from "./audit.js";
+export {
+  hashMcpProfile,
+  hashMcpProfiles,
+  mcpProfileHashInput,
+  type McpProfileHashInput,
+} from "./schema.js";

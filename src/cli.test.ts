@@ -22,7 +22,12 @@ test("help, version, and status work without an API key", async () => {
   assert.equal(await runCli(["node", "cli", "status"], {}, status.io), 0);
   assert.match(status.stdout(), /api_key_present: no/);
   assert.match(status.stdout(), /mcp_active_profiles: none/);
+  assert.match(status.stdout(), /mcp_billable_tools: 0/);
+  assert.match(status.stdout(), /mcp_configured_billable_tools: 1/);
+  assert.match(status.stdout(), /mcp_registry_hash: sha256:[a-f0-9]{64}/);
+  assert.match(status.stdout(), /mcp_pending_schema_changes: none/);
   assert.match(status.stdout(), /mcp_profile: profile=openrouter state=disabled/);
+  assert.match(status.stdout(), /hash=sha256:[a-f0-9]{64}/);
 });
 
 test("ask and chat require an OpenRouter API key", async () => {
@@ -414,6 +419,7 @@ test("chat streams turns, keeps history, and handles slash commands", async () =
 
 test("chat metadata slash commands do not make chat completion requests", async () => {
   const sessionDirectory = createTempDir();
+  const auditLogPath = join(sessionDirectory, "audit", "mcp.jsonl");
   const seenUrls: string[] = [];
 
   try {
@@ -475,6 +481,7 @@ test("chat metadata slash commands do not make chat completion requests", async 
       {
         OPENROUTER_API_KEY: "test-key",
         ORX_SESSION_DIR: sessionDirectory,
+        ORX_MCP_AUDIT_PATH: auditLogPath,
       },
       capture.io,
     );

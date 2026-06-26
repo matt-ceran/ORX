@@ -30,8 +30,16 @@ export function formatStatus({ cwd, loadedConfig }: StatusOptions): string {
     `mcp_active_servers: ${mcpStatus.serverCount}`,
     `mcp_auth_bearing_servers: ${mcpStatus.authBearingServerCount}`,
     `mcp_write_enabled_tools: ${mcpStatus.writeEnabledToolCount}`,
+    `mcp_billable_tools: ${mcpStatus.billableToolCount}`,
+    `mcp_configured_billable_tools: ${mcpStatus.configuredBillableToolCount}`,
     `mcp_risky_transports: ${mcpStatus.riskyTransportCount}`,
-    ...mcpStatus.profiles.map((profile) => `mcp_profile: ${formatMcpProfile(profile)}`),
+    `mcp_registry_hash: ${mcpStatus.registryHash}`,
+    `mcp_pending_schema_changes: ${
+      mcpStatus.pendingSchemaChangeCount === 0 ? "none" : mcpStatus.pendingSchemaChangeCount
+    }`,
+    ...mcpStatus.profiles.map(
+      (profile) => `mcp_profile: ${formatMcpProfile(profile, mcpStatus.profileHashes[profile.id])}`,
+    ),
   ];
 
   return lines.join("\n");

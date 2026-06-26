@@ -67,16 +67,17 @@ Completed:
 - Add `/credits`, `/generation <id>`, `orx models [query]`, `orx credits`, and `orx generation <id>`.
 - Add disabled-by-default OpenRouter MCP profile scaffolding and `/mcp` status/list output.
 - Add MCP policy/profile visibility to `/status`.
+- Add deterministic MCP profile/registry hashing for configured profile metadata and declared tool risk.
+- Add local redacted MCP audit JSONL scaffolding for status, inspect, and enable/disable attempts.
+- Add `/mcp inspect <profile>` plus in-process-only `/mcp enable <profile>` and `/mcp disable <profile>` simulation.
+- Add `/status` visibility for MCP hashes, pending schema changes, and active/configured billable MCP tool counts.
 
 Next:
 
-- Decide whether the next Phase 8 slice should add MCP schema hashing/audit logs or OpenRouter MCP client discovery behind the disabled profile.
+- Decide whether the next Phase 8 slice should add OpenRouter MCP client discovery behind the disabled profile or first persist/trust profile state.
 - Add MCP client registry/config support with explicit enabled profiles when needed.
-- Add `/mcp enable/disable/inspect` only after policy, audit, and schema-change visibility are in place.
 - Persist active orchestrator and delegate metadata in sessions.
 - Add MCP policy engine outside the model loop.
-- Add MCP schema hashing and schema-change status.
-- Add local MCP audit logs.
 - Add secret redaction and minimal env forwarding for MCP child processes.
 
 ## P4

@@ -8,7 +8,16 @@ import {
   type SessionDiffState,
 } from "../agent/index.js";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
-import { renderMcpStatus } from "../mcp/index.js";
+import {
+  findMcpProfile,
+  getMcpStatusSummary,
+  hashMcpProfile,
+  renderMcpProfileInspect,
+  renderMcpStatus,
+  setMcpProfileRuntimeState,
+  writeMcpAuditEvent,
+  type McpAuditEvent,
+} from "../mcp/index.js";
 import {
   formatOpenRouterCredits,
   formatOpenRouterGeneration,
@@ -87,6 +96,7 @@ export interface SlashCommandContext {
   getContextBudget?: () => Partial<AgentContextBudget>;
   getDiffState?: () => SessionDiffState;
   getSessionInfo?: () => { id: string; path: string } | undefined;
+  mcpAuditLogPath?: string;
   startNewSession?: () => Promise<void> | void;
   resumeSession?: (selector?: string) => Promise<ResumeSessionResult>;
 }
@@ -346,10 +356,10 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp",
-    description: "Show MCP profiles and policy status",
-    handler: (_command, context) => {
-      writeLine(context.io.stdout, renderMcpStatus());
+    usage: "/mcp [list|inspect|enable|disable]",
+    description: "Show or simulate MCP profile policy state",
+    handler: (command, context) => {
+      handleMcpCommand(command, context);
       return "continue";
     },
   },
@@ -496,6 +506,101 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
   ]
     .filter((line): line is string => typeof line === "string")
     .join("\n");
+}
+
+function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+  const profileId = command.args[1];
+
+  if (subcommand === "list" || subcommand === "status") {
+    const summary = getMcpStatusSummary();
+    tryWriteMcpAuditEvent(context, {
+      type: "mcp.profile.status",
+      ok: true,
+      details: {
+        activeProfileIds: summary.activeProfileIds,
+        registryHash: summary.registryHash,
+        pendingSchemaChangeCount: summary.pendingSchemaChangeCount,
+      },
+    });
+    writeLine(context.io.stdout, renderMcpStatus(summary));
+    return;
+  }
+
+  if (subcommand === "inspect") {
+    if (!profileId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /mcp inspect <profile>");
+      return;
+    }
+
+    const profile = findMcpProfile(profileId);
+    tryWriteMcpAuditEvent(context, {
+      type: "mcp.profile.inspect",
+      profileId,
+      ok: Boolean(profile),
+      details: profile
+        ? {
+            state: profile.state,
+            transport: profile.transport.kind,
+            authRequired: profile.authRequired,
+            writeCapable: profile.writeCapable,
+            profileHash: hashMcpProfile(profile),
+          }
+        : undefined,
+    });
+
+    if (!profile) {
+      writeLine(context.io.stderr, `Unknown MCP profile: ${profileId}`);
+      return;
+    }
+
+    writeLine(context.io.stdout, renderMcpProfileInspect(profile));
+    return;
+  }
+
+  if (subcommand === "enable" || subcommand === "disable") {
+    if (!profileId || command.args.length !== 2) {
+      writeLine(context.io.stderr, `Usage: /mcp ${subcommand} <profile>`);
+      return;
+    }
+
+    const result = setMcpProfileRuntimeState(
+      profileId,
+      subcommand === "enable" ? "enabled" : "disabled",
+    );
+    tryWriteMcpAuditEvent(context, {
+      type:
+        subcommand === "enable" ? "mcp.profile.enable_attempt" : "mcp.profile.disable_attempt",
+      profileId,
+      ok: result.ok,
+      details: {
+        previousState: result.previousState,
+        nextState: result.nextState,
+        message: result.message,
+        profileHash: result.profile ? hashMcpProfile(result.profile) : undefined,
+      },
+    });
+
+    if (!result.ok) {
+      writeLine(context.io.stderr, result.message);
+      return;
+    }
+
+    writeLine(context.io.stdout, result.message);
+    return;
+  }
+
+  writeLine(context.io.stderr, "Usage: /mcp [list|inspect <profile>|enable <profile>|disable <profile>]");
+}
+
+function tryWriteMcpAuditEvent(context: SlashCommandContext, event: McpAuditEvent): void {
+  try {
+    writeMcpAuditEvent(event, { auditLogPath: context.mcpAuditLogPath });
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
+    const suffix = code ? ` (${code})` : "";
+    writeLine(context.io.stderr, `Warning: unable to write MCP audit log${suffix}.`);
+  }
 }
 
 function indent(text: string): string {

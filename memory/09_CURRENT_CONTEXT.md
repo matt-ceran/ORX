@@ -43,6 +43,16 @@ Current files:
 
 ## Latest Work
 
+Implemented and verified the next Phase 8 MCP policy foundation checkpoint:
+
+- Added deterministic SHA-256 profile/registry hashing for configured MCP profiles based on profile metadata, transport/auth/write flags, and declared tool metadata rather than runtime enabled state.
+- Expanded the OpenRouter MCP profile metadata from bare tool names to declared tools with auth, risk, and billable flags; `chat-send` is marked billable/risky while the profile remains `writeCapable=false`.
+- Added local MCP audit JSONL scaffolding under `~/.orx/audit/mcp.jsonl`, with `ORX_MCP_AUDIT_PATH`/test override support, private file creation, and secret redaction for status, inspect, enable, and disable attempts.
+- Added `/mcp list`/default, `/mcp inspect <profile>`, `/mcp enable <profile>`, and `/mcp disable <profile>`. Enable/disable are in-process policy simulations only and do not persist config or execute MCP tools.
+- Extended `/mcp` and `/status` with profile hashes, registry hash, pending schema-change visibility (`none`), active/configured billable tool counts, and existing MCP risk/auth/server counts.
+- Added no-network tests for stable and changed MCP hashes, audit JSONL redaction/shape, `/mcp` inspect/list/enable/disable behavior, `/status` visibility, and no fetch calls from MCP slash commands.
+- `npm run typecheck`, `git diff --check`, and `npm test` pass with 118 tests.
+
 Implemented and verified a bounded Phase 8 live metadata and MCP policy scaffold checkpoint:
 
 - Added direct OpenRouter live metadata helpers for `GET /models`, `GET /credits`, and `GET /generation?id=...` with sanitized errors that redact API keys and bearer tokens.

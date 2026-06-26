@@ -112,6 +112,7 @@ export async function runCli(
         fetch: io.fetch,
       },
       sessionDirectory: resolveSessionDirectory({ env, cwd: io.cwd }),
+      mcpAuditLogPath: env.ORX_MCP_AUDIT_PATH,
     });
   }
 
