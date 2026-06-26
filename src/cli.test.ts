@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { runCli } from "./cli.js";
+import { setMcpProfilePersistentState } from "./mcp/index.js";
 
 const encoder = new TextEncoder();
 
@@ -18,16 +19,48 @@ test("help, version, and status work without an API key", async () => {
   assert.equal(await runCli(["node", "cli", "--version"], {}, version.io), 0);
   assert.match(version.stdout(), /\d+\.\d+\.\d+/);
 
-  const status = createIo();
-  assert.equal(await runCli(["node", "cli", "status"], {}, status.io), 0);
-  assert.match(status.stdout(), /api_key_present: no/);
-  assert.match(status.stdout(), /mcp_active_profiles: none/);
-  assert.match(status.stdout(), /mcp_billable_tools: 0/);
-  assert.match(status.stdout(), /mcp_configured_billable_tools: 1/);
-  assert.match(status.stdout(), /mcp_registry_hash: sha256:[a-f0-9]{64}/);
-  assert.match(status.stdout(), /mcp_pending_schema_changes: none/);
-  assert.match(status.stdout(), /mcp_profile: profile=openrouter state=disabled/);
-  assert.match(status.stdout(), /hash=sha256:[a-f0-9]{64}/);
+  const cwd = createTempDir();
+  try {
+    const status = createIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "status"],
+        { ORX_MCP_CONFIG_PATH: join(cwd, "mcp", "profiles.json") },
+        status.io,
+      ),
+      0,
+    );
+    assert.match(status.stdout(), /api_key_present: no/);
+    assert.match(status.stdout(), /mcp_active_profiles: none/);
+    assert.match(status.stdout(), /mcp_billable_tools: 0/);
+    assert.match(status.stdout(), /mcp_configured_billable_tools: 1/);
+    assert.match(status.stdout(), /mcp_registry_hash: sha256:[a-f0-9]{64}/);
+    assert.match(status.stdout(), /mcp_pending_schema_changes: none/);
+    assert.match(status.stdout(), /mcp_profile: profile=openrouter state=disabled/);
+    assert.match(status.stdout(), /hash=sha256:[a-f0-9]{64}/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli status reflects persisted MCP profile config", async () => {
+  const cwd = createTempDir();
+  const mcpConfigPath = join(cwd, "mcp", "profiles.json");
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath: mcpConfigPath });
+
+    const status = createIo();
+    assert.equal(
+      await runCli(["node", "cli", "status"], { ORX_MCP_CONFIG_PATH: mcpConfigPath }, status.io),
+      0,
+    );
+    assert.match(status.stdout(), /mcp_active_profiles: openrouter/);
+    assert.match(status.stdout(), /mcp_billable_tools: 1/);
+    assert.match(status.stdout(), /mcp_profile: profile=openrouter state=enabled/);
+    assert.match(status.stdout(), /trusted_hash=sha256:[a-f0-9]{64}/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("ask and chat require an OpenRouter API key", async () => {
@@ -348,6 +381,7 @@ test("chat streams turns, keeps history, and handles slash commands", async () =
       {
         OPENROUTER_API_KEY: "test-key",
         ORX_SESSION_DIR: sessionDirectory,
+        ORX_MCP_CONFIG_PATH: join(sessionDirectory, "mcp", "profiles.json"),
       },
       capture.io,
     );
@@ -482,6 +516,7 @@ test("chat metadata slash commands do not make chat completion requests", async 
         OPENROUTER_API_KEY: "test-key",
         ORX_SESSION_DIR: sessionDirectory,
         ORX_MCP_AUDIT_PATH: auditLogPath,
+        ORX_MCP_CONFIG_PATH: join(sessionDirectory, "mcp", "profiles.json"),
       },
       capture.io,
     );

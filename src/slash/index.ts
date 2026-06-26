@@ -14,7 +14,7 @@ import {
   hashMcpProfile,
   renderMcpProfileInspect,
   renderMcpStatus,
-  setMcpProfileRuntimeState,
+  setMcpProfilePersistentState,
   writeMcpAuditEvent,
   type McpAuditEvent,
 } from "../mcp/index.js";
@@ -97,6 +97,7 @@ export interface SlashCommandContext {
   getDiffState?: () => SessionDiffState;
   getSessionInfo?: () => { id: string; path: string } | undefined;
   mcpAuditLogPath?: string;
+  mcpConfigPath?: string;
   startNewSession?: () => Promise<void> | void;
   resumeSession?: (selector?: string) => Promise<ResumeSessionResult>;
 }
@@ -493,6 +494,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
     formatStatus({
       cwd: context.io.cwd,
       loadedConfig,
+      mcpConfigPath: context.mcpConfigPath,
     }),
     `history_messages: ${context.getMessages().length}`,
     `context: ${formatContextState(
@@ -513,7 +515,7 @@ function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): 
   const profileId = command.args[1];
 
   if (subcommand === "list" || subcommand === "status") {
-    const summary = getMcpStatusSummary();
+    const summary = getMcpStatusSummary({ configPath: context.mcpConfigPath });
     tryWriteMcpAuditEvent(context, {
       type: "mcp.profile.status",
       ok: true,
@@ -533,7 +535,8 @@ function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): 
       return;
     }
 
-    const profile = findMcpProfile(profileId);
+    const summary = getMcpStatusSummary({ configPath: context.mcpConfigPath });
+    const profile = findMcpProfile(profileId, { configPath: context.mcpConfigPath });
     tryWriteMcpAuditEvent(context, {
       type: "mcp.profile.inspect",
       profileId,
@@ -545,6 +548,8 @@ function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): 
             authRequired: profile.authRequired,
             writeCapable: profile.writeCapable,
             profileHash: hashMcpProfile(profile),
+            trustedProfileHash: summary.trustedProfileHashes[profile.id],
+            schemaChangePending: summary.pendingSchemaChangeProfileIds.includes(profile.id),
           }
         : undefined,
     });
@@ -554,7 +559,14 @@ function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): 
       return;
     }
 
-    writeLine(context.io.stdout, renderMcpProfileInspect(profile));
+    writeLine(
+      context.io.stdout,
+      renderMcpProfileInspect(profile, {
+        trustedProfileHash: summary.trustedProfileHashes[profile.id],
+        updatedAt: summary.profileUpdatedAt[profile.id],
+        schemaChangePending: summary.pendingSchemaChangeProfileIds.includes(profile.id),
+      }),
+    );
     return;
   }
 
@@ -564,10 +576,30 @@ function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): 
       return;
     }
 
-    const result = setMcpProfileRuntimeState(
-      profileId,
-      subcommand === "enable" ? "enabled" : "disabled",
-    );
+    let result: ReturnType<typeof setMcpProfilePersistentState>;
+    try {
+      result = setMcpProfilePersistentState(
+        profileId,
+        subcommand === "enable" ? "enabled" : "disabled",
+        { configPath: context.mcpConfigPath },
+      );
+    } catch (error) {
+      tryWriteMcpAuditEvent(context, {
+        type:
+          subcommand === "enable"
+            ? "mcp.profile.enable_attempt"
+            : "mcp.profile.disable_attempt",
+        profileId,
+        ok: false,
+        details: {
+          message: "Unable to persist MCP profile state.",
+          error: formatErrorForMcpAudit(error),
+        },
+      });
+      writeLine(context.io.stderr, `Unable to persist MCP profile state${formatErrorCode(error)}.`);
+      return;
+    }
+
     tryWriteMcpAuditEvent(context, {
       type:
         subcommand === "enable" ? "mcp.profile.enable_attempt" : "mcp.profile.disable_attempt",
@@ -578,6 +610,8 @@ function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): 
         nextState: result.nextState,
         message: result.message,
         profileHash: result.profile ? hashMcpProfile(result.profile) : undefined,
+        trustedProfileHash: result.trustedProfileHash,
+        updatedAt: result.updatedAt,
       },
     });
 
@@ -591,6 +625,20 @@ function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): 
   }
 
   writeLine(context.io.stderr, "Usage: /mcp [list|inspect <profile>|enable <profile>|disable <profile>]");
+}
+
+function formatErrorForMcpAudit(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  const code = typeof error === "object" && "code" in error ? String(error.code) : undefined;
+  return code ? `${error.name}: ${code}` : error.name;
+}
+
+function formatErrorCode(error: unknown): string {
+  const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
+  return code ? ` (${code})` : "";
 }
 
 function tryWriteMcpAuditEvent(context: SlashCommandContext, event: McpAuditEvent): void {

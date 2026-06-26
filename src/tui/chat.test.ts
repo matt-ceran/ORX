@@ -99,6 +99,7 @@ test("chat diff command shows native working tree diff without a model request",
       loadedConfig: baseLoadedConfig(),
       io: capture.io,
       sessionDirectory,
+      mcpConfigPath: join(sessionDirectory, "mcp", "profiles.json"),
     });
 
     assert.equal(exitCode, 0);
@@ -184,6 +185,7 @@ test("chat resumes a saved session and continues with restored transcript and ro
       loadedConfig: baseLoadedConfig(),
       io: capture.io,
       sessionDirectory,
+      mcpConfigPath: join(sessionDirectory, "mcp", "profiles.json"),
     });
 
     assert.equal(exitCode, 0);
@@ -346,6 +348,7 @@ test("chat resume loads compacted messages and status reports compacted context"
       loadedConfig: baseLoadedConfig(),
       io: capture.io,
       sessionDirectory,
+      mcpConfigPath: join(sessionDirectory, "mcp", "profiles.json"),
     });
 
     assert.equal(exitCode, 0);

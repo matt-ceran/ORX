@@ -5,9 +5,11 @@ export {
   getMcpToolNames,
   listMcpProfiles,
   resetMcpProfileRuntimeState,
+  setMcpProfilePersistentState,
   setMcpProfileRuntimeState,
   type McpDeclaredTool,
   type McpProfile,
+  type McpRegistryOptions,
   type McpProfileState,
   type McpRiskLevel,
   type McpToolRisk,
@@ -21,6 +23,18 @@ export {
   renderMcpStatus,
   type McpStatusSummary,
 } from "./policy.js";
+export {
+  defaultMcpConfigPath,
+  emptyMcpProfilesConfig,
+  getMcpProfileConfigRecord,
+  loadMcpProfilesConfig,
+  resolveMcpConfigPath,
+  saveMcpProfilesConfig,
+  type McpConfigIoOptions,
+  type McpConfigPathOptions,
+  type McpProfileConfigRecord,
+  type McpProfilesConfig,
+} from "./config.js";
 export {
   defaultMcpAuditLogPath,
   redactSecrets,

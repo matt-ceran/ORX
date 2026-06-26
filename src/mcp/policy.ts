@@ -3,13 +3,18 @@ import {
   getMcpToolNames,
   listMcpProfiles,
   type McpProfile,
+  type McpRegistryOptions,
 } from "./registry.js";
 import { hashMcpProfile, hashMcpProfiles } from "./schema.js";
+import { getMcpProfileConfigRecord, loadMcpProfilesConfig } from "./config.js";
 
 export interface McpStatusSummary {
   activeProfileIds: string[];
   profiles: McpProfile[];
   profileHashes: Record<string, string>;
+  trustedProfileHashes: Record<string, string | undefined>;
+  profileUpdatedAt: Record<string, string | undefined>;
+  pendingSchemaChangeProfileIds: string[];
   registryHash: string;
   serverCount: number;
   authBearingServerCount: number;
@@ -20,17 +25,40 @@ export interface McpStatusSummary {
   pendingSchemaChangeCount: number;
 }
 
-export function getMcpStatusSummary(): McpStatusSummary {
-  const profiles = listMcpProfiles();
-  const activeProfiles = getActiveMcpProfiles();
+export function getMcpStatusSummary(options: McpRegistryOptions = {}): McpStatusSummary {
+  const config = options.config ?? loadMcpProfilesConfig({ configPath: options.configPath });
+  const registryOptions = {
+    ...options,
+    config,
+  };
+  const profiles = listMcpProfiles(registryOptions);
+  const activeProfiles = getActiveMcpProfiles(registryOptions);
   const profileHashes = Object.fromEntries(
     profiles.map((profile) => [profile.id, hashMcpProfile(profile)]),
   );
+  const trustedProfileHashes = Object.fromEntries(
+    profiles.map((profile) => [
+      profile.id,
+      getMcpProfileConfigRecord(config, profile.id)?.trustedProfileHash,
+    ]),
+  );
+  const profileUpdatedAt = Object.fromEntries(
+    profiles.map((profile) => [profile.id, getMcpProfileConfigRecord(config, profile.id)?.updatedAt]),
+  );
+  const pendingSchemaChangeProfileIds = profiles
+    .filter((profile) => {
+      const trustedHash = trustedProfileHashes[profile.id];
+      return Boolean(trustedHash && trustedHash !== profileHashes[profile.id]);
+    })
+    .map((profile) => profile.id);
 
   return {
     activeProfileIds: activeProfiles.map((profile) => profile.id),
     profiles,
     profileHashes,
+    trustedProfileHashes,
+    profileUpdatedAt,
+    pendingSchemaChangeProfileIds,
     registryHash: hashMcpProfiles(profiles),
     serverCount: activeProfiles.length,
     authBearingServerCount: activeProfiles.filter((profile) => profile.authRequired).length,
@@ -50,7 +78,7 @@ export function getMcpStatusSummary(): McpStatusSummary {
       0,
     ),
     riskyTransportCount: activeProfiles.filter((profile) => profile.transport.kind !== "stdio").length,
-    pendingSchemaChangeCount: 0,
+    pendingSchemaChangeCount: pendingSchemaChangeProfileIds.length,
   };
 }
 
@@ -70,13 +98,29 @@ export function renderMcpStatus(summary: McpStatusSummary = getMcpStatusSummary(
   ];
 
   for (const profile of summary.profiles) {
-    lines.push(`  ${formatMcpProfile(profile, summary.profileHashes[profile.id])}`);
+    lines.push(
+      `  ${formatMcpProfile(profile, summary.profileHashes[profile.id], {
+        trustedProfileHash: summary.trustedProfileHashes[profile.id],
+        updatedAt: summary.profileUpdatedAt[profile.id],
+        schemaChangePending: summary.pendingSchemaChangeProfileIds.includes(profile.id),
+      })}`,
+    );
   }
 
   return lines.join("\n");
 }
 
-export function formatMcpProfile(profile: McpProfile, hash = hashMcpProfile(profile)): string {
+export interface FormatMcpProfileOptions {
+  trustedProfileHash?: string;
+  updatedAt?: string;
+  schemaChangePending?: boolean;
+}
+
+export function formatMcpProfile(
+  profile: McpProfile,
+  hash = hashMcpProfile(profile),
+  options: FormatMcpProfileOptions = {},
+): string {
   return [
     `profile=${profile.id}`,
     `state=${profile.state}`,
@@ -88,12 +132,19 @@ export function formatMcpProfile(profile: McpProfile, hash = hashMcpProfile(prof
     `billable_tools=${profile.tools.filter((tool) => tool.billable).length}`,
     `tools=${profile.tools.length}`,
     `hash=${hash}`,
+    options.trustedProfileHash ? `trusted_hash=${options.trustedProfileHash}` : undefined,
+    options.updatedAt ? `updated_at=${options.updatedAt}` : undefined,
+    options.schemaChangePending ? "schema_change=pending" : undefined,
   ]
     .filter((part): part is string => Boolean(part))
     .join(" ");
 }
 
-export function renderMcpProfileInspect(profile: McpProfile): string {
+export function renderMcpProfileInspect(
+  profile: McpProfile,
+  options: FormatMcpProfileOptions = {},
+): string {
+  const currentHash = hashMcpProfile(profile);
   const lines = [
     `MCP profile: ${profile.id}`,
     `  name: ${profile.name}`,
@@ -103,7 +154,12 @@ export function renderMcpProfileInspect(profile: McpProfile): string {
     `  risk: ${profile.riskLevel}`,
     `  auth_required: ${profile.authRequired ? "yes" : "no"}`,
     `  write_capable: ${profile.writeCapable ? "yes" : "no"}`,
-    `  profile_hash: ${hashMcpProfile(profile)}`,
+    `  profile_hash: ${currentHash}`,
+    options.trustedProfileHash ? `  trusted_hash: ${options.trustedProfileHash}` : undefined,
+    options.updatedAt ? `  updated_at: ${options.updatedAt}` : undefined,
+    options.schemaChangePending
+      ? "  schema_change: pending trusted baseline differs from configured profile hash"
+      : undefined,
     `  notes: ${profile.notes}`,
     "  tools:",
     ...profile.tools.map(

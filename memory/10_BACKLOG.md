@@ -71,11 +71,13 @@ Completed:
 - Add local redacted MCP audit JSONL scaffolding for status, inspect, and enable/disable attempts.
 - Add `/mcp inspect <profile>` plus in-process-only `/mcp enable <profile>` and `/mcp disable <profile>` simulation.
 - Add `/status` visibility for MCP hashes, pending schema changes, and active/configured billable MCP tool counts.
+- Persist MCP profile enable/disable trust state under `~/.orx/mcp/profiles.json` with `ORX_MCP_CONFIG_PATH` test override.
+- Add trusted profile hash baselines and pending schema-change visibility for persisted MCP profiles.
 
 Next:
 
-- Decide whether the next Phase 8 slice should add OpenRouter MCP client discovery behind the disabled profile or first persist/trust profile state.
-- Add MCP client registry/config support with explicit enabled profiles when needed.
+- Add OpenRouter MCP client discovery behind the explicit persisted profile state without enabling remote tool execution by default.
+- Add MCP tool allow/deny policy evaluation before any future MCP tool execution.
 - Persist active orchestrator and delegate metadata in sessions.
 - Add MCP policy engine outside the model loop.
 - Add secret redaction and minimal env forwarding for MCP child processes.

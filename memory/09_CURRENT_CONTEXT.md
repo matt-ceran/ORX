@@ -43,6 +43,16 @@ Current files:
 
 ## Latest Work
 
+Implemented and verified the Phase 8 persistent MCP profile trust/config slice:
+
+- Added `src/mcp/config.ts` for private MCP profile config resolution, load/save, sanitization, and default storage under `~/.orx/mcp/profiles.json`, with `ORX_MCP_CONFIG_PATH` override support.
+- Replaced process-local `/mcp enable/disable` behavior with persisted profile state records containing only profile id, enabled/disabled state, trusted profile hash baseline, and updatedAt.
+- Threaded MCP config paths through noninteractive `orx status`, `orx chat`, slash command context, `/mcp`, and interactive `/status`.
+- `/mcp enable openrouter` now persists enabled state and trusts the current configured hash; `/mcp disable openrouter` persists disabled state while preserving the trusted hash baseline.
+- `/mcp list`, `/mcp inspect`, and `/status` show persisted profile state, trusted hash/update metadata when available, and pending schema-change visibility when the current configured hash differs from the trusted baseline.
+- Added tests for persistent enable/disable across fresh status contexts, CLI status with `ORX_MCP_CONFIG_PATH`, config file shape/sanitization, trusted-hash preservation, pending schema-change calculation, and no-network `/mcp` behavior.
+- `npm run typecheck`, `npm run build`, targeted MCP/slash/CLI/chat tests, `npm test` with 128 tests, and `git diff --check` pass.
+
 Implemented and verified the next Phase 8 MCP policy foundation checkpoint:
 
 - Added deterministic SHA-256 profile/registry hashing for configured MCP profiles based on profile metadata, transport/auth/write flags, and declared tool metadata rather than runtime enabled state.

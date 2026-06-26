@@ -1,12 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   OPENROUTER_MCP_PROFILE,
+  getMcpStatusSummary,
   hashMcpProfile,
+  loadMcpProfilesConfig,
   redactSecrets,
+  saveMcpProfilesConfig,
+  setMcpProfilePersistentState,
   writeMcpAuditEvent,
   type McpProfile,
 } from "./index.js";
@@ -54,6 +66,200 @@ test("mcp profile hashing is deterministic for duplicate declared tool names", (
 
   assert.equal(hashMcpProfile(profile), hashMcpProfile({ ...profile, tools: [...profile.tools].reverse() }));
 });
+
+test("mcp persistent profile config stores only state and trusted hash baseline", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-config-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    const result = setMcpProfilePersistentState("openrouter", "enabled", {
+      configPath,
+      now: () => new Date("2026-06-26T12:00:00.000Z"),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.nextState, "enabled");
+    assert.equal(result.trustedProfileHash, hashMcpProfile(OPENROUTER_MCP_PROFILE));
+
+    const raw = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(raw).sort(), ["profiles", "version"]);
+    const profiles = raw.profiles as Record<string, Record<string, unknown>>;
+    assert.deepEqual(Object.keys(profiles.openrouter).sort(), [
+      "id",
+      "state",
+      "trustedProfileHash",
+      "updatedAt",
+    ]);
+    assert.equal(profiles.openrouter.id, "openrouter");
+    assert.equal(profiles.openrouter.state, "enabled");
+    assert.equal(profiles.openrouter.trustedProfileHash, hashMcpProfile(OPENROUTER_MCP_PROFILE));
+    assert.equal(profiles.openrouter.updatedAt, "2026-06-26T12:00:00.000Z");
+
+    const loaded = loadMcpProfilesConfig({ configPath });
+    assert.equal(loaded.profiles.openrouter.state, "enabled");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp disabling persists disabled state and keeps trusted hash visible", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-disable-config-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", {
+      configPath,
+      now: () => new Date("2026-06-26T12:00:00.000Z"),
+    });
+    const result = setMcpProfilePersistentState("openrouter", "disabled", {
+      configPath,
+      now: () => new Date("2026-06-26T12:05:00.000Z"),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.nextState, "disabled");
+    assert.equal(result.trustedProfileHash, hashMcpProfile(OPENROUTER_MCP_PROFILE));
+
+    const summary = getMcpStatusSummary({ configPath });
+    assert.deepEqual(summary.activeProfileIds, []);
+    assert.equal(summary.trustedProfileHashes.openrouter, hashMcpProfile(OPENROUTER_MCP_PROFILE));
+    assert.equal(summary.profileUpdatedAt.openrouter, "2026-06-26T12:05:00.000Z");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp disabling without prior trust does not create a trusted hash baseline", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-disable-untrusted-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    const result = setMcpProfilePersistentState("openrouter", "disabled", {
+      configPath,
+      now: () => new Date("2026-06-26T12:00:00.000Z"),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.nextState, "disabled");
+    assert.equal(result.trustedProfileHash, undefined);
+
+    const loaded = loadMcpProfilesConfig({ configPath });
+    assert.equal(loaded.profiles.openrouter.state, "disabled");
+    assert.equal(loaded.profiles.openrouter.trustedProfileHash, undefined);
+    assert.doesNotMatch(readFileSync(configPath, "utf8"), /trustedProfileHash/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp status counts pending schema changes against trusted baselines", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-pending-config-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    saveMcpProfilesConfig(
+      {
+        version: 1,
+        profiles: {
+          openrouter: {
+            id: "openrouter",
+            state: "enabled",
+            trustedProfileHash: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            updatedAt: "2026-06-26T12:00:00.000Z",
+          },
+        },
+      },
+      { configPath },
+    );
+
+    const summary = getMcpStatusSummary({ configPath });
+    assert.equal(summary.pendingSchemaChangeCount, 1);
+    assert.deepEqual(summary.pendingSchemaChangeProfileIds, ["openrouter"]);
+    assert.equal(summary.activeProfileIds[0], "openrouter");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp config load fails closed on malformed JSON and tightens existing modes", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-malformed-config-"));
+  const configDir = join(cwd, "mcp");
+  const configPath = join(configDir, "profiles.json");
+  try {
+    mkdirSync(configDir, { recursive: true, mode: 0o777 });
+    writeFileSync(configPath, "{not-json", { mode: 0o666 });
+    chmodSync(configDir, 0o777);
+    chmodSync(configPath, 0o666);
+
+    const loaded = loadMcpProfilesConfig({ configPath });
+    assert.deepEqual(loaded.profiles, {});
+    assert.equal(statSync(configDir).mode & 0o777, 0o700);
+    assert.equal(statSync(configPath).mode & 0o777, 0o600);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp config save repairs existing loose permissions", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-save-mode-"));
+  const configDir = join(cwd, "mcp");
+  const configPath = join(configDir, "profiles.json");
+  try {
+    mkdirSync(configDir, { recursive: true, mode: 0o777 });
+    writeFileSync(configPath, "{}\n", { mode: 0o666 });
+    chmodSync(configDir, 0o777);
+    chmodSync(configPath, 0o666);
+
+    saveMcpProfilesConfig(emptyConfigWithOpenRouter(), { configPath });
+    assert.equal(statSync(configDir).mode & 0o777, 0o700);
+    assert.equal(statSync(configPath).mode & 0o777, 0o600);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp config loader drops unrelated fields instead of preserving secrets", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-secret-config-"));
+  const configPath = join(cwd, "profiles.json");
+  try {
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        apiKey: "sk-or-v1-secret",
+        profiles: {
+          openrouter: {
+            id: "openrouter",
+            state: "enabled",
+            trustedProfileHash: hashMcpProfile(OPENROUTER_MCP_PROFILE),
+            updatedAt: "2026-06-26T12:00:00.000Z",
+            token: "secret",
+          },
+        },
+      }),
+    );
+
+    const loaded = loadMcpProfilesConfig({ configPath });
+    assert.deepEqual(Object.keys(loaded.profiles.openrouter).sort(), [
+      "id",
+      "state",
+      "trustedProfileHash",
+      "updatedAt",
+    ]);
+    assert.doesNotMatch(JSON.stringify(loaded), /sk-or-v1-secret|token|secret/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+function emptyConfigWithOpenRouter() {
+  return {
+    version: 1 as const,
+    profiles: {
+      openrouter: {
+        id: "openrouter",
+        state: "disabled" as const,
+        updatedAt: "2026-06-26T12:00:00.000Z",
+      },
+    },
+  };
+}
 
 test("mcp audit JSONL writes redacted event shape", () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-audit-"));

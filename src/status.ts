@@ -5,11 +5,12 @@ import { getMcpStatusSummary, formatMcpProfile } from "./mcp/index.js";
 export interface StatusOptions {
   cwd: string;
   loadedConfig: LoadedConfig;
+  mcpConfigPath?: string;
 }
 
-export function formatStatus({ cwd, loadedConfig }: StatusOptions): string {
+export function formatStatus({ cwd, loadedConfig, mcpConfigPath }: StatusOptions): string {
   const { config } = loadedConfig;
-  const mcpStatus = getMcpStatusSummary();
+  const mcpStatus = getMcpStatusSummary({ configPath: mcpConfigPath });
   const activeMcpProfiles =
     mcpStatus.activeProfileIds.length > 0 ? mcpStatus.activeProfileIds.join(",") : "none";
   const lines = [
@@ -38,7 +39,12 @@ export function formatStatus({ cwd, loadedConfig }: StatusOptions): string {
       mcpStatus.pendingSchemaChangeCount === 0 ? "none" : mcpStatus.pendingSchemaChangeCount
     }`,
     ...mcpStatus.profiles.map(
-      (profile) => `mcp_profile: ${formatMcpProfile(profile, mcpStatus.profileHashes[profile.id])}`,
+      (profile) =>
+        `mcp_profile: ${formatMcpProfile(profile, mcpStatus.profileHashes[profile.id], {
+          trustedProfileHash: mcpStatus.trustedProfileHashes[profile.id],
+          updatedAt: mcpStatus.profileUpdatedAt[profile.id],
+          schemaChangePending: mcpStatus.pendingSchemaChangeProfileIds.includes(profile.id),
+        })}`,
     ),
   ];
 

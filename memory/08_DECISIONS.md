@@ -4,9 +4,15 @@ Last updated: 2026-06-26
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-26: Persist MCP Profile Trust Outside Repositories
+
+Decision: ORX should persist MCP profile enablement and trusted configured-profile hash baselines in an ORX-owned user config file outside repositories, defaulting to `~/.orx/mcp/profiles.json` with `ORX_MCP_CONFIG_PATH` for tests and isolated runs. The file should store only profile id, enabled/disabled state, trusted hash baseline, and updatedAt.
+
+Reasoning: MCP profile trust is operator state, not repo-controlled state. Keeping it outside the working tree prevents a repository or model-generated file from enabling remote MCP surfaces, while the trusted hash baseline lets ORX show pending schema changes before any future remote MCP tool execution.
+
 ## 2026-06-26: Hash MCP Profile Declarations Before Tool Discovery
 
-Decision: Until live MCP discovery exists, ORX should hash configured MCP profile declarations as the stable baseline: profile identity, transport metadata, auth/write flags, profile risk, and declared tool names/risk/billable metadata. Runtime enablement state is excluded from the hash. `/mcp enable` and `/mcp disable` remain in-process simulations only until persistent profile trust/config is implemented.
+Decision: Until live MCP discovery exists, ORX should hash configured MCP profile declarations as the stable baseline: profile identity, transport metadata, auth/write flags, profile risk, and declared tool names/risk/billable metadata. Runtime enablement state is excluded from the hash. At this earlier checkpoint, `/mcp enable` and `/mcp disable` were kept as in-process simulations until persistent profile trust/config was implemented.
 
 Reasoning: Plugin work needs a visible schema/profile trust boundary before remote MCP tools become executable. Declaration hashes make changed configured profiles visible immediately, while excluding runtime state keeps policy simulation from changing the trust hash. In-process enablement lets the CLI surface the future workflow without writing persistent config or executing remote tools prematurely.
 

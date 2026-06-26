@@ -1,3 +1,10 @@
+import {
+  loadMcpProfilesConfig,
+  saveMcpProfilesConfig,
+  type McpProfilesConfig,
+} from "./config.js";
+import { hashMcpProfile } from "./schema.js";
+
 export type McpTransportKind = "remote-http" | "stdio";
 export type McpProfileState = "disabled" | "enabled";
 export type McpRiskLevel = "low" | "medium" | "high";
@@ -25,7 +32,10 @@ export interface McpProfile {
   notes: string;
 }
 
-const runtimeProfileStates = new Map<string, McpProfileState>();
+export interface McpRegistryOptions {
+  config?: McpProfilesConfig;
+  configPath?: string;
+}
 
 export const OPENROUTER_MCP_PROFILE: McpProfile = {
   id: "openrouter",
@@ -85,16 +95,17 @@ export const OPENROUTER_MCP_PROFILE: McpProfile = {
   notes: "Disabled by default. Normal ORX inference uses the direct OpenRouter API.",
 };
 
-export function listMcpProfiles(): McpProfile[] {
-  return [applyRuntimeState(OPENROUTER_MCP_PROFILE)];
+export function listMcpProfiles(options: McpRegistryOptions = {}): McpProfile[] {
+  const config = options.config ?? loadMcpProfilesConfig({ configPath: options.configPath });
+  return [applyPersistedState(OPENROUTER_MCP_PROFILE, config)];
 }
 
-export function getActiveMcpProfiles(): McpProfile[] {
-  return listMcpProfiles().filter((profile) => profile.state === "enabled");
+export function getActiveMcpProfiles(options: McpRegistryOptions = {}): McpProfile[] {
+  return listMcpProfiles(options).filter((profile) => profile.state === "enabled");
 }
 
-export function findMcpProfile(id: string): McpProfile | undefined {
-  return listMcpProfiles().find((profile) => profile.id === id);
+export function findMcpProfile(id: string, options: McpRegistryOptions = {}): McpProfile | undefined {
+  return listMcpProfiles(options).find((profile) => profile.id === id);
 }
 
 export interface McpProfileStateChange {
@@ -102,49 +113,80 @@ export interface McpProfileStateChange {
   profile?: McpProfile;
   previousState?: McpProfileState;
   nextState?: McpProfileState;
+  trustedProfileHash?: string;
+  updatedAt?: string;
   message: string;
 }
 
-export function setMcpProfileRuntimeState(
+export function setMcpProfilePersistentState(
   id: string,
   state: McpProfileState,
+  options: McpRegistryOptions & { now?: () => Date } = {},
 ): McpProfileStateChange {
-  const profile = findMcpProfile(id);
-  if (!profile) {
+  const config = options.config ?? loadMcpProfilesConfig({ configPath: options.configPath });
+  const configuredProfile = getConfiguredMcpProfile(id);
+  if (!configuredProfile) {
     return {
       ok: false,
       message: `Unknown MCP profile: ${id}`,
     };
   }
 
+  const profile = applyPersistedState(configuredProfile, config);
   const previousState = profile.state;
-  runtimeProfileStates.set(id, state);
-  const nextProfile = findMcpProfile(id);
+  const currentHash = hashMcpProfile(configuredProfile);
+  const previousRecord = config.profiles[id];
+  const trustedProfileHash = state === "enabled" ? currentHash : previousRecord?.trustedProfileHash;
+  const updatedAt = (options.now?.() ?? new Date()).toISOString();
+
+  config.profiles[id] = {
+    id,
+    state,
+    trustedProfileHash,
+    updatedAt,
+  };
+  saveMcpProfilesConfig(config, { configPath: options.configPath });
+
+  const nextProfile = applyPersistedState(configuredProfile, config);
 
   return {
     ok: true,
     profile: nextProfile,
     previousState,
     nextState: state,
+    trustedProfileHash,
+    updatedAt,
     message:
       previousState === state
-        ? `MCP profile ${id} already ${state}. Runtime state is in-process only.`
-        : `MCP profile ${id} ${state}. Runtime state is in-process only.`,
+        ? `MCP profile ${id} already ${state}. Persisted profile state updated.`
+        : `MCP profile ${id} ${state}. Persisted profile state updated.`,
   };
 }
 
+export function setMcpProfileRuntimeState(
+  id: string,
+  state: McpProfileState,
+  options: McpRegistryOptions & { now?: () => Date } = {},
+): McpProfileStateChange {
+  return setMcpProfilePersistentState(id, state, options);
+}
+
 export function resetMcpProfileRuntimeState(): void {
-  runtimeProfileStates.clear();
+  // Runtime-only MCP profile state was replaced by explicit persisted profile config.
 }
 
 export function getMcpToolNames(profile: McpProfile): string[] {
   return profile.tools.map((tool) => tool.name);
 }
 
-function applyRuntimeState(profile: McpProfile): McpProfile {
+function getConfiguredMcpProfile(id: string): McpProfile | undefined {
+  return OPENROUTER_MCP_PROFILE.id === id ? OPENROUTER_MCP_PROFILE : undefined;
+}
+
+function applyPersistedState(profile: McpProfile, config: McpProfilesConfig): McpProfile {
   return {
     ...profile,
-    state: runtimeProfileStates.get(profile.id) ?? profile.state,
+    state: config.profiles[profile.id]?.state ?? profile.state,
     transport: {
       ...profile.transport,
     },
