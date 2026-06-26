@@ -1,5 +1,11 @@
 import { createInterface } from "node:readline";
-import { formatToolCallStart, formatToolResult, runAgentTurn } from "../agent/index.js";
+import {
+  DEFAULT_CONTEXT_BUDGET,
+  formatToolCallStart,
+  formatToolResult,
+  runAgentTurn,
+  type AgentContextBudget,
+} from "../agent/index.js";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
@@ -19,9 +25,15 @@ export interface ChatOptions {
   apiKey: string;
   loadedConfig: LoadedConfig;
   io: ChatIo;
+  contextBudget?: Partial<AgentContextBudget>;
 }
 
-export async function runChat({ apiKey, loadedConfig, io }: ChatOptions): Promise<number> {
+export async function runChat({
+  apiKey,
+  loadedConfig,
+  io,
+  contextBudget = DEFAULT_CONTEXT_BUDGET,
+}: ChatOptions): Promise<number> {
   let activeConfig: OrxConfig = { ...loadedConfig.config };
   let messages: OpenRouterMessage[] = [];
   let latestMetadata: OpenRouterStreamMetadata | undefined;
@@ -66,11 +78,15 @@ export async function runChat({ apiKey, loadedConfig, io }: ChatOptions): Promis
             activeConfig = nextConfig;
           },
           getMessages: () => messages,
+          setMessages: (nextMessages) => {
+            messages = nextMessages;
+          },
           clearMessages: () => {
             messages = [];
             latestMetadata = undefined;
           },
           getLatestMetadata: () => latestMetadata,
+          getContextBudget: () => contextBudget,
         });
 
         if (result === "exit") {
@@ -99,6 +115,7 @@ export async function runChat({ apiKey, loadedConfig, io }: ChatOptions): Promis
             cwd: io.cwd,
             fetch: io.fetch,
             signal: activeAbort.signal,
+            contextBudget,
             callbacks: {
               onText(text) {
                 if (needsAssistantPrefix) {

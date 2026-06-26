@@ -43,6 +43,18 @@ Current files:
 
 ## Latest Work
 
+Implemented and verified the Phase 6 runtime context-management slice:
+
+- Added `src/agent/context.ts` for UTF-8 byte/message estimates, default context budgets, and deterministic local compaction.
+- `runAgentTurn` now bounds messages before each OpenRouter request, including tool-loop iterations.
+- Chat uses the shared context budget for in-process history shaping.
+- Added `/compact` to apply local extractive in-memory compaction without persistent session storage.
+- `/status` now includes concise context state with message count, approximate bytes, budget, and compaction presence.
+- Local compaction inserts an assistant-role summary with provenance: `ORX compacted prior context locally`.
+- Recent user turns, assistant tool calls, and tool results are preserved as a contiguous suffix for immediate continuity.
+- Added no-network tests for byte estimates, compaction boundaries, runtime request shaping, chat history bounding, `/compact`, and `/status`.
+- `npm run typecheck` and `npm test` pass with 69 tests.
+
 Implemented and verified the Phase 6 active local-tool interruption slice:
 
 - Threaded `AbortSignal` from `runAgentTurn` into native tool dispatch.
@@ -210,7 +222,6 @@ Recorded MCP/tooling research conclusions:
 
 Continue Phase 6 agent runtime:
 
-- Add runtime context management and message compaction boundaries.
 - Add richer session-level diff state and `/diff` behavior after file edits.
 - Keep the runtime shaped for future `delegate_task`, sessions, and MCP/plugin policy.
 

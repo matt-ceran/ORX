@@ -1,6 +1,6 @@
 # Sessions And Memory
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 ## Session Storage
 
@@ -36,6 +36,16 @@ Each session should store:
 - cost
 
 ## Context Compaction
+
+Current Phase 6 runtime scaffold:
+
+- Chat history remains in process only.
+- `runAgentTurn` applies default request-shaping boundaries before OpenRouter requests.
+- `/compact` performs local extractive compaction on in-process chat messages.
+- Compacted summaries use clear provenance: `ORX compacted prior context locally`.
+- Persistent transcript/session-aware compaction remains Phase 7 work.
+
+Future persistent sessions:
 
 `/compact` should summarize older turns while preserving:
 

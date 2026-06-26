@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  COMPACTED_CONTEXT_PROVENANCE,
   formatToolCallStart,
   formatToolResult,
   nativeToolDefinitions,
@@ -353,6 +354,59 @@ test("runAgentTurn executes model-requested tools and continues to final answer"
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("runAgentTurn bounds oversized history before OpenRouter requests", async () => {
+  const requestMessages: unknown[] = [];
+  const mockFetch: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body));
+    requestMessages.push(body.messages);
+
+    return new Response(
+      streamFrom([
+        sse({
+          choices: [
+            {
+              delta: {
+                content: "Bounded.",
+              },
+            },
+          ],
+        }),
+        "data: [DONE]\n\n",
+      ]),
+      { status: 200 },
+    );
+  };
+
+  const result = await runAgentTurn({
+    apiKey: "test-key",
+    config: baseConfig,
+    messages: [
+      { role: "user", content: "old one" },
+      { role: "assistant", content: "old answer one" },
+      { role: "user", content: "old two" },
+      { role: "assistant", content: "old answer two" },
+      { role: "user", content: "current task" },
+    ],
+    cwd: process.cwd(),
+    fetch: mockFetch,
+    contextBudget: {
+      maxMessages: 3,
+      maxBytes: 100_000,
+      preserveMessages: 2,
+      summaryMaxBytes: 2_000,
+    },
+  });
+
+  const sentMessages = requestMessages[0] as Array<{ role: string; content: string | null }>;
+  assert.equal(sentMessages[0].role, "assistant");
+  assert.match(String(sentMessages[0].content), new RegExp(COMPACTED_CONTEXT_PROVENANCE));
+  assert.deepEqual(sentMessages.slice(1), [{ role: "user", content: "current task" }]);
+  assert.deepEqual(result.messages.slice(0, 2), [
+    sentMessages[0],
+    { role: "user", content: "current task" },
+  ]);
 });
 
 test("runAgentTurn passes abort signals into active shell tool dispatch", async () => {

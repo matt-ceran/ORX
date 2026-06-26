@@ -2,6 +2,7 @@ import type { OrxConfig } from "../config/types.js";
 import { streamOpenRouterAsk } from "../openrouter/client.js";
 import { buildChatRequest } from "../openrouter/request.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata, OpenRouterToolCall } from "../openrouter/types.js";
+import { boundMessagesForContext, type AgentContextBudget } from "./context.js";
 import { dispatchNativeToolCall, type ToolDispatchResult } from "./tool-dispatch.js";
 import { nativeToolDefinitions } from "./tool-schemas.js";
 
@@ -20,6 +21,7 @@ export interface RunAgentTurnOptions {
   signal?: AbortSignal;
   enableTools?: boolean;
   maxToolIterations?: number;
+  contextBudget?: Partial<AgentContextBudget>;
   callbacks?: AgentTurnCallbacks;
 }
 
@@ -42,6 +44,13 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
 
   for (let iteration = 0; ; iteration += 1) {
     throwIfAborted(options.signal);
+    const bounded = boundMessagesForContext(messages, {
+      budget: options.contextBudget,
+    });
+    if (bounded.compacted) {
+      messages.splice(0, messages.length, ...bounded.messages);
+    }
+
     const built = buildChatRequest({
       config: options.config,
       messages,

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
+import { COMPACTED_CONTEXT_PROVENANCE, type AgentContextBudget } from "../agent/index.js";
 import { handleSlashCommand, parseSlashCommand } from "./index.js";
 
 test("parses slash commands with extra whitespace", () => {
@@ -99,6 +100,32 @@ test("clear and new reset conversation state callback", () => {
   assert.match(harness.stdout(), /New chat started/);
 });
 
+test("compact replaces older in-session turns with a local summary", () => {
+  const harness = createSlashHarness({
+    messages: [
+      { role: "user", content: "First task" },
+      { role: "assistant", content: "First answer" },
+      { role: "user", content: "Current task" },
+      { role: "assistant", content: "Current answer" },
+    ],
+    contextBudget: {
+      maxBytes: 100_000,
+      maxMessages: 6,
+      preserveMessages: 3,
+      summaryMaxBytes: 2_000,
+    },
+  });
+
+  assert.equal(handleSlashCommand("/compact", harness.context), "continue");
+  assert.match(harness.stdout(), /Context compacted locally: 4->3 messages/);
+  assert.equal(harness.messages()[0].role, "assistant");
+  assert.match(String(harness.messages()[0].content), new RegExp(COMPACTED_CONTEXT_PROVENANCE));
+  assert.deepEqual(harness.messages().slice(1), [
+    { role: "user", content: "Current task" },
+    { role: "assistant", content: "Current answer" },
+  ]);
+});
+
 test("status reports active routing, config, key, permissions, history, and metadata", () => {
   const harness = createSlashHarness({
     config: {
@@ -130,6 +157,7 @@ test("status reports active routing, config, key, permissions, history, and meta
   assert.match(harness.stdout(), /approval_policy: never/);
   assert.match(harness.stdout(), /sandbox_mode: danger-full-access/);
   assert.match(harness.stdout(), /history_messages: 1/);
+  assert.match(harness.stdout(), /context: 1 messages, \d+B approx, budget \d+B\/\d+ messages/);
   assert.match(harness.stdout(), /latest_metadata:/);
   assert.match(harness.stdout(), /generation_id: gen-123/);
 });
@@ -139,6 +167,7 @@ function createSlashHarness(
     config?: OrxConfig;
     messages?: OpenRouterMessage[];
     metadata?: OpenRouterStreamMetadata;
+    contextBudget?: Partial<AgentContextBudget>;
   } = {},
 ) {
   let stdoutText = "";
@@ -176,11 +205,15 @@ function createSlashHarness(
         config = nextConfig;
       },
       getMessages: () => messages,
+      setMessages: (nextMessages: OpenRouterMessage[]) => {
+        messages = nextMessages;
+      },
       clearMessages: () => {
         messages = [];
         metadata = undefined;
       },
       getLatestMetadata: () => metadata,
+      getContextBudget: () => options.contextBudget ?? {},
     },
     config: () => config,
     messages: () => messages,

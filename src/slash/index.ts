@@ -1,3 +1,9 @@
+import {
+  boundMessagesForContext,
+  formatContextState,
+  getContextState,
+  type AgentContextBudget,
+} from "../agent/index.js";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
@@ -25,8 +31,10 @@ export interface SlashCommandContext {
   getConfig: () => OrxConfig;
   setConfig: (config: OrxConfig) => void;
   getMessages: () => OpenRouterMessage[];
+  setMessages: (messages: OpenRouterMessage[]) => void;
   clearMessages: () => void;
   getLatestMetadata: () => OpenRouterStreamMetadata | undefined;
+  getContextBudget?: () => Partial<AgentContextBudget>;
 }
 
 type SlashHandler = (command: SlashCommand, context: SlashCommandContext) => SlashResult;
@@ -51,6 +59,32 @@ const COMMANDS: Record<string, SlashDefinition> = {
     description: "Show cwd, routing, config, key, permissions, history, and latest metadata",
     handler: (_command, context) => {
       writeLine(context.io.stdout, renderInteractiveStatus(context));
+      return "continue";
+    },
+  },
+  "/compact": {
+    usage: "/compact",
+    description: "Compact older in-session context locally",
+    handler: (_command, context) => {
+      const result = boundMessagesForContext(context.getMessages(), {
+        budget: context.getContextBudget?.(),
+        force: true,
+      });
+      context.setMessages(result.messages);
+
+      if (!result.compacted) {
+        writeLine(context.io.stdout, `Context unchanged: ${formatContextState(result.after)}.`);
+        return "continue";
+      }
+
+      writeLine(
+        context.io.stdout,
+        [
+          "Context compacted locally:",
+          `${result.before.messageCount}->${result.after.messageCount} messages`,
+          `${result.before.approximateBytes}B->${result.after.approximateBytes}B approx`,
+        ].join(" "),
+      );
       return "continue";
     },
   },
@@ -243,6 +277,9 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       loadedConfig,
     }),
     `history_messages: ${context.getMessages().length}`,
+    `context: ${formatContextState(
+      getContextState(context.getMessages(), context.getContextBudget?.()),
+    )}`,
     latestMetadata
       ? `latest_metadata:\n${indent(formatOpenRouterMetadata(latestMetadata).trim())}`
       : "latest_metadata: none",
