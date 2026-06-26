@@ -9,7 +9,7 @@ import {
   nativeToolDefinitions,
   runAgentTurn,
 } from "./index.js";
-import { dispatchNativeToolCall } from "./tool-dispatch.js";
+import { dispatchNativeToolCall, type ToolDispatchResult } from "./tool-dispatch.js";
 import type { OrxConfig } from "../config/types.js";
 import type { OpenRouterToolCall } from "../openrouter/types.js";
 import type { TextTruncation } from "../tools/types.js";
@@ -355,6 +355,84 @@ test("runAgentTurn executes model-requested tools and continues to final answer"
   }
 });
 
+test("runAgentTurn passes abort signals into active shell tool dispatch", async () => {
+  const controller = new AbortController();
+  const toolResults: ToolDispatchResult[] = [];
+  let fetchCount = 0;
+
+  const mockFetch: typeof fetch = async () => {
+    fetchCount += 1;
+    if (fetchCount > 1) {
+      throw new Error("runAgentTurn should not start another request after tool abort.");
+    }
+
+    return new Response(
+      streamFrom([
+        sse({
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_shell",
+                    type: "function",
+                    function: {
+                      name: "shell",
+                      arguments: JSON.stringify({
+                        command: process.execPath,
+                        args: ["-e", "setInterval(() => {}, 1000)"],
+                        shell: false,
+                        timeoutMs: 5_000,
+                      }),
+                    },
+                  },
+                ],
+              },
+              finish_reason: "tool_calls",
+            },
+          ],
+        }),
+        "data: [DONE]\n\n",
+      ]),
+      { status: 200 },
+    );
+  };
+
+  const pending = runAgentTurn({
+    apiKey: "test-key",
+    config: baseConfig,
+    messages: [{ role: "user", content: "Run a long shell command" }],
+    cwd: process.cwd(),
+    fetch: mockFetch,
+    signal: controller.signal,
+    callbacks: {
+      onToolResult(result) {
+        toolResults.push(result);
+      },
+    },
+  });
+
+  await delay(25);
+  controller.abort();
+
+  await assert.rejects(pending, isAbortError);
+  assert.equal(fetchCount, 1);
+  assert.equal(toolResults.length, 1);
+  assert.equal(toolResults[0].ok, false);
+
+  const output = toolResults[0].output as { ok: false; error: { code: string; message: string } };
+  assert.equal(output.error.code, "ABORTED");
+  assert.match(output.error.message, /aborted/i);
+
+  const envelope = JSON.parse(String(toolResults[0].message.content));
+  assert.equal(envelope.tool, "shell");
+  assert.equal(envelope.ok, false);
+  const boundedOutput = JSON.parse(envelope.output);
+  assert.equal(boundedOutput.ok, false);
+  assert.equal(boundedOutput.error.code, "ABORTED");
+});
+
 test("runAgentTurn stops when tool-call iterations exceed the configured limit", async () => {
   const mockFetch: typeof fetch = async () =>
     new Response(
@@ -426,4 +504,19 @@ function streamFrom(chunks: string[]): ReadableStream<Uint8Array> {
 
 function sse(value: unknown): string {
   return `data: ${JSON.stringify(value)}\n\n`;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    (typeof DOMException !== "undefined" &&
+      error instanceof DOMException &&
+      error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError")
+  );
 }

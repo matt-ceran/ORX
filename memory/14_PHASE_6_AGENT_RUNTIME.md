@@ -76,7 +76,7 @@ Use bounded steps. After each step, verify in a separate agent context when poss
 5. Wire `ask` and `chat` through the agent runtime while preserving current CLI flags, slash commands, Ctrl+C behavior, and status metadata.
 6. Add smoke documentation and update memory/backlog once Phase 6 is testable with the user's OpenRouter API key.
 
-Status on 2026-06-26: steps 1-5 are implemented and verified. A real OpenRouter smoke prompt selected `openai/gpt-5.5-20260423` through `openrouter/auto`, called `read_file`, and returned the package scripts. Visible tool execution summaries are also implemented for `ask` and `chat`, including compact arguments, result status/duration, truncation metadata, `git_diff` diff metadata, and `apply_patch` changed files. Remaining Phase 6 work should focus on context management/compaction boundaries, stronger active-tool interruption, and richer session-level diff state such as `/diff`.
+Status on 2026-06-26: steps 1-5 are implemented and verified. A real OpenRouter smoke prompt selected `openai/gpt-5.5-20260423` through `openrouter/auto`, called `read_file`, and returned the package scripts. Visible tool execution summaries are also implemented for `ask` and `chat`, including compact arguments, result status/duration, truncation metadata, `git_diff` diff metadata, and `apply_patch` changed files. Active shell-tool interruption is implemented through `AbortSignal` propagation into native dispatch and process execution. Remaining Phase 6 work should focus on context management/compaction boundaries and richer session-level diff state such as `/diff`.
 
 ## Guardrails
 

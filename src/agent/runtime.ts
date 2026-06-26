@@ -41,6 +41,7 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
   let visibleAssistantText = "";
 
   for (let iteration = 0; ; iteration += 1) {
+    throwIfAborted(options.signal);
     const built = buildChatRequest({
       config: options.config,
       messages,
@@ -93,10 +94,30 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
       options.callbacks?.onToolCall?.(toolCall);
       const toolResult = await dispatchNativeToolCall(toolCall, {
         cwd: options.cwd,
+        signal: options.signal,
       });
       toolResults.push(toolResult);
       messages.push(toolResult.message);
       options.callbacks?.onToolResult?.(toolResult);
+      throwIfAborted(options.signal);
     }
   }
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (!signal?.aborted) {
+    return;
+  }
+
+  throw createAbortError();
+}
+
+function createAbortError(): Error {
+  if (typeof DOMException !== "undefined") {
+    return new DOMException("This operation was aborted.", "AbortError");
+  }
+
+  const error = new Error("AbortError");
+  error.name = "AbortError";
+  return error;
 }

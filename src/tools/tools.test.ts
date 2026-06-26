@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -296,6 +297,178 @@ test("shell captures success, nonzero exit, missing commands, timeout, and outpu
   }
 });
 
+test("shell returns ABORTED without spawning when the signal is already aborted", async () => {
+  const cwd = createTempDir();
+  const controller = new AbortController();
+  controller.abort();
+
+  try {
+    const marker = join(cwd, "spawned.txt");
+    const result = await shellTool({
+      command: process.execPath,
+      args: [
+        "-e",
+        `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "spawned")`,
+      ],
+      shell: false,
+      signal: controller.signal,
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.code, "ABORTED");
+      assert.match(result.error.message, /aborted/i);
+    }
+    assert.equal(existsSync(marker), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("shell aborts running commands when the signal aborts", async () => {
+  const controller = new AbortController();
+  const startedAt = performance.now();
+  const pending = shellTool({
+    command: process.execPath,
+    args: ["-e", "process.stdout.write('started\\n'); setInterval(() => {}, 1000)"],
+    shell: false,
+    timeoutMs: 5_000,
+    signal: controller.signal,
+  });
+
+  await delay(25);
+  controller.abort();
+  const result = await pending;
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "ABORTED");
+    assert.match(result.error.message, /aborted/i);
+  }
+  assert.equal(performance.now() - startedAt < 1_000, true);
+});
+
+test("shell timeout terminates descendant processes on POSIX", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("POSIX process-group behavior is not available on Windows");
+    return;
+  }
+
+  const cwd = createTempDir();
+  try {
+    const marker = join(cwd, "descendant-survived.txt");
+    const descendantScript = [
+      "const { writeFileSync } = require('node:fs');",
+      `setTimeout(() => writeFileSync(${JSON.stringify(marker)}, 'alive'), 250);`,
+      "setTimeout(() => process.exit(0), 500);",
+    ].join("");
+    const parentScript = [
+      "const { spawn } = require('node:child_process');",
+      `const child = spawn(process.execPath, ['-e', ${JSON.stringify(descendantScript)}], { stdio: 'ignore' });`,
+      "child.unref();",
+      "setInterval(() => {}, 1000);",
+    ].join("");
+
+    const result = await shellTool({
+      command: process.execPath,
+      args: ["-e", parentScript],
+      shell: false,
+      timeoutMs: 50,
+    });
+
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.timedOut, true);
+    }
+    await delay(650);
+    assert.equal(existsSync(marker), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("shell timeout SIGKILL fallback terminates descendants that ignore SIGTERM on POSIX", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("POSIX process-group behavior is not available on Windows");
+    return;
+  }
+
+  const cwd = createTempDir();
+  try {
+    const marker = join(cwd, "sigterm-ignored-descendant.txt");
+    const descendantScript = [
+      "const { writeFileSync } = require('node:fs');",
+      "process.on('SIGTERM', () => {});",
+      `setTimeout(() => writeFileSync(${JSON.stringify(marker)}, 'alive'), 750);`,
+      "setTimeout(() => process.exit(0), 1000);",
+    ].join("");
+    const parentScript = [
+      "const { spawn } = require('node:child_process');",
+      `const child = spawn(process.execPath, ['-e', ${JSON.stringify(descendantScript)}], { stdio: 'ignore' });`,
+      "child.unref();",
+      "setInterval(() => {}, 1000);",
+    ].join("");
+
+    const result = await shellTool({
+      command: process.execPath,
+      args: ["-e", parentScript],
+      shell: false,
+      timeoutMs: 50,
+    });
+
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.timedOut, true);
+    }
+    await delay(900);
+    assert.equal(existsSync(marker), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("shell timeout SIGKILL fallback runs before one-shot process exit on POSIX", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("POSIX process-group behavior is not available on Windows");
+    return;
+  }
+
+  const cwd = createTempDir();
+  try {
+    const marker = join(cwd, "one-shot-descendant.txt");
+    const shellModuleUrl = pathToFileURL(join(process.cwd(), "dist/tools/shell.js")).href;
+    const descendantScript = [
+      "const { writeFileSync } = require('node:fs');",
+      "process.on('SIGTERM', () => {});",
+      `setTimeout(() => writeFileSync(${JSON.stringify(marker)}, 'alive'), 750);`,
+      "setTimeout(() => process.exit(0), 1000);",
+    ].join("");
+    const parentScript = [
+      "const { spawn } = require('node:child_process');",
+      `const child = spawn(process.execPath, ['-e', ${JSON.stringify(descendantScript)}], { stdio: 'ignore' });`,
+      "child.unref();",
+      "setInterval(() => {}, 1000);",
+    ].join("");
+    const oneShotScript = [
+      `const { shellTool } = await import(${JSON.stringify(shellModuleUrl)});`,
+      "const result = await shellTool({",
+      `command: process.execPath, args: ['-e', ${JSON.stringify(parentScript)}],`,
+      "shell: false, timeoutMs: 50,",
+      "});",
+      "if (!result.ok || !result.timedOut) process.exit(2);",
+    ].join("");
+
+    execFileSync(process.execPath, ["--input-type=module", "-e", oneShotScript], {
+      cwd: process.cwd(),
+      stdio: "ignore",
+    });
+    await delay(900);
+    assert.equal(existsSync(marker), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("git_diff shows working tree changes and supports path scoping", async () => {
   const cwd = createGitRepo();
   try {
@@ -537,4 +710,10 @@ function restoreAccess(path: string): void {
   } catch {
     // Best-effort cleanup for non-POSIX filesystems.
   }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }

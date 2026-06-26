@@ -1,6 +1,6 @@
 # Tooling And Permissions
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 ## Default Permission Policy
 
@@ -49,6 +49,7 @@ Even though prompts are bypassed, `/status` must show:
 - Capture exit code, stdout, stderr, duration, and cwd.
 - Truncate very large output before returning it to the model.
 - Preserve UTF-8 byte bounds when truncating output.
+- Honor active `AbortSignal` cancellation for shell/process execution and return a bounded `ABORTED` tool error instead of leaking uncaught errors.
 
 ## Current Native Tool Modules
 

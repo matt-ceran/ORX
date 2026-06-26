@@ -42,12 +42,12 @@ Completed:
 - Add visible tool execution summaries for chat and ask.
 - Add visible changed-file summaries after file-editing tools.
 - Add git diff truncation metadata to visible tool summaries without dumping diffs.
+- Add interruption handling for active local tool execution, especially shell commands.
 
 Next:
 
 - Read `memory/14_PHASE_6_AGENT_RUNTIME.md` before starting Phase 6 implementation.
 - Add runtime context management and message compaction boundaries.
-- Add interruption handling for active local tool execution, especially shell commands.
 - Add richer session-level diff state and `/diff` behavior after file edits.
 - Keep the tool-call loop compatible with a future `delegate_task` tool.
 - Add native test-runner adapters after shell tooling exists.

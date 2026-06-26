@@ -43,6 +43,17 @@ Current files:
 
 ## Latest Work
 
+Implemented and verified the Phase 6 active local-tool interruption slice:
+
+- Threaded `AbortSignal` from `runAgentTurn` into native tool dispatch.
+- `shellTool` now passes abort signals into `runProcess`.
+- `runProcess` now handles already-aborted signals before spawning and aborts active child processes with process-group termination on POSIX plus a SIGKILL fallback.
+- Aborted shell/process execution returns a bounded `ok: false` tool error with code `ABORTED`.
+- `runAgentTurn` stops after delivering an aborted tool result instead of starting another OpenRouter request with an aborted signal.
+- Added no-network tests for abort-before-spawn, abort-during-shell execution, runtime signal threading into active shell tools, timeout cleanup of descendants, SIGKILL fallback for descendants that ignore SIGTERM, and one-shot process exit behavior.
+- `npm run typecheck`, `npm run build`, `npm test`, `git diff --check`, targeted tools tests, and `npm run dev -- status` pass. The full test suite now has 57 tests.
+- Separate verifier session found process-tree timeout/fallback issues; these were fixed and the final verifier pass reported no findings. Windows `taskkill` tree termination was reviewed statically on macOS.
+
 Implemented and verified the Phase 6 visible native tool summary slice:
 
 - Added reusable tool event formatting in `src/agent/tool-summaries.ts`.
@@ -200,7 +211,6 @@ Recorded MCP/tooling research conclusions:
 Continue Phase 6 agent runtime:
 
 - Add runtime context management and message compaction boundaries.
-- Add interruption handling for active local tool execution, especially shell commands.
 - Add richer session-level diff state and `/diff` behavior after file edits.
 - Keep the runtime shaped for future `delegate_task`, sessions, and MCP/plugin policy.
 

@@ -13,6 +13,7 @@ import type { OpenRouterMessage, OpenRouterToolCall } from "../openrouter/types.
 
 export interface ToolDispatchOptions {
   cwd: string;
+  signal?: AbortSignal;
   maxResultBytes?: number;
   maxResultLines?: number;
 }
@@ -38,14 +39,21 @@ export async function dispatchNativeToolCall(
   let ok = false;
   let output: unknown;
 
-  if (!rawArguments.ok) {
+  if (options.signal?.aborted) {
+    output = abortedToolOutput();
+  } else if (!rawArguments.ok) {
     output = {
       ok: false,
       error: rawArguments.error,
     };
   } else {
     try {
-      output = await runNativeTool(toolCall.function.name, rawArguments.value, options.cwd);
+      output = await runNativeTool(
+        toolCall.function.name,
+        rawArguments.value,
+        options.cwd,
+        options.signal,
+      );
     } catch (error) {
       output = {
         ok: false,
@@ -85,7 +93,12 @@ export async function dispatchNativeToolCall(
   };
 }
 
-async function runNativeTool(name: string, args: Record<string, unknown>, cwd: string): Promise<unknown> {
+async function runNativeTool(
+  name: string,
+  args: Record<string, unknown>,
+  cwd: string,
+  signal: AbortSignal | undefined,
+): Promise<unknown> {
   switch (name) {
     case "read_file":
       return readFileTool({
@@ -122,6 +135,7 @@ async function runNativeTool(name: string, args: Record<string, unknown>, cwd: s
         timeoutMs: optionalInteger(args.timeoutMs),
         maxBytes: optionalInteger(args.maxBytes),
         shell: optionalBoolean(args.shell),
+        signal,
       });
     }
 
@@ -147,6 +161,16 @@ async function runNativeTool(name: string, args: Record<string, unknown>, cwd: s
         },
       };
   }
+}
+
+function abortedToolOutput(): { ok: false; error: { code: string; message: string } } {
+  return {
+    ok: false,
+    error: {
+      code: "ABORTED",
+      message: "Tool execution aborted.",
+    },
+  };
 }
 
 function parseToolArguments(

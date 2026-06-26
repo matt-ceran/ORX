@@ -10,6 +10,7 @@ export interface ShellOptions {
   timeoutMs?: number;
   maxBytes?: number;
   shell?: boolean;
+  signal?: AbortSignal;
 }
 
 export type ShellResult = ToolResult<{
@@ -35,6 +36,7 @@ export async function shellTool(options: ShellOptions): Promise<ShellResult> {
     timeoutMs: options.timeoutMs,
     maxBytes: options.maxBytes ?? DEFAULT_MAX_TEXT_BYTES,
     shell: options.shell,
+    signal: options.signal,
   });
 
   if (result.error) {
