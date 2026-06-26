@@ -22,14 +22,13 @@ Completed:
 - Add `/model`, `/status`, `/clear`, `/help`, `/quit`, and `/exit`.
 - Add exact model, auto-router, and Fusion request support for `ask`.
 - Add token and cost display for streamed responses.
-
-Remaining:
-
 - Extract slash command parser/registry.
 - Add `/models`, `/mode auto`, `/mode fusion`, `/fusion`, and `/new`.
 - Add richer chat status for mode/Fusion changes.
 
 ## P2
+
+Next:
 
 - Add local tools: read file, list files, search files, shell, git diff, apply patch.
 - Add tool-call loop.

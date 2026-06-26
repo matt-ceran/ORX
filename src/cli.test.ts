@@ -107,9 +107,13 @@ test("chat streams turns, keeps history, and handles slash commands", async () =
     stdin: Readable.from([
       "Hello\n",
       "/status\n",
-      "/model example/test-model\n",
+      "/mode fusion\n",
+      "/fusion general-budget\n",
+      "/models\n",
       "Follow up\n",
-      "/clear\n",
+      "/new\n",
+      "/mode auto\n",
+      "After new\n",
       "/exit\n",
     ]),
     fetch: async (_input, init) => {
@@ -137,26 +141,35 @@ test("chat streams turns, keeps history, and handles slash commands", async () =
   );
 
   assert.equal(exitCode, 0);
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3);
   assert.deepEqual(requests[0], {
     model: "openrouter/auto",
     messages: [{ role: "user", content: "Hello" }],
     stream: true,
   });
   assert.deepEqual(requests[1], {
-    model: "example/test-model",
+    model: "openrouter/fusion",
     messages: [
       { role: "user", content: "Hello" },
       { role: "assistant", content: "First reply" },
       { role: "user", content: "Follow up" },
     ],
     stream: true,
+    plugins: [{ id: "fusion", preset: "general-budget" }],
+  });
+  assert.deepEqual(requests[2], {
+    model: "openrouter/auto",
+    messages: [{ role: "user", content: "After new" }],
+    stream: true,
   });
   assert.match(capture.stdout(), /ORX chat/);
   assert.match(capture.stdout(), /assistant: First reply/);
   assert.match(capture.stdout(), /history_messages: 2/);
-  assert.match(capture.stdout(), /Model set to example\/test-model/);
-  assert.match(capture.stdout(), /Conversation history cleared/);
+  assert.match(capture.stdout(), /Mode set to fusion/);
+  assert.match(capture.stdout(), /Fusion preset set to general-budget/);
+  assert.match(capture.stdout(), /live_search: planned for OpenRouter MCP integration/);
+  assert.match(capture.stdout(), /New chat started/);
+  assert.match(capture.stdout(), /Mode set to auto/);
   assert.match(capture.stdout(), /Exiting ORX chat/);
   assert.equal(capture.stderr(), "");
 });

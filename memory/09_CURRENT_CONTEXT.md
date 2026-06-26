@@ -32,6 +32,18 @@ Current files:
 
 ## Latest Work
 
+Implemented and independently verified the Phase 4 slash command expansion:
+
+- Extracted chat slash parsing and handling into `src/slash/`.
+- Preserved `/help`, `/status`, `/model <slug>`, `/clear`, `/quit`, and `/exit`.
+- Added `/mode auto`, `/mode fusion`, `/fusion [preset]`, `/models`, and `/new`.
+- `/mode auto` selects `openrouter/auto` and clears Fusion preset.
+- `/mode fusion` selects `openrouter/fusion`.
+- `/fusion <preset>` selects Fusion mode/model and sends Fusion plugin config on later requests.
+- `/models` is a no-network placeholder until OpenRouter MCP is implemented.
+- `/status` now shows active routing, Fusion preset, history count, latest metadata, cwd, config source, API key source, and permissions.
+- Added parser/handler tests and chat integration coverage; `npm run typecheck`, `npm run build`, and `npm test` pass.
+
 Implemented and independently verified the Phase 3 interactive chat MVP:
 
 - `orx chat` starts a readline-based interactive session.
@@ -110,12 +122,12 @@ Recorded MCP/tooling research conclusions:
 
 ## Next Likely Task
 
-Start Phase 4 slash command expansion:
+Start Phase 5 local coding tools:
 
-- Extract the inline chat slash handling into a registry/parser.
-- Add `/mode auto`, `/mode fusion`, `/fusion <preset>`, `/models`, `/new`, and improved `/status`.
-- Keep `/model`, `/clear`, `/help`, `/quit`, and `/exit` working.
-- Add focused parser/handler tests before commit.
+- Add native `read_file`, `list_files`, `search_files`, `shell`, `git_diff`, and `apply_patch` modules.
+- Use `rg` for search when available.
+- Keep command execution unrestricted by default but visible through status.
+- Add tests around truncation, errors, and no-prompt execution.
 
 Do not implement orchestration before the core OpenRouter streaming loop, tool-call loop, and session metadata exist.
 

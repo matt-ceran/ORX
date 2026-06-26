@@ -4,7 +4,7 @@ import { buildChatRequest } from "../openrouter/request.js";
 import { streamOpenRouterAsk } from "../openrouter/client.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
-import { formatStatus } from "../status.js";
+import { handleSlashCommand } from "../slash/index.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
 
@@ -21,8 +21,6 @@ export interface ChatOptions {
   loadedConfig: LoadedConfig;
   io: ChatIo;
 }
-
-type SlashResult = "continue" | "exit";
 
 export async function runChat({ apiKey, loadedConfig, io }: ChatOptions): Promise<number> {
   let activeConfig: OrxConfig = { ...loadedConfig.config };
@@ -61,8 +59,7 @@ export async function runChat({ apiKey, loadedConfig, io }: ChatOptions): Promis
       }
 
       if (line.startsWith("/")) {
-        const result = handleSlashCommand({
-          command: line,
+        const result = handleSlashCommand(line, {
           io,
           loadedConfig,
           getConfig: () => activeConfig,
@@ -141,71 +138,6 @@ export async function runChat({ apiKey, loadedConfig, io }: ChatOptions): Promis
   return 0;
 }
 
-interface SlashCommandOptions {
-  command: string;
-  io: ChatIo;
-  loadedConfig: LoadedConfig;
-  getConfig: () => OrxConfig;
-  setConfig: (config: OrxConfig) => void;
-  getMessages: () => OpenRouterMessage[];
-  clearMessages: () => void;
-  getLatestMetadata: () => OpenRouterStreamMetadata | undefined;
-}
-
-function handleSlashCommand(options: SlashCommandOptions): SlashResult {
-  const [name = "", ...rest] = options.command.split(/\s+/);
-  const arg = rest.join(" ").trim();
-
-  switch (name) {
-    case "/quit":
-    case "/exit":
-      writeLine(options.io.stdout, "Exiting ORX chat.");
-      return "exit";
-
-    case "/help":
-      writeLine(options.io.stdout, chatHelpText());
-      return "continue";
-
-    case "/status":
-      writeLine(
-        options.io.stdout,
-        renderInteractiveStatus({
-          cwd: options.io.cwd,
-          loadedConfig: options.loadedConfig,
-          activeConfig: options.getConfig(),
-          messages: options.getMessages(),
-          latestMetadata: options.getLatestMetadata(),
-        }),
-      );
-      return "continue";
-
-    case "/clear":
-      options.clearMessages();
-      writeLine(options.io.stdout, "Conversation history cleared.");
-      return "continue";
-
-    case "/model": {
-      if (!arg) {
-        writeLine(options.io.stdout, `Current model: ${options.getConfig().model}`);
-        return "continue";
-      }
-
-      options.setConfig({
-        ...options.getConfig(),
-        mode: "exact",
-        model: arg,
-        fusionPreset: undefined,
-      });
-      writeLine(options.io.stdout, `Model set to ${arg} (mode: exact).`);
-      return "continue";
-    }
-
-    default:
-      writeLine(options.io.stderr, `Unknown command: ${name}. Type /help for commands.`);
-      return "continue";
-  }
-}
-
 function renderHeader(cwd: string, loadedConfig: LoadedConfig, activeConfig: OrxConfig): string {
   return [
     "ORX chat",
@@ -223,41 +155,6 @@ function renderFooter(cwd: string, loadedConfig: LoadedConfig, activeConfig: Orx
     `key: ${key}`,
     `permissions: ${activeConfig.permissions.approvalPolicy}/${activeConfig.permissions.sandboxMode}`,
   ].join(" | ");
-}
-
-function renderInteractiveStatus(options: {
-  cwd: string;
-  loadedConfig: LoadedConfig;
-  activeConfig: OrxConfig;
-  messages: OpenRouterMessage[];
-  latestMetadata: OpenRouterStreamMetadata | undefined;
-}): string {
-  const loadedConfig = {
-    ...options.loadedConfig,
-    config: options.activeConfig,
-  };
-
-  return [
-    formatStatus({
-      cwd: options.cwd,
-      loadedConfig,
-    }),
-    `history_messages: ${options.messages.length}`,
-    options.latestMetadata
-      ? formatOpenRouterMetadata(options.latestMetadata)
-      : "latest_metadata: none",
-  ].join("\n");
-}
-
-function chatHelpText(): string {
-  return [
-    "Chat commands:",
-    "  /help          Show this help",
-    "  /status        Show cwd, model, key, permissions, and latest metadata",
-    "  /model <slug>  Switch to an exact OpenRouter model",
-    "  /clear         Clear in-session message history",
-    "  /quit, /exit   Leave chat",
-  ].join("\n");
 }
 
 function writePrompt(stream: WritableLike) {

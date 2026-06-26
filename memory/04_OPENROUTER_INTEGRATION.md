@@ -53,6 +53,8 @@ plugins: [{ id: "fusion", preset: "general-budget" }]
 - `/mode fusion` selects `openrouter/fusion`.
 - `/model <slug>` selects an exact model.
 - `/fusion <preset>` sets Fusion plugin config.
+- `/fusion` with no argument shows the current Fusion preset.
+- `/models` currently shows local routing state and notes that live search will come from OpenRouter MCP.
 - `/status` shows active mode, model, Fusion config, generation id, tokens, and spend.
 
 ## Streaming Metadata

@@ -42,6 +42,7 @@ OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello from ORX"
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello" --model anthropic/claude-sonnet-4.5
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello" --mode fusion --fusion general-budget
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- chat
+printf '/mode fusion\n/fusion general-budget\n/models\n/status\n/new\n/exit\n' | OPENROUTER_API_KEY="sk-or-..." npm run dev -- chat
 ```
 
 ## Planned Environment

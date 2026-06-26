@@ -72,7 +72,12 @@ Implemented MVP commands:
 /help
 /status
 /model <slug>
+/mode auto
+/mode fusion
+/fusion [preset]
+/models
 /clear
+/new
 /quit
 /exit
 ```

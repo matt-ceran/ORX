@@ -53,6 +53,8 @@ Status: complete and independently verified on 2026-06-25.
 
 Done when OpenRouter routing modes can be changed without restarting the CLI.
 
+Status: complete and independently verified on 2026-06-25.
+
 ## Phase 5: Local Coding Tools
 
 - Add `read_file`, `list_files`, `search_files`, `shell`, `git_diff`, and `apply_patch`.

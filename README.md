@@ -60,13 +60,18 @@ Start an interactive chat session with:
 OPENROUTER_API_KEY=... npm run dev -- chat
 ```
 
-The chat UI keeps in-session message history for the current process, streams assistant text as it arrives, and shows a compact header/footer with cwd, mode, model, API key presence, and permission posture. Supported MVP slash commands:
+The chat UI keeps in-session message history for the current process, streams assistant text as it arrives, and shows a compact header/footer with cwd, mode, model, API key presence, and permission posture. Supported slash commands:
 
 ```text
 /help
 /status
 /model <openrouter-model-slug>
+/mode auto
+/mode fusion
+/fusion [preset]
+/models
 /clear
+/new
 /quit
 /exit
 ```
