@@ -43,6 +43,23 @@ Current files:
 
 ## Latest Work
 
+Implemented and verified the first Phase 6 agent-runtime slice:
+
+- Added `src/agent/` with native tool schemas, dispatch, and a guarded multi-turn runtime.
+- Extended OpenRouter streaming to aggregate tool-call deltas and return tool calls with finish reasons.
+- Added OpenRouter-compatible tool schemas for `read_file`, `list_files`, `search_files`, `shell`, `git_diff`, and `apply_patch`.
+- Tool dispatch now parses model arguments, drops undeclared risky surfaces such as arbitrary env forwarding, runs native local tools, and returns bounded JSON result envelopes as tool messages.
+- `orx ask` and `orx chat` now use the agent runtime, so enabled models can automatically call native ORX tools when they decide it is useful.
+- Added no-network tests for streamed tool calls, schema inclusion, native dispatch, guarded tool-loop execution, and CLI compatibility.
+- `npm run typecheck`, `npm run build`, `npm test`, and `npm run dev -- status` pass with 43 tests.
+- Real OpenRouter smoke passed: `npm run dev -- ask "...Read package.json..."` selected `openai/gpt-5.5-20260423` through `openrouter/auto`, called `read_file`, and answered with the package scripts. Reported cost was `$0.006115`.
+
+Updated the roadmap so the later full-stack integration phase explicitly follows `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`:
+
+- Phase 8 remains MCP policy and official OpenRouter MCP.
+- Phase 9 is now explicitly the full-stack plugin/MCP preset/advanced tooling phase.
+- Phase 10 remains web, browser, and research tooling with evidence-ledger work.
+
 Created a focused Phase 6 handoff for the OpenRouter agent runtime:
 
 - Added `memory/14_PHASE_6_AGENT_RUNTIME.md`.
@@ -170,18 +187,17 @@ Recorded MCP/tooling research conclusions:
 
 ## Next Likely Task
 
-Start Phase 6 agent runtime:
+Continue Phase 6 agent runtime:
 
-- Read `memory/14_PHASE_6_AGENT_RUNTIME.md`.
-- Add model tool definitions for native local tools.
-- Add a tool-call loop around OpenRouter chat completions.
-- Add tool result truncation and summarization rules.
-- Add interruption handling for tool execution.
+- Add runtime context management and message compaction boundaries.
+- Add better visible tool execution summaries for chat and ask.
+- Add interruption handling for active local tool execution, especially shell commands.
+- Add visible diff summaries after file edits.
 - Keep the runtime shaped for future `delegate_task`, sessions, and MCP/plugin policy.
 
 Do not implement orchestration before the core OpenRouter streaming loop, tool-call loop, and session metadata exist.
 
-Do not implement the plugin system before native local tools, the tool-call loop, sessions, and MCP policy basics exist. The plugin system should build on those foundations.
+Do not implement the plugin system before native local tools, the tool-call loop, sessions, and MCP policy basics exist. The plugin system should build on those foundations and follow `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`.
 
 ## Active Constraints
 

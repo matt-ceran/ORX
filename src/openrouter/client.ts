@@ -5,6 +5,7 @@ import type {
   OpenRouterGenerationMetadata,
   OpenRouterStreamCallbacks,
   OpenRouterStreamMetadata,
+  OpenRouterToolCall,
   OpenRouterUsageMetadata,
 } from "./types.js";
 
@@ -26,6 +27,14 @@ interface StreamChunk {
   model?: unknown;
   choices?: unknown;
   usage?: unknown;
+}
+
+interface PendingToolCall {
+  index: number;
+  id?: string;
+  type?: "function";
+  name?: string;
+  arguments: string;
 }
 
 export async function streamOpenRouterAsk(
@@ -66,10 +75,13 @@ export async function streamOpenRouterAsk(
     requestedModel: options.requestMetadata.requestedModel,
     generationId: response.headers.get("x-generation-id") ?? undefined,
   };
+  const pendingToolCalls = new Map<number, PendingToolCall>();
+  let finishReason: string | undefined;
 
   await consumeSseStream(response.body, {
     onChunk(chunk) {
-      mergeStreamChunk(metadata, chunk, callbacks);
+      const nextFinishReason = mergeStreamChunk(metadata, chunk, callbacks, pendingToolCalls);
+      finishReason ??= nextFinishReason;
     },
   });
 
@@ -84,7 +96,11 @@ export async function streamOpenRouterAsk(
     mergeGenerationMetadata(metadata, generationMetadata);
   }
 
-  return { metadata };
+  return {
+    metadata,
+    toolCalls: finalizeToolCalls(pendingToolCalls),
+    ...(finishReason ? { finishReason } : {}),
+  };
 }
 
 interface ConsumeSseOptions {
@@ -138,7 +154,8 @@ function mergeStreamChunk(
   metadata: OpenRouterStreamMetadata,
   chunk: StreamChunk,
   callbacks: OpenRouterStreamCallbacks,
-) {
+  pendingToolCalls: Map<number, PendingToolCall>,
+): string | undefined {
   if (typeof chunk.model === "string") {
     metadata.resolvedModel = chunk.model;
   }
@@ -149,6 +166,9 @@ function mergeStreamChunk(
   for (const text of extractTextDeltas(chunk.choices)) {
     callbacks.onText(text);
   }
+
+  mergeToolCallDeltas(chunk.choices, pendingToolCalls);
+  return extractFinishReason(chunk.choices);
 }
 
 function extractTextDeltas(choices: unknown): string[] {
@@ -167,6 +187,89 @@ function extractTextDeltas(choices: unknown): string[] {
   }
 
   return texts;
+}
+
+function mergeToolCallDeltas(
+  choices: unknown,
+  pendingToolCalls: Map<number, PendingToolCall>,
+) {
+  if (!Array.isArray(choices)) {
+    return;
+  }
+
+  for (const choice of choices) {
+    const choiceObject = asRecord(choice);
+    const delta = asRecord(choiceObject?.delta);
+    const toolCalls = delta?.tool_calls;
+    if (!Array.isArray(toolCalls)) {
+      continue;
+    }
+
+    for (const rawToolCall of toolCalls) {
+      const toolCall = asRecord(rawToolCall);
+      if (!toolCall) {
+        continue;
+      }
+
+      const index = numberFromUnknown(toolCall.index) ?? pendingToolCalls.size;
+      const pending =
+        pendingToolCalls.get(index) ??
+        ({
+          index,
+          arguments: "",
+        } satisfies PendingToolCall);
+      pendingToolCalls.set(index, pending);
+
+      const id = stringFromUnknown(toolCall.id);
+      if (id) {
+        pending.id = id;
+      }
+      if (toolCall.type === "function") {
+        pending.type = "function";
+      }
+
+      const fn = asRecord(toolCall.function);
+      const name = stringFromUnknown(fn?.name);
+      if (name) {
+        pending.name = name;
+      }
+
+      const argumentDelta = stringFromUnknown(fn?.arguments);
+      if (argumentDelta) {
+        pending.arguments += argumentDelta;
+      }
+    }
+  }
+}
+
+function extractFinishReason(choices: unknown): string | undefined {
+  if (!Array.isArray(choices)) {
+    return undefined;
+  }
+
+  for (const choice of choices) {
+    const choiceObject = asRecord(choice);
+    const finishReason = stringFromUnknown(choiceObject?.finish_reason);
+    if (finishReason) {
+      return finishReason;
+    }
+  }
+
+  return undefined;
+}
+
+function finalizeToolCalls(pendingToolCalls: Map<number, PendingToolCall>): OpenRouterToolCall[] {
+  return [...pendingToolCalls.values()]
+    .sort((left, right) => left.index - right.index)
+    .filter((toolCall) => toolCall.name)
+    .map((toolCall) => ({
+      id: toolCall.id ?? `tool_call_${toolCall.index}`,
+      type: "function",
+      function: {
+        name: toolCall.name ?? "",
+        arguments: toolCall.arguments,
+      },
+    }));
 }
 
 function extractUsage(value: unknown): OpenRouterUsageMetadata & { cost?: number } {

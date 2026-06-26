@@ -1,7 +1,6 @@
 import { createInterface } from "node:readline";
+import { runAgentTurn } from "../agent/index.js";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
-import { buildChatRequest } from "../openrouter/request.js";
-import { streamOpenRouterAsk } from "../openrouter/client.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import { handleSlashCommand } from "../slash/index.js";
@@ -85,35 +84,33 @@ export async function runChat({ apiKey, loadedConfig, io }: ChatOptions): Promis
 
       const userMessage: OpenRouterMessage = { role: "user", content: line };
       const requestMessages = [...messages, userMessage];
-      const built = buildChatRequest({
-        config: activeConfig,
-        messages: requestMessages,
-      });
 
       activeAbort = new AbortController();
-      let assistantText = "";
       writeLine(io.stdout, `\nyou: ${line}`);
       io.stdout.write("assistant: ");
 
       try {
-        const result = await streamOpenRouterAsk(
+        const result = await runAgentTurn(
           {
             apiKey,
-            request: built.request,
-            requestMetadata: built.metadata,
+            config: activeConfig,
+            messages: requestMessages,
+            cwd: io.cwd,
             fetch: io.fetch,
             signal: activeAbort.signal,
-          },
-          {
-            onText(text) {
-              assistantText += text;
-              io.stdout.write(text);
+            callbacks: {
+              onText(text) {
+                io.stdout.write(text);
+              },
+              onToolCall(toolCall) {
+                io.stdout.write(`\n[tool] ${toolCall.function.name}\nassistant: `);
+              },
             },
           },
         );
 
         io.stdout.write("\n");
-        messages = [...requestMessages, { role: "assistant", content: assistantText }];
+        messages = result.messages;
         latestMetadata = result.metadata;
         writeLine(io.stdout, formatOpenRouterMetadata(result.metadata));
         writeLine(io.stdout, renderFooter(io.cwd, loadedConfig, activeConfig));

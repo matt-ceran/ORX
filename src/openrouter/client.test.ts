@@ -87,6 +87,80 @@ test("streams SSE text chunks and captures final metadata", async () => {
   assert.equal(result.metadata.totalTokens, 5);
   assert.equal(result.metadata.reasoningTokens, 1);
   assert.equal(result.metadata.cost, 0.00042);
+  assert.deepEqual(result.toolCalls, []);
+});
+
+test("aggregates streamed tool call deltas", async () => {
+  const mockFetch: typeof fetch = async (input) => {
+    assert.equal(String(input), "https://example.test/chat/completions");
+    return new Response(
+      streamFrom([
+        sse({
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_1",
+                    type: "function",
+                    function: {
+                      name: "read_file",
+                      arguments: "{\"path\":\"",
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        sse({
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    function: {
+                      arguments: "package.json\"}",
+                    },
+                  },
+                ],
+              },
+              finish_reason: "tool_calls",
+            },
+          ],
+        }),
+        "data: [DONE]\n\n",
+      ]),
+      { status: 200 },
+    );
+  };
+
+  const result = await streamOpenRouterAsk(
+    {
+      apiKey: "test-key",
+      baseUrl: "https://example.test",
+      request,
+      requestMetadata,
+      fetch: mockFetch,
+    },
+    {
+      onText() {},
+    },
+  );
+
+  assert.equal(result.finishReason, "tool_calls");
+  assert.deepEqual(result.toolCalls, [
+    {
+      id: "call_1",
+      type: "function",
+      function: {
+        name: "read_file",
+        arguments: "{\"path\":\"package.json\"}",
+      },
+    },
+  ]);
 });
 
 test("does not fail a successful stream when generation lookup is unavailable", async () => {
@@ -192,4 +266,8 @@ function streamFrom(chunks: string[]): ReadableStream<Uint8Array> {
       controller.close();
     },
   });
+}
+
+function sse(value: unknown): string {
+  return `data: ${JSON.stringify(value)}\n\n`;
 }

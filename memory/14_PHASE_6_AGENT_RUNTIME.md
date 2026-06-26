@@ -47,8 +47,9 @@ The API key can come from `OPENROUTER_API_KEY` or ignored local config at `.orx/
 - `src/slash/` owns slash command parsing and handlers.
 - `src/openrouter/` owns request construction, streaming SSE parsing, metadata capture, and Fusion plugin config shaping.
 - `src/tools/` owns native local tools: `read_file`, `list_files`, `search_files`, `shell`, `git_diff`, and `apply_patch`.
+- `src/agent/` owns native tool schemas, native tool dispatch, bounded tool-result envelopes, and the guarded multi-turn tool-call loop now used by `ask` and `chat`.
 
-Phase 6 should connect these pieces through a new agent runtime rather than expanding `src/tui/chat.ts` with ad hoc logic.
+Phase 6 now connects these pieces through `src/agent/` rather than expanding `src/tui/chat.ts` with ad hoc logic.
 
 ## Phase 6 Scope
 
@@ -74,6 +75,8 @@ Use bounded steps. After each step, verify in a separate agent context when poss
 4. Add the multi-turn tool-call loop around OpenRouter chat completions, including max-iteration guards and mocked streaming/tool-call tests.
 5. Wire `ask` and `chat` through the agent runtime while preserving current CLI flags, slash commands, Ctrl+C behavior, and status metadata.
 6. Add smoke documentation and update memory/backlog once Phase 6 is testable with the user's OpenRouter API key.
+
+Status on 2026-06-26: steps 1-5 are implemented and verified. A real OpenRouter smoke prompt selected `openai/gpt-5.5-20260423` through `openrouter/auto`, called `read_file`, and returned the package scripts. Remaining Phase 6 work should focus on context management/compaction boundaries, stronger active-tool interruption, and visible tool and diff summaries.
 
 ## Guardrails
 

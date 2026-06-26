@@ -79,6 +79,15 @@ Handoff: `memory/14_PHASE_6_AGENT_RUNTIME.md`.
 
 Done when the agent can complete multi-step coding tasks reliably.
 
+Status: in progress. First runtime slice verified on 2026-06-26:
+
+- added `src/agent/`
+- added OpenRouter-compatible native tool schemas
+- added streamed tool-call aggregation
+- added native tool dispatch with bounded result envelopes
+- added guarded multi-turn tool-call loop
+- wired `ask` and `chat` through the agent runtime while preserving current routing behavior
+
 ## Phase 7: Sessions And Memory
 
 - Persist transcripts under `~/.orx/sessions`.
@@ -89,6 +98,8 @@ Done when sessions can be resumed after terminal restart.
 
 ## Phase 8: OpenRouter MCP And MCP Policy
 
+Handoff: `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`.
+
 - Add MCP client support.
 - Connect to OpenRouter MCP for live model search, rankings, benchmarks, credits, and generation lookup.
 - Keep OpenRouter API as the actual inference path.
@@ -97,9 +108,12 @@ Done when sessions can be resumed after terminal restart.
 
 Done when `/models`, `/credits`, and model recommendations can use live OpenRouter data.
 
-## Phase 9: Plugins And Advanced Tooling
+## Phase 9: Full-Stack Plugins, MCP Presets, And Advanced Tooling
+
+Handoff: `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`.
 
 - Add ORX plugin manifest support, install cache, lockfile pins, and enabled/installed state separation.
+- Add plugin-provided MCP presets routed through Phase 8 policy.
 - Add Agent Skills `SKILL.md` loader with progressive disclosure.
 - Add plugin-provided slash commands/prompts, rules, lifecycle hooks, and MCP presets.
 - Add `/plugins` and hook/plugin inspection workflow.
@@ -108,6 +122,8 @@ Done when `/models`, `/credits`, and model recommendations can use live OpenRout
 Done when ORX can install and enable a locked plugin bundle without auto-enabling risky executable or auth-bearing surfaces.
 
 ## Phase 10: Web, Browser, And Research Tools
+
+Handoff: `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`.
 
 - Add web search integration.
 - Add optional Playwright browser automation.

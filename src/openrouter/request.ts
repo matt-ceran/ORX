@@ -3,6 +3,7 @@ import type {
   OpenRouterChatRequest,
   OpenRouterMessage,
   OpenRouterRequestMetadata,
+  OpenRouterToolDefinition,
 } from "./types.js";
 
 export interface AskRequestOverrides {
@@ -21,6 +22,7 @@ export interface BuildChatRequestOptions {
   config: OrxConfig;
   messages: OpenRouterMessage[];
   overrides?: AskRequestOverrides;
+  tools?: OpenRouterToolDefinition[];
 }
 
 export interface BuiltAskRequest {
@@ -44,6 +46,7 @@ export function buildChatRequest({
   config,
   messages,
   overrides = {},
+  tools,
 }: BuildChatRequestOptions): BuiltAskRequest {
   const mode = resolveMode(config.mode, overrides);
   const requestedModel = resolveModel(config, mode, overrides.model);
@@ -55,6 +58,7 @@ export function buildChatRequest({
       messages,
       stream: true,
       ...(fusionPreset ? { plugins: [{ id: "fusion", preset: fusionPreset }] } : {}),
+      ...(tools && tools.length > 0 ? { tools } : {}),
     },
     metadata: {
       mode,

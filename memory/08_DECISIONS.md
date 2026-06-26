@@ -1,8 +1,14 @@
 # Decisions
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
+
+## 2026-06-26: Expose Native Local Tools By Default In Agent Turns
+
+Decision: `orx ask` and `orx chat` should send ORX-owned native local coding tool schemas by default and let OpenRouter models call those tools automatically during the guarded agent loop.
+
+Reasoning: ORX is intended to be a coding agent, not only a chat client. The native tools are deterministic, locally owned, bounded, and aligned with ORX's YOLO-style default permissions. Automatic use lets capable models inspect, search, run commands, view diffs, and apply patches when useful, while plugin/MCP surfaces remain explicit trust boundaries.
 
 ## 2026-06-25: Add ORX Plugins As Installable Bundles
 

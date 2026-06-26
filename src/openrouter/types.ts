@@ -4,7 +4,27 @@ export type OpenRouterRole = "system" | "user" | "assistant" | "tool";
 
 export interface OpenRouterMessage {
   role: OpenRouterRole;
-  content: string;
+  content: string | null;
+  tool_call_id?: string;
+  tool_calls?: OpenRouterToolCall[];
+}
+
+export interface OpenRouterToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export interface OpenRouterToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
 }
 
 export interface OpenRouterPluginConfig {
@@ -17,6 +37,7 @@ export interface OpenRouterChatRequest {
   messages: OpenRouterMessage[];
   stream: true;
   plugins?: OpenRouterPluginConfig[];
+  tools?: OpenRouterToolDefinition[];
 }
 
 export interface OpenRouterRequestMetadata {
@@ -55,6 +76,8 @@ export interface OpenRouterAskOptions {
 
 export interface OpenRouterAskResult {
   metadata: OpenRouterStreamMetadata;
+  toolCalls: OpenRouterToolCall[];
+  finishReason?: string;
 }
 
 export interface OpenRouterGenerationMetadata {

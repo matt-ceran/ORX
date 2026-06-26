@@ -61,7 +61,7 @@ Implemented under `src/tools/`:
 - `git_diff`
 - `apply_patch`
 
-The tools are standalone and testable. They are not wired into the agent loop yet.
+The tools remain standalone and testable. Phase 6 now exposes them to models through `src/agent/` with OpenRouter-compatible schemas, argument sanitation, and bounded JSON result envelopes.
 
 ## MCP And Third-Party Tool Policy
 

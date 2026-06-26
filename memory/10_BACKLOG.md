@@ -34,15 +34,18 @@ Completed:
 - Add shell output truncation.
 - Create later-phase implementor handoff for plugins, MCP policy, advanced tooling, and research stack.
 - Create focused Phase 6 handoff for the OpenRouter agent runtime and tool-call loop.
-
-Next:
-
-- Read `memory/14_PHASE_6_AGENT_RUNTIME.md` before starting Phase 6 implementation.
 - Add Phase 6 `src/agent/` runtime wrapper around existing OpenRouter streaming.
 - Add OpenRouter-compatible native tool schemas.
 - Add local tool dispatch from model tool calls.
 - Add guarded multi-turn tool-call loop.
 - Wire `ask` and `chat` through the agent runtime.
+
+Next:
+
+- Read `memory/14_PHASE_6_AGENT_RUNTIME.md` before starting Phase 6 implementation.
+- Add runtime context management and message compaction boundaries.
+- Add better visible tool execution summaries for chat and ask.
+- Add interruption handling for active local tool execution, especially shell commands.
 - Add visible diff summaries after file edits.
 - Keep the tool-call loop compatible with a future `delegate_task` tool.
 - Add native test-runner adapters after shell tooling exists.
@@ -68,6 +71,7 @@ Next:
 - Add web search.
 - Add Playwright browser automation.
 - Add prompt-injection safeguards for fetched content.
+- Follow `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md` for the full-stack plugin/MCP/research build order.
 - Add MCP presets: `openrouter`, `context7`, `github-readonly`, `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
 - Add first-class plugin system: install cache, marketplace/catalog metadata, lockfile pins, installed/enabled state separation, and namespacing.
 - Add Agent Skills `SKILL.md` loader with progressive disclosure.

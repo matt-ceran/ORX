@@ -56,10 +56,13 @@ plugins: [{ id: "fusion", preset: "general-budget" }]
 - `/fusion` with no argument shows the current Fusion preset.
 - `/models` currently shows local routing state and notes that live search will come from OpenRouter MCP.
 - `/status` shows active mode, model, Fusion config, generation id, tokens, and spend.
+- `orx ask` and `orx chat` now route through `src/agent/`, which sends native ORX tool schemas with chat requests and handles model-requested tool calls automatically.
 
 ## Streaming Metadata
 
 The current CLI reads token and cost metadata from the streaming response when OpenRouter provides it, captures `X-Generation-Id`, and performs a best-effort `/generation?id=<id>` lookup without failing the main response if that lookup is unavailable.
+
+The streaming parser also aggregates OpenAI-compatible `delta.tool_calls` chunks and returns completed tool calls to the agent runtime.
 
 ## Orchestration Boundary
 

@@ -46,6 +46,7 @@ test("ask streams text and prints compact metadata summary", async () => {
       assert.equal(body.stream, true);
       assert.deepEqual(body.messages, [{ role: "user", content: "Say hello" }]);
       assert.equal(body.plugins, undefined);
+      assertNativeTools(body.tools);
 
       return new Response(
         streamFrom([
@@ -83,6 +84,7 @@ test("ask supports Fusion preset override", async () => {
       const body = JSON.parse(String(init?.body));
       assert.equal(body.model, "openrouter/fusion");
       assert.deepEqual(body.plugins, [{ id: "fusion", preset: "general-budget" }]);
+      assertNativeTools(body.tools);
 
       return new Response(streamFrom(["data: [DONE]\n\n"]), { status: 200 });
     },
@@ -118,6 +120,8 @@ test("chat streams turns, keeps history, and handles slash commands", async () =
     ]),
     fetch: async (_input, init) => {
       const body = JSON.parse(String(init?.body));
+      assertNativeTools(body.tools);
+      delete body.tools;
       requests.push(body);
       const text = callCount === 0 ? "First reply" : "Second reply";
       callCount += 1;
@@ -214,4 +218,19 @@ function streamFrom(chunks: string[]): ReadableStream<Uint8Array> {
       controller.close();
     },
   });
+}
+
+function assertNativeTools(tools: unknown) {
+  assert.equal(Array.isArray(tools), true);
+  const names = (tools as Array<{ function: { name: string } }>)
+    .map((tool) => tool.function.name)
+    .sort();
+  assert.deepEqual(names, [
+    "apply_patch",
+    "git_diff",
+    "list_files",
+    "read_file",
+    "search_files",
+    "shell",
+  ]);
 }

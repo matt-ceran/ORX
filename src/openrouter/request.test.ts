@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildAskRequest, buildChatRequest } from "./request.js";
 import type { OrxConfig } from "../config/types.js";
+import type { OpenRouterToolDefinition } from "./types.js";
 
 const baseConfig: OrxConfig = {
   mode: "auto",
@@ -70,4 +71,31 @@ test("builds chat request from existing message history", () => {
     { role: "user", content: "Follow up" },
   ]);
   assert.equal(built.request.model, "openrouter/auto");
+});
+
+test("adds tool definitions to chat requests when provided", () => {
+  const tools: OpenRouterToolDefinition[] = [
+    {
+      type: "function",
+      function: {
+        name: "read_file",
+        description: "Read a file",
+        parameters: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+          },
+          required: ["path"],
+        },
+      },
+    },
+  ];
+
+  const built = buildChatRequest({
+    config: baseConfig,
+    messages: [{ role: "user", content: "Read package.json" }],
+    tools,
+  });
+
+  assert.deepEqual(built.request.tools, tools);
 });

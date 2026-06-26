@@ -3,10 +3,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BIN_NAME } from "./constants.js";
+import { runAgentTurn } from "./agent/index.js";
 import { loadConfig, validateApiKey } from "./config/index.js";
 import type { OrxConfig, OrxMode } from "./config/types.js";
-import { buildAskRequest, type AskRequestOverrides } from "./openrouter/request.js";
-import { streamOpenRouterAsk } from "./openrouter/client.js";
+import type { AskRequestOverrides } from "./openrouter/request.js";
+import type { OpenRouterMessage } from "./openrouter/types.js";
 import { formatOpenRouterMetadata } from "./openrouter/summary.js";
 import { formatStatus } from "./status.js";
 import { runChat } from "./tui/chat.js";
@@ -140,24 +141,24 @@ async function runAskCommand(
     return 1;
   }
 
-  const built = buildAskRequest({
-    config,
-    prompt: parsed.prompt,
-    overrides: parsed.overrides,
-  });
+  const requestMessages: OpenRouterMessage[] = [{ role: "user", content: parsed.prompt }];
+  const requestConfig = applyAskOverrides(config, parsed.overrides);
 
   try {
-    const result = await streamOpenRouterAsk(
+    const result = await runAgentTurn(
       {
         apiKey,
-        prompt: parsed.prompt,
-        request: built.request,
-        requestMetadata: built.metadata,
+        config: requestConfig,
+        messages: requestMessages,
+        cwd: io.cwd,
         fetch: io.fetch,
-      },
-      {
-        onText(text) {
-          io.stdout.write(text);
+        callbacks: {
+          onText(text) {
+            io.stdout.write(text);
+          },
+          onToolCall(toolCall) {
+            io.stdout.write(`\n[tool] ${toolCall.function.name}\n`);
+          },
         },
       },
     );
@@ -169,6 +170,45 @@ async function runAskCommand(
     writeLine(io.stderr, message);
     return 1;
   }
+}
+
+function applyAskOverrides(config: OrxConfig, overrides: AskRequestOverrides): OrxConfig {
+  if (overrides.model) {
+    return {
+      ...config,
+      mode: "exact",
+      model: overrides.model,
+      fusionPreset: undefined,
+    };
+  }
+
+  if (overrides.mode === "auto") {
+    return {
+      ...config,
+      mode: "auto",
+      model: "openrouter/auto",
+      fusionPreset: undefined,
+    };
+  }
+
+  if (overrides.mode === "exact") {
+    return {
+      ...config,
+      mode: "exact",
+      fusionPreset: undefined,
+    };
+  }
+
+  if (overrides.mode === "fusion" || overrides.fusionPreset) {
+    return {
+      ...config,
+      mode: "fusion",
+      model: "openrouter/fusion",
+      fusionPreset: overrides.fusionPreset ?? config.fusionPreset,
+    };
+  }
+
+  return config;
 }
 
 function parseAskArgs(args: string[]): AskCommand | string {
