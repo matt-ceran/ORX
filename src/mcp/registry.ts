@@ -56,6 +56,36 @@ export const OPENROUTER_MCP_PROFILE: McpProfile = {
       billable: false,
     },
     {
+      name: "model-get",
+      risk: "read",
+      authRequired: true,
+      billable: false,
+    },
+    {
+      name: "model-endpoints",
+      risk: "read",
+      authRequired: true,
+      billable: false,
+    },
+    {
+      name: "providers-list",
+      risk: "read",
+      authRequired: true,
+      billable: false,
+    },
+    {
+      name: "rankings-daily",
+      risk: "read",
+      authRequired: true,
+      billable: false,
+    },
+    {
+      name: "app-rankings",
+      risk: "read",
+      authRequired: true,
+      billable: false,
+    },
+    {
       name: "credits-get",
       risk: "read",
       authRequired: true,
@@ -63,12 +93,6 @@ export const OPENROUTER_MCP_PROFILE: McpProfile = {
     },
     {
       name: "generation-get",
-      risk: "read",
-      authRequired: true,
-      billable: false,
-    },
-    {
-      name: "providers-list",
       risk: "read",
       authRequired: true,
       billable: false,
@@ -86,13 +110,26 @@ export const OPENROUTER_MCP_PROFILE: McpProfile = {
       billable: false,
     },
     {
+      name: "view-skill",
+      risk: "read",
+      authRequired: true,
+      billable: false,
+    },
+    {
+      name: "ping",
+      risk: "read",
+      authRequired: true,
+      billable: false,
+    },
+    {
       name: "chat-send",
       risk: "billable",
       authRequired: true,
       billable: true,
     },
   ],
-  notes: "Disabled by default. Normal ORX inference uses the direct OpenRouter API.",
+  notes:
+    "Disabled by default. Uses remote HTTP with OpenRouter OAuth or dedicated expiring MCP keys. Normal ORX inference uses the direct OpenRouter API.",
 };
 
 export function listMcpProfiles(options: McpRegistryOptions = {}): McpProfile[] {

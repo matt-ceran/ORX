@@ -1,4 +1,11 @@
 export {
+  discoverMcpProfile,
+  formatMcpDiscoveryResult,
+  type McpDiscoveryOptions,
+  type McpDiscoveryResult,
+  type McpDiscoveryStatus,
+} from "./discovery.js";
+export {
   OPENROUTER_MCP_PROFILE,
   findMcpProfile,
   getActiveMcpProfiles,

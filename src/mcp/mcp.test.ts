@@ -13,6 +13,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   OPENROUTER_MCP_PROFILE,
+  discoverMcpProfile,
+  formatMcpDiscoveryResult,
   getMcpStatusSummary,
   hashMcpProfile,
   loadMcpProfilesConfig,
@@ -22,6 +24,33 @@ import {
   writeMcpAuditEvent,
   type McpProfile,
 } from "./index.js";
+
+test("openrouter mcp profile declares current official tools and billable chat-send", () => {
+  assert.deepEqual(
+    OPENROUTER_MCP_PROFILE.tools.map((tool) => tool.name),
+    [
+      "models-list",
+      "model-get",
+      "model-endpoints",
+      "providers-list",
+      "rankings-daily",
+      "app-rankings",
+      "credits-get",
+      "generation-get",
+      "benchmarks",
+      "docs-search",
+      "view-skill",
+      "ping",
+      "chat-send",
+    ],
+  );
+  assert.deepEqual(
+    OPENROUTER_MCP_PROFILE.tools.filter((tool) => tool.billable).map((tool) => tool.name),
+    ["chat-send"],
+  );
+  assert.equal(OPENROUTER_MCP_PROFILE.transport.kind, "remote-http");
+  assert.equal(OPENROUTER_MCP_PROFILE.transport.url, "https://mcp.openrouter.ai/mcp");
+});
 
 test("mcp profile hashing is deterministic and excludes runtime state", () => {
   const first = hashMcpProfile(OPENROUTER_MCP_PROFILE);
@@ -322,4 +351,294 @@ test("mcp redaction handles bearer strings and sensitive object keys", () => {
       nested: [{ token: "[redacted]" }],
     },
   );
+});
+
+test("mcp discovery does not fetch disabled profiles", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-discovery-disabled-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    const result = await discoverMcpProfile("openrouter", {
+      configPath,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    assert.equal(fetchCalls, 0);
+    assert.equal(result.status, "disabled");
+    assert.equal(result.networkAttempted, false);
+    assert.match(formatMcpDiscoveryResult(result), /Enable and trust it with \/mcp enable openrouter/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp discovery does not fetch enabled profiles without trusted hash baseline", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-discovery-untrusted-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    saveMcpProfilesConfig(
+      {
+        version: 1,
+        profiles: {
+          openrouter: {
+            id: "openrouter",
+            state: "enabled",
+            updatedAt: "2026-06-26T12:00:00.000Z",
+          },
+        },
+      },
+      { configPath },
+    );
+
+    const result = await discoverMcpProfile("openrouter", {
+      configPath,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    assert.equal(fetchCalls, 0);
+    assert.equal(result.status, "untrusted");
+    assert.equal(result.networkAttempted, false);
+    assert.match(result.message, /no trusted profile hash baseline/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp discovery does not fetch profiles with pending schema changes", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-discovery-pending-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    saveMcpProfilesConfig(
+      {
+        version: 1,
+        profiles: {
+          openrouter: {
+            id: "openrouter",
+            state: "enabled",
+            trustedProfileHash: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            updatedAt: "2026-06-26T12:00:00.000Z",
+          },
+        },
+      },
+      { configPath },
+    );
+
+    const result = await discoverMcpProfile("openrouter", {
+      configPath,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    assert.equal(fetchCalls, 0);
+    assert.equal(result.status, "schema_change_pending");
+    assert.equal(result.schemaChangePending, true);
+    assert.equal(result.networkAttempted, false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp discovery calls provided fetch for enabled trusted remote-http profile", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-discovery-ok-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const seenRequests: Array<{ url: string; method?: string; accept?: string | null; body?: string }> =
+    [];
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", {
+      configPath,
+      now: () => new Date("2026-06-26T12:00:00.000Z"),
+    });
+
+    const result = await discoverMcpProfile("openrouter", {
+      configPath,
+      fetch: async (input, init) => {
+        seenRequests.push({
+          url: String(input),
+          method: init?.method,
+          accept:
+            init?.headers instanceof Headers
+              ? init.headers.get("accept")
+              : ((init?.headers as Record<string, string> | undefined)?.Accept ?? null),
+          body: String(init?.body),
+        });
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-discovery-1",
+            result: {
+              protocolVersion: "2025-03-26",
+              capabilities: {
+                tools: {},
+                resources: {},
+              },
+              serverInfo: {
+                name: "openrouter",
+                version: "test",
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      },
+    });
+
+    assert.equal(seenRequests.length, 1);
+    assert.equal(seenRequests[0].url, "https://mcp.openrouter.ai/mcp");
+    assert.equal(seenRequests[0].method, "POST");
+    assert.equal(seenRequests[0].accept, "application/json");
+    assert.match(seenRequests[0].body ?? "", /"method":"initialize"/);
+    assert.equal(result.status, "ok");
+    assert.equal(result.networkAttempted, true);
+    assert.equal(result.serverInfo?.name, "openrouter");
+    assert.deepEqual(result.capabilityKeys, ["resources", "tools"]);
+    assert.match(formatMcpDiscoveryResult(result), /tool_execution: not implemented/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp discovery rejects malformed JSON-RPC initialize responses", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-discovery-invalid-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const result = await discoverMcpProfile("openrouter", {
+      configPath,
+      fetch: async () =>
+        new Response(JSON.stringify({ result: { protocolVersion: "2025-03-26" } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+
+    assert.equal(result.status, "invalid_response");
+    assert.equal(result.networkAttempted, true);
+    assert.match(result.message, /invalid JSON-RPC initialize response/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp discovery bounds remote-controlled initialize fields", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-discovery-bounds-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const long = "x".repeat(500);
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const result = await discoverMcpProfile("openrouter", {
+      configPath,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-discovery-1",
+            result: {
+              protocolVersion: long,
+              capabilities: Object.fromEntries(
+                Array.from({ length: 25 }, (_, index) => [`cap-${index}-${long}`, {}]),
+              ),
+              serverInfo: {
+                name: `openrouter-${long}`,
+                version: long,
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    });
+
+    assert.equal(result.status, "ok");
+    assert.ok((result.serverInfo?.name?.length ?? 0) <= 160);
+    assert.ok((result.serverInfo?.version?.length ?? 0) <= 160);
+    assert.ok((result.protocolVersion?.length ?? 0) <= 160);
+    assert.ok((result.capabilityKeys?.length ?? 0) <= 20);
+    assert.ok(result.capabilityKeys?.every((key) => key.length <= 160));
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp discovery treats 401 and 403 as auth-required without leaking response body", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-discovery-auth-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const result = await discoverMcpProfile("openrouter", {
+      configPath,
+      fetch: async () => new Response("Bearer sk-or-v1-secret", { status: 401 }),
+    });
+    const formatted = formatMcpDiscoveryResult(result);
+
+    assert.equal(result.status, "auth_required");
+    assert.equal(result.httpStatus, 401);
+    assert.equal(result.networkAttempted, true);
+    assert.doesNotMatch(JSON.stringify(result), /sk-or-v1-secret/);
+    assert.doesNotMatch(formatted, /sk-or-v1-secret/);
+    assert.match(formatted, /OAuth or a dedicated expiring MCP key/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp discovery sanitizes network errors", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-discovery-network-error-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const result = await discoverMcpProfile("openrouter", {
+      configPath,
+      fetch: async () => {
+        throw new Error("failed with Authorization: Bearer sk-or-v1-secret");
+      },
+    });
+
+    assert.equal(result.status, "network_error");
+    assert.equal(result.networkAttempted, true);
+    assert.match(result.error ?? "", /\[redacted\]/);
+    assert.ok((result.error?.length ?? 0) <= 500);
+    assert.doesNotMatch(formatMcpDiscoveryResult(result), /sk-or-v1-secret/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp discovery bounds long thrown network errors", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-discovery-long-network-error-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const result = await discoverMcpProfile("openrouter", {
+      configPath,
+      fetch: async () => {
+        throw new Error("x".repeat(2_000));
+      },
+    });
+
+    assert.equal(result.status, "network_error");
+    assert.ok((result.error?.length ?? 0) <= 500);
+    assert.ok(formatMcpDiscoveryResult(result).length < 1_500);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });

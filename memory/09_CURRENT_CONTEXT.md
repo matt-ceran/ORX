@@ -43,6 +43,18 @@ Current files:
 
 ## Latest Work
 
+Implemented and verified the Phase 8 official OpenRouter MCP discovery scaffold:
+
+- Added `src/mcp/discovery.ts` with a gated, testable discovery result surface and a minimal remote HTTP JSON-RPC `initialize` attempt.
+- Added `/mcp discover <profile>` for manual profile discovery/status; it only attempts network discovery when the persisted profile exists, is enabled/trusted, has no pending schema change, and uses `remote-http`.
+- Disabled, untrusted, and pending-schema-change profiles return explanatory no-network results.
+- `401`/`403` discovery responses are treated as `auth_required` for OpenRouter OAuth or dedicated expiring MCP keys, with sanitized bounded errors and no secret leakage.
+- Remote MCP tool execution remains unimplemented and is explicitly rendered in `/mcp inspect` and discovery output; normal chat/ask inference and REST metadata commands still use direct OpenRouter APIs.
+- Updated the OpenRouter MCP declared tools to the current documented surface: `models-list`, `model-get`, `model-endpoints`, `providers-list`, `rankings-daily`, `app-rankings`, `credits-get`, `generation-get`, `benchmarks`, `docs-search`, `view-skill`, `ping`, and billable `chat-send`.
+- Added redacted MCP audit events for discovery attempts/results.
+- Added tests for discovery gating, mocked enabled discovery, auth-required handling, secret redaction, slash audit output, and REST metadata independence.
+- `npm run typecheck`, `git diff --check`, targeted MCP/slash/CLI tests, and `npm test` pass with 142 tests.
+
 Implemented and verified the Phase 8 persistent MCP profile trust/config slice:
 
 - Added `src/mcp/config.ts` for private MCP profile config resolution, load/save, sanitization, and default storage under `~/.orx/mcp/profiles.json`, with `ORX_MCP_CONFIG_PATH` override support.

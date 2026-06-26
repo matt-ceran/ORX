@@ -96,8 +96,10 @@ The ORX runtime should still call the OpenRouter API directly for normal inferen
 Current implementation checkpoint:
 
 - Direct live metadata helpers exist under `src/openrouter/live.ts` for models, credits, and generation lookup.
-- `src/mcp/` contains a disabled-by-default `openrouter` profile for `https://mcp.openrouter.ai/mcp` and status/policy scaffolding.
-- No MCP tool execution or MCP-backed inference path is implemented.
+- `src/mcp/` contains a disabled-by-default `openrouter` profile for `https://mcp.openrouter.ai/mcp`, persisted profile trust state, schema/profile hashing, audit scaffolding, and gated remote HTTP discovery.
+- `/mcp discover <profile>` only attempts a minimal remote HTTP initialize handshake when the profile is enabled, trusted, has no pending schema change, and uses `remote-http`; OAuth/auth failures are reported as `auth_required`.
+- The declared OpenRouter MCP tools are `models-list`, `model-get`, `model-endpoints`, `providers-list`, `rankings-daily`, `app-rankings`, `credits-get`, `generation-get`, `benchmarks`, `docs-search`, `view-skill`, `ping`, and billable `chat-send`.
+- No MCP tool execution or MCP-backed inference path is implemented. Direct REST continues to power `/models`, `/credits`, `/generation`, `orx models`, `orx credits`, `orx generation`, and normal chat/ask inference.
 
 ## Cost Tracking
 

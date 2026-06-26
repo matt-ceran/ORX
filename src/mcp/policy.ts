@@ -153,7 +153,12 @@ export function renderMcpProfileInspect(
     profile.transport.url ? `  url: ${profile.transport.url}` : undefined,
     `  risk: ${profile.riskLevel}`,
     `  auth_required: ${profile.authRequired ? "yes" : "no"}`,
+    profile.authRequired
+      ? "  auth_status: required (OAuth or dedicated expiring MCP key)"
+      : "  auth_status: not required",
     `  write_capable: ${profile.writeCapable ? "yes" : "no"}`,
+    "  remote_tool_execution: not implemented; not exposed to the model loop",
+    "  normal_inference: direct OpenRouter REST API",
     `  profile_hash: ${currentHash}`,
     options.trustedProfileHash ? `  trusted_hash: ${options.trustedProfileHash}` : undefined,
     options.updatedAt ? `  updated_at: ${options.updatedAt}` : undefined,

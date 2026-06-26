@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 export type McpAuditEventType =
   | "mcp.profile.status"
   | "mcp.profile.inspect"
+  | "mcp.profile.discovery_attempt"
   | "mcp.profile.enable_attempt"
   | "mcp.profile.disable_attempt";
 

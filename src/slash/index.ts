@@ -9,7 +9,9 @@ import {
 } from "../agent/index.js";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
 import {
+  discoverMcpProfile,
   findMcpProfile,
+  formatMcpDiscoveryResult,
   getMcpStatusSummary,
   hashMcpProfile,
   renderMcpProfileInspect,
@@ -357,10 +359,10 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|inspect|enable|disable]",
-    description: "Show or simulate MCP profile policy state",
-    handler: (command, context) => {
-      handleMcpCommand(command, context);
+    usage: "/mcp [list|inspect|discover|enable|disable]",
+    description: "Show MCP profile policy state and gated discovery",
+    handler: async (command, context): Promise<SlashResult> => {
+      await handleMcpCommand(command, context);
       return "continue";
     },
   },
@@ -510,7 +512,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
     .join("\n");
 }
 
-function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): void {
+async function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
   const subcommand = command.args[0]?.toLowerCase() ?? "list";
   const profileId = command.args[1];
 
@@ -570,6 +572,53 @@ function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): 
     return;
   }
 
+  if (subcommand === "discover") {
+    if (!profileId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /mcp discover <profile>");
+      return;
+    }
+
+    const result = await discoverMcpProfile(profileId, {
+      configPath: context.mcpConfigPath,
+      fetch: context.fetch,
+    });
+    tryWriteMcpAuditEvent(context, {
+      type: "mcp.profile.discovery_attempt",
+      profileId,
+      ok: result.ok,
+      details: {
+        status: result.status,
+        networkAttempted: result.networkAttempted,
+        transport: result.transport,
+        url: result.url,
+        authRequired: result.authRequired,
+        profileHash: result.profileHash,
+        trustedProfileHash: result.trustedProfileHash,
+        schemaChangePending: result.schemaChangePending,
+        httpStatus: result.httpStatus,
+        serverInfo: result.serverInfo,
+        protocolVersion: result.protocolVersion,
+        capabilityKeys: result.capabilityKeys,
+        error: result.error,
+        message: result.message,
+      },
+    });
+
+    const output = formatMcpDiscoveryResult(result);
+    if (
+      result.status === "not_found" ||
+      result.status === "network_error" ||
+      result.status === "remote_error" ||
+      result.status === "invalid_response"
+    ) {
+      writeLine(context.io.stderr, output);
+      return;
+    }
+
+    writeLine(context.io.stdout, output);
+    return;
+  }
+
   if (subcommand === "enable" || subcommand === "disable") {
     if (!profileId || command.args.length !== 2) {
       writeLine(context.io.stderr, `Usage: /mcp ${subcommand} <profile>`);
@@ -624,7 +673,10 @@ function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): 
     return;
   }
 
-  writeLine(context.io.stderr, "Usage: /mcp [list|inspect <profile>|enable <profile>|disable <profile>]");
+  writeLine(
+    context.io.stderr,
+    "Usage: /mcp [list|inspect <profile>|discover <profile>|enable <profile>|disable <profile>]",
+  );
 }
 
 function formatErrorForMcpAudit(error: unknown): string {

@@ -85,5 +85,6 @@ Current Phase 8 scaffold:
 
 - `src/mcp/registry.ts` defines an explicit disabled `openrouter` profile for the official remote HTTP server.
 - `src/mcp/policy.ts` exposes status counts for active profiles, active servers, auth-bearing servers, write-enabled tools, and risky transports.
-- `/mcp` and `/status` show the disabled profile and risk metadata.
-- No MCP tools are executable yet; direct OpenRouter API helpers currently power models, credits, and generation metadata.
+- `src/mcp/discovery.ts` exposes gated manual discovery for enabled/trusted remote HTTP profiles without listing/executing tools in the model loop.
+- `/mcp`, `/mcp inspect`, `/mcp discover`, and `/status` show profile state, risk metadata, OAuth/auth-required status, billable tool visibility, and pending schema-change gates.
+- No MCP tools are executable yet; direct OpenRouter API helpers currently power models, credits, generation metadata, and normal chat/ask inference.

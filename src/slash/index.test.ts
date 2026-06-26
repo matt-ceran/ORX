@@ -1,7 +1,7 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
@@ -245,6 +245,10 @@ test("mcp inspect renders profile metadata and audits without network", async ()
     assert.equal(fetchCalls, 0);
     assert.match(harness.stdout(), /MCP profile: openrouter/);
     assert.match(harness.stdout(), /profile_hash: sha256:[a-f0-9]{64}/);
+    assert.match(harness.stdout(), /auth_status: required \(OAuth or dedicated expiring MCP key\)/);
+    assert.match(harness.stdout(), /remote_tool_execution: not implemented; not exposed to the model loop/);
+    assert.match(harness.stdout(), /normal_inference: direct OpenRouter REST API/);
+    assert.match(harness.stdout(), /model-get risk=read auth=yes billable=no/);
     assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes/);
     assert.match(harness.stdout(), /write_capable: no/);
 
@@ -325,6 +329,160 @@ test("mcp persisted enable and disable are visible across slash status contexts"
     assert.match(afterDisable.stdout(), /mcp_active_profiles: none/);
     assert.match(afterDisable.stdout(), /mcp_profile: profile=openrouter state=disabled/);
     assert.match(afterDisable.stdout(), /trusted_hash=sha256:[a-f0-9]{64}/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp discover blocks disabled profiles without network and audits the gate", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-discover-disabled-"));
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const harness = createSlashHarness({
+    mcpAuditLogPath: auditLogPath,
+    mcpConfigPath: configPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand("/mcp discover openrouter", harness.context), "continue");
+    assert.equal(fetchCalls, 0);
+    assert.match(harness.stdout(), /MCP discovery: openrouter/);
+    assert.match(harness.stdout(), /status: disabled/);
+    assert.match(harness.stdout(), /network: not_attempted/);
+
+    const events = readAuditEvents(auditLogPath);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, "mcp.profile.discovery_attempt");
+    assert.equal(events[0].profileId, "openrouter");
+    assert.equal(events[0].ok, true);
+    assert.equal(events[0].details.status, "disabled");
+    assert.equal(events[0].details.networkAttempted, false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp discover calls fetch for enabled trusted profile and does not execute tools", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-discover-enabled-"));
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const seenRequests: string[] = [];
+  const harness = createSlashHarness({
+    mcpAuditLogPath: auditLogPath,
+    mcpConfigPath: configPath,
+    fetch: async (input, init) => {
+      seenRequests.push(`${String(input)} ${init?.method ?? ""} ${String(init?.body)}`);
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: "orx-discovery-1",
+          result: {
+            protocolVersion: "2025-03-26",
+            capabilities: { tools: {} },
+            serverInfo: { name: "openrouter", version: "test" },
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand("/mcp enable openrouter", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/mcp discover openrouter", harness.context), "continue");
+
+    assert.equal(seenRequests.length, 1);
+    assert.match(seenRequests[0], /^https:\/\/mcp\.openrouter\.ai\/mcp POST /);
+    assert.match(seenRequests[0], /"method":"initialize"/);
+    assert.doesNotMatch(seenRequests[0], /tools\/call|chat-send/);
+    assert.match(harness.stdout(), /status: ok/);
+    assert.match(harness.stdout(), /server_name: openrouter/);
+    assert.match(harness.stdout(), /tool_execution: not implemented/);
+
+    const events = readAuditEvents(auditLogPath);
+    assert.deepEqual(
+      events.map((event) => event.type),
+      ["mcp.profile.enable_attempt", "mcp.profile.discovery_attempt"],
+    );
+    assert.equal(events[1].details.status, "ok");
+    assert.equal(events[1].details.networkAttempted, true);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp discover blocks pending schema change without network", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-discover-pending-"));
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  mkdirSync(join(cwd, "mcp"), { recursive: true });
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      version: 1,
+      profiles: {
+        openrouter: {
+          id: "openrouter",
+          state: "enabled",
+          trustedProfileHash: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          updatedAt: "2026-06-26T12:00:00.000Z",
+        },
+      },
+    }),
+  );
+  const harness = createSlashHarness({
+    mcpAuditLogPath: auditLogPath,
+    mcpConfigPath: configPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand("/mcp discover openrouter", harness.context), "continue");
+    assert.equal(fetchCalls, 0);
+    assert.match(harness.stdout(), /status: schema_change_pending/);
+    assert.match(harness.stdout(), /schema_change: pending/);
+
+    const events = readAuditEvents(auditLogPath);
+    assert.equal(events[0].details.status, "schema_change_pending");
+    assert.equal(events[0].details.networkAttempted, false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp discover auth-required result and audit do not leak API-like secrets", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-discover-auth-"));
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const harness = createSlashHarness({
+    mcpAuditLogPath: auditLogPath,
+    mcpConfigPath: configPath,
+    fetch: async () => new Response("Bearer sk-or-v1-secret", { status: 403 }),
+  });
+
+  try {
+    assert.equal(await handleSlashCommand("/mcp enable openrouter", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/mcp discover openrouter", harness.context), "continue");
+
+    assert.match(harness.stdout(), /status: auth_required/);
+    assert.match(harness.stdout(), /http_status: 403/);
+    assert.match(harness.stdout(), /OAuth or a dedicated expiring MCP key/);
+    assert.doesNotMatch(harness.stdout(), /sk-or-v1-secret/);
+    assert.doesNotMatch(readFileSync(auditLogPath, "utf8"), /sk-or-v1-secret/);
+
+    const events = readAuditEvents(auditLogPath);
+    assert.equal(events[1].type, "mcp.profile.discovery_attempt");
+    assert.equal(events[1].details.status, "auth_required");
+    assert.equal(events[1].details.httpStatus, 403);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

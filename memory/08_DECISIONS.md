@@ -4,6 +4,12 @@ Last updated: 2026-06-26
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-26: Keep OpenRouter MCP Discovery Manual And Gated
+
+Decision: ORX should expose official OpenRouter MCP discovery only through explicit ORX-owned commands such as `/mcp discover <profile>`, and only after the persisted profile is enabled, trusted, free of pending schema changes, and configured for remote HTTP. Discovery may perform a minimal initialize handshake and report `auth_required` for OAuth or dedicated expiring MCP keys, but remote MCP tools remain unexecutable and absent from the model loop.
+
+Reasoning: OpenRouter MCP is useful for profile/status discovery and future lookup tools, but its remote auth-bearing surface includes a billable `chat-send` tool. Gating discovery behind persisted trust and keeping normal inference on direct OpenRouter REST prevents a profile/schema change or fetched MCP metadata from expanding ORX's tool surface without operator review.
+
 ## 2026-06-26: Persist MCP Profile Trust Outside Repositories
 
 Decision: ORX should persist MCP profile enablement and trusted configured-profile hash baselines in an ORX-owned user config file outside repositories, defaulting to `~/.orx/mcp/profiles.json` with `ORX_MCP_CONFIG_PATH` for tests and isolated runs. The file should store only profile id, enabled/disabled state, trusted hash baseline, and updatedAt.

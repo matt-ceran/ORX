@@ -73,11 +73,13 @@ Completed:
 - Add `/status` visibility for MCP hashes, pending schema changes, and active/configured billable MCP tool counts.
 - Persist MCP profile enable/disable trust state under `~/.orx/mcp/profiles.json` with `ORX_MCP_CONFIG_PATH` test override.
 - Add trusted profile hash baselines and pending schema-change visibility for persisted MCP profiles.
+- Add gated `/mcp discover <profile>` for official OpenRouter remote HTTP MCP discovery/status without exposing remote MCP tools to the model loop.
+- Update the declared OpenRouter MCP tool surface to current docs and keep `chat-send` visibly billable.
 
 Next:
 
-- Add OpenRouter MCP client discovery behind the explicit persisted profile state without enabling remote tool execution by default.
 - Add MCP tool allow/deny policy evaluation before any future MCP tool execution.
+- Add authenticated OpenRouter MCP schema/tool listing after OAuth or dedicated expiring MCP key handling is designed.
 - Persist active orchestrator and delegate metadata in sessions.
 - Add MCP policy engine outside the model loop.
 - Add secret redaction and minimal env forwarding for MCP child processes.
