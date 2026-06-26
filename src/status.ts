@@ -1,16 +1,24 @@
 import { formatConfigSources } from "./config/index.js";
 import type { LoadedConfig } from "./config/types.js";
 import { getMcpStatusSummary, formatMcpProfile } from "./mcp/index.js";
+import { getPluginStatusSummary } from "./plugins/index.js";
 
 export interface StatusOptions {
   cwd: string;
   loadedConfig: LoadedConfig;
   mcpConfigPath?: string;
+  pluginRegistryPath?: string;
 }
 
-export function formatStatus({ cwd, loadedConfig, mcpConfigPath }: StatusOptions): string {
+export function formatStatus({
+  cwd,
+  loadedConfig,
+  mcpConfigPath,
+  pluginRegistryPath,
+}: StatusOptions): string {
   const { config } = loadedConfig;
   const mcpStatus = getMcpStatusSummary({ configPath: mcpConfigPath });
+  const pluginStatus = getPluginStatusSummary({ registryPath: pluginRegistryPath });
   const activeMcpProfiles =
     mcpStatus.activeProfileIds.length > 0 ? mcpStatus.activeProfileIds.join(",") : "none";
   const lines = [
@@ -42,6 +50,11 @@ export function formatStatus({ cwd, loadedConfig, mcpConfigPath }: StatusOptions
     `mcp_pending_schema_changes: ${
       mcpStatus.pendingSchemaChangeCount === 0 ? "none" : mcpStatus.pendingSchemaChangeCount
     }`,
+    `plugin_installed_count: ${pluginStatus.installedCount}`,
+    `plugin_enabled_count: ${pluginStatus.enabledCount}`,
+    `plugin_enabled_hooks: ${pluginStatus.enabledHookCount}`,
+    `plugin_enabled_bins: ${pluginStatus.enabledBinCount}`,
+    `plugin_enabled_mcp: ${pluginStatus.enabledMcpCount}`,
     ...mcpStatus.profiles.map(
       (profile) =>
         `mcp_profile: ${formatMcpProfile(profile, mcpStatus.profileHashes[profile.id], {

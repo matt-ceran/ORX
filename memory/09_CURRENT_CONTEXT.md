@@ -2,9 +2,9 @@
 
 Last updated: 2026-06-26
 
-## Fast Phase 8 Handoff
+## Fast Phase 9 Handoff
 
-To continue Phase 8 in a fresh session, read:
+To continue Phase 9 in a fresh session, read:
 
 1. `memory/00_INDEX.md`
 2. `memory/01_PROJECT_BRIEF.md`
@@ -42,6 +42,18 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented and verified the Phase 9 Slice 1 plugin manifest/registry/lockfile foundation:
+
+- Added `src/plugins/` with sanitized ORX plugin manifest parsing, stable plugin ids, deterministic manifest hashes, local lock-style records, and component hashes for local files/directories when available.
+- Added private plugin registry persistence under `~/.orx/plugins/registry.json`, with `ORX_PLUGIN_REGISTRY_PATH` override support and `0700` directory / `0600` file writes.
+- Added installed vs enabled plugin state. Registering a local manifest stores the plugin disabled by default; enable/disable persist only an inert state marker.
+- Added `/plugins list`, `/plugins inspect <id>`, `/plugins register <manifest-path>`, `/plugins enable <id>`, and `/plugins disable <id>`.
+- `/plugins` and `/status` explicitly show that hooks, bins, plugin MCP servers, commands, and plugin code execution remain inactive in this scaffold.
+- Added status visibility for installed plugin count, enabled plugin count, enabled hooks, enabled bins, and enabled MCP count; executable counts remain `0` in this slice.
+- Hardened manifests and loaded registry records against secret-like values, terminal control characters, credential/query-bearing git URLs, unpinned git sources, poisoned display metadata, and unbounded local component hashing.
+- Added tests for local register/list/inspect/enable/disable, invalid manifest rejection, no network/fetch, secret-field dropping, private registry file modes, registry override paths, status visibility, git source pinning, bounded component hashing, and poisoned registry sanitization.
+- `npm run typecheck`, `git diff --check`, targeted plugin/slash/CLI tests, and `npm test` pass with 165 tests.
 
 Implemented and verified the Phase 8 MCP declared-tool policy evaluation scaffold:
 

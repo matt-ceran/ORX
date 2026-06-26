@@ -632,6 +632,146 @@ test("mcp enable reports unknown profiles without network", async () => {
   }
 });
 
+test("plugins register, list, inspect, enable, and disable without network or execution", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugins-slash-"));
+  const registryPath = join(cwd, "registry", "plugins.json");
+  const manifestPath = join(cwd, "plugin", "orx-plugin.json");
+  mkdirSync(join(cwd, "plugin", "skills"), { recursive: true });
+  writeFileSync(join(cwd, "plugin", "skills", "SKILL.md"), "# Demo skill\n");
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "demo-plugin",
+      version: "1.0.0",
+      description: "Demo plugin for registry tests.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        skills: "./skills",
+        hooks: "./hooks/hooks.json",
+        bins: "./bin",
+        mcpServers: "./mcp.json",
+      },
+      permissions: {
+        filesystem: ["read:."],
+        network: [],
+        env: ["DEMO_TOKEN"],
+        mcp: ["openrouter"],
+      },
+    }),
+  );
+  const harness = createSlashHarness({
+    pluginRegistryPath: registryPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand(`/plugins register ${manifestPath}`, harness.context), "continue");
+    assert.equal(fetchCalls, 0);
+    assert.match(harness.stdout(), /Plugin acme\.demo-plugin@1\.0\.0 registered disabled/);
+    assert.match(harness.stdout(), /No hooks, bins, MCP servers, or plugin code are active/);
+
+    assert.equal(handleSlashCommand("/plugins list", harness.context), "continue");
+    assert.match(harness.stdout(), /Plugins/);
+    assert.match(harness.stdout(), /installed: 1/);
+    assert.match(harness.stdout(), /enabled: 0/);
+    assert.match(harness.stdout(), /enabled_hooks: 0/);
+    assert.match(harness.stdout(), /enabled_bins: 0/);
+    assert.match(harness.stdout(), /enabled_mcp: 0/);
+    assert.match(harness.stdout(), /plugin=acme\.demo-plugin@1\.0\.0 enabled=no/);
+    assert.match(harness.stdout(), /integrity=sha256:[a-f0-9]{64}/);
+    assert.match(harness.stdout(), /components=bins,hooks,mcpServers,skills/);
+
+    assert.equal(
+      handleSlashCommand("/plugins inspect acme.demo-plugin@1.0.0", harness.context),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Plugin: acme\.demo-plugin@1\.0\.0/);
+    assert.match(harness.stdout(), /enabled: no/);
+    assert.match(harness.stdout(), /source: type=local path=\./);
+    assert.match(harness.stdout(), /skills: skills/);
+    assert.match(harness.stdout(), /component_hashes:/);
+    assert.match(harness.stdout(), /skills: directory skills sha256:[a-f0-9]{64}/);
+    assert.match(harness.stdout(), /filesystem: read:\./);
+    assert.match(harness.stdout(), /env: DEMO_TOKEN/);
+    assert.match(harness.stdout(), /executable_surfaces: hooks=inactive bins=inactive mcp=inactive/);
+    assert.match(harness.stdout(), /plugin_code_execution: disabled in this scaffold/);
+
+    assert.equal(
+      handleSlashCommand("/plugins enable acme.demo-plugin@1.0.0", harness.context),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Plugin acme\.demo-plugin@1\.0\.0 enabled/);
+    assert.match(harness.stdout(), /executable surfaces remain inactive/);
+
+    assert.equal(handleSlashCommand("/status", harness.context), "continue");
+    assert.match(harness.stdout(), /plugin_installed_count: 1/);
+    assert.match(harness.stdout(), /plugin_enabled_count: 1/);
+    assert.match(harness.stdout(), /plugin_enabled_hooks: 0/);
+    assert.match(harness.stdout(), /plugin_enabled_bins: 0/);
+    assert.match(harness.stdout(), /plugin_enabled_mcp: 0/);
+
+    assert.equal(
+      handleSlashCommand("/plugins disable acme.demo-plugin@1.0.0", harness.context),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Plugin acme\.demo-plugin@1\.0\.0 disabled/);
+    assert.match(readFileSync(registryPath, "utf8"), /"enabled": false/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugins command rejects invalid manifests and unknown plugins without network", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugins-invalid-"));
+  const registryPath = join(cwd, "registry.json");
+  const manifestPath = join(cwd, "bad.json");
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "2",
+      name: "bad",
+      version: "1.0.0",
+      description: "Bad manifest",
+      publisher: "acme",
+      source: { type: "local" },
+      components: {},
+      permissions: {},
+    }),
+  );
+  const harness = createSlashHarness({
+    pluginRegistryPath: registryPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand(`/plugins register ${manifestPath}`, harness.context), "continue");
+    assert.match(harness.stderr(), /Invalid plugin manifest: schemaVersion must be "1"/);
+    assert.equal(fetchCalls, 0);
+
+    assert.equal(handleSlashCommand("/plugins inspect missing", harness.context), "continue");
+    assert.match(harness.stderr(), /Unknown plugin: missing/);
+
+    assert.equal(handleSlashCommand("/plugins enable missing", harness.context), "continue");
+    assert.match(harness.stderr(), /Unknown plugin: missing/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("clear and new reset conversation state callback", async () => {
   const harness = createSlashHarness({
     messages: [
@@ -969,6 +1109,7 @@ function createSlashHarness(
     cwd?: string;
     mcpAuditLogPath?: string;
     mcpConfigPath?: string;
+    pluginRegistryPath?: string;
     resumeSession?: SlashCommandContext["resumeSession"];
     fetch?: typeof fetch;
   } = {},
@@ -1023,6 +1164,7 @@ function createSlashHarness(
       getSessionInfo: () => options.sessionInfo,
       mcpAuditLogPath: options.mcpAuditLogPath,
       mcpConfigPath: options.mcpConfigPath,
+      pluginRegistryPath: options.pluginRegistryPath,
       resumeSession: options.resumeSession,
     },
     config: () => config,

@@ -77,4 +77,6 @@ Keep research provenance behind `src/research/` so search results, fetched pages
 
 `src/agent/` now owns OpenRouter-compatible native tool schemas, native tool dispatch, bounded tool-result envelopes, and the guarded multi-turn tool-call loop used by `orx ask` and `orx chat`.
 
-The next Phase 6 work should add context management, visible tool/diff summaries, and stronger active-tool interruption boundaries. See `memory/14_PHASE_6_AGENT_RUNTIME.md` for the implementation handoff.
+`src/plugins/` now owns the Phase 9 Slice 1 inert plugin substrate: sanitized ORX plugin manifests, stable plugin ids, manifest hashes, local lock-style records, local component hashes, private registry persistence, installed/enabled state separation, and `/plugins` rendering. Plugin enablement is only a persisted state marker in this scaffold; hooks, bins, plugin commands, plugin MCP servers, and plugin code execution remain inactive.
+
+The next plugin work should add source/cache semantics and Agent Skills progressive loading without changing the current trust boundary.

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { runCli } from "./cli.js";
 import { setMcpProfilePersistentState } from "./mcp/index.js";
+import { registerPluginManifest, setPluginEnabledState } from "./plugins/index.js";
 
 const encoder = new TextEncoder();
 
@@ -42,6 +43,11 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /mcp_pending_schema_changes: none/);
     assert.match(status.stdout(), /mcp_profile: profile=openrouter state=disabled/);
     assert.match(status.stdout(), /hash=sha256:[a-f0-9]{64}/);
+    assert.match(status.stdout(), /plugin_installed_count: 0/);
+    assert.match(status.stdout(), /plugin_enabled_count: 0/);
+    assert.match(status.stdout(), /plugin_enabled_hooks: 0/);
+    assert.match(status.stdout(), /plugin_enabled_bins: 0/);
+    assert.match(status.stdout(), /plugin_enabled_mcp: 0/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -64,6 +70,63 @@ test("cli status reflects persisted MCP profile config", async () => {
     assert.match(status.stdout(), /mcp_policy_denied_tools: 1/);
     assert.match(status.stdout(), /mcp_profile: profile=openrouter state=enabled/);
     assert.match(status.stdout(), /trusted_hash=sha256:[a-f0-9]{64}/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli status reflects plugin registry override without enabling executable surfaces", async () => {
+  const cwd = createTempDir();
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const manifestPath = join(cwd, "manifest.json");
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "demo-plugin",
+      version: "1.0.0",
+      description: "Demo plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        hooks: "./hooks/hooks.json",
+        bins: "./bin",
+        mcpServers: "./mcp.json",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.demo-plugin@1.0.0", true, { registryPath });
+
+    const status = createIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "status"],
+        {
+          ORX_MCP_CONFIG_PATH: join(cwd, "mcp", "profiles.json"),
+          ORX_PLUGIN_REGISTRY_PATH: registryPath,
+        },
+        status.io,
+      ),
+      0,
+    );
+
+    assert.match(status.stdout(), /plugin_installed_count: 1/);
+    assert.match(status.stdout(), /plugin_enabled_count: 1/);
+    assert.match(status.stdout(), /plugin_enabled_hooks: 0/);
+    assert.match(status.stdout(), /plugin_enabled_bins: 0/);
+    assert.match(status.stdout(), /plugin_enabled_mcp: 0/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

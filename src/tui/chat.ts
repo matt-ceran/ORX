@@ -51,6 +51,7 @@ export interface ChatOptions {
   sessionDirectory?: string;
   mcpAuditLogPath?: string;
   mcpConfigPath?: string;
+  pluginRegistryPath?: string;
 }
 
 export async function runChat({
@@ -61,6 +62,7 @@ export async function runChat({
   sessionDirectory,
   mcpAuditLogPath,
   mcpConfigPath,
+  pluginRegistryPath,
 }: ChatOptions): Promise<number> {
   let activeConfig: OrxConfig = { ...loadedConfig.config };
   let activeCwd = io.cwd;
@@ -127,6 +129,7 @@ export async function runChat({
           getSessionInfo: () => sessionInfo(session),
           mcpAuditLogPath,
           mcpConfigPath,
+          pluginRegistryPath,
           startNewSession: async () => {
             session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
           },

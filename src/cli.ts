@@ -19,6 +19,7 @@ import {
   listOpenRouterModels,
 } from "./openrouter/live.js";
 import { resolveMcpConfigPath } from "./mcp/index.js";
+import { resolvePluginRegistryPath } from "./plugins/index.js";
 import { resolveSessionDirectory } from "./sessions/index.js";
 import { formatStatus } from "./status.js";
 import { runChat } from "./tui/chat.js";
@@ -69,12 +70,14 @@ export async function runCli(
   if (first === "status") {
     const loadedConfig = loadConfig({ env, cwd: io.cwd });
     const mcpConfigPath = resolveMcpConfigPath({ env, cwd: io.cwd });
+    const pluginRegistryPath = resolvePluginRegistryPath({ env, cwd: io.cwd });
     writeLine(
       io.stdout,
       formatStatus({
         cwd: io.cwd,
         loadedConfig,
         mcpConfigPath,
+        pluginRegistryPath,
       }),
     );
     return 0;
@@ -105,6 +108,7 @@ export async function runCli(
 
   if (first === "chat") {
     const mcpConfigPath = resolveMcpConfigPath({ env, cwd: io.cwd });
+    const pluginRegistryPath = resolvePluginRegistryPath({ env, cwd: io.cwd });
     return runChat({
       apiKey: loadedConfig.config.apiKey ?? "",
       loadedConfig,
@@ -118,6 +122,7 @@ export async function runCli(
       sessionDirectory: resolveSessionDirectory({ env, cwd: io.cwd }),
       mcpAuditLogPath: env.ORX_MCP_AUDIT_PATH,
       mcpConfigPath,
+      pluginRegistryPath,
     });
   }
 

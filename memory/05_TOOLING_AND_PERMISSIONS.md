@@ -91,3 +91,14 @@ Current Phase 8 scaffold:
 - `src/mcp/discovery.ts` exposes gated manual discovery for enabled/trusted remote HTTP profiles without listing/executing tools in the model loop.
 - `/mcp`, `/mcp inspect`, `/mcp tools`, `/mcp discover`, and `/status` show profile state, risk metadata, OAuth/auth-required status, billable/default-denied/risky tool visibility, per-tool policy decisions, and pending schema-change gates.
 - No MCP tools are executable yet; direct OpenRouter API helpers currently power models, credits, generation metadata, and normal chat/ask inference.
+
+Current Phase 9 plugin scaffold:
+
+- `src/plugins/` validates and sanitizes ORX plugin manifests before storing them.
+- Plugin registry state is ORX-owned operator state outside repositories, defaulting to `~/.orx/plugins/registry.json` with `ORX_PLUGIN_REGISTRY_PATH` for tests and isolated runs.
+- Registering a local manifest computes a stable plugin id, manifest hash, lock-style integrity record, install time, source metadata, and bounded local component hashes when files/directories are available.
+- Git source manifests must include a pinned `resolvedCommit`; floating refs can be recorded as context but cannot be the lock pin.
+- Manifest and loaded registry display fields reject secret-like values and terminal control characters before they can be stored or rendered.
+- Registering stores plugins disabled by default. `/plugins enable` and `/plugins disable` persist only an inert enabled flag.
+- Hooks, bins, plugin MCP servers, plugin slash commands, and all plugin code execution are inactive in this scaffold even when a plugin is marked enabled.
+- `/plugins inspect` and `/status` show this trust boundary explicitly; enabled hook/bin/MCP counts remain `0`.

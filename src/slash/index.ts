@@ -33,6 +33,14 @@ import {
 } from "../openrouter/live.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
+import {
+  findInstalledPlugin,
+  getPluginStatusSummary,
+  registerPluginManifest,
+  renderPluginInspect,
+  renderPluginList,
+  setPluginEnabledState,
+} from "../plugins/index.js";
 import { formatStatus } from "../status.js";
 import { gitDiffTool } from "../tools/index.js";
 
@@ -102,6 +110,7 @@ export interface SlashCommandContext {
   getSessionInfo?: () => { id: string; path: string } | undefined;
   mcpAuditLogPath?: string;
   mcpConfigPath?: string;
+  pluginRegistryPath?: string;
   startNewSession?: () => Promise<void> | void;
   resumeSession?: (selector?: string) => Promise<ResumeSessionResult>;
 }
@@ -368,6 +377,14 @@ const COMMANDS: Record<string, SlashDefinition> = {
       return "continue";
     },
   },
+  "/plugins": {
+    usage: "/plugins [list|inspect|register|enable|disable]",
+    description: "Show and update inert plugin registry state",
+    handler: (command, context): SlashResult => {
+      handlePluginsCommand(command, context);
+      return "continue";
+    },
+  },
   "/clear": {
     usage: "/clear",
     description: "Clear in-session message history",
@@ -499,6 +516,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       cwd: context.io.cwd,
       loadedConfig,
       mcpConfigPath: context.mcpConfigPath,
+      pluginRegistryPath: context.pluginRegistryPath,
     }),
     `history_messages: ${context.getMessages().length}`,
     `context: ${formatContextState(
@@ -512,6 +530,84 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
   ]
     .filter((line): line is string => typeof line === "string")
     .join("\n");
+}
+
+function handlePluginsCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+  const pluginId = command.args[1];
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(
+      context.io.stdout,
+      renderPluginList(getPluginStatusSummary({ registryPath: context.pluginRegistryPath })),
+    );
+    return;
+  }
+
+  if (subcommand === "inspect") {
+    if (!pluginId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /plugins inspect <id>");
+      return;
+    }
+
+    const plugin = findInstalledPlugin(pluginId, { registryPath: context.pluginRegistryPath });
+    if (!plugin) {
+      writeLine(context.io.stderr, `Unknown plugin: ${pluginId}`);
+      return;
+    }
+
+    writeLine(context.io.stdout, renderPluginInspect(plugin));
+    return;
+  }
+
+  if (subcommand === "register") {
+    const manifestPath = command.args.slice(1).join(" ").trim();
+    if (!manifestPath) {
+      writeLine(context.io.stderr, "Usage: /plugins register <manifest-path>");
+      return;
+    }
+
+    try {
+      const result = registerPluginManifest(manifestPath, {
+        registryPath: context.pluginRegistryPath,
+      });
+      writeLine(context.io.stdout, result.message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeLine(context.io.stderr, message);
+    }
+    return;
+  }
+
+  if (subcommand === "enable" || subcommand === "disable") {
+    if (!pluginId || command.args.length !== 2) {
+      writeLine(context.io.stderr, `Usage: /plugins ${subcommand} <id>`);
+      return;
+    }
+
+    try {
+      const result = setPluginEnabledState(pluginId, subcommand === "enable", {
+        registryPath: context.pluginRegistryPath,
+      });
+      if (!result.ok) {
+        writeLine(context.io.stderr, result.message);
+        return;
+      }
+
+      writeLine(context.io.stdout, result.message);
+    } catch (error) {
+      writeLine(
+        context.io.stderr,
+        `Unable to persist plugin registry state${formatErrorCode(error)}.`,
+      );
+    }
+    return;
+  }
+
+  writeLine(
+    context.io.stderr,
+    "Usage: /plugins [list|inspect <id>|register <manifest-path>|enable <id>|disable <id>]",
+  );
 }
 
 async function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {

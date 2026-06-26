@@ -4,6 +4,12 @@ Last updated: 2026-06-26
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-26: Plugin Enablement Starts As An Inert Registry Marker
+
+Decision: ORX plugin registration should first create an ORX-owned private registry record with sanitized manifest data, stable id, manifest integrity, local lock-style metadata, pinned git source commits, bounded component hashing, and installed/enabled state separation. Registering a plugin must leave it disabled by default. Enabling a plugin in the initial scaffold should persist only an enabled marker and must not activate hooks, bins, plugin slash commands, plugin MCP servers, or any plugin code execution.
+
+Reasoning: Plugins are supply-chain and execution surface even though ORX native tools remain YOLO-style. A private registry and inert enable marker let `/plugins` and `/status` expose trust/integrity state early without allowing repo-controlled manifests, model output, or fetched content to expand ORX's executable surface. Secret-like values and terminal control characters must be rejected or dropped before plugin metadata is stored or rendered.
+
 ## 2026-06-26: Evaluate Declared MCP Tools Before Remote Execution Exists
 
 Decision: ORX should evaluate declared MCP tools with a pure local policy before any remote MCP tool execution is implemented. Read-only declared tools on enabled, trusted profiles with no pending schema change may be marked `allowed` for future use, while billable, write, and destructive tools remain denied unless a future explicit allowlist is designed. Disabled, untrusted, and schema-changed profiles block every declared tool. The OpenRouter `chat-send` tool is billable and denied by default.
