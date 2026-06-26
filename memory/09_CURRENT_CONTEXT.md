@@ -43,6 +43,16 @@ Current files:
 
 ## Latest Work
 
+Implemented and verified the Phase 6 session diff state and `/diff` slice:
+
+- Added lightweight in-process `SessionDiffState` tracking under `src/agent/`.
+- `runAgentTurn` can now update session diff state from successful edit-capable tool outputs that report `changedFiles`, including `apply_patch` and future compatible native edit tools.
+- Model-requested `git_diff` and chat `/diff` update the latest diff snapshot metadata without leaking diff text into `/status`.
+- Added chat `/diff [path...]`, backed by the native `git_diff` tool, with untracked new-file diffs and a concise `No working tree changes.` clean-tree message.
+- Interactive `/status` now includes one concise `diff_state` line when chat provides session diff state.
+- Added no-network tests for generic edit-capable diff state, `apply_patch` runtime state updates, slash `/diff` dirty/clean behavior, `/status` diff state, and chat-level `/diff` without OpenRouter calls.
+- `npm run typecheck` and `npm test` pass with 81 tests.
+
 Implemented and verified the Phase 6 runtime context-management slice:
 
 - Added `src/agent/context.ts` for UTF-8 byte/message estimates, default context budgets, and deterministic local compaction.
@@ -222,8 +232,9 @@ Recorded MCP/tooling research conclusions:
 
 Continue Phase 6 agent runtime:
 
-- Add richer session-level diff state and `/diff` behavior after file edits.
+- Add any remaining runtime polish around session metadata and tool-loop boundaries.
 - Keep the runtime shaped for future `delegate_task`, sessions, and MCP/plugin policy.
+- Consider native test-runner adapters after the core tool-call loop and session metadata are stable.
 
 Do not implement orchestration before the core OpenRouter streaming loop, tool-call loop, and session metadata exist.
 

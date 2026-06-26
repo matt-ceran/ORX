@@ -3,6 +3,7 @@ import { streamOpenRouterAsk } from "../openrouter/client.js";
 import { buildChatRequest } from "../openrouter/request.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata, OpenRouterToolCall } from "../openrouter/types.js";
 import { boundMessagesForContext, type AgentContextBudget } from "./context.js";
+import { recordToolResultForDiffState, type SessionDiffState } from "./diff-state.js";
 import { dispatchNativeToolCall, type ToolDispatchResult } from "./tool-dispatch.js";
 import { nativeToolDefinitions } from "./tool-schemas.js";
 
@@ -22,6 +23,7 @@ export interface RunAgentTurnOptions {
   enableTools?: boolean;
   maxToolIterations?: number;
   contextBudget?: Partial<AgentContextBudget>;
+  diffState?: SessionDiffState;
   callbacks?: AgentTurnCallbacks;
 }
 
@@ -106,6 +108,9 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
         signal: options.signal,
       });
       toolResults.push(toolResult);
+      if (options.diffState) {
+        recordToolResultForDiffState(options.diffState, toolResult);
+      }
       messages.push(toolResult.message);
       options.callbacks?.onToolResult?.(toolResult);
       throwIfAborted(options.signal);

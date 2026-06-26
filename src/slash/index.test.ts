@@ -1,8 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
-import { COMPACTED_CONTEXT_PROVENANCE, type AgentContextBudget } from "../agent/index.js";
+import {
+  COMPACTED_CONTEXT_PROVENANCE,
+  createSessionDiffState,
+  recordToolResultForDiffState,
+  type AgentContextBudget,
+  type SessionDiffState,
+} from "../agent/index.js";
 import { handleSlashCommand, parseSlashCommand } from "./index.js";
 
 test("parses slash commands with extra whitespace", () => {
@@ -126,6 +136,63 @@ test("compact replaces older in-session turns with a local summary", () => {
   ]);
 });
 
+test("diff command prints the current working tree diff and records diff state", async () => {
+  const cwd = createGitRepo();
+  try {
+    writeFileSync(join(cwd, "tracked.txt"), "before\n");
+    git(cwd, "add", "tracked.txt");
+    git(cwd, "commit", "-m", "initial");
+    writeFileSync(join(cwd, "tracked.txt"), "after\n");
+
+    const harness = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diff", harness.context), "continue");
+
+    assert.match(harness.stdout(), /diff --git a\/tracked\.txt b\/tracked\.txt/);
+    assert.match(harness.stdout(), /-before/);
+    assert.match(harness.stdout(), /\+after/);
+    assert.equal(harness.diffState().lastDiff?.hasChanges, true);
+    assert.equal(harness.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("diff command includes untracked new files", async () => {
+  const cwd = createGitRepo();
+  try {
+    writeFileSync(join(cwd, "created.txt"), "created\n");
+
+    const harness = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diff", harness.context), "continue");
+
+    assert.match(harness.stdout(), /diff --git a\/created\.txt b\/created\.txt/);
+    assert.match(harness.stdout(), /new file mode/);
+    assert.match(harness.stdout(), /\+created/);
+    assert.equal(harness.diffState().lastDiff?.hasChanges, true);
+    assert.equal(harness.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("diff command reports a concise no-changes message", async () => {
+  const cwd = createGitRepo();
+  try {
+    writeFileSync(join(cwd, "tracked.txt"), "same\n");
+    git(cwd, "add", "tracked.txt");
+    git(cwd, "commit", "-m", "initial");
+
+    const harness = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diff", harness.context), "continue");
+
+    assert.equal(harness.stdout(), "No working tree changes.\n");
+    assert.equal(harness.diffState().lastDiff?.hasChanges, false);
+    assert.equal(harness.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("status reports active routing, config, key, permissions, history, and metadata", () => {
   const harness = createSlashHarness({
     config: {
@@ -158,8 +225,47 @@ test("status reports active routing, config, key, permissions, history, and meta
   assert.match(harness.stdout(), /sandbox_mode: danger-full-access/);
   assert.match(harness.stdout(), /history_messages: 1/);
   assert.match(harness.stdout(), /context: 1 messages, \d+B approx, budget \d+B\/\d+ messages/);
+  assert.match(harness.stdout(), /diff_state: no edit tools observed/);
   assert.match(harness.stdout(), /latest_metadata:/);
   assert.match(harness.stdout(), /generation_id: gen-123/);
+});
+
+test("status reports concise observed edit state", () => {
+  const diffState = createSessionDiffState();
+  recordToolResultForDiffState(diffState, {
+    toolCall: {
+      id: "call_patch",
+      type: "function",
+      function: {
+        name: "apply_patch",
+        arguments: "{}",
+      },
+    },
+    message: {
+      role: "tool",
+      tool_call_id: "call_patch",
+      content: "{}",
+    },
+    output: {
+      ok: true,
+      changedFiles: ["a.txt", "b.txt"],
+    },
+    ok: true,
+    durationMs: 1,
+    truncation: {
+      truncated: false,
+      originalBytes: 0,
+      returnedBytes: 0,
+      originalLines: 0,
+      returnedLines: 0,
+      omittedBytes: 0,
+      omittedLines: 0,
+    },
+  });
+  const harness = createSlashHarness({ diffState });
+
+  assert.equal(handleSlashCommand("/status", harness.context), "continue");
+  assert.match(harness.stdout(), /diff_state: 1 edit tool call, 2 files observed \(a\.txt, b\.txt\)/);
 });
 
 function createSlashHarness(
@@ -168,6 +274,8 @@ function createSlashHarness(
     messages?: OpenRouterMessage[];
     metadata?: OpenRouterStreamMetadata;
     contextBudget?: Partial<AgentContextBudget>;
+    diffState?: SessionDiffState;
+    cwd?: string;
   } = {},
 ) {
   let stdoutText = "";
@@ -175,6 +283,7 @@ function createSlashHarness(
   let config = options.config ?? baseConfig();
   let messages = options.messages ?? [];
   let metadata = options.metadata;
+  const diffState = options.diffState ?? createSessionDiffState();
   const loadedConfig: LoadedConfig = {
     config,
     loadedFiles: [],
@@ -197,7 +306,7 @@ function createSlashHarness(
             return true;
           },
         },
-        cwd: "/tmp/orx-test",
+        cwd: options.cwd ?? "/tmp/orx-test",
       },
       loadedConfig,
       getConfig: () => config,
@@ -214,6 +323,7 @@ function createSlashHarness(
       },
       getLatestMetadata: () => metadata,
       getContextBudget: () => options.contextBudget ?? {},
+      getDiffState: () => diffState,
     },
     config: () => config,
     messages: () => messages,
@@ -224,6 +334,7 @@ function createSlashHarness(
     setMetadata: (nextMetadata: OpenRouterStreamMetadata) => {
       metadata = nextMetadata;
     },
+    diffState: () => diffState,
     stdout: () => stdoutText,
     stderr: () => stderrText,
   };
@@ -238,4 +349,19 @@ function baseConfig(): OrxConfig {
       sandboxMode: "danger-full-access",
     },
   };
+}
+
+function createGitRepo(): string {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-slash-"));
+  git(cwd, "init");
+  git(cwd, "config", "user.email", "orx@example.test");
+  git(cwd, "config", "user.name", "ORX Test");
+  return cwd;
+}
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+  });
 }

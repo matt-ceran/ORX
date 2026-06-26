@@ -497,6 +497,82 @@ test("git_diff shows working tree changes and supports path scoping", async () =
   }
 });
 
+test("git_diff includes untracked files as new-file diffs", async () => {
+  const cwd = createGitRepo();
+  try {
+    writeFileSync(join(cwd, "created.txt"), "created\n");
+
+    const diff = await gitDiffTool({ cwd });
+
+    assert.equal(diff.ok, true);
+    if (diff.ok) {
+      assert.match(diff.diff, /diff --git a\/created\.txt b\/created\.txt/);
+      assert.match(diff.diff, /new file mode/);
+      assert.match(diff.diff, /\+created/);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("git_diff applies maxBytes after untracked discovery", async () => {
+  const cwd = createGitRepo();
+  try {
+    writeFileSync(join(cwd, "created-long-name.txt"), "created\n");
+
+    const diff = await gitDiffTool({ cwd, maxBytes: 12 });
+
+    assert.equal(diff.ok, true);
+    if (diff.ok) {
+      assert.notEqual(diff.diff.length, 0);
+      assert.equal(diff.truncation.truncated, true);
+      assert.equal(diff.truncation.returnedBytes <= 12, true);
+      assert.equal(diff.truncation.originalBytes > diff.truncation.returnedBytes, true);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("git_diff discovers untracked files beyond the default process capture size", async () => {
+  const cwd = createGitRepo();
+  try {
+    for (let index = 0; index < 900; index += 1) {
+      const file = `created-${String(index).padStart(4, "0")}-${"x".repeat(80)}.txt`;
+      writeFileSync(join(cwd, file), `${index}\n`);
+    }
+
+    const diff = await gitDiffTool({ cwd, maxBytes: 2 * 1024 * 1024 });
+
+    assert.equal(diff.ok, true);
+    if (diff.ok) {
+      assert.equal((diff.diff.match(/^diff --git /gm) ?? []).length, 900);
+      assert.equal(diff.truncation.truncated, false);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("git_diff reports true original bytes for large untracked diffs", async () => {
+  const cwd = createGitRepo();
+  try {
+    writeFileSync(join(cwd, "large.txt"), `${"x".repeat(150_000)}\n`);
+
+    const diff = await gitDiffTool({ cwd, maxBytes: 128 });
+
+    assert.equal(diff.ok, true);
+    if (diff.ok) {
+      assert.notEqual(diff.diff.length, 0);
+      assert.equal(diff.truncation.truncated, true);
+      assert.equal(diff.truncation.returnedBytes <= 128, true);
+      assert.equal(diff.truncation.originalBytes > 150_000, true);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("apply_patch applies unified patches and returns changed files", async () => {
   const cwd = createGitRepo();
   try {

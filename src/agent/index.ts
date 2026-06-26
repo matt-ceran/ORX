@@ -15,6 +15,14 @@ export type {
   ContextCompactionReason,
   ContextCompactionResult,
 } from "./context.js";
+export {
+  createSessionDiffState,
+  formatSessionDiffState,
+  recordGitDiffOutputForDiffState,
+  recordToolResultForDiffState,
+  resetSessionDiffState,
+} from "./diff-state.js";
+export type { SessionDiffChange, SessionDiffSnapshot, SessionDiffState } from "./diff-state.js";
 export { runAgentTurn } from "./runtime.js";
 export type { AgentTurnCallbacks, AgentTurnResult, RunAgentTurnOptions } from "./runtime.js";
 export { dispatchNativeToolCall } from "./tool-dispatch.js";

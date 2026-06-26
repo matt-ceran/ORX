@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
 import {
   DEFAULT_CONTEXT_BUDGET,
+  createSessionDiffState,
   formatToolCallStart,
   formatToolResult,
   runAgentTurn,
@@ -38,6 +39,7 @@ export async function runChat({
   let messages: OpenRouterMessage[] = [];
   let latestMetadata: OpenRouterStreamMetadata | undefined;
   let activeAbort: AbortController | undefined;
+  const diffState = createSessionDiffState();
 
   const rl = createInterface({
     input: io.stdin,
@@ -70,7 +72,7 @@ export async function runChat({
       }
 
       if (line.startsWith("/")) {
-        const result = handleSlashCommand(line, {
+        const result = await handleSlashCommand(line, {
           io,
           loadedConfig,
           getConfig: () => activeConfig,
@@ -87,6 +89,7 @@ export async function runChat({
           },
           getLatestMetadata: () => latestMetadata,
           getContextBudget: () => contextBudget,
+          getDiffState: () => diffState,
         });
 
         if (result === "exit") {
@@ -116,6 +119,7 @@ export async function runChat({
             fetch: io.fetch,
             signal: activeAbort.signal,
             contextBudget,
+            diffState,
             callbacks: {
               onText(text) {
                 if (needsAssistantPrefix) {

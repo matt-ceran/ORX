@@ -1,13 +1,17 @@
 import {
   boundMessagesForContext,
   formatContextState,
+  formatSessionDiffState,
   getContextState,
+  recordGitDiffOutputForDiffState,
   type AgentContextBudget,
+  type SessionDiffState,
 } from "../agent/index.js";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import { formatStatus } from "../status.js";
+import { gitDiffTool } from "../tools/index.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
 
@@ -35,9 +39,13 @@ export interface SlashCommandContext {
   clearMessages: () => void;
   getLatestMetadata: () => OpenRouterStreamMetadata | undefined;
   getContextBudget?: () => Partial<AgentContextBudget>;
+  getDiffState?: () => SessionDiffState;
 }
 
-type SlashHandler = (command: SlashCommand, context: SlashCommandContext) => SlashResult;
+type SlashHandler = (
+  command: SlashCommand,
+  context: SlashCommandContext,
+) => SlashResult | Promise<SlashResult>;
 
 interface SlashDefinition {
   usage: string;
@@ -85,6 +93,40 @@ const COMMANDS: Record<string, SlashDefinition> = {
           `${result.before.approximateBytes}B->${result.after.approximateBytes}B approx`,
         ].join(" "),
       );
+      return "continue";
+    },
+  },
+  "/diff": {
+    usage: "/diff [path...]",
+    description: "Show the current working tree diff",
+    handler: async (command, context): Promise<SlashResult> => {
+      const result = await gitDiffTool({
+        cwd: context.io.cwd,
+        paths: command.args.length > 0 ? command.args : undefined,
+      });
+
+      if (!result.ok) {
+        writeLine(context.io.stderr, `Unable to show diff: ${result.error.message}`);
+        return "continue";
+      }
+
+      const diffState = context.getDiffState?.();
+      if (diffState) {
+        recordGitDiffOutputForDiffState(diffState, result);
+      }
+
+      if (result.diff.length === 0) {
+        writeLine(context.io.stdout, "No working tree changes.");
+        return "continue";
+      }
+
+      context.io.stdout.write(result.diff.endsWith("\n") ? result.diff : `${result.diff}\n`);
+      if (result.truncation.truncated) {
+        writeLine(
+          context.io.stdout,
+          `Diff truncated: ${result.truncation.omittedBytes}B omitted, ${result.truncation.omittedLines} lines omitted.`,
+        );
+      }
       return "continue";
     },
   },
@@ -241,7 +283,7 @@ export function parseSlashCommand(rawInput: string): SlashCommand | undefined {
 export function handleSlashCommand(
   rawInput: string,
   context: SlashCommandContext,
-): SlashResult {
+): SlashResult | Promise<SlashResult> {
   const command = parseSlashCommand(rawInput);
   if (!command) {
     return "continue";
@@ -270,6 +312,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
     config: context.getConfig(),
   };
   const latestMetadata = context.getLatestMetadata();
+  const diffState = context.getDiffState?.();
 
   return [
     formatStatus({
@@ -280,10 +323,13 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
     `context: ${formatContextState(
       getContextState(context.getMessages(), context.getContextBudget?.()),
     )}`,
+    diffState ? `diff_state: ${formatSessionDiffState(diffState)}` : undefined,
     latestMetadata
       ? `latest_metadata:\n${indent(formatOpenRouterMetadata(latestMetadata).trim())}`
       : "latest_metadata: none",
-  ].join("\n");
+  ]
+    .filter((line): line is string => typeof line === "string")
+    .join("\n");
 }
 
 function indent(text: string): string {

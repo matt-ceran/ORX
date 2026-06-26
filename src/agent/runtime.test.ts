@@ -5,9 +5,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   COMPACTED_CONTEXT_PROVENANCE,
+  createSessionDiffState,
+  formatSessionDiffState,
   formatToolCallStart,
   formatToolResult,
   nativeToolDefinitions,
+  recordToolResultForDiffState,
   runAgentTurn,
 } from "./index.js";
 import { dispatchNativeToolCall, type ToolDispatchResult } from "./tool-dispatch.js";
@@ -236,6 +239,82 @@ test("tool result summaries show failed tool error codes", async () => {
   assert.match(formatToolResult(result), /\[tool\] read_file failed duration=\d+ms error=ENOENT/);
 });
 
+test("diff state records successful edit-capable tool results", () => {
+  const diffState = createSessionDiffState();
+  recordToolResultForDiffState(diffState, {
+    toolCall: {
+      id: "call_future_edit",
+      type: "function",
+      function: {
+        name: "future_edit",
+        arguments: "{}",
+      },
+    },
+    message: {
+      role: "tool",
+      tool_call_id: "call_future_edit",
+      content: "{}",
+    },
+    output: {
+      ok: true,
+      changedFiles: ["a.txt", "b.txt", "a.txt"],
+    },
+    ok: true,
+    durationMs: 4,
+    truncation: emptyTruncation(),
+  });
+
+  assert.equal(diffState.editToolCalls, 1);
+  assert.deepEqual(diffState.changedFiles, ["a.txt", "b.txt"]);
+  assert.deepEqual(diffState.lastChange, {
+    tool: "future_edit",
+    toolCallId: "call_future_edit",
+    changedFiles: ["a.txt", "b.txt"],
+  });
+  assert.equal(
+    formatSessionDiffState(diffState),
+    "1 edit tool call, 2 files observed (a.txt, b.txt)",
+  );
+});
+
+test("diff state treats fully truncated git diffs as changed", () => {
+  const diffState = createSessionDiffState();
+  recordToolResultForDiffState(diffState, {
+    toolCall: {
+      id: "call_diff",
+      type: "function",
+      function: {
+        name: "git_diff",
+        arguments: JSON.stringify({ maxBytes: 0 }),
+      },
+    },
+    message: {
+      role: "tool",
+      tool_call_id: "call_diff",
+      content: "{}",
+    },
+    output: {
+      ok: true,
+      diff: "",
+      truncation: {
+        truncated: true,
+        originalBytes: 120,
+        returnedBytes: 0,
+        originalLines: 10,
+        returnedLines: 0,
+        omittedBytes: 120,
+        omittedLines: 10,
+      },
+    },
+    ok: true,
+    durationMs: 2,
+    truncation: emptyTruncation(),
+  });
+
+  assert.equal(diffState.lastDiff?.hasChanges, true);
+  assert.equal(formatSessionDiffState(diffState), "no edit tools observed; last diff 0B/0 lines, truncated");
+});
+
 test("tool result summaries show read_file content truncation", async () => {
   const cwd = createTempDir();
   try {
@@ -351,6 +430,87 @@ test("runAgentTurn executes model-requested tools and continues to final answer"
     assert.equal(requests.length, 2);
     assert.equal(result.messages.at(-1)?.role, "assistant");
     assert.equal(result.messages.at(-1)?.content, "Read sample.txt.");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("runAgentTurn updates session diff state after apply_patch", async () => {
+  const cwd = createTempDir();
+  const diffState = createSessionDiffState();
+  let fetchCount = 0;
+
+  try {
+    const patch = [
+      "*** Begin Patch",
+      "*** Add File: created.txt",
+      "+created",
+      "*** End Patch",
+      "",
+    ].join("\n");
+
+    const mockFetch: typeof fetch = async () => {
+      fetchCount += 1;
+
+      if (fetchCount === 1) {
+        return new Response(
+          streamFrom([
+            sse({
+              choices: [
+                {
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: "call_patch",
+                        type: "function",
+                        function: {
+                          name: "apply_patch",
+                          arguments: JSON.stringify({ patch }),
+                        },
+                      },
+                    ],
+                  },
+                  finish_reason: "tool_calls",
+                },
+              ],
+            }),
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      }
+
+      return new Response(
+        streamFrom([
+          sse({
+            choices: [
+              {
+                delta: {
+                  content: "Patched.",
+                },
+              },
+            ],
+          }),
+          "data: [DONE]\n\n",
+        ]),
+        { status: 200 },
+      );
+    };
+
+    const result = await runAgentTurn({
+      apiKey: "test-key",
+      config: baseConfig,
+      messages: [{ role: "user", content: "Create a file" }],
+      cwd,
+      fetch: mockFetch,
+      diffState,
+    });
+
+    assert.equal(result.assistantText, "Patched.");
+    assert.equal(diffState.editToolCalls, 1);
+    assert.deepEqual(diffState.changedFiles, ["created.txt"]);
+    assert.equal(diffState.lastChange?.tool, "apply_patch");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

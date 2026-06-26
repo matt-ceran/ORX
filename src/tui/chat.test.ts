@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Readable } from "node:stream";
 import { COMPACTED_CONTEXT_PROVENANCE } from "../agent/index.js";
 import type { LoadedConfig } from "../config/types.js";
@@ -50,7 +54,40 @@ test("chat bounds in-process history before later turns", async () => {
   assert.equal(capture.stderr(), "");
 });
 
-function createIo(options: { fetch: typeof fetch; stdin: NodeJS.ReadableStream }) {
+test("chat diff command shows native working tree diff without a model request", async () => {
+  const cwd = createGitRepo();
+  try {
+    writeFileSync(join(cwd, "tracked.txt"), "before\n");
+    git(cwd, "add", "tracked.txt");
+    git(cwd, "commit", "-m", "initial");
+    writeFileSync(join(cwd, "tracked.txt"), "after\n");
+
+    const capture = createIo({
+      stdin: Readable.from(["/diff\n", "/exit\n"]),
+      fetch: async () => {
+        throw new Error("chat /diff should not call OpenRouter.");
+      },
+      cwd,
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.match(capture.stdout(), /diff --git a\/tracked\.txt b\/tracked\.txt/);
+    assert.match(capture.stdout(), /-before/);
+    assert.match(capture.stdout(), /\+after/);
+    assert.match(capture.stdout(), /Exiting ORX chat/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+function createIo(options: { fetch: typeof fetch; stdin: NodeJS.ReadableStream; cwd?: string }) {
   let stdoutText = "";
   let stderrText = "";
 
@@ -69,7 +106,7 @@ function createIo(options: { fetch: typeof fetch; stdin: NodeJS.ReadableStream }
           return true;
         },
       },
-      cwd: "/tmp/orx-chat-test",
+      cwd: options.cwd ?? "/tmp/orx-chat-test",
       fetch: options.fetch,
     },
     stdout() {
@@ -79,6 +116,21 @@ function createIo(options: { fetch: typeof fetch; stdin: NodeJS.ReadableStream }
       return stderrText;
     },
   };
+}
+
+function createGitRepo(): string {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-chat-"));
+  git(cwd, "init");
+  git(cwd, "config", "user.email", "orx@example.test");
+  git(cwd, "config", "user.name", "ORX Test");
+  return cwd;
+}
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+  });
 }
 
 function baseLoadedConfig(): LoadedConfig {
