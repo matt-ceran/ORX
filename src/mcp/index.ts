@@ -23,12 +23,21 @@ export {
   type McpTransportKind,
 } from "./registry.js";
 export {
+  evaluateDeclaredMcpToolPolicy,
+  evaluateMcpToolPolicy,
+  formatMcpToolPolicyEvaluation,
   formatMcpProfile,
   getMcpProfileToolNames,
+  getMcpProfileToolPolicyReport,
   getMcpStatusSummary,
   renderMcpProfileInspect,
+  renderMcpProfileTools,
   renderMcpStatus,
+  type McpProfileToolPolicyReport,
   type McpStatusSummary,
+  type McpToolPolicyContext,
+  type McpToolPolicyDecision,
+  type McpToolPolicyEvaluation,
 } from "./policy.js";
 export {
   defaultMcpConfigPath,

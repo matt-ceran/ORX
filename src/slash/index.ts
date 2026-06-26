@@ -12,9 +12,11 @@ import {
   discoverMcpProfile,
   findMcpProfile,
   formatMcpDiscoveryResult,
+  getMcpProfileToolPolicyReport,
   getMcpStatusSummary,
   hashMcpProfile,
   renderMcpProfileInspect,
+  renderMcpProfileTools,
   renderMcpStatus,
   setMcpProfilePersistentState,
   writeMcpAuditEvent,
@@ -359,7 +361,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|inspect|discover|enable|disable]",
+    usage: "/mcp [list|inspect|tools|discover|enable|disable]",
     description: "Show MCP profile policy state and gated discovery",
     handler: async (command, context): Promise<SlashResult> => {
       await handleMcpCommand(command, context);
@@ -572,6 +574,41 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
     return;
   }
 
+  if (subcommand === "tools") {
+    if (!profileId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /mcp tools <profile>");
+      return;
+    }
+
+    const report = getMcpProfileToolPolicyReport(profileId, { configPath: context.mcpConfigPath });
+    tryWriteMcpAuditEvent(context, {
+      type: "mcp.profile.tools",
+      profileId,
+      ok: Boolean(report),
+      details: report
+        ? {
+            state: report.profile.state,
+            profileHash: report.profileHash,
+            trustedProfileHash: report.trustedProfileHash,
+            schemaChangePending: report.schemaChangePending,
+            toolCount: report.evaluations.length,
+            allowedCount: report.evaluations.filter((evaluation) => evaluation.decision === "allowed")
+              .length,
+            deniedCount: report.evaluations.filter((evaluation) => evaluation.decision === "denied")
+              .length,
+          }
+        : undefined,
+    });
+
+    if (!report) {
+      writeLine(context.io.stderr, `Unknown MCP profile: ${profileId}`);
+      return;
+    }
+
+    writeLine(context.io.stdout, renderMcpProfileTools(report));
+    return;
+  }
+
   if (subcommand === "discover") {
     if (!profileId || command.args.length !== 2) {
       writeLine(context.io.stderr, "Usage: /mcp discover <profile>");
@@ -675,7 +712,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /mcp [list|inspect <profile>|discover <profile>|enable <profile>|disable <profile>]",
+    "Usage: /mcp [list|inspect <profile>|tools <profile>|discover <profile>|enable <profile>|disable <profile>]",
   );
 }
 

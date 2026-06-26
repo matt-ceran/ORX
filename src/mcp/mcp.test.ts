@@ -14,10 +14,13 @@ import { join } from "node:path";
 import {
   OPENROUTER_MCP_PROFILE,
   discoverMcpProfile,
+  evaluateMcpToolPolicy,
   formatMcpDiscoveryResult,
   getMcpStatusSummary,
+  getMcpProfileToolPolicyReport,
   hashMcpProfile,
   loadMcpProfilesConfig,
+  renderMcpProfileTools,
   redactSecrets,
   saveMcpProfilesConfig,
   setMcpProfilePersistentState,
@@ -201,6 +204,124 @@ test("mcp status counts pending schema changes against trusted baselines", () =>
     assert.equal(summary.pendingSchemaChangeCount, 1);
     assert.deepEqual(summary.pendingSchemaChangeProfileIds, ["openrouter"]);
     assert.equal(summary.activeProfileIds[0], "openrouter");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp tool policy blocks disabled profiles without network", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-policy-disabled-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    const evaluation = evaluateMcpToolPolicy("openrouter", "models-list", { configPath });
+    const report = getMcpProfileToolPolicyReport("openrouter", { configPath });
+
+    assert.equal(evaluation.decision, "blocked_by_profile");
+    assert.equal(evaluation.reason, "profile is disabled");
+    assert.equal(report?.evaluations.length, OPENROUTER_MCP_PROFILE.tools.length);
+    assert.equal(
+      report?.evaluations.every((candidate) => candidate.decision === "blocked_by_profile"),
+      true,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp tool policy allows enabled trusted read tools and denies billable chat-send", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-policy-enabled-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const readTool = evaluateMcpToolPolicy("openrouter", "models-list", { configPath });
+    const chatSend = evaluateMcpToolPolicy("openrouter", "chat-send", { configPath });
+    const explicitlyAllowedChatSend = evaluateMcpToolPolicy("openrouter", "chat-send", {
+      configPath,
+      futureAllowedToolIds: ["openrouter/chat-send"],
+    });
+    const summary = getMcpStatusSummary({ configPath });
+
+    assert.equal(readTool.decision, "allowed");
+    assert.equal(readTool.reason, "read-only declared tool on enabled trusted profile");
+    assert.equal(chatSend.decision, "denied");
+    assert.match(chatSend.reason, /billable MCP tools require an explicit future allowlist/);
+    assert.equal(chatSend.tool?.billable, true);
+    assert.equal(explicitlyAllowedChatSend.decision, "allowed");
+    assert.equal(
+      explicitlyAllowedChatSend.reason,
+      "explicit future allowlist permits this MCP tool",
+    );
+    assert.equal(summary.policyAllowedToolCount, 12);
+    assert.equal(summary.policyDeniedToolCount, 1);
+    assert.equal(summary.configuredDeniedToolCount, 1);
+    assert.equal(summary.configuredRiskyToolCount, 1);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp tool policy blocks pending schema changes before tool risk checks", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-policy-pending-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    saveMcpProfilesConfig(
+      {
+        version: 1,
+        profiles: {
+          openrouter: {
+            id: "openrouter",
+            state: "enabled",
+            trustedProfileHash: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            updatedAt: "2026-06-26T12:00:00.000Z",
+          },
+        },
+      },
+      { configPath },
+    );
+
+    const readTool = evaluateMcpToolPolicy("openrouter", "models-list", { configPath });
+    const chatSend = evaluateMcpToolPolicy("openrouter", "chat-send", { configPath });
+    const report = getMcpProfileToolPolicyReport("openrouter", { configPath });
+
+    assert.equal(readTool.decision, "blocked_by_schema_change");
+    assert.equal(chatSend.decision, "blocked_by_schema_change");
+    assert.equal(report?.schemaChangePending, true);
+    assert.equal(
+      report?.evaluations.every((candidate) => candidate.decision === "blocked_by_schema_change"),
+      true,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp tool policy handles unknown profile and tool safely", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-policy-unknown-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    assert.equal(evaluateMcpToolPolicy("missing", "models-list", { configPath }).decision, "unknown_profile");
+    assert.equal(evaluateMcpToolPolicy("openrouter", "missing-tool", { configPath }).decision, "unknown_tool");
+    assert.equal(getMcpProfileToolPolicyReport("missing", { configPath }), undefined);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp tools renderer includes risk auth billable and policy decisions", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-policy-render-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+    const report = getMcpProfileToolPolicyReport("openrouter", { configPath });
+    assert.ok(report);
+
+    const rendered = renderMcpProfileTools(report);
+    assert.match(rendered, /MCP tools: openrouter/);
+    assert.match(rendered, /remote_tool_execution: not implemented/);
+    assert.match(rendered, /decisions: allowed=12 denied=1/);
+    assert.match(rendered, /models-list risk=read auth=yes billable=no policy=allowed/);
+    assert.match(rendered, /chat-send risk=billable auth=yes billable=yes policy=denied/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

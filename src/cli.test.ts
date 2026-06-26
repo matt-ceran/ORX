@@ -33,7 +33,11 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /api_key_present: no/);
     assert.match(status.stdout(), /mcp_active_profiles: none/);
     assert.match(status.stdout(), /mcp_billable_tools: 0/);
+    assert.match(status.stdout(), /mcp_policy_allowed_tools: 0/);
+    assert.match(status.stdout(), /mcp_policy_denied_tools: 0/);
+    assert.match(status.stdout(), /mcp_configured_denied_tools: 1/);
     assert.match(status.stdout(), /mcp_configured_billable_tools: 1/);
+    assert.match(status.stdout(), /mcp_configured_risky_tools: 1/);
     assert.match(status.stdout(), /mcp_registry_hash: sha256:[a-f0-9]{64}/);
     assert.match(status.stdout(), /mcp_pending_schema_changes: none/);
     assert.match(status.stdout(), /mcp_profile: profile=openrouter state=disabled/);
@@ -56,6 +60,8 @@ test("cli status reflects persisted MCP profile config", async () => {
     );
     assert.match(status.stdout(), /mcp_active_profiles: openrouter/);
     assert.match(status.stdout(), /mcp_billable_tools: 1/);
+    assert.match(status.stdout(), /mcp_policy_allowed_tools: 12/);
+    assert.match(status.stdout(), /mcp_policy_denied_tools: 1/);
     assert.match(status.stdout(), /mcp_profile: profile=openrouter state=enabled/);
     assert.match(status.stdout(), /trusted_hash=sha256:[a-f0-9]{64}/);
   } finally {

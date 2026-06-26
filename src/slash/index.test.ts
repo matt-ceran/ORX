@@ -169,7 +169,11 @@ test("mcp slash command reports disabled OpenRouter profile without network and 
     assert.equal(fetchCalls, 0);
     assert.match(harness.stdout(), /active_profiles: none/);
     assert.match(harness.stdout(), /billable_tools: 0/);
+    assert.match(harness.stdout(), /policy_allowed_tools: 0/);
+    assert.match(harness.stdout(), /policy_denied_tools: 0/);
+    assert.match(harness.stdout(), /configured_denied_tools: 1/);
     assert.match(harness.stdout(), /configured_billable_tools: 1/);
+    assert.match(harness.stdout(), /configured_risky_tools: 1/);
     assert.match(harness.stdout(), /registry_hash: sha256:[a-f0-9]{64}/);
     assert.match(harness.stdout(), /pending_schema_changes: none/);
     assert.match(harness.stdout(), /profile=openrouter state=disabled/);
@@ -250,6 +254,7 @@ test("mcp inspect renders profile metadata and audits without network", async ()
     assert.match(harness.stdout(), /normal_inference: direct OpenRouter REST API/);
     assert.match(harness.stdout(), /model-get risk=read auth=yes billable=no/);
     assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes/);
+    assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes policy=blocked_by_profile/);
     assert.match(harness.stdout(), /write_capable: no/);
 
     const events = readAuditEvents(auditLogPath);
@@ -258,6 +263,107 @@ test("mcp inspect renders profile metadata and audits without network", async ()
     assert.equal(events[0].profileId, "openrouter");
     assert.equal(events[0].ok, true);
     assert.equal(events[0].details.writeCapable, false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp tools renders declared tool policy without network", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-tools-"));
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const harness = createSlashHarness({
+    mcpAuditLogPath: auditLogPath,
+    mcpConfigPath: configPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand("/mcp tools openrouter", harness.context), "continue");
+    assert.equal(fetchCalls, 0);
+    assert.match(harness.stdout(), /MCP tools: openrouter/);
+    assert.match(harness.stdout(), /decisions: allowed=0 denied=0 blocked_by_profile=13/);
+    assert.match(harness.stdout(), /models-list risk=read auth=yes billable=no policy=blocked_by_profile/);
+    assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes policy=blocked_by_profile/);
+    assert.match(harness.stdout(), /remote_tool_execution: not implemented/);
+
+    const events = readAuditEvents(auditLogPath);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, "mcp.profile.tools");
+    assert.equal(events[0].profileId, "openrouter");
+    assert.equal(events[0].ok, true);
+    assert.equal(events[0].details.toolCount, 13);
+    assert.equal(events[0].details.allowedCount, 0);
+    assert.equal(events[0].details.deniedCount, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp tools reports unknown profiles without network", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-tools-unknown-"));
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const harness = createSlashHarness({
+    mcpAuditLogPath: auditLogPath,
+    mcpConfigPath: configPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand("/mcp tools missing", harness.context), "continue");
+    assert.equal(fetchCalls, 0);
+    assert.match(harness.stderr(), /Unknown MCP profile: missing/);
+    const events = readAuditEvents(auditLogPath);
+    assert.equal(events[0].type, "mcp.profile.tools");
+    assert.equal(events[0].profileId, "missing");
+    assert.equal(events[0].ok, false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp tools shows blocked_by_trust for enabled profiles without trusted baseline", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-tools-untrusted-"));
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  mkdirSync(join(cwd, "mcp"), { recursive: true });
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      version: 1,
+      profiles: {
+        openrouter: {
+          id: "openrouter",
+          state: "enabled",
+          updatedAt: "2026-06-26T12:00:00.000Z",
+        },
+      },
+    }),
+  );
+  const harness = createSlashHarness({
+    mcpAuditLogPath: auditLogPath,
+    mcpConfigPath: configPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand("/mcp tools openrouter", harness.context), "continue");
+    assert.equal(fetchCalls, 0);
+    assert.match(harness.stdout(), /policy=blocked_by_trust/);
+    assert.match(harness.stdout(), /decisions: allowed=0 denied=0 blocked_by_profile=0 blocked_by_trust=13/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -285,8 +391,14 @@ test("mcp enable and disable persist profile state without network", async () =>
     assert.equal(await handleSlashCommand("/mcp list", harness.context), "continue");
     assert.match(harness.stdout(), /active_profiles: openrouter/);
     assert.match(harness.stdout(), /billable_tools: 1/);
+    assert.match(harness.stdout(), /policy_allowed_tools: 12/);
+    assert.match(harness.stdout(), /policy_denied_tools: 1/);
     assert.match(harness.stdout(), /profile=openrouter state=enabled/);
     assert.match(harness.stdout(), /trusted_hash=sha256:[a-f0-9]{64}/);
+
+    assert.equal(await handleSlashCommand("/mcp tools openrouter", harness.context), "continue");
+    assert.match(harness.stdout(), /models-list risk=read auth=yes billable=no policy=allowed/);
+    assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes policy=denied/);
 
     assert.equal(await handleSlashCommand("/mcp disable openrouter", harness.context), "continue");
     assert.match(harness.stdout(), /MCP profile openrouter disabled/);
@@ -297,7 +409,12 @@ test("mcp enable and disable persist profile state without network", async () =>
     const events = readAuditEvents(auditLogPath);
     assert.deepEqual(
       events.map((event) => event.type),
-      ["mcp.profile.enable_attempt", "mcp.profile.status", "mcp.profile.disable_attempt"],
+      [
+        "mcp.profile.enable_attempt",
+        "mcp.profile.status",
+        "mcp.profile.tools",
+        "mcp.profile.disable_attempt",
+      ],
     );
     assert.equal(events[0].ok, true);
     assert.equal(events[0].details.previousState, "disabled");
@@ -772,7 +889,11 @@ test("status reports active routing, config, key, permissions, history, and meta
     assert.match(harness.stdout(), /sandbox_mode: danger-full-access/);
     assert.match(harness.stdout(), /mcp_active_profiles: none/);
     assert.match(harness.stdout(), /mcp_billable_tools: 0/);
+    assert.match(harness.stdout(), /mcp_policy_allowed_tools: 0/);
+    assert.match(harness.stdout(), /mcp_policy_denied_tools: 0/);
+    assert.match(harness.stdout(), /mcp_configured_denied_tools: 1/);
     assert.match(harness.stdout(), /mcp_configured_billable_tools: 1/);
+    assert.match(harness.stdout(), /mcp_configured_risky_tools: 1/);
     assert.match(harness.stdout(), /mcp_registry_hash: sha256:[a-f0-9]{64}/);
     assert.match(harness.stdout(), /mcp_pending_schema_changes: none/);
     assert.match(harness.stdout(), /mcp_profile: profile=openrouter state=disabled/);

@@ -43,6 +43,17 @@ Current files:
 
 ## Latest Work
 
+Implemented and verified the Phase 8 MCP declared-tool policy evaluation scaffold:
+
+- Added pure MCP tool policy evaluation for configured declared tools without live discovery or remote execution.
+- Default policy now allows only read-only declared tools on enabled, trusted profiles with no pending schema change.
+- Billable/write/destructive declared tools are denied unless a future explicit allowlist is provided; OpenRouter `chat-send` is denied by default and remains visibly billable.
+- Added `/mcp tools <profile>` to render each declared tool with risk, auth, billable flag, and policy decision. The command is render-only and does not fetch, discover, or execute tools.
+- Extended `/mcp inspect`, `/mcp list`, and `/status` with concise policy/default-denied/risky tool visibility.
+- Added redacted audit events for `/mcp tools`.
+- Added tests for disabled-profile blocking without network, enabled/trusted read-tool allowance, billable `chat-send` denial, pending schema-change blocking, unknown profile/tool handling, and status/inspect/tools output.
+- `npm run typecheck`, build-backed targeted MCP/slash/CLI tests, `git diff --check`, and `npm test` pass with 150 tests.
+
 Implemented and verified the Phase 8 official OpenRouter MCP discovery scaffold:
 
 - Added `src/mcp/discovery.ts` with a gated, testable discovery result surface and a minimal remote HTTP JSON-RPC `initialize` attempt.

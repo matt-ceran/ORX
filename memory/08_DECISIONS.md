@@ -4,6 +4,12 @@ Last updated: 2026-06-26
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-26: Evaluate Declared MCP Tools Before Remote Execution Exists
+
+Decision: ORX should evaluate declared MCP tools with a pure local policy before any remote MCP tool execution is implemented. Read-only declared tools on enabled, trusted profiles with no pending schema change may be marked `allowed` for future use, while billable, write, and destructive tools remain denied unless a future explicit allowlist is designed. Disabled, untrusted, and schema-changed profiles block every declared tool. The OpenRouter `chat-send` tool is billable and denied by default.
+
+Reasoning: MCP tool descriptions and schemas are remote integration surface, not authority to execute. A render-only evaluator lets `/mcp tools`, `/mcp inspect`, and `/status` show future eligibility and risk without discovering, fetching, or calling tools, and keeps the direct OpenRouter REST inference path separate from MCP policy work.
+
 ## 2026-06-26: Keep OpenRouter MCP Discovery Manual And Gated
 
 Decision: ORX should expose official OpenRouter MCP discovery only through explicit ORX-owned commands such as `/mcp discover <profile>`, and only after the persisted profile is enabled, trusted, free of pending schema changes, and configured for remote HTTP. Discovery may perform a minimal initialize handshake and report `auth_required` for OAuth or dedicated expiring MCP keys, but remote MCP tools remain unexecutable and absent from the model loop.

@@ -84,7 +84,10 @@ The tools remain standalone and testable. Phase 6 now exposes them to models thr
 Current Phase 8 scaffold:
 
 - `src/mcp/registry.ts` defines an explicit disabled `openrouter` profile for the official remote HTTP server.
-- `src/mcp/policy.ts` exposes status counts for active profiles, active servers, auth-bearing servers, write-enabled tools, and risky transports.
+- `src/mcp/policy.ts` exposes status counts for active profiles, active servers, auth-bearing servers, write-enabled tools, policy-allowed tools, policy-denied tools, configured default-denied tools, configured billable tools, configured risky tools, and risky transports.
+- The declared-tool policy evaluator is pure and independent of live discovery. Read-only declared tools on enabled, trusted profiles with no pending schema change can be marked `allowed` for future use.
+- Billable, write, and destructive declared tools are `denied` by default unless a future explicit allowlist is added. OpenRouter `chat-send` is billable and denied by default.
+- Disabled profiles block tools with `blocked_by_profile`; profiles without trusted baselines block with `blocked_by_trust`; pending schema changes block with `blocked_by_schema_change`.
 - `src/mcp/discovery.ts` exposes gated manual discovery for enabled/trusted remote HTTP profiles without listing/executing tools in the model loop.
-- `/mcp`, `/mcp inspect`, `/mcp discover`, and `/status` show profile state, risk metadata, OAuth/auth-required status, billable tool visibility, and pending schema-change gates.
+- `/mcp`, `/mcp inspect`, `/mcp tools`, `/mcp discover`, and `/status` show profile state, risk metadata, OAuth/auth-required status, billable/default-denied/risky tool visibility, per-tool policy decisions, and pending schema-change gates.
 - No MCP tools are executable yet; direct OpenRouter API helpers currently power models, credits, generation metadata, and normal chat/ask inference.

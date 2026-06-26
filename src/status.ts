@@ -32,7 +32,11 @@ export function formatStatus({ cwd, loadedConfig, mcpConfigPath }: StatusOptions
     `mcp_auth_bearing_servers: ${mcpStatus.authBearingServerCount}`,
     `mcp_write_enabled_tools: ${mcpStatus.writeEnabledToolCount}`,
     `mcp_billable_tools: ${mcpStatus.billableToolCount}`,
+    `mcp_policy_allowed_tools: ${mcpStatus.policyAllowedToolCount}`,
+    `mcp_policy_denied_tools: ${mcpStatus.policyDeniedToolCount}`,
+    `mcp_configured_denied_tools: ${mcpStatus.configuredDeniedToolCount}`,
     `mcp_configured_billable_tools: ${mcpStatus.configuredBillableToolCount}`,
+    `mcp_configured_risky_tools: ${mcpStatus.configuredRiskyToolCount}`,
     `mcp_risky_transports: ${mcpStatus.riskyTransportCount}`,
     `mcp_registry_hash: ${mcpStatus.registryHash}`,
     `mcp_pending_schema_changes: ${
