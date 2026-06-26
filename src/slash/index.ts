@@ -40,6 +40,8 @@ export interface SlashCommandContext {
   getLatestMetadata: () => OpenRouterStreamMetadata | undefined;
   getContextBudget?: () => Partial<AgentContextBudget>;
   getDiffState?: () => SessionDiffState;
+  getSessionInfo?: () => { id: string; path: string } | undefined;
+  startNewSession?: () => Promise<void> | void;
 }
 
 type SlashHandler = (
@@ -242,8 +244,9 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/new": {
     usage: "/new",
     description: "Start a new in-process chat",
-    handler: (_command, context) => {
+    handler: async (_command, context): Promise<SlashResult> => {
       context.clearMessages();
+      await context.startNewSession?.();
       writeLine(context.io.stdout, "New chat started. Conversation history cleared.");
       return "continue";
     },
@@ -313,6 +316,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
   };
   const latestMetadata = context.getLatestMetadata();
   const diffState = context.getDiffState?.();
+  const sessionInfo = context.getSessionInfo?.();
 
   return [
     formatStatus({
@@ -323,6 +327,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
     `context: ${formatContextState(
       getContextState(context.getMessages(), context.getContextBudget?.()),
     )}`,
+    sessionInfo ? `session: ${sessionInfo.id} (${sessionInfo.path})` : undefined,
     diffState ? `diff_state: ${formatSessionDiffState(diffState)}` : undefined,
     latestMetadata
       ? `latest_metadata:\n${indent(formatOpenRouterMetadata(latestMetadata).trim())}`

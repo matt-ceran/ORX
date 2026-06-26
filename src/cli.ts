@@ -9,6 +9,7 @@ import type { OrxConfig, OrxMode } from "./config/types.js";
 import type { AskRequestOverrides } from "./openrouter/request.js";
 import type { OpenRouterMessage } from "./openrouter/types.js";
 import { formatOpenRouterMetadata } from "./openrouter/summary.js";
+import { resolveSessionDirectory } from "./sessions/index.js";
 import { formatStatus } from "./status.js";
 import { runChat } from "./tui/chat.js";
 
@@ -89,6 +90,7 @@ export async function runCli(
         cwd: io.cwd,
         fetch: io.fetch,
       },
+      sessionDirectory: resolveSessionDirectory({ env, cwd: io.cwd }),
     });
   }
 

@@ -56,7 +56,13 @@ Next:
 
 ## P3
 
-- Add session persistence.
+Completed:
+
+- Add session persistence foundation for interactive chat.
+- Add session JSON storage helpers, git metadata snapshots, API-key-free config snapshots, and `ORX_SESSION_DIR` override.
+
+Next:
+
 - Add `/resume`.
 - Replace the Phase 6 in-process `/compact` scaffold with persistent-session-aware compaction.
 - Add official OpenRouter MCP integration for live model catalog, pricing, rankings, benchmarks, credits, docs search, providers, and generation lookup.

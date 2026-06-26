@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -197,96 +198,144 @@ test("ask prints visible tool start and result summaries", async () => {
 });
 
 test("chat streams turns, keeps history, and handles slash commands", async () => {
+  const sessionDirectory = createTempDir();
   const requests: unknown[] = [];
   let callCount = 0;
-  const capture = createIo({
-    stdin: Readable.from([
-      "Hello\n",
-      "/status\n",
-      "/mode fusion\n",
-      "/fusion general-budget\n",
-      "/models\n",
-      "Follow up\n",
-      "/new\n",
-      "/mode auto\n",
-      "After new\n",
-      "/exit\n",
-    ]),
-    fetch: async (_input, init) => {
-      const body = JSON.parse(String(init?.body));
-      assertNativeTools(body.tools);
-      delete body.tools;
-      requests.push(body);
-      const text = callCount === 0 ? "First reply" : "Second reply";
-      callCount += 1;
 
-      return new Response(
-        streamFrom([
-          `data: {"model":"${body.model}","choices":[{"delta":{"content":"${text}"}}]}\n\n`,
-          "data: [DONE]\n\n",
-        ]),
-        { status: 200 },
-      );
-    },
-  });
+  try {
+    const capture = createIo({
+      stdin: Readable.from([
+        "Hello\n",
+        "/status\n",
+        "/mode fusion\n",
+        "/fusion general-budget\n",
+        "/models\n",
+        "Follow up\n",
+        "/new\n",
+        "/mode auto\n",
+        "After new\n",
+        "/exit\n",
+      ]),
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        assertNativeTools(body.tools);
+        delete body.tools;
+        requests.push(body);
+        const text = callCount === 0 ? "First reply" : "Second reply";
+        callCount += 1;
 
-  const exitCode = await runCli(
-    ["node", "cli", "chat"],
-    {
-      OPENROUTER_API_KEY: "test-key",
-    },
-    capture.io,
-  );
+        return new Response(
+          streamFrom([
+            `data: {"model":"${body.model}","choices":[{"delta":{"content":"${text}"}}]}\n\n`,
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
 
-  assert.equal(exitCode, 0);
-  assert.equal(requests.length, 3);
-  assert.deepEqual(requests[0], {
-    model: "openrouter/auto",
-    messages: [{ role: "user", content: "Hello" }],
-    stream: true,
-  });
-  assert.deepEqual(requests[1], {
-    model: "openrouter/fusion",
-    messages: [
-      { role: "user", content: "Hello" },
-      { role: "assistant", content: "First reply" },
-      { role: "user", content: "Follow up" },
-    ],
-    stream: true,
-    plugins: [{ id: "fusion", preset: "general-budget" }],
-  });
-  assert.deepEqual(requests[2], {
-    model: "openrouter/auto",
-    messages: [{ role: "user", content: "After new" }],
-    stream: true,
-  });
-  assert.match(capture.stdout(), /ORX chat/);
-  assert.match(capture.stdout(), /assistant: First reply/);
-  assert.match(capture.stdout(), /history_messages: 2/);
-  assert.match(capture.stdout(), /Mode set to fusion/);
-  assert.match(capture.stdout(), /Fusion preset set to general-budget/);
-  assert.match(capture.stdout(), /live_search: planned for OpenRouter MCP integration/);
-  assert.match(capture.stdout(), /New chat started/);
-  assert.match(capture.stdout(), /Mode set to auto/);
-  assert.match(capture.stdout(), /Exiting ORX chat/);
-  assert.equal(capture.stderr(), "");
+    const exitCode = await runCli(
+      ["node", "cli", "chat"],
+      {
+        OPENROUTER_API_KEY: "test-key",
+        ORX_SESSION_DIR: sessionDirectory,
+      },
+      capture.io,
+    );
+
+    assert.equal(exitCode, 0);
+    assert.equal(requests.length, 3);
+    assert.deepEqual(requests[0], {
+      model: "openrouter/auto",
+      messages: [{ role: "user", content: "Hello" }],
+      stream: true,
+    });
+    assert.deepEqual(requests[1], {
+      model: "openrouter/fusion",
+      messages: [
+        { role: "user", content: "Hello" },
+        { role: "assistant", content: "First reply" },
+        { role: "user", content: "Follow up" },
+      ],
+      stream: true,
+      plugins: [{ id: "fusion", preset: "general-budget" }],
+    });
+    assert.deepEqual(requests[2], {
+      model: "openrouter/auto",
+      messages: [{ role: "user", content: "After new" }],
+      stream: true,
+    });
+    assert.match(capture.stdout(), /ORX chat/);
+    assert.match(capture.stdout(), /session: \d{8}T\d{6}Z-[a-f0-9]{8}/);
+    assert.match(capture.stdout(), /assistant: First reply/);
+    assert.match(capture.stdout(), /history_messages: 2/);
+    assert.match(capture.stdout(), /session: .*\.json\)/);
+    assert.match(capture.stdout(), /Mode set to fusion/);
+    assert.match(capture.stdout(), /Fusion preset set to general-budget/);
+    assert.match(capture.stdout(), /live_search: planned for OpenRouter MCP integration/);
+    assert.match(capture.stdout(), /New chat started/);
+    assert.match(capture.stdout(), /Mode set to auto/);
+    assert.match(capture.stdout(), /Exiting ORX chat/);
+    assert.equal(capture.stderr(), "");
+
+    const sessionFiles = readdirSync(sessionDirectory).filter((file) => file.endsWith(".json"));
+    assert.equal(sessionFiles.length, 2);
+    const sessions = sessionFiles.map(
+      (file) =>
+        JSON.parse(readFileSync(join(sessionDirectory, file), "utf8")) as {
+          activeConfig: { mode: string; model: string; fusionPreset?: string };
+          messageCount: number;
+          summary: { firstUserMessage?: string };
+        },
+    );
+    const originalSession = sessions.find(
+      (session) => session.summary.firstUserMessage === "Hello",
+    );
+    const newSession = sessions.find(
+      (session) => session.summary.firstUserMessage === "After new",
+    );
+
+    assert.equal(originalSession?.activeConfig.mode, "fusion");
+    assert.equal(originalSession?.activeConfig.model, "openrouter/fusion");
+    assert.equal(originalSession?.activeConfig.fusionPreset, "general-budget");
+    assert.equal(originalSession?.messageCount, 4);
+    assert.equal(newSession?.activeConfig.mode, "auto");
+    assert.equal(newSession?.activeConfig.model, "openrouter/auto");
+    assert.equal(newSession?.messageCount, 2);
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
 });
 
 test("chat prints visible tool start and result summaries", async () => {
   const cwd = createTempDir();
+  const sessionDirectory = createTempDir();
   let callCount = 0;
+  const patch = [
+    "*** Begin Patch",
+    "*** Add File: later-change.txt",
+    "+dirty",
+    "*** End Patch",
+    "",
+  ].join("\n");
 
   try {
+    git(cwd, "init");
+    git(cwd, "config", "user.email", "orx@example.test");
+    git(cwd, "config", "user.name", "ORX Test");
     writeFileSync(join(cwd, "sample.txt"), "alpha from chat\n");
+    git(cwd, "add", "sample.txt");
+    git(cwd, "commit", "-m", "initial");
+
     const capture = createIo({
       cwd,
-      stdin: Readable.from(["Read sample\n", "/exit\n"]),
+      stdin: Readable.from(["Patch sample\n", "/exit\n"]),
       fetch: async (_input, init) => {
         callCount += 1;
         const body = JSON.parse(String(init?.body));
 
         if (callCount === 1) {
-          assert.equal(body.messages.at(-1).content, "Read sample");
+          assert.equal(body.messages.at(-1).content, "Patch sample");
           return new Response(
             streamFrom([
               sse({
@@ -296,11 +345,11 @@ test("chat prints visible tool start and result summaries", async () => {
                       tool_calls: [
                         {
                           index: 0,
-                          id: "call_read",
+                          id: "call_patch",
                           type: "function",
                           function: {
-                            name: "read_file",
-                            arguments: JSON.stringify({ path: "sample.txt" }),
+                            name: "apply_patch",
+                            arguments: JSON.stringify({ patch }),
                           },
                         },
                       ],
@@ -322,7 +371,7 @@ test("chat prints visible tool start and result summaries", async () => {
               choices: [
                 {
                   delta: {
-                    content: "Read sample.txt.",
+                    content: "Patched sample.",
                   },
                 },
               ],
@@ -338,17 +387,31 @@ test("chat prints visible tool start and result summaries", async () => {
       ["node", "cli", "chat"],
       {
         OPENROUTER_API_KEY: "test-key",
+        ORX_SESSION_DIR: sessionDirectory,
       },
       capture.io,
     );
 
     assert.equal(exitCode, 0);
-    assert.match(capture.stdout(), /\[tool\] read_file path="sample\.txt"/);
-    assert.match(capture.stdout(), /\[tool\] read_file ok duration=\d+ms/);
-    assert.match(capture.stdout(), /assistant: Read sample\.txt\./);
+    assert.match(capture.stdout(), /\[tool\] apply_patch patch=<\d+B, 4 lines>/);
+    assert.match(
+      capture.stdout(),
+      /\[tool\] apply_patch ok duration=\d+ms changed_files=1 \["later-change\.txt"\]/,
+    );
+    assert.match(capture.stdout(), /assistant: Patched sample\./);
     assert.equal(capture.stderr(), "");
+
+    const sessionFiles = readdirSync(sessionDirectory).filter((file) => file.endsWith(".json"));
+    assert.equal(sessionFiles.length, 1);
+    const session = JSON.parse(
+      readFileSync(join(sessionDirectory, sessionFiles[0]), "utf8"),
+    ) as {
+      git?: { dirty: boolean };
+    };
+    assert.equal(session.git?.dirty, true);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
   }
 });
 
@@ -385,6 +448,13 @@ function createIo(options: { fetch?: typeof fetch; stdin?: NodeJS.ReadableStream
 
 function createTempDir(): string {
   return mkdtempSync(join(tmpdir(), "orx-cli-"));
+}
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+  });
 }
 
 function streamFrom(chunks: string[]): ReadableStream<Uint8Array> {

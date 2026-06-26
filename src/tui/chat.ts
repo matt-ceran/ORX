@@ -10,9 +10,23 @@ import {
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
+import {
+  createSessionRecord,
+  refreshSessionGitMetadata,
+  resolveSessionDirectory,
+  saveSessionRecord,
+  updateSessionRecord,
+  type OrxSessionRecord,
+} from "../sessions/index.js";
 import { handleSlashCommand } from "../slash/index.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
+
+interface ChatSessionHandle {
+  record: OrxSessionRecord;
+  sessionDir: string;
+  filePath: string;
+}
 
 export interface ChatIo {
   stdin: NodeJS.ReadableStream;
@@ -27,6 +41,7 @@ export interface ChatOptions {
   loadedConfig: LoadedConfig;
   io: ChatIo;
   contextBudget?: Partial<AgentContextBudget>;
+  sessionDirectory?: string;
 }
 
 export async function runChat({
@@ -34,12 +49,14 @@ export async function runChat({
   loadedConfig,
   io,
   contextBudget = DEFAULT_CONTEXT_BUDGET,
+  sessionDirectory,
 }: ChatOptions): Promise<number> {
   let activeConfig: OrxConfig = { ...loadedConfig.config };
   let messages: OpenRouterMessage[] = [];
   let latestMetadata: OpenRouterStreamMetadata | undefined;
   let activeAbort: AbortController | undefined;
   const diffState = createSessionDiffState();
+  let session = await createChatSession(io.cwd, activeConfig, sessionDirectory, io.stderr);
 
   const rl = createInterface({
     input: io.stdin,
@@ -59,7 +76,7 @@ export async function runChat({
     rl.close();
   });
 
-  writeLine(io.stdout, renderHeader(io.cwd, loadedConfig, activeConfig));
+  writeLine(io.stdout, renderHeader(io.cwd, loadedConfig, activeConfig, session));
   writePrompt(io.stdout);
 
   try {
@@ -90,7 +107,12 @@ export async function runChat({
           getLatestMetadata: () => latestMetadata,
           getContextBudget: () => contextBudget,
           getDiffState: () => diffState,
+          getSessionInfo: () => sessionInfo(session),
+          startNewSession: async () => {
+            session = await createChatSession(io.cwd, activeConfig, sessionDirectory, io.stderr);
+          },
         });
+        await persistSession(session, io.cwd, activeConfig, messages, latestMetadata, io.stderr);
 
         if (result === "exit") {
           rl.close();
@@ -143,8 +165,9 @@ export async function runChat({
         io.stdout.write("\n");
         messages = result.messages;
         latestMetadata = result.metadata;
+        await persistSession(session, io.cwd, activeConfig, messages, latestMetadata, io.stderr);
         writeLine(io.stdout, formatOpenRouterMetadata(result.metadata));
-        writeLine(io.stdout, renderFooter(io.cwd, loadedConfig, activeConfig));
+        writeLine(io.stdout, renderFooter(io.cwd, loadedConfig, activeConfig, session));
       } catch (error) {
         io.stdout.write("\n");
         if (isAbortError(error)) {
@@ -166,15 +189,25 @@ export async function runChat({
   return 0;
 }
 
-function renderHeader(cwd: string, loadedConfig: LoadedConfig, activeConfig: OrxConfig): string {
+function renderHeader(
+  cwd: string,
+  loadedConfig: LoadedConfig,
+  activeConfig: OrxConfig,
+  session: ChatSessionHandle,
+): string {
   return [
     "ORX chat",
-    renderFooter(cwd, loadedConfig, activeConfig),
+    renderFooter(cwd, loadedConfig, activeConfig, session),
     "Type /help for commands. Ctrl+C interrupts an active response or exits when idle.",
   ].join("\n");
 }
 
-function renderFooter(cwd: string, loadedConfig: LoadedConfig, activeConfig: OrxConfig): string {
+function renderFooter(
+  cwd: string,
+  loadedConfig: LoadedConfig,
+  activeConfig: OrxConfig,
+  session: ChatSessionHandle,
+): string {
   const key = loadedConfig.apiKeyPresent ? `yes (${loadedConfig.apiKeySource})` : "no";
   return [
     `cwd: ${cwd}`,
@@ -182,6 +215,7 @@ function renderFooter(cwd: string, loadedConfig: LoadedConfig, activeConfig: Orx
     `model: ${activeConfig.model}`,
     `key: ${key}`,
     `permissions: ${activeConfig.permissions.approvalPolicy}/${activeConfig.permissions.sandboxMode}`,
+    `session: ${session.record.id} @ ${session.filePath}`,
   ].join(" | ");
 }
 
@@ -191,6 +225,64 @@ function writePrompt(stream: WritableLike) {
 
 function writeLine(stream: WritableLike, text: string) {
   stream.write(`${text}\n`);
+}
+
+async function createChatSession(
+  cwd: string,
+  config: OrxConfig,
+  directory: string | undefined,
+  stderr: WritableLike,
+): Promise<ChatSessionHandle> {
+  try {
+    const record = await createSessionRecord({
+      cwd,
+      activeConfig: config,
+    });
+    const sessionDir = resolveSessionDirectory({ cwd, sessionDir: directory });
+    const filePath = await saveSessionRecord(record, { cwd, sessionDir });
+    return {
+      record,
+      sessionDir,
+      filePath,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    writeLine(stderr, `Unable to create session: ${message}`);
+    throw error;
+  }
+}
+
+async function persistSession(
+  session: ChatSessionHandle,
+  cwd: string,
+  config: OrxConfig,
+  messages: OpenRouterMessage[],
+  latestMetadata: OpenRouterStreamMetadata | undefined,
+  stderr: WritableLike,
+): Promise<void> {
+  try {
+    updateSessionRecord(session.record, {
+      activeConfig: config,
+      messages,
+      latestMetadata,
+      cwd,
+    });
+    await refreshSessionGitMetadata(session.record);
+    session.filePath = await saveSessionRecord(session.record, {
+      cwd,
+      sessionDir: session.sessionDir,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    writeLine(stderr, `Unable to save session: ${message}`);
+  }
+}
+
+function sessionInfo(session: ChatSessionHandle): { id: string; path: string } {
+  return {
+    id: session.record.id,
+    path: session.filePath,
+  };
 }
 
 function isAbortError(error: unknown): boolean {

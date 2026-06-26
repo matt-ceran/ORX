@@ -78,7 +78,7 @@ test("fusion command shows and sets presets", () => {
   assert.match(harness.stdout(), /Fusion preset set to general-budget/);
 });
 
-test("clear and new reset conversation state callback", () => {
+test("clear and new reset conversation state callback", async () => {
   const harness = createSlashHarness({
     messages: [
       { role: "user", content: "Hello" },
@@ -104,7 +104,7 @@ test("clear and new reset conversation state callback", () => {
     resolvedModel: "example/fusion-model",
   });
 
-  assert.equal(handleSlashCommand("/new", harness.context), "continue");
+  assert.equal(await handleSlashCommand("/new", harness.context), "continue");
   assert.deepEqual(harness.messages(), []);
   assert.equal(harness.metadata(), undefined);
   assert.match(harness.stdout(), /New chat started/);
@@ -211,6 +211,10 @@ test("status reports active routing, config, key, permissions, history, and meta
       totalTokens: 5,
       cost: 0.0001,
     },
+    sessionInfo: {
+      id: "20260626T123456Z-test",
+      path: "/tmp/orx-sessions/20260626T123456Z-test.json",
+    },
   });
 
   assert.equal(handleSlashCommand("/status", harness.context), "continue");
@@ -225,6 +229,10 @@ test("status reports active routing, config, key, permissions, history, and meta
   assert.match(harness.stdout(), /sandbox_mode: danger-full-access/);
   assert.match(harness.stdout(), /history_messages: 1/);
   assert.match(harness.stdout(), /context: 1 messages, \d+B approx, budget \d+B\/\d+ messages/);
+  assert.match(
+    harness.stdout(),
+    /session: 20260626T123456Z-test \(\/tmp\/orx-sessions\/20260626T123456Z-test\.json\)/,
+  );
   assert.match(harness.stdout(), /diff_state: no edit tools observed/);
   assert.match(harness.stdout(), /latest_metadata:/);
   assert.match(harness.stdout(), /generation_id: gen-123/);
@@ -275,6 +283,7 @@ function createSlashHarness(
     metadata?: OpenRouterStreamMetadata;
     contextBudget?: Partial<AgentContextBudget>;
     diffState?: SessionDiffState;
+    sessionInfo?: { id: string; path: string };
     cwd?: string;
   } = {},
 ) {
@@ -324,6 +333,7 @@ function createSlashHarness(
       getLatestMetadata: () => metadata,
       getContextBudget: () => options.contextBudget ?? {},
       getDiffState: () => diffState,
+      getSessionInfo: () => options.sessionInfo,
     },
     config: () => config,
     messages: () => messages,

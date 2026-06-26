@@ -4,13 +4,17 @@ Last updated: 2026-06-26
 
 ## Session Storage
 
-Target location:
+Current target location:
 
 ```text
 ~/.orx/sessions/
 ```
 
-Each session should store:
+The directory can be overridden with `ORX_SESSION_DIR`. Relative overrides resolve from the active cwd.
+
+Session directories are created with `0700` permissions and JSON session files with `0600` permissions.
+
+Current Phase 7 foundation stores:
 
 - session id
 - started and updated timestamps
@@ -18,14 +22,24 @@ Each session should store:
 - git repo metadata
 - active model and mode
 - Fusion config
+- messages
+- latest OpenRouter metadata
+- first-user-message summary/title
+- message count
+
+Session config snapshots do not persist API keys. Git remote URLs redact credential userinfo before persistence.
+
+Future session fields should add:
+
 - active orchestrator
 - configured delegates
-- messages
 - tool calls and summarized outputs
 - delegate task inputs and summarized results
-- token and cost metadata
+- aggregate token and cost metadata
 
 ## Resume
+
+Not implemented yet.
 
 `/resume` should list previous sessions by:
 
@@ -37,9 +51,8 @@ Each session should store:
 
 ## Context Compaction
 
-Current Phase 6 runtime scaffold:
+Current runtime scaffold:
 
-- Chat history remains in process only.
 - `runAgentTurn` applies default request-shaping boundaries before OpenRouter requests.
 - `/compact` performs local extractive compaction on in-process chat messages.
 - Compacted summaries use clear provenance: `ORX compacted prior context locally`.

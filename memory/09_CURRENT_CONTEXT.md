@@ -43,6 +43,18 @@ Current files:
 
 ## Latest Work
 
+Implemented and verified the first Phase 7 session persistence foundation:
+
+- Added `src/sessions/` with session ids, JSON save/load helpers, session directory resolution, config snapshots without API keys, summaries, and best-effort git repository metadata.
+- Interactive `orx chat` now creates a session record and persists active config, messages, latest OpenRouter metadata, cwd, and git metadata under `~/.orx/sessions/`.
+- Session directories/files are written with private `0700`/`0600` modes, and credential userinfo is redacted from persisted git remote URLs.
+- Chat refreshes best-effort git metadata when saving after turns and slash commands.
+- `ORX_SESSION_DIR` can override the session directory, including relative paths resolved from cwd, which keeps tests isolated from the real home directory.
+- Chat header and interactive `/status` now show the active session id/path.
+- `/new` rotates to a fresh session file while keeping the current process alive.
+- Added no-network tests for session id safety, directory resolution, save/load without API key leakage, record updates, git metadata, chat persistence, and CLI chat session-directory override.
+- `npm run typecheck` and `npm test` pass with 89 tests.
+
 Implemented and verified the Phase 6 session diff state and `/diff` slice:
 
 - Added lightweight in-process `SessionDiffState` tracking under `src/agent/`.
