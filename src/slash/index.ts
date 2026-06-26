@@ -8,6 +8,16 @@ import {
   type SessionDiffState,
 } from "../agent/index.js";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
+import { renderMcpStatus } from "../mcp/index.js";
+import {
+  formatOpenRouterCredits,
+  formatOpenRouterGeneration,
+  formatOpenRouterLiveError,
+  formatOpenRouterModels,
+  getOpenRouterCredits,
+  getOpenRouterGeneration,
+  listOpenRouterModels,
+} from "../openrouter/live.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import { formatStatus } from "../status.js";
@@ -67,6 +77,7 @@ export type ResumeSessionResult =
 export interface SlashCommandContext {
   io: SlashIo;
   loadedConfig: LoadedConfig;
+  fetch?: typeof fetch;
   getConfig: () => OrxConfig;
   setConfig: (config: OrxConfig) => void;
   getMessages: () => OpenRouterMessage[];
@@ -253,20 +264,92 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/models": {
-    usage: "/models",
-    description: "Show current routing and model lookup status",
-    handler: (_command, context) => {
+    usage: "/models [filter]",
+    description: "List live OpenRouter models with optional text filter",
+    handler: async (command, context): Promise<SlashResult> => {
       const config = context.getConfig();
-      writeLine(
-        context.io.stdout,
-        [
-          "Models",
-          `  mode: ${config.mode}`,
-          `  model: ${config.model}`,
-          `  fusion_preset: ${config.fusionPreset ?? "none"}`,
-          "  live_search: planned for OpenRouter MCP integration",
-        ].join("\n"),
-      );
+      if (!context.loadedConfig.apiKeyPresent || !config.apiKey) {
+        writeLine(
+          context.io.stderr,
+          "OpenRouter API key not found. Live model lookup is unavailable.",
+        );
+        return "continue";
+      }
+
+      try {
+        const models = await listOpenRouterModels({
+          apiKey: config.apiKey,
+          fetch: context.fetch,
+        });
+        writeLine(context.io.stdout, formatOpenRouterModels(models, command.argText || undefined));
+      } catch (error) {
+        writeLine(context.io.stderr, formatOpenRouterLiveError(error));
+      }
+      return "continue";
+    },
+  },
+  "/credits": {
+    usage: "/credits",
+    description: "Show live OpenRouter credit balance",
+    handler: async (_command, context): Promise<SlashResult> => {
+      const config = context.getConfig();
+      if (!context.loadedConfig.apiKeyPresent || !config.apiKey) {
+        writeLine(
+          context.io.stderr,
+          "OpenRouter API key not found. Credit lookup is unavailable.",
+        );
+        return "continue";
+      }
+
+      try {
+        const credits = await getOpenRouterCredits({
+          apiKey: config.apiKey,
+          fetch: context.fetch,
+        });
+        writeLine(context.io.stdout, formatOpenRouterCredits(credits));
+      } catch (error) {
+        writeLine(context.io.stderr, formatOpenRouterLiveError(error));
+      }
+      return "continue";
+    },
+  },
+  "/generation": {
+    usage: "/generation <id>",
+    description: "Show OpenRouter generation metadata",
+    handler: async (command, context): Promise<SlashResult> => {
+      const config = context.getConfig();
+      const generationId = command.argText || context.getLatestMetadata()?.generationId;
+      if (!generationId) {
+        writeLine(context.io.stderr, "Usage: /generation <id>");
+        return "continue";
+      }
+
+      if (!context.loadedConfig.apiKeyPresent || !config.apiKey) {
+        writeLine(
+          context.io.stderr,
+          "OpenRouter API key not found. Generation lookup is unavailable.",
+        );
+        return "continue";
+      }
+
+      try {
+        const generation = await getOpenRouterGeneration({
+          apiKey: config.apiKey,
+          generationId,
+          fetch: context.fetch,
+        });
+        writeLine(context.io.stdout, formatOpenRouterGeneration(generation));
+      } catch (error) {
+        writeLine(context.io.stderr, formatOpenRouterLiveError(error));
+      }
+      return "continue";
+    },
+  },
+  "/mcp": {
+    usage: "/mcp",
+    description: "Show MCP profiles and policy status",
+    handler: (_command, context) => {
+      writeLine(context.io.stdout, renderMcpStatus());
       return "continue";
     },
   },

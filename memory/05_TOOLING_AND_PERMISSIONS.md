@@ -80,3 +80,10 @@ The tools remain standalone and testable. Phase 6 now exposes them to models thr
 - Keep secrets out of model context, plugin files, logs, transcripts, and crash reports. Forward only declared env vars to child processes.
 - Prefer containerized MCP/plugin execution through Docker MCP Toolkit or ToolHive-style isolation for untrusted executable surfaces.
 - Add local audit logs for plugin install/enable, MCP startup, tool calls, hook runs, schema changes, and secret names used.
+
+Current Phase 8 scaffold:
+
+- `src/mcp/registry.ts` defines an explicit disabled `openrouter` profile for the official remote HTTP server.
+- `src/mcp/policy.ts` exposes status counts for active profiles, active servers, auth-bearing servers, write-enabled tools, and risky transports.
+- `/mcp` and `/status` show the disabled profile and risk metadata.
+- No MCP tools are executable yet; direct OpenRouter API helpers currently power models, credits, and generation metadata.

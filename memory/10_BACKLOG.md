@@ -62,14 +62,17 @@ Completed:
 - Add session JSON storage helpers, git metadata snapshots, API-key-free config snapshots, and `ORX_SESSION_DIR` override.
 - Add `/resume` for listing and restoring saved chat sessions after restart.
 - Replace the Phase 6 in-process `/compact` scaffold with persistent-session-aware compaction.
+- Add direct OpenRouter live metadata helpers for models, credits, and generation lookup.
+- Replace `/models` placeholder with live model catalog lookup and optional text filtering.
+- Add `/credits`, `/generation <id>`, `orx models [query]`, `orx credits`, and `orx generation <id>`.
+- Add disabled-by-default OpenRouter MCP profile scaffolding and `/mcp` status/list output.
+- Add MCP policy/profile visibility to `/status`.
 
 Next:
 
-- Add official OpenRouter MCP integration for live model catalog, pricing, rankings, benchmarks, credits, docs search, providers, and generation lookup.
-- Add `/credits` and generation lookup.
-- Add MCP client registry/config support with explicit profiles.
-- Add `/mcp` status/list/enable/disable command design.
-- Add `/status` fields for MCP server risk metadata.
+- Decide whether the next Phase 8 slice should add MCP schema hashing/audit logs or OpenRouter MCP client discovery behind the disabled profile.
+- Add MCP client registry/config support with explicit enabled profiles when needed.
+- Add `/mcp enable/disable/inspect` only after policy, audit, and schema-change visibility are in place.
 - Persist active orchestrator and delegate metadata in sessions.
 - Add MCP policy engine outside the model loop.
 - Add MCP schema hashing and schema-change status.

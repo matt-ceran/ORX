@@ -104,6 +104,7 @@ export async function runChat({
             cwd: activeCwd,
           },
           loadedConfig,
+          fetch: io.fetch,
           getConfig: () => activeConfig,
           setConfig: (nextConfig) => {
             activeConfig = nextConfig;

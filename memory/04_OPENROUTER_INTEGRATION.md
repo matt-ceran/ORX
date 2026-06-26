@@ -54,7 +54,10 @@ plugins: [{ id: "fusion", preset: "general-budget" }]
 - `/model <slug>` selects an exact model.
 - `/fusion <preset>` sets Fusion plugin config.
 - `/fusion` with no argument shows the current Fusion preset.
-- `/models` currently shows local routing state and notes that live search will come from OpenRouter MCP.
+- `/models [filter]` fetches the live OpenRouter model catalog through the direct Models API when an API key is available, then shows concise id/name/context/pricing fields.
+- `/credits` fetches live OpenRouter credit totals, usage, remaining credits, and percent used through the direct Credits API. A 401/403 notes that a management-capable key may be required.
+- `/generation <id>` fetches generation cost/token/provider metadata through the direct Generation API. In chat, `/generation` can use the latest in-session generation id when available.
+- `orx models [query]`, `orx credits`, and `orx generation <id>` expose the same live metadata outside interactive chat.
 - `/status` shows active mode, model, Fusion config, generation id, tokens, and spend.
 - `orx ask` and `orx chat` now route through `src/agent/`, which sends native ORX tool schemas with chat requests and handles model-requested tool calls automatically.
 
@@ -89,6 +92,12 @@ OpenRouter has an official hosted MCP server as of 2026-06-25. OpenRouter MCP sh
 - capped test calls through `chat-send`
 
 The ORX runtime should still call the OpenRouter API directly for normal inference. Treat the MCP server as a development assistant and model-selection/research tool, not as ORX's primary chat transport.
+
+Current implementation checkpoint:
+
+- Direct live metadata helpers exist under `src/openrouter/live.ts` for models, credits, and generation lookup.
+- `src/mcp/` contains a disabled-by-default `openrouter` profile for `https://mcp.openrouter.ai/mcp` and status/policy scaffolding.
+- No MCP tool execution or MCP-backed inference path is implemented.
 
 ## Cost Tracking
 

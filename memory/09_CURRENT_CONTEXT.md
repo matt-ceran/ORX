@@ -43,6 +43,18 @@ Current files:
 
 ## Latest Work
 
+Implemented and verified a bounded Phase 8 live metadata and MCP policy scaffold checkpoint:
+
+- Added direct OpenRouter live metadata helpers for `GET /models`, `GET /credits`, and `GET /generation?id=...` with sanitized errors that redact API keys and bearer tokens.
+- Replaced chat `/models` placeholder with live model catalog lookup when an OpenRouter API key is available, including optional text filtering and concise id/name/context/pricing output.
+- Added chat `/credits` and `/generation <id>` slash commands for live credits and generation metadata; `/generation` can fall back to latest in-session generation id when present.
+- Added non-interactive `orx models [query]`, `orx credits`, and `orx generation <id>` commands.
+- Added `src/mcp/` registry/policy scaffolding with an explicit disabled-by-default `openrouter` remote HTTP profile for `https://mcp.openrouter.ai/mcp`; no MCP tool execution is implemented.
+- Added chat `/mcp` status output and `/status` MCP visibility for active profiles, server counts, auth-bearing servers, write-enabled tools, risky transports, and the disabled OpenRouter profile.
+- Kept normal `ask` and chat inference on the direct OpenRouter chat completions path.
+- Added no-network tests for live models, credits, generation success, sanitized failures, metadata CLI commands, slash command behavior, no chat-completion request for metadata slash commands, and MCP status visibility.
+- `npm run typecheck` and `npm test` pass with 108 tests.
+
 Implemented and verified the remaining Phase 7 persistent `/compact` slice:
 
 - `/compact` still uses the shared local extractive compactor and preserves the provenance text `ORX compacted prior context locally`.
@@ -264,12 +276,13 @@ Recorded MCP/tooling research conclusions:
 
 ## Next Likely Task
 
-Start Phase 8 OpenRouter MCP and MCP policy work:
+Continue Phase 8 MCP policy work:
 
 - Read `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`.
-- Add official OpenRouter MCP integration for live model catalog, pricing, rankings, benchmarks, credits, docs search, providers, and generation lookup.
+- Add MCP schema hashing and schema-change status for the disabled OpenRouter profile.
+- Add MCP audit-log scaffolding for profile inspection/startup/tool-call events before any MCP execution is enabled.
+- Decide whether the next live-MCP slice should add OpenRouter MCP client discovery behind explicit enablement or first complete `/mcp enable/disable/inspect` policy surfaces.
 - Keep OpenRouter API as the normal inference path.
-- Add explicit MCP profile/config policy before exposing auth-bearing or write-capable MCP servers.
 
 Do not implement orchestration before MCP policy basics and session metadata for delegates exist.
 

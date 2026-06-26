@@ -4,6 +4,12 @@ Last updated: 2026-06-26
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-26: Keep Live Metadata Direct Until MCP Policy Is Enforced
+
+Decision: ORX should use direct OpenRouter REST helpers for models, credits, and generation metadata while MCP remains disabled-by-default policy scaffolding. The official OpenRouter MCP profile can be listed in `/mcp` and `/status`, but MCP tool execution should wait for schema hashing, audit logging, explicit enablement, and policy checks.
+
+Reasoning: Models, credits, and generation lookup are narrow first-party API calls that can be tested and sanitized without expanding model tool surface. MCP introduces remote tool descriptions, auth-bearing transports, schema-change risk, and optional billable tools such as `chat-send`; those should not become executable until ORX has the intended trust boundary in place.
+
 ## 2026-06-26: Expose Native Local Tools By Default In Agent Turns
 
 Decision: `orx ask` and `orx chat` should send ORX-owned native local coding tool schemas by default and let OpenRouter models call those tools automatically during the guarded agent loop.

@@ -1,5 +1,6 @@
 import { formatConfigSources } from "./config/index.js";
 import type { LoadedConfig } from "./config/types.js";
+import { getMcpStatusSummary, formatMcpProfile } from "./mcp/index.js";
 
 export interface StatusOptions {
   cwd: string;
@@ -8,6 +9,9 @@ export interface StatusOptions {
 
 export function formatStatus({ cwd, loadedConfig }: StatusOptions): string {
   const { config } = loadedConfig;
+  const mcpStatus = getMcpStatusSummary();
+  const activeMcpProfiles =
+    mcpStatus.activeProfileIds.length > 0 ? mcpStatus.activeProfileIds.join(",") : "none";
   const lines = [
     "ORX status",
     `cwd: ${cwd}`,
@@ -22,6 +26,12 @@ export function formatStatus({ cwd, loadedConfig }: StatusOptions): string {
     "shell_access: enabled",
     "network_tools: enabled",
     "destructive_command_warnings: disabled",
+    `mcp_active_profiles: ${activeMcpProfiles}`,
+    `mcp_active_servers: ${mcpStatus.serverCount}`,
+    `mcp_auth_bearing_servers: ${mcpStatus.authBearingServerCount}`,
+    `mcp_write_enabled_tools: ${mcpStatus.writeEnabledToolCount}`,
+    `mcp_risky_transports: ${mcpStatus.riskyTransportCount}`,
+    ...mcpStatus.profiles.map((profile) => `mcp_profile: ${formatMcpProfile(profile)}`),
   ];
 
   return lines.join("\n");

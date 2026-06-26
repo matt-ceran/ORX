@@ -9,6 +9,15 @@ import type { OrxConfig, OrxMode } from "./config/types.js";
 import type { AskRequestOverrides } from "./openrouter/request.js";
 import type { OpenRouterMessage } from "./openrouter/types.js";
 import { formatOpenRouterMetadata } from "./openrouter/summary.js";
+import {
+  formatOpenRouterCredits,
+  formatOpenRouterGeneration,
+  formatOpenRouterLiveError,
+  formatOpenRouterModels,
+  getOpenRouterCredits,
+  getOpenRouterGeneration,
+  listOpenRouterModels,
+} from "./openrouter/live.js";
 import { resolveSessionDirectory } from "./sessions/index.js";
 import { formatStatus } from "./status.js";
 import { runChat } from "./tui/chat.js";
@@ -79,6 +88,18 @@ export async function runCli(
     return runAskCommand(args.slice(1), loadedConfig.config.apiKey ?? "", loadedConfig.config, io);
   }
 
+  if (first === "models") {
+    return runModelsCommand(args.slice(1), loadedConfig.config.apiKey ?? "", io);
+  }
+
+  if (first === "credits") {
+    return runCreditsCommand(loadedConfig.config.apiKey ?? "", io);
+  }
+
+  if (first === "generation") {
+    return runGenerationCommand(args.slice(1), loadedConfig.config.apiKey ?? "", io);
+  }
+
   if (first === "chat") {
     return runChat({
       apiKey: loadedConfig.config.apiKey ?? "",
@@ -110,6 +131,9 @@ function helpText(): string {
     "Commands:",
     '  ask "prompt"  Send one prompt to OpenRouter and stream the answer',
     "  chat          Start an interactive OpenRouter chat session",
+    "  models [q]    List live OpenRouter models with an optional filter",
+    "  credits       Show live OpenRouter credits",
+    "  generation <id>  Show OpenRouter generation metadata",
     "  status        Show runtime status and config defaults",
     "  help          Show this help message",
     "  version       Show the current version",
@@ -123,6 +147,57 @@ function helpText(): string {
     "  -h, --help              Show this help message",
     "  -v, --version           Show the current version",
   ].join("\n");
+}
+
+async function runModelsCommand(args: string[], apiKey: string, io: CliIo): Promise<number> {
+  const query = args.join(" ").trim() || undefined;
+
+  try {
+    const models = await listOpenRouterModels({
+      apiKey,
+      fetch: io.fetch,
+    });
+    writeLine(io.stdout, formatOpenRouterModels(models, query));
+    return 0;
+  } catch (error) {
+    writeLine(io.stderr, formatOpenRouterLiveError(error));
+    return 1;
+  }
+}
+
+async function runCreditsCommand(apiKey: string, io: CliIo): Promise<number> {
+  try {
+    const credits = await getOpenRouterCredits({
+      apiKey,
+      fetch: io.fetch,
+    });
+    writeLine(io.stdout, formatOpenRouterCredits(credits));
+    return 0;
+  } catch (error) {
+    writeLine(io.stderr, formatOpenRouterLiveError(error));
+    return 1;
+  }
+}
+
+async function runGenerationCommand(args: string[], apiKey: string, io: CliIo): Promise<number> {
+  const generationId = args.join(" ").trim();
+  if (!generationId) {
+    writeLine(io.stderr, "Missing generation id. Usage: orx generation <id>");
+    return 1;
+  }
+
+  try {
+    const generation = await getOpenRouterGeneration({
+      apiKey,
+      generationId,
+      fetch: io.fetch,
+    });
+    writeLine(io.stdout, formatOpenRouterGeneration(generation));
+    return 0;
+  } catch (error) {
+    writeLine(io.stderr, formatOpenRouterLiveError(error));
+    return 1;
+  }
 }
 
 function getVersion(): string {

@@ -21,6 +21,8 @@ test("help, version, and status work without an API key", async () => {
   const status = createIo();
   assert.equal(await runCli(["node", "cli", "status"], {}, status.io), 0);
   assert.match(status.stdout(), /api_key_present: no/);
+  assert.match(status.stdout(), /mcp_active_profiles: none/);
+  assert.match(status.stdout(), /mcp_profile: profile=openrouter state=disabled/);
 });
 
 test("ask and chat require an OpenRouter API key", async () => {
@@ -104,6 +106,93 @@ test("ask supports Fusion preset override", async () => {
 
   assert.equal(exitCode, 0);
   assert.match(capture.stdout(), /requested_model: openrouter\/fusion/);
+});
+
+test("metadata CLI commands use live OpenRouter APIs", async () => {
+  const seenUrls: string[] = [];
+  const capture = createIo({
+    fetch: async (input) => {
+      seenUrls.push(String(input));
+      if (String(input).endsWith("/models")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "openai/gpt-5.5",
+                name: "GPT 5.5",
+                context_length: 200000,
+                pricing: { prompt: "0.000001", completion: "0.000004" },
+              },
+              {
+                id: "anthropic/claude-sonnet-4.5",
+                name: "Claude Sonnet 4.5",
+                context_length: 200000,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (String(input).endsWith("/credits")) {
+        return new Response(
+          JSON.stringify({ data: { total_credits: 12, total_usage: 3 } }),
+          { status: 200 },
+        );
+      }
+
+      if (String(input).endsWith("/generation?id=gen_123")) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: "gen_123",
+              model: "openai/gpt-5.5",
+              provider_name: "OpenAI",
+              tokens_prompt: 5,
+              tokens_completion: 7,
+              total_cost: 0.002,
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      throw new Error(`unexpected URL ${String(input)}`);
+    },
+  });
+  const env = { OPENROUTER_API_KEY: "test-key" };
+
+  assert.equal(await runCli(["node", "cli", "models", "claude"], env, capture.io), 0);
+  assert.equal(await runCli(["node", "cli", "credits"], env, capture.io), 0);
+  assert.equal(await runCli(["node", "cli", "generation", "gen_123"], env, capture.io), 0);
+
+  assert.deepEqual(seenUrls, [
+    "https://openrouter.ai/api/v1/models",
+    "https://openrouter.ai/api/v1/credits",
+    "https://openrouter.ai/api/v1/generation?id=gen_123",
+  ]);
+  assert.match(capture.stdout(), /OpenRouter models matching "claude": 1/);
+  assert.match(capture.stdout(), /remaining: \$9\.000000/);
+  assert.match(capture.stdout(), /id: gen_123/);
+  assert.match(capture.stdout(), /provider: OpenAI/);
+  assert.equal(capture.stderr(), "");
+});
+
+test("metadata CLI command failures are sanitized", async () => {
+  const capture = createIo({
+    fetch: async () => new Response("bad test-key Bearer test-key", { status: 403 }),
+  });
+
+  const exitCode = await runCli(
+    ["node", "cli", "credits"],
+    { OPENROUTER_API_KEY: "test-key" },
+    capture.io,
+  );
+
+  assert.equal(exitCode, 1);
+  assert.doesNotMatch(capture.stderr(), /test-key/);
+  assert.match(capture.stderr(), /\[redacted\]/);
+  assert.match(capture.stderr(), /may lack OpenRouter management permission/);
 });
 
 test("ask prints visible tool start and result summaries", async () => {
@@ -216,7 +305,22 @@ test("chat streams turns, keeps history, and handles slash commands", async () =
         "After new\n",
         "/exit\n",
       ]),
-      fetch: async (_input, init) => {
+      fetch: async (input, init) => {
+        if (String(input).endsWith("/models")) {
+          return new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: "anthropic/claude-sonnet-4.5",
+                  name: "Claude Sonnet 4.5",
+                  context_length: 200000,
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+
         const body = JSON.parse(String(init?.body));
         assertNativeTools(body.tools);
         delete body.tools;
@@ -272,7 +376,8 @@ test("chat streams turns, keeps history, and handles slash commands", async () =
     assert.match(capture.stdout(), /session: .*\.json\)/);
     assert.match(capture.stdout(), /Mode set to fusion/);
     assert.match(capture.stdout(), /Fusion preset set to general-budget/);
-    assert.match(capture.stdout(), /live_search: planned for OpenRouter MCP integration/);
+    assert.match(capture.stdout(), /OpenRouter models: 1/);
+    assert.match(capture.stdout(), /anthropic\/claude-sonnet-4\.5/);
     assert.match(capture.stdout(), /New chat started/);
     assert.match(capture.stdout(), /Mode set to auto/);
     assert.match(capture.stdout(), /Exiting ORX chat/);
@@ -302,6 +407,89 @@ test("chat streams turns, keeps history, and handles slash commands", async () =
     assert.equal(newSession?.activeConfig.mode, "auto");
     assert.equal(newSession?.activeConfig.model, "openrouter/auto");
     assert.equal(newSession?.messageCount, 2);
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("chat metadata slash commands do not make chat completion requests", async () => {
+  const sessionDirectory = createTempDir();
+  const seenUrls: string[] = [];
+
+  try {
+    const capture = createIo({
+      stdin: Readable.from([
+        "/models claude\n",
+        "/credits\n",
+        "/generation gen_123\n",
+        "/mcp\n",
+        "/exit\n",
+      ]),
+      fetch: async (input) => {
+        const url = String(input);
+        seenUrls.push(url);
+        assert.doesNotMatch(url, /\/chat\/completions$/);
+
+        if (url.endsWith("/models")) {
+          return new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: "anthropic/claude-sonnet-4.5",
+                  name: "Claude Sonnet 4.5",
+                  context_length: 200000,
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+
+        if (url.endsWith("/credits")) {
+          return new Response(
+            JSON.stringify({ data: { total_credits: 5, total_usage: 1 } }),
+            { status: 200 },
+          );
+        }
+
+        if (url.endsWith("/generation?id=gen_123")) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                id: "gen_123",
+                model: "anthropic/claude-sonnet-4.5",
+                provider_name: "Anthropic",
+                total_cost: 0.003,
+              },
+            }),
+            { status: 200 },
+          );
+        }
+
+        throw new Error(`unexpected URL ${url}`);
+      },
+    });
+
+    const exitCode = await runCli(
+      ["node", "cli", "chat"],
+      {
+        OPENROUTER_API_KEY: "test-key",
+        ORX_SESSION_DIR: sessionDirectory,
+      },
+      capture.io,
+    );
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(seenUrls, [
+      "https://openrouter.ai/api/v1/models",
+      "https://openrouter.ai/api/v1/credits",
+      "https://openrouter.ai/api/v1/generation?id=gen_123",
+    ]);
+    assert.match(capture.stdout(), /OpenRouter models matching "claude": 1/);
+    assert.match(capture.stdout(), /OpenRouter credits/);
+    assert.match(capture.stdout(), /OpenRouter generation/);
+    assert.match(capture.stdout(), /profile=openrouter state=disabled/);
+    assert.equal(capture.stderr(), "");
   } finally {
     rmSync(sessionDirectory, { recursive: true, force: true });
   }

@@ -78,6 +78,89 @@ test("fusion command shows and sets presets", () => {
   assert.match(harness.stdout(), /Fusion preset set to general-budget/);
 });
 
+test("live metadata slash commands use OpenRouter metadata APIs", async () => {
+  const seenUrls: string[] = [];
+  const harness = createSlashHarness({
+    fetch: async (input) => {
+      seenUrls.push(String(input));
+      if (String(input).endsWith("/models")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "openai/gpt-5.5",
+                name: "GPT 5.5",
+                context_length: 200000,
+                pricing: { prompt: "0.000001", completion: "0.000004" },
+              },
+              {
+                id: "anthropic/claude-sonnet-4.5",
+                name: "Claude Sonnet 4.5",
+                context_length: 200000,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (String(input).endsWith("/credits")) {
+        return new Response(
+          JSON.stringify({ data: { total_credits: 10, total_usage: 2.5 } }),
+          { status: 200 },
+        );
+      }
+
+      if (String(input).endsWith("/generation?id=gen_123")) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: "gen_123",
+              model: "openai/gpt-5.5",
+              provider_name: "OpenAI",
+              tokens_prompt: 4,
+              tokens_completion: 6,
+              total_cost: 0.001,
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      throw new Error(`unexpected URL ${String(input)}`);
+    },
+  });
+
+  assert.equal(await handleSlashCommand("/models claude", harness.context), "continue");
+  assert.equal(await handleSlashCommand("/credits", harness.context), "continue");
+  assert.equal(await handleSlashCommand("/generation gen_123", harness.context), "continue");
+  assert.deepEqual(seenUrls, [
+    "https://openrouter.ai/api/v1/models",
+    "https://openrouter.ai/api/v1/credits",
+    "https://openrouter.ai/api/v1/generation?id=gen_123",
+  ]);
+  assert.match(harness.stdout(), /OpenRouter models matching "claude": 1/);
+  assert.match(harness.stdout(), /anthropic\/claude-sonnet-4\.5/);
+  assert.match(harness.stdout(), /remaining: \$7\.500000/);
+  assert.match(harness.stdout(), /provider: OpenAI/);
+});
+
+test("mcp slash command reports disabled OpenRouter profile without network", async () => {
+  let fetchCalls = 0;
+  const harness = createSlashHarness({
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  assert.equal(await handleSlashCommand("/mcp", harness.context), "continue");
+  assert.equal(fetchCalls, 0);
+  assert.match(harness.stdout(), /active_profiles: none/);
+  assert.match(harness.stdout(), /profile=openrouter state=disabled/);
+  assert.match(harness.stdout(), /url=https:\/\/mcp\.openrouter\.ai\/mcp/);
+});
+
 test("clear and new reset conversation state callback", async () => {
   const harness = createSlashHarness({
     messages: [
@@ -330,6 +413,8 @@ test("status reports active routing, config, key, permissions, history, and meta
   assert.match(harness.stdout(), /api_key_source: OPENROUTER_API_KEY/);
   assert.match(harness.stdout(), /approval_policy: never/);
   assert.match(harness.stdout(), /sandbox_mode: danger-full-access/);
+  assert.match(harness.stdout(), /mcp_active_profiles: none/);
+  assert.match(harness.stdout(), /mcp_profile: profile=openrouter state=disabled/);
   assert.match(harness.stdout(), /history_messages: 1/);
   assert.match(harness.stdout(), /context: 1 messages, \d+B approx, budget \d+B\/\d+ messages/);
   assert.match(
@@ -389,6 +474,7 @@ function createSlashHarness(
     sessionInfo?: { id: string; path: string };
     cwd?: string;
     resumeSession?: SlashCommandContext["resumeSession"];
+    fetch?: typeof fetch;
   } = {},
 ) {
   let stdoutText = "";
@@ -422,6 +508,7 @@ function createSlashHarness(
         cwd: options.cwd ?? "/tmp/orx-test",
       },
       loadedConfig,
+      fetch: options.fetch,
       getConfig: () => config,
       setConfig: (nextConfig: OrxConfig) => {
         config = nextConfig;
@@ -459,6 +546,7 @@ function baseConfig(): OrxConfig {
   return {
     mode: "auto",
     model: "openrouter/auto",
+    apiKey: "test-key",
     permissions: {
       approvalPolicy: "never",
       sandboxMode: "danger-full-access",
