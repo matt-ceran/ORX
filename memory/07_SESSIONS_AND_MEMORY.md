@@ -63,16 +63,16 @@ Blank startup session files are omitted from `/resume` lists.
 
 ## Context Compaction
 
-Current runtime scaffold:
+Current behavior:
 
 - `runAgentTurn` applies default request-shaping boundaries before OpenRouter requests.
-- `/compact` performs local extractive compaction on in-process chat messages.
+- `/compact` performs local extractive compaction on chat messages and persists compacted messages to the active session JSON.
+- Resuming a compacted session restores the compacted summary and recent suffix.
+- `/status` reports `compacted=yes` after a compacted session is resumed.
 - Compacted summaries use clear provenance: `ORX compacted prior context locally`.
-- Persistent transcript/session-aware compaction remains Phase 7 work.
+- Minimal sessions with no compactable prefix are left unchanged and reported as unchanged.
 
-Future persistent sessions:
-
-`/compact` should summarize older turns while preserving:
+Persistent compaction summarizes older turns while preserving:
 
 - active task
 - relevant files

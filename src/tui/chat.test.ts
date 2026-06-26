@@ -227,6 +227,195 @@ test("chat resumes a saved session and continues with restored transcript and ro
   }
 });
 
+test("chat compact persists compacted messages to the resumed session JSON", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const savedCwd = mkdtempSync(join(tmpdir(), "orx-chat-compact-cwd-"));
+
+  try {
+    const record = await createSessionRecord({
+      id: "20260626T140000Z-compact",
+      cwd: savedCwd,
+      activeConfig: baseLoadedConfig().config,
+      messages: [
+        { role: "user", content: "First task" },
+        { role: "assistant", content: "First answer" },
+        { role: "user", content: "Current task" },
+        { role: "assistant", content: "Current answer" },
+      ],
+      now: new Date("2026-06-26T14:00:00.000Z"),
+      git: undefined,
+    });
+    await saveSessionRecord(record, { sessionDir: sessionDirectory });
+
+    const capture = createIo({
+      stdin: Readable.from(["/resume 20260626T140000Z-compact\n", "/compact\n", "/exit\n"]),
+      fetch: async () => {
+        throw new Error("chat /compact should not call OpenRouter.");
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      contextBudget: {
+        maxBytes: 100_000,
+        maxMessages: 6,
+        preserveMessages: 3,
+        summaryMaxBytes: 2_000,
+      },
+    });
+
+    assert.equal(exitCode, 0);
+    assert.match(capture.stdout(), /Resumed session 20260626T140000Z-compact/);
+    assert.match(capture.stdout(), /Context compacted locally: 4->3 messages/);
+    assert.equal(capture.stderr(), "");
+
+    const raw = readFileSync(join(sessionDirectory, "20260626T140000Z-compact.json"), "utf8");
+    assert.doesNotMatch(raw, /test-key/);
+    const saved = JSON.parse(raw) as {
+      messages: Array<{ role: string; content: string | null }>;
+      messageCount: number;
+    };
+    assert.equal(saved.messageCount, 3);
+    assert.equal(saved.messages[0].role, "assistant");
+    assert.match(String(saved.messages[0].content), new RegExp(COMPACTED_CONTEXT_PROVENANCE));
+    assert.deepEqual(saved.messages.slice(1), [
+      { role: "user", content: "Current task" },
+      { role: "assistant", content: "Current answer" },
+    ]);
+  } finally {
+    rmSync(savedCwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("chat resume loads compacted messages and status reports compacted context", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const savedCwd = mkdtempSync(join(tmpdir(), "orx-chat-resume-compact-cwd-"));
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+  const compactedSummary = [
+    `${COMPACTED_CONTEXT_PROVENANCE}.`,
+    "Compacted messages: 2",
+    "Retained recent messages: 2",
+  ].join("\n");
+
+  try {
+    const record = await createSessionRecord({
+      id: "20260626T141000Z-compacted",
+      cwd: savedCwd,
+      activeConfig: {
+        ...baseLoadedConfig().config,
+        mode: "exact",
+        model: "example/compact",
+      },
+      messages: [
+        { role: "assistant", content: compactedSummary },
+        { role: "user", content: "Current task" },
+        { role: "assistant", content: "Current answer" },
+      ],
+      now: new Date("2026-06-26T14:10:00.000Z"),
+      git: undefined,
+    });
+    await saveSessionRecord(record, { sessionDir: sessionDirectory });
+
+    const capture = createIo({
+      stdin: Readable.from([
+        "/resume 20260626T141000Z-compacted\n",
+        "/status\n",
+        "Follow up\n",
+        "/exit\n",
+      ]),
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+
+        return new Response(
+          streamFrom([
+            'data: {"model":"example/compact","choices":[{"delta":{"content":"Compacted answer"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requests.length, 1);
+    assert.deepEqual(requests[0].messages, [
+      { role: "assistant", content: compactedSummary },
+      { role: "user", content: "Current task" },
+      { role: "assistant", content: "Current answer" },
+      { role: "user", content: "Follow up" },
+    ]);
+    assert.match(capture.stdout(), /Resumed session 20260626T141000Z-compacted/);
+    assert.match(capture.stdout(), /history_messages: 3/);
+    assert.match(capture.stdout(), /context: 3 messages, \d+B approx, budget \d+B\/\d+ messages, compacted=yes/);
+    assert.match(capture.stdout(), /assistant: Compacted answer/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(savedCwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("chat compact on an already minimal resumed session leaves JSON unchanged", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const savedCwd = mkdtempSync(join(tmpdir(), "orx-chat-minimal-compact-cwd-"));
+
+  try {
+    const record = await createSessionRecord({
+      id: "20260626T142000Z-minimal",
+      cwd: savedCwd,
+      activeConfig: baseLoadedConfig().config,
+      messages: [{ role: "user", content: "Only task" }],
+      now: new Date("2026-06-26T14:20:00.000Z"),
+      git: undefined,
+    });
+    await saveSessionRecord(record, { sessionDir: sessionDirectory });
+
+    const capture = createIo({
+      stdin: Readable.from(["/resume 20260626T142000Z-minimal\n", "/compact\n", "/exit\n"]),
+      fetch: async () => {
+        throw new Error("chat /compact should not call OpenRouter.");
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.match(capture.stdout(), /Context unchanged: 1 messages/);
+    assert.match(capture.stdout(), /compacted=no/);
+    assert.equal(capture.stderr(), "");
+
+    const saved = JSON.parse(
+      readFileSync(join(sessionDirectory, "20260626T142000Z-minimal.json"), "utf8"),
+    ) as {
+      messages: Array<{ role: string; content: string | null }>;
+      messageCount: number;
+    };
+    assert.equal(saved.messageCount, 1);
+    assert.deepEqual(saved.messages, [{ role: "user", content: "Only task" }]);
+    assert.doesNotMatch(String(saved.messages[0].content), new RegExp(COMPACTED_CONTEXT_PROVENANCE));
+  } finally {
+    rmSync(savedCwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 test("chat resumes an exact session id outside the recent display window", async () => {
   const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
   const savedCwd = mkdtempSync(join(tmpdir(), "orx-chat-resume-old-cwd-"));

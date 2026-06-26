@@ -2,14 +2,14 @@
 
 Last updated: 2026-06-26
 
-## Fast Phase 7 Handoff
+## Fast Phase 8 Handoff
 
-To continue Phase 7 in a fresh session, read:
+To continue Phase 8 in a fresh session, read:
 
 1. `memory/00_INDEX.md`
 2. `memory/01_PROJECT_BRIEF.md`
 3. `memory/09_CURRENT_CONTEXT.md`
-4. `memory/07_SESSIONS_AND_MEMORY.md`
+4. `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`
 
 Then retrieve supporting shards from the index as needed.
 
@@ -42,6 +42,16 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented and verified the remaining Phase 7 persistent `/compact` slice:
+
+- `/compact` still uses the shared local extractive compactor and preserves the provenance text `ORX compacted prior context locally`.
+- Chat persists the compacted message list through the normal post-slash session save path.
+- Persisted session JSON stores the compacted summary plus the recent suffix and remains API-key-free.
+- Resuming a compacted session restores the compacted summary, and `/status` after resume reports `compacted=yes`.
+- Minimal sessions with no compactable prefix are reported as unchanged and persist predictably without adding a summary.
+- Added no-network tests for compact persistence to session JSON, resume loading of compacted summaries, `/status` after resume, and minimal-session `/compact` behavior.
+- `npm run typecheck` and `npm test` pass with 99 tests.
 
 Implemented and verified the Phase 7 `/resume` slice:
 
@@ -254,13 +264,14 @@ Recorded MCP/tooling research conclusions:
 
 ## Next Likely Task
 
-Continue Phase 7 sessions and memory:
+Start Phase 8 OpenRouter MCP and MCP policy work:
 
-- Replace the Phase 6 in-process `/compact` scaffold with persistent-session-aware compaction.
-- Persist compaction results back into the active session record without losing restart/resume continuity.
-- Keep session metadata shaped for future aggregate token/cost, orchestration, delegate, and MCP policy fields.
+- Read `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`.
+- Add official OpenRouter MCP integration for live model catalog, pricing, rankings, benchmarks, credits, docs search, providers, and generation lookup.
+- Keep OpenRouter API as the normal inference path.
+- Add explicit MCP profile/config policy before exposing auth-bearing or write-capable MCP servers.
 
-Do not implement orchestration before the core OpenRouter streaming loop, tool-call loop, and session metadata exist.
+Do not implement orchestration before MCP policy basics and session metadata for delegates exist.
 
 Do not implement the plugin system before native local tools, the tool-call loop, sessions, and MCP policy basics exist. The plugin system should build on those foundations and follow `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`.
 

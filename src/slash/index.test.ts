@@ -228,6 +228,17 @@ test("compact replaces older in-session turns with a local summary", () => {
   ]);
 });
 
+test("compact leaves an already minimal session unchanged", () => {
+  const harness = createSlashHarness({
+    messages: [{ role: "user", content: "Only task" }],
+  });
+
+  assert.equal(handleSlashCommand("/compact", harness.context), "continue");
+  assert.deepEqual(harness.messages(), [{ role: "user", content: "Only task" }]);
+  assert.match(harness.stdout(), /Context unchanged: 1 messages/);
+  assert.match(harness.stdout(), /compacted=no/);
+});
+
 test("diff command prints the current working tree diff and records diff state", async () => {
   const cwd = createGitRepo();
   try {

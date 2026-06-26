@@ -61,10 +61,10 @@ Completed:
 - Add session persistence foundation for interactive chat.
 - Add session JSON storage helpers, git metadata snapshots, API-key-free config snapshots, and `ORX_SESSION_DIR` override.
 - Add `/resume` for listing and restoring saved chat sessions after restart.
+- Replace the Phase 6 in-process `/compact` scaffold with persistent-session-aware compaction.
 
 Next:
 
-- Replace the Phase 6 in-process `/compact` scaffold with persistent-session-aware compaction.
 - Add official OpenRouter MCP integration for live model catalog, pricing, rankings, benchmarks, credits, docs search, providers, and generation lookup.
 - Add `/credits` and generation lookup.
 - Add MCP client registry/config support with explicit profiles.
