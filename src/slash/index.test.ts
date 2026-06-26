@@ -13,7 +13,7 @@ import {
   type AgentContextBudget,
   type SessionDiffState,
 } from "../agent/index.js";
-import { handleSlashCommand, parseSlashCommand } from "./index.js";
+import { handleSlashCommand, parseSlashCommand, type SlashCommandContext } from "./index.js";
 
 test("parses slash commands with extra whitespace", () => {
   assert.deepEqual(parseSlashCommand("   /model    anthropic/claude-sonnet-4.5   "), {
@@ -108,6 +108,98 @@ test("clear and new reset conversation state callback", async () => {
   assert.deepEqual(harness.messages(), []);
   assert.equal(harness.metadata(), undefined);
   assert.match(harness.stdout(), /New chat started/);
+});
+
+test("resume lists saved sessions and calls the resume callback for selectors", async () => {
+  const resumeCalls: Array<string | undefined> = [];
+  const harness = createSlashHarness({
+    resumeSession: async (selector) => {
+      resumeCalls.push(selector);
+      if (!selector) {
+        return {
+          kind: "list",
+          sessions: [
+            {
+              id: "20260626T130000Z-newer",
+              path: "/tmp/orx-sessions/20260626T130000Z-newer.json",
+              updatedAt: "2026-06-26T13:00:00.000Z",
+              cwd: "/tmp/newer",
+              model: "openrouter/fusion",
+              mode: "fusion",
+              title: "Continue feature work",
+              cost: 0.001234,
+              messageCount: 4,
+            },
+          ],
+        };
+      }
+
+      return {
+        kind: "resumed",
+        session: {
+          id: "20260626T130000Z-newer",
+          path: "/tmp/orx-sessions/20260626T130000Z-newer.json",
+          updatedAt: "2026-06-26T13:00:00.000Z",
+          cwd: "/tmp/newer",
+          model: "openrouter/fusion",
+          mode: "fusion",
+          title: "Continue feature work",
+          cost: 0.001234,
+          messageCount: 4,
+        },
+      };
+    },
+  });
+
+  assert.equal(await handleSlashCommand("/resume", harness.context), "continue");
+  assert.match(harness.stdout(), /Saved sessions:/);
+  assert.match(harness.stdout(), /1\. 20260626T130000Z-newer/);
+  assert.match(harness.stdout(), /title: Continue feature work/);
+  assert.match(harness.stdout(), /model: openrouter\/fusion/);
+  assert.match(harness.stdout(), /cost: \$0\.001234/);
+
+  assert.equal(await handleSlashCommand("/resume 1", harness.context), "continue");
+  assert.deepEqual(resumeCalls, [undefined, "1"]);
+  assert.match(harness.stdout(), /Resumed session 20260626T130000Z-newer/);
+  assert.match(harness.stdout(), /messages: 4/);
+});
+
+test("resume reports missing and ambiguous selectors", async () => {
+  const missing = createSlashHarness({
+    resumeSession: async (selector) => ({
+      kind: "not_found",
+      selector: selector ?? "",
+    }),
+  });
+
+  assert.equal(await handleSlashCommand("/resume nope", missing.context), "continue");
+  assert.match(missing.stderr(), /No saved session matched: nope/);
+
+  const ambiguous = createSlashHarness({
+    resumeSession: async (selector) => ({
+      kind: "ambiguous",
+      selector: selector ?? "",
+      matches: Array.from({ length: 25 }, (_unused, index) => ({
+        id: `20260626T13${String(index).padStart(2, "0")}00Z-aaaa`,
+        path: `/tmp/${index}.json`,
+        updatedAt: `2026-06-26T13:${String(index).padStart(2, "0")}:00.000Z`,
+        cwd: `/tmp/${index}`,
+        model: "openrouter/auto",
+        mode: "auto",
+        messageCount: 1,
+      })),
+    }),
+  });
+
+  assert.equal(await handleSlashCommand("/resume 20260626", ambiguous.context), "continue");
+  assert.match(ambiguous.stderr(), /Session selector is ambiguous: 20260626/);
+  assert.match(ambiguous.stderr(), /Matching sessions:/);
+  assert.match(ambiguous.stderr(), /20260626T130000Z-aaaa/);
+  assert.match(ambiguous.stderr(), /\.\.\. 5 more sessions omitted; use a longer id prefix\./);
+  assert.doesNotMatch(ambiguous.stderr(), /20260626T132000Z-aaaa/);
+  assert.doesNotMatch(ambiguous.stderr(), /1\. 20260626T130000Z-aaaa/);
+  assert.doesNotMatch(ambiguous.stderr(), /Use \/resume <number/);
+  assert.match(ambiguous.stderr(), /Use \/resume <exact-id> or a longer unique id prefix\./);
 });
 
 test("compact replaces older in-session turns with a local summary", () => {
@@ -285,6 +377,7 @@ function createSlashHarness(
     diffState?: SessionDiffState;
     sessionInfo?: { id: string; path: string };
     cwd?: string;
+    resumeSession?: SlashCommandContext["resumeSession"];
   } = {},
 ) {
   let stdoutText = "";
@@ -334,6 +427,7 @@ function createSlashHarness(
       getContextBudget: () => options.contextBudget ?? {},
       getDiffState: () => diffState,
       getSessionInfo: () => options.sessionInfo,
+      resumeSession: options.resumeSession,
     },
     config: () => config,
     messages: () => messages,

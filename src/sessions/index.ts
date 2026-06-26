@@ -3,6 +3,7 @@ export {
   createSessionId,
   createSessionRecord,
   getSessionFilePath,
+  listSessionRecords,
   loadSessionRecord,
   refreshSessionGitMetadata,
   resolveSessionDirectory,
@@ -12,6 +13,7 @@ export {
 } from "./store.js";
 export type {
   GitRepositoryMetadata,
+  ListedSessionRecord,
   OrxSessionRecord,
   SessionConfigSnapshot,
   SessionLocation,

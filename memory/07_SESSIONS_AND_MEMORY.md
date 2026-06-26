@@ -39,15 +39,27 @@ Future session fields should add:
 
 ## Resume
 
-Not implemented yet.
+Implemented for interactive chat.
 
-`/resume` should list previous sessions by:
+`/resume` with no selector lists recent transcript-bearing sessions by:
 
 - title or first prompt
 - cwd
 - last updated time
 - model and mode
 - cost
+- message count
+
+`/resume <number|id|prefix|latest>` loads a saved session and restores:
+
+- transcript messages
+- latest OpenRouter metadata
+- active model, mode, and Fusion preset
+- active chat cwd from the saved session
+
+Exact id and prefix selection search all transcript-bearing saved sessions, not only the displayed recent list. Ambiguous prefix output is capped, non-numbered, and asks for an exact id or longer unique prefix.
+
+Blank startup session files are omitted from `/resume` lists.
 
 ## Context Compaction
 

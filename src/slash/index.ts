@@ -29,6 +29,41 @@ export interface SlashIo {
   cwd: string;
 }
 
+export interface ResumeSessionSummary {
+  id: string;
+  path: string;
+  updatedAt: string;
+  cwd: string;
+  model: string;
+  mode: string;
+  title?: string;
+  cost?: number;
+  messageCount: number;
+}
+
+export type ResumeSessionResult =
+  | {
+      kind: "list";
+      sessions: ResumeSessionSummary[];
+    }
+  | {
+      kind: "resumed";
+      session: ResumeSessionSummary;
+    }
+  | {
+      kind: "not_found";
+      selector: string;
+    }
+  | {
+      kind: "ambiguous";
+      selector: string;
+      matches: ResumeSessionSummary[];
+    }
+  | {
+      kind: "error";
+      message: string;
+    };
+
 export interface SlashCommandContext {
   io: SlashIo;
   loadedConfig: LoadedConfig;
@@ -42,6 +77,7 @@ export interface SlashCommandContext {
   getDiffState?: () => SessionDiffState;
   getSessionInfo?: () => { id: string; path: string } | undefined;
   startNewSession?: () => Promise<void> | void;
+  resumeSession?: (selector?: string) => Promise<ResumeSessionResult>;
 }
 
 type SlashHandler = (
@@ -54,6 +90,8 @@ interface SlashDefinition {
   description: string;
   handler: SlashHandler;
 }
+
+const MAX_RENDERED_RESUME_SESSIONS = 20;
 
 const COMMANDS: Record<string, SlashDefinition> = {
   "/help": {
@@ -251,6 +289,46 @@ const COMMANDS: Record<string, SlashDefinition> = {
       return "continue";
     },
   },
+  "/resume": {
+    usage: "/resume [id|prefix|number|latest]",
+    description: "List or resume a saved chat session",
+    handler: async (command, context): Promise<SlashResult> => {
+      if (!context.resumeSession) {
+        writeLine(context.io.stderr, "Session resume is not available in this context.");
+        return "continue";
+      }
+
+      const result = await context.resumeSession(command.argText || undefined);
+      if (result.kind === "list") {
+        writeLine(context.io.stdout, renderResumeSessionList(result.sessions));
+        return "continue";
+      }
+
+      if (result.kind === "resumed") {
+        writeLine(context.io.stdout, renderResumedSession(result.session));
+        return "continue";
+      }
+
+      if (result.kind === "ambiguous") {
+        writeLine(
+          context.io.stderr,
+          [
+            `Session selector is ambiguous: ${result.selector}`,
+            renderAmbiguousResumeSessions(result.matches),
+          ].join("\n"),
+        );
+        return "continue";
+      }
+
+      if (result.kind === "not_found") {
+        writeLine(context.io.stderr, `No saved session matched: ${result.selector}`);
+        return "continue";
+      }
+
+      writeLine(context.io.stderr, `Unable to resume session: ${result.message}`);
+      return "continue";
+    },
+  },
   "/quit": {
     usage: "/quit",
     description: "Leave chat",
@@ -342,6 +420,82 @@ function indent(text: string): string {
     .split("\n")
     .map((line) => `  ${line}`)
     .join("\n");
+}
+
+function renderResumeSessionList(sessions: ResumeSessionSummary[]): string {
+  if (sessions.length === 0) {
+    return "No previous sessions found.";
+  }
+
+  const lines = ["Saved sessions:"];
+  const renderedSessions = sessions.slice(0, MAX_RENDERED_RESUME_SESSIONS);
+  renderedSessions.forEach((session, index) => {
+    lines.push(
+      [
+        `  ${index + 1}. ${session.id}`,
+        `updated: ${session.updatedAt}`,
+        `mode: ${session.mode}`,
+        `model: ${session.model}`,
+        `cost: ${formatCost(session.cost)}`,
+        `messages: ${session.messageCount}`,
+      ].join(" | "),
+    );
+    lines.push(`     title: ${session.title ?? "(untitled)"}`);
+    lines.push(`     cwd: ${session.cwd}`);
+  });
+  if (sessions.length > renderedSessions.length) {
+    lines.push(
+      `... ${sessions.length - renderedSessions.length} more sessions omitted; use a longer id prefix.`,
+    );
+  }
+  lines.push("Use /resume <number|id|prefix|latest> to load one.");
+  return lines.join("\n");
+}
+
+function renderAmbiguousResumeSessions(sessions: ResumeSessionSummary[]): string {
+  if (sessions.length === 0) {
+    return "No previous sessions found.";
+  }
+
+  const lines = ["Matching sessions:"];
+  const renderedSessions = sessions.slice(0, MAX_RENDERED_RESUME_SESSIONS);
+  for (const session of renderedSessions) {
+    lines.push(
+      [
+        `  - ${session.id}`,
+        `updated: ${session.updatedAt}`,
+        `mode: ${session.mode}`,
+        `model: ${session.model}`,
+        `cost: ${formatCost(session.cost)}`,
+        `messages: ${session.messageCount}`,
+      ].join(" | "),
+    );
+    lines.push(`    title: ${session.title ?? "(untitled)"}`);
+    lines.push(`    cwd: ${session.cwd}`);
+  }
+  if (sessions.length > renderedSessions.length) {
+    lines.push(
+      `... ${sessions.length - renderedSessions.length} more sessions omitted; use a longer id prefix.`,
+    );
+  }
+  lines.push("Use /resume <exact-id> or a longer unique id prefix.");
+  return lines.join("\n");
+}
+
+function renderResumedSession(session: ResumeSessionSummary): string {
+  return [
+    `Resumed session ${session.id}.`,
+    `title: ${session.title ?? "(untitled)"}`,
+    `messages: ${session.messageCount}`,
+    `cwd: ${session.cwd}`,
+    `model: ${session.model}`,
+    `mode: ${session.mode}`,
+    `cost: ${formatCost(session.cost)}`,
+  ].join(" ");
+}
+
+function formatCost(cost: number | undefined): string {
+  return typeof cost === "number" ? `$${cost.toFixed(6)}` : "n/a";
 }
 
 function writeLine(stream: WritableLike, text: string) {

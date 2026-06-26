@@ -96,6 +96,8 @@ Status: in progress. First runtime slice verified on 2026-06-26:
 
 Done when sessions can be resumed after terminal restart.
 
+Status: in progress. Persistence foundation and `/resume` are verified as of 2026-06-26. Persistent-session-aware `/compact` remains.
+
 ## Phase 8: OpenRouter MCP And MCP Policy
 
 Handoff: `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`.

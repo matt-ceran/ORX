@@ -4,6 +4,7 @@ import {
   createSessionDiffState,
   formatToolCallStart,
   formatToolResult,
+  resetSessionDiffState,
   runAgentTurn,
   type AgentContextBudget,
 } from "../agent/index.js";
@@ -12,13 +13,19 @@ import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import {
   createSessionRecord,
+  listSessionRecords,
   refreshSessionGitMetadata,
   resolveSessionDirectory,
   saveSessionRecord,
   updateSessionRecord,
+  type ListedSessionRecord,
   type OrxSessionRecord,
 } from "../sessions/index.js";
-import { handleSlashCommand } from "../slash/index.js";
+import {
+  handleSlashCommand,
+  type ResumeSessionResult,
+  type ResumeSessionSummary,
+} from "../slash/index.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
 
@@ -52,11 +59,12 @@ export async function runChat({
   sessionDirectory,
 }: ChatOptions): Promise<number> {
   let activeConfig: OrxConfig = { ...loadedConfig.config };
+  let activeCwd = io.cwd;
   let messages: OpenRouterMessage[] = [];
   let latestMetadata: OpenRouterStreamMetadata | undefined;
   let activeAbort: AbortController | undefined;
   const diffState = createSessionDiffState();
-  let session = await createChatSession(io.cwd, activeConfig, sessionDirectory, io.stderr);
+  let session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
 
   const rl = createInterface({
     input: io.stdin,
@@ -76,7 +84,7 @@ export async function runChat({
     rl.close();
   });
 
-  writeLine(io.stdout, renderHeader(io.cwd, loadedConfig, activeConfig, session));
+  writeLine(io.stdout, renderHeader(activeCwd, loadedConfig, activeConfig, session));
   writePrompt(io.stdout);
 
   try {
@@ -90,7 +98,11 @@ export async function runChat({
 
       if (line.startsWith("/")) {
         const result = await handleSlashCommand(line, {
-          io,
+          io: {
+            stdout: io.stdout,
+            stderr: io.stderr,
+            cwd: activeCwd,
+          },
           loadedConfig,
           getConfig: () => activeConfig,
           setConfig: (nextConfig) => {
@@ -109,10 +121,41 @@ export async function runChat({
           getDiffState: () => diffState,
           getSessionInfo: () => sessionInfo(session),
           startNewSession: async () => {
-            session = await createChatSession(io.cwd, activeConfig, sessionDirectory, io.stderr);
+            session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
+          },
+          resumeSession: async (selector) => {
+            const result = await resumeChatSession({
+              selector,
+              currentSessionId: session.record.id,
+              sessionDir: session.sessionDir,
+            });
+
+            if (result.kind !== "resumed") {
+              return result;
+            }
+
+            const record = result.record;
+            activeCwd = record.cwd;
+            activeConfig = {
+              ...record.activeConfig,
+              apiKey: activeConfig.apiKey ?? loadedConfig.config.apiKey,
+            };
+            messages = cloneJson(record.messages);
+            latestMetadata = cloneOptionalJson(record.latestMetadata);
+            resetSessionDiffState(diffState);
+            session = {
+              record,
+              sessionDir: session.sessionDir,
+              filePath: result.filePath,
+            };
+
+            return {
+              kind: "resumed",
+              session: result.session,
+            };
           },
         });
-        await persistSession(session, io.cwd, activeConfig, messages, latestMetadata, io.stderr);
+        await persistSession(session, activeCwd, activeConfig, messages, latestMetadata, io.stderr);
 
         if (result === "exit") {
           rl.close();
@@ -137,7 +180,7 @@ export async function runChat({
             apiKey,
             config: activeConfig,
             messages: requestMessages,
-            cwd: io.cwd,
+            cwd: activeCwd,
             fetch: io.fetch,
             signal: activeAbort.signal,
             contextBudget,
@@ -165,9 +208,9 @@ export async function runChat({
         io.stdout.write("\n");
         messages = result.messages;
         latestMetadata = result.metadata;
-        await persistSession(session, io.cwd, activeConfig, messages, latestMetadata, io.stderr);
+        await persistSession(session, activeCwd, activeConfig, messages, latestMetadata, io.stderr);
         writeLine(io.stdout, formatOpenRouterMetadata(result.metadata));
-        writeLine(io.stdout, renderFooter(io.cwd, loadedConfig, activeConfig, session));
+        writeLine(io.stdout, renderFooter(activeCwd, loadedConfig, activeConfig, session));
       } catch (error) {
         io.stdout.write("\n");
         if (isAbortError(error)) {
@@ -283,6 +326,138 @@ function sessionInfo(session: ChatSessionHandle): { id: string; path: string } {
     id: session.record.id,
     path: session.filePath,
   };
+}
+
+type ChatResumeSessionResult =
+  | Exclude<ResumeSessionResult, { kind: "resumed" }>
+  | {
+      kind: "resumed";
+      session: ResumeSessionSummary;
+      record: OrxSessionRecord;
+      filePath: string;
+    };
+
+async function resumeChatSession(options: {
+  selector?: string;
+  currentSessionId: string;
+  sessionDir: string;
+}): Promise<ChatResumeSessionResult> {
+  try {
+    const sessions = (
+      await listSessionRecords({
+        sessionDir: options.sessionDir,
+        excludeIds: [options.currentSessionId],
+      })
+    ).filter((session) => session.record.messageCount > 0);
+    const selector = options.selector?.trim();
+
+    if (!selector) {
+      return {
+        kind: "list",
+        sessions: sessions.slice(0, 20).map(toResumeSessionSummary),
+      };
+    }
+
+    const selected = selectSession(selector, sessions);
+    if (selected.kind === "selected") {
+      return {
+        kind: "resumed",
+        record: selected.session.record,
+        filePath: selected.session.filePath,
+        session: toResumeSessionSummary(selected.session),
+      };
+    }
+
+    if (selected.kind === "ambiguous") {
+      return {
+        kind: "ambiguous",
+        selector,
+        matches: selected.matches.map(toResumeSessionSummary),
+      };
+    }
+
+    return {
+      kind: "not_found",
+      selector,
+    };
+  } catch (error) {
+    return {
+      kind: "error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+type SessionSelection =
+  | { kind: "selected"; session: ListedSessionRecord }
+  | { kind: "ambiguous"; matches: ListedSessionRecord[] }
+  | { kind: "not_found" };
+
+function selectSession(selector: string, sessions: ListedSessionRecord[]): SessionSelection {
+  if (selector.toLowerCase() === "latest") {
+    const latest = sessions[0];
+    return latest ? { kind: "selected", session: latest } : { kind: "not_found" };
+  }
+
+  const exactMatch = sessions.find((session) => session.id === selector);
+  if (exactMatch) {
+    return {
+      kind: "selected",
+      session: exactMatch,
+    };
+  }
+
+  if (/^\d+$/.test(selector)) {
+    const index = Number(selector);
+    if (Number.isSafeInteger(index) && index >= 1 && index <= sessions.length) {
+      return {
+        kind: "selected",
+        session: sessions[index - 1],
+      };
+    }
+  }
+
+  const prefixMatches = sessions.filter((session) => session.id.startsWith(selector));
+  if (prefixMatches.length === 1) {
+    return {
+      kind: "selected",
+      session: prefixMatches[0],
+    };
+  }
+
+  if (prefixMatches.length > 1) {
+    return {
+      kind: "ambiguous",
+      matches: prefixMatches,
+    };
+  }
+
+  return {
+    kind: "not_found",
+  };
+}
+
+function toResumeSessionSummary(session: ListedSessionRecord): ResumeSessionSummary {
+  const { record } = session;
+  return {
+    id: record.id,
+    path: session.filePath,
+    updatedAt: record.updatedAt,
+    cwd: record.cwd,
+    model: record.activeConfig.model,
+    mode: record.activeConfig.mode,
+    title: record.summary.title,
+    cost: record.latestMetadata?.cost,
+    messageCount: record.messageCount,
+  };
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function cloneOptionalJson<T>(value: T | undefined): T | undefined {
+  return value === undefined ? undefined : cloneJson(value);
 }
 
 function isAbortError(error: unknown): boolean {

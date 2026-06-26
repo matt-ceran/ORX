@@ -2,16 +2,16 @@
 
 Last updated: 2026-06-26
 
-## Fast Phase 6 Handoff
+## Fast Phase 7 Handoff
 
-To start Phase 6 in a fresh session, read:
+To continue Phase 7 in a fresh session, read:
 
 1. `memory/00_INDEX.md`
 2. `memory/01_PROJECT_BRIEF.md`
 3. `memory/09_CURRENT_CONTEXT.md`
-4. `memory/14_PHASE_6_AGENT_RUNTIME.md`
+4. `memory/07_SESSIONS_AND_MEMORY.md`
 
-Then retrieve supporting shards from the index as needed. The Phase 6 shard is the focused handoff for the agent runtime and tool-call loop.
+Then retrieve supporting shards from the index as needed.
 
 ## Current State
 
@@ -42,6 +42,18 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented and verified the Phase 7 `/resume` slice:
+
+- Added tolerant session listing for saved JSON records, sorted newest-first and excluding the active session.
+- Chat `/resume` with no selector lists recent transcript-bearing sessions with title, cwd, updated time, model, mode, cost, and message count.
+- Chat `/resume <number|id|prefix|latest>` loads a saved session, restores messages, latest metadata, active routing/Fusion config, and switches the active chat cwd to the saved session cwd.
+- Exact id and prefix selection search all transcript-bearing saved sessions, not only the displayed recent list.
+- Ambiguous prefix output is capped, non-numbered, and instructs users to use an exact id or longer unique prefix so `/resume 1` cannot be confused with ambiguous-match numbering.
+- Blank startup session files are omitted from `/resume` listings.
+- Added no-network tests for session listing, missing/malformed session files, slash `/resume` list/resume/error/ambiguous output, full chat resume with restored Fusion routing, exact-id resume outside the recent display window, and bounded ambiguous output.
+- `npm run typecheck`, `git diff --check`, and `npm test` pass with 95 tests.
+- Independent verifier found and rechecked exact-id and ambiguous-output edge cases; final pass reported no findings.
 
 Implemented and verified the first Phase 7 session persistence foundation:
 
@@ -242,11 +254,11 @@ Recorded MCP/tooling research conclusions:
 
 ## Next Likely Task
 
-Continue Phase 6 agent runtime:
+Continue Phase 7 sessions and memory:
 
-- Add any remaining runtime polish around session metadata and tool-loop boundaries.
-- Keep the runtime shaped for future `delegate_task`, sessions, and MCP/plugin policy.
-- Consider native test-runner adapters after the core tool-call loop and session metadata are stable.
+- Replace the Phase 6 in-process `/compact` scaffold with persistent-session-aware compaction.
+- Persist compaction results back into the active session record without losing restart/resume continuity.
+- Keep session metadata shaped for future aggregate token/cost, orchestration, delegate, and MCP policy fields.
 
 Do not implement orchestration before the core OpenRouter streaming loop, tool-call loop, and session metadata exist.
 

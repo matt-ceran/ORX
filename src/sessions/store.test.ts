@@ -18,6 +18,7 @@ import {
   createSessionId,
   createSessionRecord,
   getSessionFilePath,
+  listSessionRecords,
   loadSessionRecord,
   redactRemoteUrl,
   resolveGitRepositoryMetadata,
@@ -193,6 +194,61 @@ test("updates session records with active config, messages, and latest metadata"
   assert.equal(record.activeConfig.fusionPreset, "general-budget");
   assert.equal(record.messageCount, 2);
   assert.equal(record.latestMetadata?.generationId, "gen-123");
+});
+
+test("lists saved sessions newest first while excluding active and malformed records", async () => {
+  const sessionDir = mkdtempSync(join(tmpdir(), "orx-session-list-"));
+
+  try {
+    const older = await createSessionRecord({
+      id: "20260626T120000Z-older",
+      cwd: "/tmp/project",
+      activeConfig: baseConfig(),
+      messages: [{ role: "user", content: "Older task" }],
+      now: new Date("2026-06-26T12:00:00.000Z"),
+      git: undefined,
+    });
+    const newer = await createSessionRecord({
+      id: "20260626T130000Z-newer",
+      cwd: "/tmp/project",
+      activeConfig: baseConfig(),
+      messages: [{ role: "user", content: "Newer task" }],
+      now: new Date("2026-06-26T13:00:00.000Z"),
+      git: undefined,
+    });
+    const active = await createSessionRecord({
+      id: "20260626T140000Z-active",
+      cwd: "/tmp/project",
+      activeConfig: baseConfig(),
+      now: new Date("2026-06-26T14:00:00.000Z"),
+      git: undefined,
+    });
+
+    await saveSessionRecord(older, { sessionDir });
+    await saveSessionRecord(newer, { sessionDir });
+    await saveSessionRecord(active, { sessionDir });
+    writeFileSync(join(sessionDir, "broken.json"), "{");
+
+    const sessions = await listSessionRecords({
+      sessionDir,
+      excludeIds: [active.id],
+      limit: 2,
+    });
+
+    assert.deepEqual(
+      sessions.map((session) => session.id),
+      [newer.id, older.id],
+    );
+    assert.equal(sessions[0].record.summary.title, "Newer task");
+  } finally {
+    rmSync(sessionDir, { recursive: true, force: true });
+  }
+});
+
+test("listing missing session directories returns an empty list", async () => {
+  const sessionDir = join(tmpdir(), `orx-missing-sessions-${Date.now()}`);
+
+  assert.deepEqual(await listSessionRecords({ sessionDir }), []);
 });
 
 test("reads best-effort git repository metadata", async () => {

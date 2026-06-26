@@ -41,3 +41,7 @@ export interface SessionLocation {
   id: string;
   filePath: string;
 }
+
+export interface ListedSessionRecord extends SessionLocation {
+  record: OrxSessionRecord;
+}

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import type { OrxConfig } from "../config/types.js";
@@ -8,6 +8,7 @@ import { resolveGitRepositoryMetadata } from "./git.js";
 import {
   SESSION_SCHEMA_VERSION,
   type GitRepositoryMetadata,
+  type ListedSessionRecord,
   type OrxSessionRecord,
   type SessionConfigSnapshot,
   type SessionSummary,
@@ -145,6 +146,50 @@ export async function loadSessionRecord(filePath: string): Promise<OrxSessionRec
   return parseSessionRecord(parsed, filePath);
 }
 
+export async function listSessionRecords(
+  options: ResolveSessionDirectoryOptions & {
+    excludeIds?: string[];
+    limit?: number;
+  } = {},
+): Promise<ListedSessionRecord[]> {
+  const sessionDir = resolveSessionDirectory(options);
+  let names: string[];
+
+  try {
+    names = await readdir(sessionDir);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+
+  const excluded = new Set(options.excludeIds ?? []);
+  const records: ListedSessionRecord[] = [];
+  for (const name of names) {
+    if (!name.endsWith(".json")) {
+      continue;
+    }
+
+    const filePath = join(sessionDir, name);
+    try {
+      const record = await loadSessionRecord(filePath);
+      if (!excluded.has(record.id)) {
+        records.push({
+          id: record.id,
+          filePath,
+          record,
+        });
+      }
+    } catch {
+      // Ignore malformed session files so one bad file does not break /resume.
+    }
+  }
+
+  records.sort(compareListedSessions);
+  return typeof options.limit === "number" ? records.slice(0, options.limit) : records;
+}
+
 export function snapshotConfig(config: OrxConfig): SessionConfigSnapshot {
   return {
     model: config.model,
@@ -228,4 +273,17 @@ function cloneOptionalJson<T>(value: T | undefined): T | undefined {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function compareListedSessions(a: ListedSessionRecord, b: ListedSessionRecord): number {
+  const byUpdatedAt = Date.parse(b.record.updatedAt) - Date.parse(a.record.updatedAt);
+  if (Number.isFinite(byUpdatedAt) && byUpdatedAt !== 0) {
+    return byUpdatedAt;
+  }
+
+  return b.id.localeCompare(a.id);
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return Boolean(error && typeof error === "object" && "code" in error);
 }
