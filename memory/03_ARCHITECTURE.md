@@ -12,6 +12,7 @@ Last updated: 2026-06-25
 - Search: ripgrep wrapper
 - Browser: Playwright
 - MCP: TypeScript MCP SDK
+- Plugins: ORX manifest plus Agent Skills `SKILL.md` compatibility
 - Config: TOML or JSONC
 
 ## Module Boundaries
@@ -26,9 +27,12 @@ src/tools/                 local tools: files, shell, search, git, patch
 src/slash/                 slash command registry and handlers
 src/permissions/           permission policy, YOLO defaults, future safe modes
 src/mcp/                   MCP client and server registry
+src/plugins/               plugin install cache, manifests, skills, commands, hooks, plugin MCP presets
 src/delegation/            orchestration profiles, delegate adapters, result merging
 src/sessions/              transcript persistence and resume
 src/web/                   search and browser tools
+src/research/              search/crawl/scholar/document adapters, evidence ledger, citations
+src/security/              scanner adapters, MCP/plugin audit helpers, SSRF guards
 ```
 
 ## Request Flow
@@ -43,6 +47,8 @@ src/web/                   search and browser tools
 8. Session state, usage, and cost metadata are persisted.
 
 Future delegation uses the same loop: the active controller can request a `delegate_task` tool call, then ORX dispatches that task to a configured adapter and returns the summarized result to the controller.
+
+Future plugins load before the agent request is built. ORX should progressively expose only enabled plugin metadata, then load full skill instructions, commands, rules, hooks, MCP tools, or docs only when activated by the user, path scope, or model-selected workflow.
 
 ## Mode Flow
 
@@ -59,6 +65,12 @@ Keep provider behavior behind `src/openrouter/` so the rest of the runtime talks
 
 Keep cross-agent orchestration behind `src/delegation/` so OpenRouter model calls, Codex subprocess/SDK calls, Devin MCP/API calls, and future adapters share one controller/delegate contract.
 
+Keep plugin installation, trust, locking, and enablement behind `src/plugins/`. Plugins can contribute tools and instructions, but ORX policy decides what is enabled and what reaches the model.
+
+Keep research provenance behind `src/research/` so search results, fetched pages, PDFs, scholarly metadata, and browser captures share one evidence-ledger and citation model.
+
 ## Current Implementation Notes
 
 `src/openrouter/` currently owns the one-shot streaming client, request construction, SSE parsing, metadata capture, and metadata formatting used by `orx ask`.
+
+`src/tools/` currently owns standalone native local coding tools for file reads, directory listing, file search, shell execution, git diff, patch application, shared truncation, and process execution. These are ready to be wired into the Phase 6 agent runtime.

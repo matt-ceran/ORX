@@ -4,6 +4,24 @@ Last updated: 2026-06-25
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-25: Add ORX Plugins As Installable Bundles
+
+Decision: ORX should support a first-class plugin system where a plugin can bundle skills, slash commands/prompts, rules, lifecycle hooks, MCP server presets, named delegates, docs/context providers, assets, and optional scoped binaries.
+
+Reasoning: Second-pass ecosystem research showed that mature coding-agent extension systems are converging on installable bundles, while MCP is only one component inside those bundles. ORX should treat the open Agent Skills `SKILL.md` format as the portable workflow unit and use progressive loading to keep context small.
+
+## 2026-06-25: Treat Plugin And MCP Enablement As The Trust Boundary
+
+Decision: ORX can keep YOLO-style native local execution, but plugins and MCP servers must require explicit install/profile enablement, source pinning, schema hashing, secrets isolation, risk visibility, and audit logging.
+
+Reasoning: MCP servers, plugin hooks, and plugin binaries are executable supply-chain surface. Tool descriptions, schemas, resources, fetched content, and plugin instructions can also carry prompt-injection or tool-poisoning attacks. Since ORX will not prompt on every local action by default, policy must be enforced at install/profile/runtime boundaries outside the model loop.
+
+## 2026-06-25: Use Evidence Ledgers For Deep Research
+
+Decision: ORX research tools should store an evidence ledger for each research run, including source identifiers, canonical URLs or DOI/PMID/arXiv ids, fetched dates, content hashes, extracted spans, provider/query metadata, and trust tier.
+
+Reasoning: Deep research needs reproducible citation handling and source verification. Provider summaries from web or research APIs should be treated as secondary until ORX fetches and records the cited primary sources directly.
+
 ## 2026-06-25: Prefer Native Core Tools And Profile-Scoped MCP
 
 Decision: ORX should implement core local coding capabilities natively and use MCP as an explicit, profile-scoped integration layer for external systems.

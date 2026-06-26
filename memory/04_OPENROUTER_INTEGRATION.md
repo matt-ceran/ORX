@@ -73,7 +73,7 @@ ORX should support future orchestration profiles without making OpenRouter respo
 
 ## MCP Boundary
 
-OpenRouter MCP should be used for live lookup and testing:
+OpenRouter has an official hosted MCP server as of 2026-06-25. OpenRouter MCP should be used for live lookup and testing:
 
 - model search
 - pricing
@@ -81,8 +81,11 @@ OpenRouter MCP should be used for live lookup and testing:
 - rankings
 - credits
 - generation lookup
+- providers
+- docs search
+- capped test calls through `chat-send`
 
-The ORX runtime should still call the OpenRouter API directly for normal inference.
+The ORX runtime should still call the OpenRouter API directly for normal inference. Treat the MCP server as a development assistant and model-selection/research tool, not as ORX's primary chat transport.
 
 ## Cost Tracking
 

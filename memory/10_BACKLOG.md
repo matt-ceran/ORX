@@ -28,25 +28,33 @@ Completed:
 
 ## P2
 
-Next:
+Completed:
 
 - Add local tools: read file, list files, search files, shell, git diff, apply patch.
+- Add shell output truncation.
+
+Next:
+
 - Add tool-call loop.
 - Add visible diff summaries after file edits.
-- Add shell output truncation.
 - Keep the tool-call loop compatible with a future `delegate_task` tool.
+- Add native test-runner adapters after shell tooling exists.
 
 ## P3
 
 - Add session persistence.
 - Add `/resume`.
 - Add `/compact`.
-- Add OpenRouter MCP integration.
+- Add official OpenRouter MCP integration for live model catalog, pricing, rankings, benchmarks, credits, docs search, providers, and generation lookup.
 - Add `/credits` and generation lookup.
 - Add MCP client registry/config support with explicit profiles.
 - Add `/mcp` status/list/enable/disable command design.
 - Add `/status` fields for MCP server risk metadata.
 - Persist active orchestrator and delegate metadata in sessions.
+- Add MCP policy engine outside the model loop.
+- Add MCP schema hashing and schema-change status.
+- Add local MCP audit logs.
+- Add secret redaction and minimal env forwarding for MCP child processes.
 
 ## P4
 
@@ -54,11 +62,26 @@ Next:
 - Add Playwright browser automation.
 - Add prompt-injection safeguards for fetched content.
 - Add MCP presets: `openrouter`, `context7`, `github-readonly`, `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
+- Add first-class plugin system: install cache, marketplace/catalog metadata, lockfile pins, installed/enabled state separation, and namespacing.
+- Add Agent Skills `SKILL.md` loader with progressive disclosure.
+- Add plugin-provided slash commands/prompts and rules.
+- Add hook runtime with hash trust and `/status` visibility.
+- Add plugin-provided MCP server presets routed through ORX policy.
+- Add plugin metadata fields for source, integrity, permissions, auth/privacy, runtime requirements, trust tier, and component lists.
+- Add `/plugins` command for list/install/enable/disable/inspect.
+- Add `/hooks` or plugin hook inspection workflow.
+- Add tree-sitter and ast-grep code intelligence for repo maps, symbol slices, syntax-aware search, and codemod previews.
+- Add LSP/SCIP bridge research spike for diagnostics, references, hover, and go-to-definition.
+- Add Sourcegraph read-only profile for multi-repo search/navigation/history.
 - Add docs/retrieval providers: Context7, DeepWiki, OpenAI Docs, Microsoft Learn, AWS docs, Google Developer Knowledge.
 - Add official GitHub MCP read-only integration before write-capable GitHub operations.
+- Add GitLab read-only profile, then CI-write only as explicit opt-in.
+- Add security scanner profiles: Semgrep, Snyk, Socket, OSV-Scanner, CodeQL, and Trivy.
 - Add optional Chrome DevTools MCP profile for frontend debugging and performance traces.
 - Add database profiles with read-only defaults, row limits, query logging, and explicit connection names.
 - Add cloud/devops profiles only as explicit opt-ins with account/project/region visible in `/status`.
+- Add research profiles: `research-web`, `research-crawl`, `research-scholar`, `research-docs`, `research-browser`, `research-rag`, and `research-memory`.
+- Add research evidence ledger and `/sources`, `/cite`, and `/bibliography` command design.
 - Add orchestration profiles: `/orchestrator`, `/delegate`, `/delegates`, and `/team`.
 - Add OpenRouter delegate adapter.
 - Add Codex delegate adapter.

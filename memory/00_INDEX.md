@@ -27,7 +27,7 @@ Always read these first:
 | `current` | `09_CURRENT_CONTEXT.md` | Current repo state, latest changes, next likely work |
 | `backlog` | `10_BACKLOG.md` | Prioritized implementation tasks |
 | `commands` | `11_COMMANDS.md` | Local commands, setup steps, GitHub repo details |
-| `integrations` | `12_INTEGRATIONS_RESEARCH.md` | MCP server/tool research, integration priorities, security posture |
+| `integrations` | `12_INTEGRATIONS_RESEARCH.md` | MCP/plugin/tool research, integration priorities, security posture |
 
 ## Retrieval Patterns
 

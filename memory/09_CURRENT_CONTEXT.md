@@ -32,6 +32,29 @@ Current files:
 
 ## Latest Work
 
+Implemented and independently verified the Phase 5 native local coding tools:
+
+- Added `src/tools/` registry with `read_file`, `list_files`, `search_files`, `shell`, `git_diff`, and `apply_patch`.
+- Added shared truncation utilities that preserve UTF-8 byte bounds.
+- `read_file` supports line and byte truncation with clear file errors.
+- `list_files` reports type, size, recursion depth, and max-entry truncation.
+- `search_files` uses `rg` when available, supports dash-leading patterns, and has a bounded fallback search.
+- `shell` runs without approval prompts and captures exit code, stdout, stderr, cwd, duration, timeout, signal, and truncation metadata.
+- `git_diff` supports working-tree diffs with optional path scopes.
+- `apply_patch` supports `git apply` unified patches and structured patches with preflight validation to avoid partial mutation on malformed structured patch plans.
+- Added temp-dir based tests covering success, failures, truncation, search, shell, git diff, patch application, malformed structured patches, and edge cases found by independent verifiers.
+- `npm run typecheck`, `npm run build`, and `npm test` pass with 36 tests.
+
+Continued the second-pass integration research after a context-window failure and recorded the expanded findings:
+
+- Prior research already concluded that ORX should keep core local work native and use MCP through explicit profiles for external systems.
+- New research confirmed ORX should add a first-class plugin system, not only MCP presets.
+- Plugins should be installable bundles of Agent Skills `SKILL.md` workflows, slash commands/prompts, rules, lifecycle hooks, MCP server presets, named delegates, docs/context providers, assets, and optional scoped binaries.
+- OpenRouter has an official hosted MCP server as of 2026-06-25 for live model catalog, pricing, benchmarks, rankings, credits, docs search, providers, generation lookup, and billable test calls. ORX should use it as a development assistant while keeping normal inference on the direct OpenRouter API client.
+- Programming integrations should add native layers after the initial tools: test adapters, tree-sitter, ast-grep, LSP/SCIP, Sourcegraph read-only profile, GitHub/GitLab read-only profiles, and scanner profiles for Semgrep, Snyk, Socket, OSV-Scanner, CodeQL, and Trivy.
+- Deep research should be profile-scoped with web search, crawl/scrape, scholarly metadata, document parsing, browser research, local RAG cache, research notes, and an evidence ledger for citations.
+- Plugin/MCP security should require explicit install/profile enablement, source pinning, schema hashing, secrets isolation, SSRF guards, sandboxing where practical, and local audit logs.
+
 Implemented and independently verified the Phase 4 slash command expansion:
 
 - Extracted chat slash parsing and handling into `src/slash/`.
@@ -122,14 +145,17 @@ Recorded MCP/tooling research conclusions:
 
 ## Next Likely Task
 
-Start Phase 5 local coding tools:
+Start Phase 6 agent runtime:
 
-- Add native `read_file`, `list_files`, `search_files`, `shell`, `git_diff`, and `apply_patch` modules.
-- Use `rg` for search when available.
-- Keep command execution unrestricted by default but visible through status.
-- Add tests around truncation, errors, and no-prompt execution.
+- Add model tool definitions for native local tools.
+- Add a tool-call loop around OpenRouter chat completions.
+- Add tool result truncation and summarization rules.
+- Add interruption handling for tool execution.
+- Keep the runtime shaped for future `delegate_task`, sessions, and MCP/plugin policy.
 
 Do not implement orchestration before the core OpenRouter streaming loop, tool-call loop, and session metadata exist.
+
+Do not implement the plugin system before native local tools, the tool-call loop, sessions, and MCP policy basics exist. The plugin system should build on those foundations.
 
 ## Active Constraints
 
@@ -138,3 +164,4 @@ Do not implement orchestration before the core OpenRouter streaming loop, tool-c
 - Keep UI inspired by professional terminal coding agents without copying Codex branding or proprietary assets.
 - Keep memory files concise and indexed.
 - Commit and push only after the current implementation step has passed independent verification.
+- Treat plugins and MCP servers as explicit opt-in surfaces with visible risk metadata, even while native ORX local execution remains YOLO-style.

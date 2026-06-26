@@ -64,6 +64,8 @@ Status: complete and independently verified on 2026-06-25.
 
 Done when ORX can inspect and modify a repo end to end.
 
+Status: complete and independently verified on 2026-06-25.
+
 ## Phase 6: Agent Runtime
 
 - Add tool-call loop.
@@ -83,15 +85,37 @@ Done when the agent can complete multi-step coding tasks reliably.
 
 Done when sessions can be resumed after terminal restart.
 
-## Phase 8: OpenRouter MCP
+## Phase 8: OpenRouter MCP And MCP Policy
 
 - Add MCP client support.
 - Connect to OpenRouter MCP for live model search, rankings, benchmarks, credits, and generation lookup.
 - Keep OpenRouter API as the actual inference path.
+- Add explicit MCP profiles.
+- Add MCP schema hashing, tool allow/deny lists, secret redaction, and local audit logs.
 
 Done when `/models`, `/credits`, and model recommendations can use live OpenRouter data.
 
-## Phase 9: Orchestration And Delegation
+## Phase 9: Plugins And Advanced Tooling
+
+- Add ORX plugin manifest support, install cache, lockfile pins, and enabled/installed state separation.
+- Add Agent Skills `SKILL.md` loader with progressive disclosure.
+- Add plugin-provided slash commands/prompts, rules, lifecycle hooks, and MCP presets.
+- Add `/plugins` and hook/plugin inspection workflow.
+- Add tree-sitter, ast-grep, LSP/SCIP research spike, Sourcegraph read-only profile, and scanner profiles.
+
+Done when ORX can install and enable a locked plugin bundle without auto-enabling risky executable or auth-bearing surfaces.
+
+## Phase 10: Web, Browser, And Research Tools
+
+- Add web search integration.
+- Add optional Playwright browser automation.
+- Add prompt-injection safeguards for fetched content.
+- Add research profiles for web, crawl, scholar, docs, browser, RAG, and memory.
+- Add research evidence ledger and citation commands.
+
+Done when ORX can research current information, verify sources, and cite evidence in task work.
+
+## Phase 11: Orchestration And Delegation
 
 - Add orchestration profiles with one controller and a delegate pool.
 - Allow the controller to be either an OpenRouter model or an external agent adapter such as Codex.
@@ -102,15 +126,7 @@ Done when `/models`, `/credits`, and model recommendations can use live OpenRout
 
 Done when an ORX session can ask a selected controller to delegate subtasks to configured models or agent adapters and summarize their results back into the main thread.
 
-## Phase 10: Web And Browser Tools
-
-- Add web search integration.
-- Add optional Playwright browser automation.
-- Add prompt-injection safeguards for fetched content.
-
-Done when ORX can research current information and cite sources in task work.
-
-## Phase 11: Polish
+## Phase 12: Polish
 
 - Improve visual design, command palette, animations, themes, and model badges.
 - Add tests for core command parsing and tool execution.
