@@ -23,6 +23,16 @@ export interface SessionSummary {
   title?: string;
 }
 
+export interface SessionActivatedSkill {
+  id: string;
+  pluginId: string;
+  name: string;
+  filePath: string;
+  contentHash: string;
+  sourceManifestHash: string;
+  activatedAt: string;
+}
+
 export interface OrxSessionRecord {
   schemaVersion: typeof SESSION_SCHEMA_VERSION;
   id: string;
@@ -33,6 +43,7 @@ export interface OrxSessionRecord {
   activeConfig: SessionConfigSnapshot;
   messages: OpenRouterMessage[];
   latestMetadata?: OpenRouterStreamMetadata;
+  activatedSkills?: SessionActivatedSkill[];
   messageCount: number;
   summary: SessionSummary;
 }

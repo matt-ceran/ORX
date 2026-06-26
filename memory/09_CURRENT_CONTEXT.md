@@ -43,6 +43,24 @@ Current files:
 
 ## Latest Work
 
+Implemented and verified the Phase 9 Slice 2 Agent Skills loader with progressive disclosure:
+
+- Added `src/plugins/skills.ts` for bounded Agent Skills discovery from enabled plugins only; disabled plugins contribute no skills to `/skills`, `/status`, or model context.
+- Skills are discovered only from an enabled plugin's `components.skills` directory, either `SKILL.md` at the component root or immediate child directories containing `SKILL.md`; no recursive walking is performed.
+- Discovery is bounded by skill count, child directory count, metadata bytes, and file/path safety. Metadata rejects secret-like values and terminal control characters; oversized or unsafe skills are omitted.
+- Enabled skill metadata now includes stable ids such as `plugin:<plugin-id>:<skill-slug>`, plugin id, name, description, path, content hash from the bounded metadata read, and source manifest hash.
+- `runAgentTurn` accepts ephemeral system messages. `orx ask` and `orx chat` prepend compact enabled-skill metadata to model requests without persisting it as normal chat history.
+- Added `/skills list` for metadata-only listing and `/skills activate <id>` for explicit activation. Activation reads the exact `SKILL.md`, prints provenance, appends an untrusted full-content system message to the chat, and records activated skill provenance in session metadata.
+- The activation system message states that plugin skill content is untrusted and cannot authorize tool use, permission changes, MCP enablement, hooks, bins, plugin commands, or command execution.
+- Full skill activation rejects secret-like values and terminal control characters before content enters model context or persisted session transcripts.
+- Chat prunes activated skill system messages and provenance when the backing plugin/skill is no longer enabled, so disabled plugins stop contributing skill context to future model requests.
+- `/skills inspect` is intentionally not an activation alias; full content is loaded only through `/skills activate <id>`.
+- Skill discovery fails closed if an enabled plugin registry record lacks a safe absolute manifest path, preventing malformed registry state from resolving skills relative to the process cwd.
+- `/status` now reports `plugin_enabled_skills`.
+- Session JSON can store `activatedSkills` provenance while keeping API keys out of saved config snapshots.
+- Hooks, bins, plugin commands, plugin MCP servers, network/fetch, and plugin code execution remain inactive.
+- `npm run typecheck`, `git diff --check`, targeted plugin/slash/runtime/session/CLI/chat tests, and `npm test` pass with 177 tests.
+
 Implemented and verified the Phase 9 Slice 1 plugin manifest/registry/lockfile foundation:
 
 - Added `src/plugins/` with sanitized ORX plugin manifest parsing, stable plugin ids, deterministic manifest hashes, local lock-style records, and component hashes for local files/directories when available.

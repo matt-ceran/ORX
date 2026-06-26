@@ -12,6 +12,10 @@ import type { LoadedConfig, OrxConfig } from "../config/types.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import {
+  createEnabledPluginSkillsSystemMessage,
+  discoverEnabledPluginSkills,
+} from "../plugins/index.js";
+import {
   createSessionRecord,
   listSessionRecords,
   refreshSessionGitMetadata,
@@ -20,6 +24,7 @@ import {
   updateSessionRecord,
   type ListedSessionRecord,
   type OrxSessionRecord,
+  type SessionActivatedSkill,
 } from "../sessions/index.js";
 import {
   handleSlashCommand,
@@ -71,6 +76,7 @@ export async function runChat({
   let activeAbort: AbortController | undefined;
   const diffState = createSessionDiffState();
   let session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
+  let activatedSkills: SessionActivatedSkill[] = session.record.activatedSkills ?? [];
 
   const rl = createInterface({
     input: io.stdin,
@@ -122,6 +128,7 @@ export async function runChat({
           clearMessages: () => {
             messages = [];
             latestMetadata = undefined;
+            activatedSkills = [];
           },
           getLatestMetadata: () => latestMetadata,
           getContextBudget: () => contextBudget,
@@ -130,8 +137,12 @@ export async function runChat({
           mcpAuditLogPath,
           mcpConfigPath,
           pluginRegistryPath,
+          recordActivatedSkill: (skill) => {
+            activatedSkills = upsertActivatedSkill(activatedSkills, skill);
+          },
           startNewSession: async () => {
             session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
+            activatedSkills = [];
           },
           resumeSession: async (selector) => {
             const result = await resumeChatSession({
@@ -152,6 +163,7 @@ export async function runChat({
             };
             messages = cloneJson(record.messages);
             latestMetadata = cloneOptionalJson(record.latestMetadata);
+            activatedSkills = cloneJson(record.activatedSkills ?? []);
             resetSessionDiffState(diffState);
             session = {
               record,
@@ -165,7 +177,20 @@ export async function runChat({
             };
           },
         });
-        await persistSession(session, activeCwd, activeConfig, messages, latestMetadata, io.stderr);
+        ({ messages, activatedSkills } = pruneInactiveSkillState(
+          messages,
+          activatedSkills,
+          pluginRegistryPath,
+        ));
+        await persistSession(
+          session,
+          activeCwd,
+          activeConfig,
+          messages,
+          latestMetadata,
+          activatedSkills,
+          io.stderr,
+        );
 
         if (result === "exit") {
           rl.close();
@@ -176,6 +201,11 @@ export async function runChat({
         continue;
       }
 
+      ({ messages, activatedSkills } = pruneInactiveSkillState(
+        messages,
+        activatedSkills,
+        pluginRegistryPath,
+      ));
       const userMessage: OpenRouterMessage = { role: "user", content: line };
       const requestMessages = [...messages, userMessage];
 
@@ -195,6 +225,7 @@ export async function runChat({
             signal: activeAbort.signal,
             contextBudget,
             diffState,
+            ephemeralSystemMessages: compactPluginSkillMessages(pluginRegistryPath),
             callbacks: {
               onText(text) {
                 if (needsAssistantPrefix) {
@@ -218,7 +249,15 @@ export async function runChat({
         io.stdout.write("\n");
         messages = result.messages;
         latestMetadata = result.metadata;
-        await persistSession(session, activeCwd, activeConfig, messages, latestMetadata, io.stderr);
+        await persistSession(
+          session,
+          activeCwd,
+          activeConfig,
+          messages,
+          latestMetadata,
+          activatedSkills,
+          io.stderr,
+        );
         writeLine(io.stdout, formatOpenRouterMetadata(result.metadata));
         writeLine(io.stdout, renderFooter(activeCwd, loadedConfig, activeConfig, session));
       } catch (error) {
@@ -311,6 +350,7 @@ async function persistSession(
   config: OrxConfig,
   messages: OpenRouterMessage[],
   latestMetadata: OpenRouterStreamMetadata | undefined,
+  activatedSkills: SessionActivatedSkill[],
   stderr: WritableLike,
 ): Promise<void> {
   try {
@@ -318,6 +358,7 @@ async function persistSession(
       activeConfig: config,
       messages,
       latestMetadata,
+      activatedSkills,
       cwd,
     });
     await refreshSessionGitMetadata(session.record);
@@ -329,6 +370,62 @@ async function persistSession(
     const message = error instanceof Error ? error.message : String(error);
     writeLine(stderr, `Unable to save session: ${message}`);
   }
+}
+
+function compactPluginSkillMessages(pluginRegistryPath: string | undefined): OpenRouterMessage[] {
+  const message = createEnabledPluginSkillsSystemMessage({ registryPath: pluginRegistryPath });
+  return message ? [message] : [];
+}
+
+function upsertActivatedSkill(
+  skills: SessionActivatedSkill[],
+  nextSkill: SessionActivatedSkill,
+): SessionActivatedSkill[] {
+  return [...skills.filter((skill) => skill.id !== nextSkill.id), nextSkill];
+}
+
+function pruneInactiveSkillState(
+  messages: OpenRouterMessage[],
+  activatedSkills: SessionActivatedSkill[],
+  pluginRegistryPath: string | undefined,
+): { messages: OpenRouterMessage[]; activatedSkills: SessionActivatedSkill[] } {
+  if (activatedSkills.length === 0) {
+    return {
+      messages,
+      activatedSkills,
+    };
+  }
+
+  const activeSkillIds = new Set(
+    discoverEnabledPluginSkills({ registryPath: pluginRegistryPath }).skills.map((skill) => skill.id),
+  );
+  const nextActivatedSkills = activatedSkills.filter((skill) => activeSkillIds.has(skill.id));
+  if (nextActivatedSkills.length === activatedSkills.length) {
+    return {
+      messages,
+      activatedSkills,
+    };
+  }
+
+  return {
+    messages: messages.filter((message) => {
+      const skillId = activatedSkillMessageId(message);
+      return !skillId || activeSkillIds.has(skillId);
+    }),
+    activatedSkills: nextActivatedSkills,
+  };
+}
+
+function activatedSkillMessageId(message: OpenRouterMessage): string | undefined {
+  if (message.role !== "system" || typeof message.content !== "string") {
+    return undefined;
+  }
+
+  if (!message.content.startsWith("ORX plugin skill activation.\n")) {
+    return undefined;
+  }
+
+  return /^- skill_id: (plugin:[^\n]+)$/m.exec(message.content)?.[1];
 }
 
 function sessionInfo(session: ChatSessionHandle): { id: string; path: string } {

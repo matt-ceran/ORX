@@ -19,7 +19,7 @@ import {
   listOpenRouterModels,
 } from "./openrouter/live.js";
 import { resolveMcpConfigPath } from "./mcp/index.js";
-import { resolvePluginRegistryPath } from "./plugins/index.js";
+import { createEnabledPluginSkillsSystemMessage, resolvePluginRegistryPath } from "./plugins/index.js";
 import { resolveSessionDirectory } from "./sessions/index.js";
 import { formatStatus } from "./status.js";
 import { runChat } from "./tui/chat.js";
@@ -91,7 +91,10 @@ export async function runCli(
   }
 
   if (first === "ask") {
-    return runAskCommand(args.slice(1), loadedConfig.config.apiKey ?? "", loadedConfig.config, io);
+    const pluginRegistryPath = resolvePluginRegistryPath({ env, cwd: io.cwd });
+    return runAskCommand(args.slice(1), loadedConfig.config.apiKey ?? "", loadedConfig.config, io, {
+      pluginRegistryPath,
+    });
   }
 
   if (first === "models") {
@@ -222,6 +225,7 @@ async function runAskCommand(
   apiKey: string,
   config: OrxConfig,
   io: CliIo,
+  options: { pluginRegistryPath?: string } = {},
 ): Promise<number> {
   const parsed = parseAskArgs(args);
   if (typeof parsed === "string") {
@@ -240,6 +244,7 @@ async function runAskCommand(
         messages: requestMessages,
         cwd: io.cwd,
         fetch: io.fetch,
+        ephemeralSystemMessages: compactPluginSkillMessages(options.pluginRegistryPath),
         callbacks: {
           onText(text) {
             io.stdout.write(text);
@@ -261,6 +266,11 @@ async function runAskCommand(
     writeLine(io.stderr, message);
     return 1;
   }
+}
+
+function compactPluginSkillMessages(pluginRegistryPath: string | undefined): OpenRouterMessage[] {
+  const message = createEnabledPluginSkillsSystemMessage({ registryPath: pluginRegistryPath });
+  return message ? [message] : [];
 }
 
 function applyAskOverrides(config: OrxConfig, overrides: AskRequestOverrides): OrxConfig {

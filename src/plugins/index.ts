@@ -40,3 +40,17 @@ export {
   renderPluginInspect,
   renderPluginList,
 } from "./render.js";
+export {
+  activatePluginSkill,
+  createEnabledPluginSkillsSystemMessage,
+  discoverEnabledPluginSkills,
+  getEnabledPluginSkillSummary,
+  renderEnabledPluginSkillsForModel,
+  renderPluginSkillList,
+  renderSkillActivation,
+  type PluginSkillActivation,
+  type PluginSkillActivationProvenance,
+  type PluginSkillMetadata,
+  type PluginSkillOmission,
+  type PluginSkillsDiscovery,
+} from "./skills.js";

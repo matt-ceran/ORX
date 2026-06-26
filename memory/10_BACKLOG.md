@@ -90,6 +90,7 @@ Next:
 
 - Completed:
   - Add Phase 9 Slice 1 plugin substrate: sanitized manifest parsing, stable plugin ids, private registry persistence under `~/.orx/plugins/registry.json`, local lock-style records, inert installed/enabled state separation, bounded component hashing, pinned git source records, `/plugins list|inspect|register|enable|disable`, and `/status` plugin counts with hooks/bins/MCP remaining inactive.
+  - Add Phase 9 Slice 2 Agent Skills progressive loader: bounded enabled-plugin-only `SKILL.md` discovery, compact metadata in model context through ephemeral system messages, `/skills list`, `/skills activate <id>`, activated skill provenance in sessions, and `/status` enabled skill count while keeping hooks/bins/plugin commands/MCP/code execution inactive.
 
 - Add web search.
 - Add Playwright browser automation.
@@ -97,7 +98,6 @@ Next:
 - Follow `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md` for the full-stack plugin/MCP/research build order.
 - Add MCP presets: `openrouter`, `context7`, `github-readonly`, `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
 - Extend the plugin system beyond the Slice 1 substrate with install cache, marketplace/catalog metadata, source fetching, lockfile pins for remote sources, and namespacing.
-- Add Agent Skills `SKILL.md` loader with progressive disclosure.
 - Add plugin-provided slash commands/prompts and rules.
 - Add hook runtime with hash trust and `/status` visibility.
 - Add plugin-provided MCP server presets routed through ORX policy.

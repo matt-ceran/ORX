@@ -85,6 +85,18 @@ test("saves and loads session JSON without persisting API keys", async () => {
         totalTokens: 3,
         cost: 0.0001,
       },
+      activatedSkills: [
+        {
+          id: "plugin:acme.demo-plugin@1.0.0:demo",
+          pluginId: "acme.demo-plugin@1.0.0",
+          name: "Demo",
+          filePath: "/tmp/project/skills/SKILL.md",
+          contentHash: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          sourceManifestHash:
+            "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          activatedAt: "2026-06-26T12:00:00.000Z",
+        },
+      ],
       now: new Date("2026-06-26T12:34:56.000Z"),
       git: {
         root: "/tmp/project",
@@ -106,6 +118,8 @@ test("saves and loads session JSON without persisting API keys", async () => {
     assert.equal(loaded.summary.title, "Build the thing");
     assert.equal(loaded.activeConfig.model, "openrouter/auto");
     assert.equal("apiKey" in loaded.activeConfig, false);
+    assert.equal(loaded.activatedSkills?.[0].id, "plugin:acme.demo-plugin@1.0.0:demo");
+    assert.equal(loaded.activatedSkills?.[0].activatedAt, "2026-06-26T12:00:00.000Z");
     assert.doesNotMatch(raw, /secret-key/);
   } finally {
     rmSync(sessionDir, { recursive: true, force: true });
@@ -186,6 +200,18 @@ test("updates session records with active config, messages, and latest metadata"
       resolvedModel: "example/fusion",
       generationId: "gen-123",
     },
+    activatedSkills: [
+      {
+        id: "plugin:acme.demo-plugin@1.0.0:update",
+        pluginId: "acme.demo-plugin@1.0.0",
+        name: "Update",
+        filePath: "/tmp/project/skills/update/SKILL.md",
+        contentHash: "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        sourceManifestHash:
+          "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        activatedAt: "2026-06-26T12:01:00.000Z",
+      },
+    ],
     now: new Date("2026-06-26T12:01:00.000Z"),
   });
 
@@ -194,6 +220,7 @@ test("updates session records with active config, messages, and latest metadata"
   assert.equal(record.activeConfig.fusionPreset, "general-budget");
   assert.equal(record.messageCount, 2);
   assert.equal(record.latestMetadata?.generationId, "gen-123");
+  assert.equal(record.activatedSkills?.[0].id, "plugin:acme.demo-plugin@1.0.0:update");
 });
 
 test("lists saved sessions newest first while excluding active and malformed records", async () => {

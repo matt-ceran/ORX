@@ -26,8 +26,11 @@ Current Phase 7 foundation stores:
 - latest OpenRouter metadata
 - first-user-message summary/title
 - message count
+- activated plugin skill provenance when `/skills activate <id>` has been used
 
 Session config snapshots do not persist API keys. Git remote URLs redact credential userinfo before persistence.
+
+Activated skill provenance stores ids, plugin ids, names, file paths, content hashes, source manifest hashes, and activation timestamps. The full activated `SKILL.md` text lives in the explicit untrusted system message that was added to the transcript during activation.
 
 Future session fields should add:
 

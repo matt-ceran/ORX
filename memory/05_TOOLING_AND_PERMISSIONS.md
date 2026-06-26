@@ -100,5 +100,10 @@ Current Phase 9 plugin scaffold:
 - Git source manifests must include a pinned `resolvedCommit`; floating refs can be recorded as context but cannot be the lock pin.
 - Manifest and loaded registry display fields reject secret-like values and terminal control characters before they can be stored or rendered.
 - Registering stores plugins disabled by default. `/plugins enable` and `/plugins disable` persist only an inert enabled flag.
+- Enabled plugins can contribute Agent Skills metadata only. Skill discovery is bounded to `components.skills` root `SKILL.md` files and immediate child `SKILL.md` files, omits unsafe/oversized metadata, and exposes compact metadata through `/skills list`, `/status`, and ephemeral model context.
+- Skill discovery requires a safe absolute manifest path in the ORX-owned registry record and fails closed for malformed registry state.
+- Full `SKILL.md` content is loaded only through explicit `/skills activate <id>`, rejects secret-like values and terminal control characters before model/session use, then stores safe content as an untrusted system message and records provenance in session metadata.
+- Activated skill context is pruned from chat messages and session provenance when the backing plugin/skill is no longer enabled.
+- Skill content and metadata cannot authorize tool use, permission changes, MCP enablement, hooks, bins, plugin commands, or command execution.
 - Hooks, bins, plugin MCP servers, plugin slash commands, and all plugin code execution are inactive in this scaffold even when a plugin is marked enabled.
-- `/plugins inspect` and `/status` show this trust boundary explicitly; enabled hook/bin/MCP counts remain `0`.
+- `/plugins inspect`, `/skills`, and `/status` show this trust boundary explicitly; enabled hook/bin/MCP counts remain `0`.

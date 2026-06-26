@@ -10,6 +10,7 @@ import {
   type GitRepositoryMetadata,
   type ListedSessionRecord,
   type OrxSessionRecord,
+  type SessionActivatedSkill,
   type SessionConfigSnapshot,
   type SessionSummary,
 } from "./types.js";
@@ -27,6 +28,7 @@ export interface CreateSessionRecordOptions {
   activeConfig: OrxConfig;
   messages?: OpenRouterMessage[];
   latestMetadata?: OpenRouterStreamMetadata;
+  activatedSkills?: SessionActivatedSkill[];
   git?: GitRepositoryMetadata;
   now?: Date;
 }
@@ -37,6 +39,7 @@ export interface UpdateSessionRecordOptions {
   activeConfig?: OrxConfig;
   messages?: OpenRouterMessage[];
   latestMetadata?: OpenRouterStreamMetadata;
+  activatedSkills?: SessionActivatedSkill[];
   now?: Date;
 }
 
@@ -82,6 +85,7 @@ export async function createSessionRecord(
     activeConfig: snapshotConfig(options.activeConfig),
     messages,
     latestMetadata: cloneOptionalJson(options.latestMetadata),
+    activatedSkills: cloneOptionalJson(options.activatedSkills),
     messageCount: messages.length,
     summary: summarizeMessages(messages),
   };
@@ -113,6 +117,10 @@ export function updateSessionRecord(
 
   if ("latestMetadata" in options) {
     record.latestMetadata = cloneOptionalJson(options.latestMetadata);
+  }
+
+  if ("activatedSkills" in options) {
+    record.activatedSkills = cloneOptionalJson(options.activatedSkills);
   }
 
   return record;

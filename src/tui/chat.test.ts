@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { COMPACTED_CONTEXT_PROVENANCE } from "../agent/index.js";
 import type { LoadedConfig } from "../config/types.js";
+import { registerPluginManifest, setPluginEnabledState } from "../plugins/index.js";
 import { createSessionRecord, saveSessionRecord } from "../sessions/index.js";
 import { runChat } from "./chat.js";
 
@@ -415,6 +416,199 @@ test("chat compact on an already minimal resumed session leaves JSON unchanged",
     assert.doesNotMatch(String(saved.messages[0].content), new RegExp(COMPACTED_CONTEXT_PROVENANCE));
   } finally {
     rmSync(savedCwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("chat skills activation persists provenance and full skill system message", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const registryPath = join(sessionDirectory, "plugins", "registry.json");
+  const manifestPath = join(sessionDirectory, "plugin", "orx-plugin.json");
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+  mkdirSync(join(sessionDirectory, "plugin", "skills"), { recursive: true });
+  writeFileSync(
+    join(sessionDirectory, "plugin", "skills", "SKILL.md"),
+    [
+      "---",
+      "name: Chat Skill",
+      "description: Chat skill metadata.",
+      "---",
+      "# Chat Skill",
+      "FULL CHAT SKILL BODY",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "chat-plugin",
+      version: "1.0.0",
+      description: "Chat plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        skills: "./skills",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.chat-plugin@1.0.0", true, { registryPath });
+    const capture = createIo({
+      stdin: Readable.from([
+        "/skills activate plugin:acme.chat-plugin@1.0.0:chat-skill\n",
+        "Use the chat skill\n",
+        "/exit\n",
+      ]),
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+
+        return new Response(
+          streamFrom([
+            'data: {"choices":[{"delta":{"content":"Chat skill used."}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      pluginRegistryPath: registryPath,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].messages[0].role, "system");
+    assert.match(String(requests[0].messages[0].content), /compact metadata only/);
+    assert.doesNotMatch(String(requests[0].messages[0].content), /FULL CHAT SKILL BODY/);
+    assert.equal(requests[0].messages[1].role, "system");
+    assert.match(String(requests[0].messages[1].content), /FULL CHAT SKILL BODY/);
+    assert.deepEqual(requests[0].messages[2], { role: "user", content: "Use the chat skill" });
+    assert.match(capture.stdout(), /Skill activated: plugin:acme\.chat-plugin@1\.0\.0:chat-skill/);
+    assert.match(capture.stdout(), /assistant: Chat skill used\./);
+
+    const sessionFiles = readdirSync(sessionDirectory).filter((file) => file.endsWith(".json"));
+    assert.equal(sessionFiles.length, 1);
+    const saved = JSON.parse(
+      readFileSync(join(sessionDirectory, sessionFiles[0]), "utf8"),
+    ) as {
+      activatedSkills?: Array<{ id: string; contentHash: string }>;
+      messages: Array<{ role: string; content: string | null }>;
+    };
+    assert.equal(saved.activatedSkills?.[0].id, "plugin:acme.chat-plugin@1.0.0:chat-skill");
+    assert.match(saved.activatedSkills?.[0].contentHash ?? "", /^sha256:[a-f0-9]{64}$/);
+    assert.match(String(saved.messages[0].content), /FULL CHAT SKILL BODY/);
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("chat prunes activated skill context after plugin disable", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const registryPath = join(sessionDirectory, "plugins", "registry.json");
+  const manifestPath = join(sessionDirectory, "plugin", "orx-plugin.json");
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+  mkdirSync(join(sessionDirectory, "plugin", "skills"), { recursive: true });
+  writeFileSync(
+    join(sessionDirectory, "plugin", "skills", "SKILL.md"),
+    [
+      "---",
+      "name: Disabled Skill",
+      "description: Disabled skill metadata.",
+      "---",
+      "# Disabled Skill",
+      "FULL DISABLED SKILL BODY",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "disable-plugin",
+      version: "1.0.0",
+      description: "Disable plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        skills: "./skills",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.disable-plugin@1.0.0", true, { registryPath });
+    const capture = createIo({
+      stdin: Readable.from([
+        "/skills activate plugin:acme.disable-plugin@1.0.0:disabled-skill\n",
+        "/plugins disable acme.disable-plugin@1.0.0\n",
+        "Use any remaining skill\n",
+        "/exit\n",
+      ]),
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+
+        return new Response(
+          streamFrom([
+            'data: {"choices":[{"delta":{"content":"No disabled skill."}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      pluginRegistryPath: registryPath,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requests.length, 1);
+    assert.deepEqual(requests[0].messages, [{ role: "user", content: "Use any remaining skill" }]);
+
+    const sessionFiles = readdirSync(sessionDirectory).filter((file) => file.endsWith(".json"));
+    assert.equal(sessionFiles.length, 1);
+    const saved = JSON.parse(
+      readFileSync(join(sessionDirectory, sessionFiles[0]), "utf8"),
+    ) as {
+      activatedSkills?: Array<{ id: string }>;
+      messages: Array<{ role: string; content: string | null }>;
+    };
+    assert.deepEqual(saved.activatedSkills, []);
+    assert.doesNotMatch(JSON.stringify(saved.messages), /FULL DISABLED SKILL BODY/);
+  } finally {
     rmSync(sessionDirectory, { recursive: true, force: true });
   }
 });

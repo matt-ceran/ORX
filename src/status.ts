@@ -1,7 +1,7 @@
 import { formatConfigSources } from "./config/index.js";
 import type { LoadedConfig } from "./config/types.js";
 import { getMcpStatusSummary, formatMcpProfile } from "./mcp/index.js";
-import { getPluginStatusSummary } from "./plugins/index.js";
+import { getEnabledPluginSkillSummary, getPluginStatusSummary } from "./plugins/index.js";
 
 export interface StatusOptions {
   cwd: string;
@@ -19,6 +19,7 @@ export function formatStatus({
   const { config } = loadedConfig;
   const mcpStatus = getMcpStatusSummary({ configPath: mcpConfigPath });
   const pluginStatus = getPluginStatusSummary({ registryPath: pluginRegistryPath });
+  const pluginSkillStatus = getEnabledPluginSkillSummary({ registryPath: pluginRegistryPath });
   const activeMcpProfiles =
     mcpStatus.activeProfileIds.length > 0 ? mcpStatus.activeProfileIds.join(",") : "none";
   const lines = [
@@ -55,6 +56,9 @@ export function formatStatus({
     `plugin_enabled_hooks: ${pluginStatus.enabledHookCount}`,
     `plugin_enabled_bins: ${pluginStatus.enabledBinCount}`,
     `plugin_enabled_mcp: ${pluginStatus.enabledMcpCount}`,
+    `plugin_enabled_skills: ${pluginSkillStatus.skillCount}${
+      pluginSkillStatus.truncated ? " (truncated)" : ""
+    }`,
     ...mcpStatus.profiles.map(
       (profile) =>
         `mcp_profile: ${formatMcpProfile(profile, mcpStatus.profileHashes[profile.id], {

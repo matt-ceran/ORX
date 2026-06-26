@@ -569,6 +569,53 @@ test("runAgentTurn bounds oversized history before OpenRouter requests", async (
   ]);
 });
 
+test("runAgentTurn prepends ephemeral system messages without persisting them", async () => {
+  const requestMessages: unknown[] = [];
+  const mockFetch: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body));
+    requestMessages.push(body.messages);
+
+    return new Response(
+      streamFrom([
+        sse({
+          choices: [
+            {
+              delta: {
+                content: "Used compact metadata.",
+              },
+            },
+          ],
+        }),
+        "data: [DONE]\n\n",
+      ]),
+      { status: 200 },
+    );
+  };
+
+  const result = await runAgentTurn({
+    apiKey: "test-key",
+    config: baseConfig,
+    messages: [{ role: "user", content: "Use available skills" }],
+    cwd: process.cwd(),
+    fetch: mockFetch,
+    ephemeralSystemMessages: [
+      {
+        role: "system",
+        content: "ORX enabled plugin skills compact metadata.",
+      },
+    ],
+  });
+
+  assert.deepEqual(requestMessages[0], [
+    { role: "system", content: "ORX enabled plugin skills compact metadata." },
+    { role: "user", content: "Use available skills" },
+  ]);
+  assert.deepEqual(result.messages, [
+    { role: "user", content: "Use available skills" },
+    { role: "assistant", content: "Used compact metadata." },
+  ]);
+});
+
 test("runAgentTurn passes abort signals into active shell tool dispatch", async () => {
   const controller = new AbortController();
   const toolResults: ToolDispatchResult[] = [];

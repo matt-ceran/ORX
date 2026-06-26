@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -48,6 +48,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /plugin_enabled_hooks: 0/);
     assert.match(status.stdout(), /plugin_enabled_bins: 0/);
     assert.match(status.stdout(), /plugin_enabled_mcp: 0/);
+    assert.match(status.stdout(), /plugin_enabled_skills: 0/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -79,6 +80,11 @@ test("cli status reflects plugin registry override without enabling executable s
   const cwd = createTempDir();
   const registryPath = join(cwd, "plugins", "registry.json");
   const manifestPath = join(cwd, "manifest.json");
+  mkdirSync(join(cwd, "skills"), { recursive: true });
+  writeFileSync(
+    join(cwd, "skills", "SKILL.md"),
+    ["---", "name: Status Skill", "description: Status skill metadata.", "---", ""].join("\n"),
+  );
   writeFileSync(
     manifestPath,
     JSON.stringify({
@@ -92,6 +98,7 @@ test("cli status reflects plugin registry override without enabling executable s
         path: ".",
       },
       components: {
+        skills: "./skills",
         hooks: "./hooks/hooks.json",
         bins: "./bin",
         mcpServers: "./mcp.json",
@@ -127,6 +134,7 @@ test("cli status reflects plugin registry override without enabling executable s
     assert.match(status.stdout(), /plugin_enabled_hooks: 0/);
     assert.match(status.stdout(), /plugin_enabled_bins: 0/);
     assert.match(status.stdout(), /plugin_enabled_mcp: 0/);
+    assert.match(status.stdout(), /plugin_enabled_skills: 1/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -189,6 +197,90 @@ test("ask streams text and prints compact metadata summary", async () => {
   assert.match(capture.stdout(), /tokens: prompt=2, completion=1, total=3/);
   assert.match(capture.stdout(), /cost: \$0\.000100/);
   assert.equal(capture.stderr(), "");
+});
+
+test("ask prepends enabled plugin skill metadata without full SKILL content", async () => {
+  const cwd = createTempDir();
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const manifestPath = join(cwd, "plugin", "orx-plugin.json");
+  mkdirSync(join(cwd, "plugin", "skills"), { recursive: true });
+  writeFileSync(
+    join(cwd, "plugin", "skills", "SKILL.md"),
+    [
+      "---",
+      "name: Ask Skill",
+      "description: Ask skill metadata.",
+      "---",
+      "# Ask Skill",
+      "FULL ASK SKILL BODY",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "ask-plugin",
+      version: "1.0.0",
+      description: "Ask plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        skills: "./skills",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.ask-plugin@1.0.0", true, { registryPath });
+
+    const capture = createIo({
+      cwd,
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        assert.equal(body.messages[0].role, "system");
+        assert.match(body.messages[0].content, /ORX enabled plugin skills \(compact metadata only\)/);
+        assert.match(body.messages[0].content, /plugin:acme\.ask-plugin@1\.0\.0:ask-skill/);
+        assert.match(body.messages[0].content, /description=Ask skill metadata\./);
+        assert.doesNotMatch(body.messages[0].content, /FULL ASK SKILL BODY/);
+        assert.deepEqual(body.messages[1], { role: "user", content: "Use a skill" });
+        assertNativeTools(body.tools);
+
+        return new Response(
+          streamFrom([
+            'data: {"choices":[{"delta":{"content":"Skill metadata seen."}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runCli(
+      ["node", "cli", "ask", "Use a skill"],
+      {
+        OPENROUTER_API_KEY: "test-key",
+        ORX_PLUGIN_REGISTRY_PATH: registryPath,
+      },
+      capture.io,
+    );
+
+    assert.equal(exitCode, 0);
+    assert.match(capture.stdout(), /Skill metadata seen\./);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("ask supports Fusion preset override", async () => {

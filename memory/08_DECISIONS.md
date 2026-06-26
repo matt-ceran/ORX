@@ -4,6 +4,12 @@ Last updated: 2026-06-26
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-26: Plugin Skills Use Progressive Disclosure Only
+
+Decision: ORX should discover Agent Skills only from enabled plugins and expose compact, sanitized metadata automatically. Full `SKILL.md` content is loaded only after an explicit `/skills activate <id>` action, then rejected if it contains secret-like values or terminal control characters, appended as an untrusted system message with provenance, and recorded in session metadata. Compact metadata may be injected into model requests as ephemeral system context so it does not become normal conversation history.
+
+Reasoning: Agent Skills are useful workflow context but are plugin-controlled text, not authority. Progressive disclosure keeps token load small, prevents disabled plugins from affecting the model, and preserves the Phase 9 trust boundary: skill text cannot authorize tool use, permission changes, MCP enablement, hooks, bins, plugin commands, or command execution.
+
 ## 2026-06-26: Plugin Enablement Starts As An Inert Registry Marker
 
 Decision: ORX plugin registration should first create an ORX-owned private registry record with sanitized manifest data, stable id, manifest integrity, local lock-style metadata, pinned git source commits, bounded component hashing, and installed/enabled state separation. Registering a plugin must leave it disabled by default. Enabling a plugin in the initial scaffold should persist only an enabled marker and must not activate hooks, bins, plugin slash commands, plugin MCP servers, or any plugin code execution.

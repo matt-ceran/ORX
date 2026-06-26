@@ -24,6 +24,7 @@ export interface RunAgentTurnOptions {
   maxToolIterations?: number;
   contextBudget?: Partial<AgentContextBudget>;
   diffState?: SessionDiffState;
+  ephemeralSystemMessages?: OpenRouterMessage[];
   callbacks?: AgentTurnCallbacks;
 }
 
@@ -53,9 +54,13 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
       messages.splice(0, messages.length, ...bounded.messages);
     }
 
+    const requestMessages =
+      options.ephemeralSystemMessages && options.ephemeralSystemMessages.length > 0
+        ? [...options.ephemeralSystemMessages, ...messages]
+        : messages;
     const built = buildChatRequest({
       config: options.config,
-      messages,
+      messages: requestMessages,
       tools: enableTools ? nativeToolDefinitions : undefined,
     });
     let assistantText = "";

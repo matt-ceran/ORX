@@ -144,6 +144,8 @@ Acceptance:
 
 Goal: support portable workflow plugins through Agent Skills `SKILL.md`.
 
+Current status as of 2026-06-26: bounded Slice 4 foundation implemented. ORX discovers `SKILL.md` files from enabled plugins only, surfaces compact sanitized metadata through ephemeral model context and `/skills list`, supports explicit `/skills activate <id>` to append full untrusted skill content to chat history, records activation provenance in sessions, and keeps hooks/bins/plugin commands/plugin MCP/code execution inactive.
+
 Implement:
 
 - Skill discovery from enabled plugins.

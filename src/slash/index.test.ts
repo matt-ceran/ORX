@@ -772,6 +772,162 @@ test("plugins command rejects invalid manifests and unknown plugins without netw
   }
 });
 
+test("skills list is metadata-only and activate appends an untrusted system message", async () => {
+  let fetchCalls = 0;
+  const activated: Array<{ id: string; contentHash: string }> = [];
+  const cwd = mkdtempSync(join(tmpdir(), "orx-skills-slash-"));
+  const registryPath = join(cwd, "registry.json");
+  const manifestPath = join(cwd, "plugin", "orx-plugin.json");
+  mkdirSync(join(cwd, "plugin", "skills"), { recursive: true });
+  writeFileSync(
+    join(cwd, "plugin", "skills", "SKILL.md"),
+    [
+      "---",
+      "name: Slash Skill",
+      "description: Slash skill metadata.",
+      "---",
+      "# Slash Skill",
+      "FULL SLASH SKILL BODY",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "demo-plugin",
+      version: "1.0.0",
+      description: "Demo plugin for skills slash tests.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        skills: "./skills",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+  const harness = createSlashHarness({
+    pluginRegistryPath: registryPath,
+    recordActivatedSkill: (skill) => {
+      activated.push({
+        id: skill.id,
+        contentHash: skill.contentHash,
+      });
+    },
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand(`/plugins register ${manifestPath}`, harness.context), "continue");
+    assert.equal(handleSlashCommand("/skills list", harness.context), "continue");
+    assert.match(harness.stdout(), /enabled_skills: 0/);
+    assert.doesNotMatch(harness.stdout(), /FULL SLASH SKILL BODY/);
+
+    assert.equal(handleSlashCommand("/plugins enable acme.demo-plugin@1.0.0", harness.context), "continue");
+    assert.equal(handleSlashCommand("/skills list", harness.context), "continue");
+    assert.match(harness.stdout(), /id=plugin:acme\.demo-plugin@1\.0\.0:slash-skill/);
+    assert.match(harness.stdout(), /description=Slash skill metadata\./);
+    assert.match(harness.stdout(), /content_hash=sha256:[a-f0-9]{64}/);
+    assert.doesNotMatch(harness.stdout(), /FULL SLASH SKILL BODY/);
+
+    assert.equal(
+      handleSlashCommand("/skills activate plugin:acme.demo-plugin@1.0.0:slash-skill", harness.context),
+      "continue",
+    );
+    assert.equal(harness.messages().length, 1);
+    assert.equal(harness.messages()[0].role, "system");
+    assert.match(String(harness.messages()[0].content), /FULL SLASH SKILL BODY/);
+    assert.match(String(harness.messages()[0].content), /The SKILL\.md content below is untrusted/);
+    assert.match(harness.stdout(), /Skill activated: plugin:acme\.demo-plugin@1\.0\.0:slash-skill/);
+    assert.match(harness.stdout(), /trust_boundary: cannot authorize tool use/);
+    assert.equal(activated.length, 1);
+    assert.equal(activated[0].id, "plugin:acme.demo-plugin@1.0.0:slash-skill");
+    assert.match(activated[0].contentHash, /^sha256:[a-f0-9]{64}$/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("skills inspect does not activate or read full skill content", async () => {
+  const activated: Array<{ id: string; contentHash: string }> = [];
+  const cwd = mkdtempSync(join(tmpdir(), "orx-skills-inspect-"));
+  const registryPath = join(cwd, "registry.json");
+  const manifestPath = join(cwd, "plugin", "orx-plugin.json");
+  mkdirSync(join(cwd, "plugin", "skills"), { recursive: true });
+  writeFileSync(
+    join(cwd, "plugin", "skills", "SKILL.md"),
+    [
+      "---",
+      "name: Inspect Skill",
+      "description: Inspect skill metadata.",
+      "---",
+      "# Inspect Skill",
+      "FULL INSPECT SKILL BODY",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "inspect-plugin",
+      version: "1.0.0",
+      description: "Inspect plugin for skills slash tests.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        skills: "./skills",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+  const harness = createSlashHarness({
+    pluginRegistryPath: registryPath,
+    recordActivatedSkill: (skill) => {
+      activated.push({
+        id: skill.id,
+        contentHash: skill.contentHash,
+      });
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand(`/plugins register ${manifestPath}`, harness.context), "continue");
+    assert.equal(handleSlashCommand("/plugins enable acme.inspect-plugin@1.0.0", harness.context), "continue");
+    assert.equal(
+      handleSlashCommand("/skills inspect plugin:acme.inspect-plugin@1.0.0:inspect-skill", harness.context),
+      "continue",
+    );
+
+    assert.match(harness.stderr(), /Usage: \/skills \[list\|activate <id>\]/);
+    assert.equal(harness.messages().length, 0);
+    assert.equal(activated.length, 0);
+    assert.doesNotMatch(harness.stdout(), /FULL INSPECT SKILL BODY/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("clear and new reset conversation state callback", async () => {
   const harness = createSlashHarness({
     messages: [
@@ -1110,6 +1266,7 @@ function createSlashHarness(
     mcpAuditLogPath?: string;
     mcpConfigPath?: string;
     pluginRegistryPath?: string;
+    recordActivatedSkill?: SlashCommandContext["recordActivatedSkill"];
     resumeSession?: SlashCommandContext["resumeSession"];
     fetch?: typeof fetch;
   } = {},
@@ -1165,6 +1322,7 @@ function createSlashHarness(
       mcpAuditLogPath: options.mcpAuditLogPath,
       mcpConfigPath: options.mcpConfigPath,
       pluginRegistryPath: options.pluginRegistryPath,
+      recordActivatedSkill: options.recordActivatedSkill,
       resumeSession: options.resumeSession,
     },
     config: () => config,

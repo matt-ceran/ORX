@@ -77,6 +77,10 @@ Keep research provenance behind `src/research/` so search results, fetched pages
 
 `src/agent/` now owns OpenRouter-compatible native tool schemas, native tool dispatch, bounded tool-result envelopes, and the guarded multi-turn tool-call loop used by `orx ask` and `orx chat`.
 
-`src/plugins/` now owns the Phase 9 Slice 1 inert plugin substrate: sanitized ORX plugin manifests, stable plugin ids, manifest hashes, local lock-style records, local component hashes, private registry persistence, installed/enabled state separation, and `/plugins` rendering. Plugin enablement is only a persisted state marker in this scaffold; hooks, bins, plugin commands, plugin MCP servers, and plugin code execution remain inactive.
+`src/plugins/` now owns the Phase 9 Slice 1 inert plugin substrate plus the Slice 2 Agent Skills loader: sanitized ORX plugin manifests, stable plugin ids, manifest hashes, local lock-style records, local component hashes, private registry persistence, installed/enabled state separation, `/plugins` rendering, bounded enabled-plugin-only `SKILL.md` discovery, compact skill metadata rendering, and explicit skill activation. Plugin enablement is only a persisted state marker plus skill metadata eligibility in this scaffold; hooks, bins, plugin commands, plugin MCP servers, and plugin code execution remain inactive.
 
-The next plugin work should add source/cache semantics and Agent Skills progressive loading without changing the current trust boundary.
+`src/agent/` supports ephemeral system messages for request-only context such as compact enabled plugin skill metadata. These messages are prepended to OpenRouter requests but are not returned as persisted conversation history unless the operator explicitly activates a skill.
+
+`src/sessions/` can store activated plugin skill provenance in `activatedSkills`; the full activated skill content is represented by the explicit system message in the transcript.
+
+The next plugin work should add source/cache semantics, plugin-provided commands/prompts, rules, and hooks without changing the current trust boundary.

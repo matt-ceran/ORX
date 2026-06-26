@@ -34,12 +34,17 @@ import {
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import {
+  activatePluginSkill,
+  discoverEnabledPluginSkills,
   findInstalledPlugin,
   getPluginStatusSummary,
   registerPluginManifest,
   renderPluginInspect,
   renderPluginList,
+  renderPluginSkillList,
+  renderSkillActivation,
   setPluginEnabledState,
+  type PluginSkillActivationProvenance,
 } from "../plugins/index.js";
 import { formatStatus } from "../status.js";
 import { gitDiffTool } from "../tools/index.js";
@@ -111,6 +116,7 @@ export interface SlashCommandContext {
   mcpAuditLogPath?: string;
   mcpConfigPath?: string;
   pluginRegistryPath?: string;
+  recordActivatedSkill?: (skill: PluginSkillActivationProvenance) => void;
   startNewSession?: () => Promise<void> | void;
   resumeSession?: (selector?: string) => Promise<ResumeSessionResult>;
 }
@@ -385,6 +391,14 @@ const COMMANDS: Record<string, SlashDefinition> = {
       return "continue";
     },
   },
+  "/skills": {
+    usage: "/skills [list|activate <id>]",
+    description: "List enabled plugin skills or activate one for this chat",
+    handler: (command, context): SlashResult => {
+      handleSkillsCommand(command, context);
+      return "continue";
+    },
+  },
   "/clear": {
     usage: "/clear",
     description: "Clear in-session message history",
@@ -530,6 +544,43 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
   ]
     .filter((line): line is string => typeof line === "string")
     .join("\n");
+}
+
+function handleSkillsCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(
+      context.io.stdout,
+      renderPluginSkillList(
+        discoverEnabledPluginSkills({ registryPath: context.pluginRegistryPath }),
+      ),
+    );
+    return;
+  }
+
+  if (subcommand === "activate") {
+    const skillId = command.args[1];
+    if (!skillId || command.args.length !== 2) {
+      writeLine(context.io.stderr, `Usage: /skills ${subcommand} <id>`);
+      return;
+    }
+
+    try {
+      const activation = activatePluginSkill(skillId, {
+        registryPath: context.pluginRegistryPath,
+      });
+      context.setMessages([...context.getMessages(), activation.systemMessage]);
+      context.recordActivatedSkill?.(activation.provenance);
+      writeLine(context.io.stdout, renderSkillActivation(activation));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeLine(context.io.stderr, message);
+    }
+    return;
+  }
+
+  writeLine(context.io.stderr, "Usage: /skills [list|activate <id>]");
 }
 
 function handlePluginsCommand(command: SlashCommand, context: SlashCommandContext): void {
