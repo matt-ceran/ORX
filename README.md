@@ -36,6 +36,18 @@ node dist/cli.js --version
 node dist/cli.js status
 ```
 
+To install the source checkout as a global `orx` command without manually running a build:
+
+```sh
+npm install
+npm install -g .
+orx --version
+orx status
+OPENROUTER_API_KEY=... orx
+```
+
+The npm `prepare` lifecycle builds `dist/cli.js` for local source installs. `orx` with no command starts interactive chat from the current directory; use `orx help` or `orx --help` for help output.
+
 Config is discovered from repo-local `.orx/config.toml` development defaults and `~/.orx/config.toml`. `OPENROUTER_API_KEY` takes precedence for API key detection. The `status` command reports whether a key is present without printing it.
 
 Send one non-interactive streaming request with:

@@ -14,7 +14,9 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/cli.ts",
-    "test": "npm run build && node --test \"dist/**/*.test.js\""
+    "test": "npm run build && node --test \"dist/**/*.test.js\"",
+    "verify:global-install": "node scripts/verify-global-install.mjs",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "eventsource-parser": "^3.1.0",

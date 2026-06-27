@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BIN_NAME } from "./constants.js";
 import { formatToolCallStart, formatToolResult, runAgentTurn } from "./agent/index.js";
@@ -393,7 +393,18 @@ function writeLine(stream: Pick<NodeJS.WriteStream, "write">, text: string) {
   stream.write(`${text}\n`);
 }
 
-const isEntrypoint = process.argv[1] === fileURLToPath(import.meta.url);
+function resolveEntrypointPath(path: string): string {
+  const absolutePath = resolve(path);
+  try {
+    return realpathSync(absolutePath);
+  } catch {
+    return absolutePath;
+  }
+}
+
+const isEntrypoint =
+  process.argv[1] !== undefined &&
+  resolveEntrypointPath(process.argv[1]) === resolveEntrypointPath(fileURLToPath(import.meta.url));
 if (isEntrypoint) {
   process.exitCode = await runCli(process.argv);
 }
