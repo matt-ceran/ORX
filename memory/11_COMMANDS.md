@@ -45,7 +45,7 @@ OPENROUTER_API_KEY="sk-or-..." npm run dev -- models claude
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- credits
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- generation "gen_..."
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- chat
-printf '/mode fusion\n/fusion general-budget\n/models claude\n/credits\n/generation gen_...\n/mcp\n/status\n/new\n/exit\n' | OPENROUTER_API_KEY="sk-or-..." npm run dev -- chat
+printf '/mode fusion\n/fusion general-budget\n/models claude\n/credits\n/generation gen_...\n/web\n/web fetch https://example.com\n/sources\n/mcp\n/status\n/new\n/exit\n' | OPENROUTER_API_KEY="sk-or-..." npm run dev -- chat
 ```
 
 If `.orx/config.toml` contains the API key, the `OPENROUTER_API_KEY=...` prefix is not needed. The `.orx/` directory is ignored and must remain uncommitted.

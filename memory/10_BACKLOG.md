@@ -91,10 +91,11 @@ Next:
 - Completed:
   - Add Phase 9 Slice 1 plugin substrate: sanitized manifest parsing, stable plugin ids, private registry persistence under `~/.orx/plugins/registry.json`, local lock-style records, inert installed/enabled state separation, bounded component hashing, pinned git source records, `/plugins list|inspect|register|enable|disable`, and `/status` plugin counts with hooks/bins/MCP remaining inactive.
   - Add Phase 9 Slice 2 Agent Skills progressive loader: bounded enabled-plugin-only `SKILL.md` discovery, compact metadata in model context through ephemeral system messages, `/skills list`, `/skills activate <id>`, activated skill provenance in sessions, and `/status` enabled skill count while keeping hooks/bins/plugin commands/MCP/code execution inactive.
+  - Add Phase 10 Slice 1 research foundation: `src/research/` evidence source model, slash-only `/web fetch <url>` and `/fetch <url>`, `/sources`, bounded direct fetch/extract, layered SSRF-style URL guard, DNS-vetted Node-native fetch transport, untrusted web context messages, session-persisted `evidenceSources`, and interactive `/status` source count.
 
 - Add web search.
 - Add Playwright browser automation.
-- Add prompt-injection safeguards for fetched content.
+- Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
 - Follow `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md` for the full-stack plugin/MCP/research build order.
 - Add MCP presets: `openrouter`, `context7`, `github-readonly`, `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
 - Extend the plugin system beyond the Slice 1 substrate with install cache, marketplace/catalog metadata, source fetching, lockfile pins for remote sources, and namespacing.
@@ -115,7 +116,7 @@ Next:
 - Add database profiles with read-only defaults, row limits, query logging, and explicit connection names.
 - Add cloud/devops profiles only as explicit opt-ins with account/project/region visible in `/status`.
 - Add research profiles: `research-web`, `research-crawl`, `research-scholar`, `research-docs`, `research-browser`, `research-rag`, and `research-memory`.
-- Add research evidence ledger and `/sources`, `/cite`, and `/bibliography` command design.
+- Add `/cite` and `/bibliography` command design on top of the initial evidence ledger.
 - Add orchestration profiles: `/orchestrator`, `/delegate`, `/delegates`, and `/team`.
 - Add OpenRouter delegate adapter.
 - Add Codex delegate adapter.

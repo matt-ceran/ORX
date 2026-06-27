@@ -1,5 +1,6 @@
 import type { OrxMode, PermissionConfig } from "../config/types.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
+import type { EvidenceSource } from "../research/index.js";
 
 export const SESSION_SCHEMA_VERSION = 1;
 
@@ -44,6 +45,7 @@ export interface OrxSessionRecord {
   messages: OpenRouterMessage[];
   latestMetadata?: OpenRouterStreamMetadata;
   activatedSkills?: SessionActivatedSkill[];
+  evidenceSources?: EvidenceSource[];
   messageCount: number;
   summary: SessionSummary;
 }

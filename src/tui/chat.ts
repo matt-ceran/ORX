@@ -15,6 +15,7 @@ import {
   createEnabledPluginSkillsSystemMessage,
   discoverEnabledPluginSkills,
 } from "../plugins/index.js";
+import type { EvidenceSource } from "../research/index.js";
 import {
   createSessionRecord,
   listSessionRecords,
@@ -46,6 +47,7 @@ export interface ChatIo {
   stderr: WritableLike;
   cwd: string;
   fetch?: typeof fetch;
+  webFetch?: typeof fetch;
 }
 
 export interface ChatOptions {
@@ -77,6 +79,7 @@ export async function runChat({
   const diffState = createSessionDiffState();
   let session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
   let activatedSkills: SessionActivatedSkill[] = session.record.activatedSkills ?? [];
+  let evidenceSources: EvidenceSource[] = session.record.evidenceSources ?? [];
 
   const rl = createInterface({
     input: io.stdin,
@@ -117,6 +120,7 @@ export async function runChat({
           },
           loadedConfig,
           fetch: io.fetch,
+          webFetch: io.webFetch,
           getConfig: () => activeConfig,
           setConfig: (nextConfig) => {
             activeConfig = nextConfig;
@@ -129,6 +133,11 @@ export async function runChat({
             messages = [];
             latestMetadata = undefined;
             activatedSkills = [];
+            evidenceSources = [];
+          },
+          getEvidenceSources: () => evidenceSources,
+          setEvidenceSources: (sources) => {
+            evidenceSources = sources;
           },
           getLatestMetadata: () => latestMetadata,
           getContextBudget: () => contextBudget,
@@ -143,6 +152,7 @@ export async function runChat({
           startNewSession: async () => {
             session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
             activatedSkills = [];
+            evidenceSources = [];
           },
           resumeSession: async (selector) => {
             const result = await resumeChatSession({
@@ -164,6 +174,7 @@ export async function runChat({
             messages = cloneJson(record.messages);
             latestMetadata = cloneOptionalJson(record.latestMetadata);
             activatedSkills = cloneJson(record.activatedSkills ?? []);
+            evidenceSources = cloneJson(record.evidenceSources ?? []);
             resetSessionDiffState(diffState);
             session = {
               record,
@@ -189,6 +200,7 @@ export async function runChat({
           messages,
           latestMetadata,
           activatedSkills,
+          evidenceSources,
           io.stderr,
         );
 
@@ -256,6 +268,7 @@ export async function runChat({
           messages,
           latestMetadata,
           activatedSkills,
+          evidenceSources,
           io.stderr,
         );
         writeLine(io.stdout, formatOpenRouterMetadata(result.metadata));
@@ -351,6 +364,7 @@ async function persistSession(
   messages: OpenRouterMessage[],
   latestMetadata: OpenRouterStreamMetadata | undefined,
   activatedSkills: SessionActivatedSkill[],
+  evidenceSources: EvidenceSource[],
   stderr: WritableLike,
 ): Promise<void> {
   try {
@@ -359,6 +373,7 @@ async function persistSession(
       messages,
       latestMetadata,
       activatedSkills,
+      evidenceSources,
       cwd,
     });
     await refreshSessionGitMetadata(session.record);

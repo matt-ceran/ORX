@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import type { OrxConfig } from "../config/types.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
+import type { EvidenceSource } from "../research/index.js";
 import { resolveGitRepositoryMetadata } from "./git.js";
 import {
   SESSION_SCHEMA_VERSION,
@@ -29,6 +30,7 @@ export interface CreateSessionRecordOptions {
   messages?: OpenRouterMessage[];
   latestMetadata?: OpenRouterStreamMetadata;
   activatedSkills?: SessionActivatedSkill[];
+  evidenceSources?: EvidenceSource[];
   git?: GitRepositoryMetadata;
   now?: Date;
 }
@@ -40,6 +42,7 @@ export interface UpdateSessionRecordOptions {
   messages?: OpenRouterMessage[];
   latestMetadata?: OpenRouterStreamMetadata;
   activatedSkills?: SessionActivatedSkill[];
+  evidenceSources?: EvidenceSource[];
   now?: Date;
 }
 
@@ -86,6 +89,7 @@ export async function createSessionRecord(
     messages,
     latestMetadata: cloneOptionalJson(options.latestMetadata),
     activatedSkills: cloneOptionalJson(options.activatedSkills),
+    evidenceSources: cloneOptionalJson(options.evidenceSources),
     messageCount: messages.length,
     summary: summarizeMessages(messages),
   };
@@ -121,6 +125,10 @@ export function updateSessionRecord(
 
   if ("activatedSkills" in options) {
     record.activatedSkills = cloneOptionalJson(options.activatedSkills);
+  }
+
+  if ("evidenceSources" in options) {
+    record.evidenceSources = cloneOptionalJson(options.evidenceSources);
   }
 
   return record;

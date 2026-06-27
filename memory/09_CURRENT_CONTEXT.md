@@ -2,9 +2,9 @@
 
 Last updated: 2026-06-26
 
-## Fast Phase 9 Handoff
+## Fast Phase 10 Handoff
 
-To continue Phase 9 in a fresh session, read:
+To continue Phase 10 in a fresh session, read:
 
 1. `memory/00_INDEX.md`
 2. `memory/01_PROJECT_BRIEF.md`
@@ -42,6 +42,18 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented and verified the bounded Phase 10 Slice 1 web fetch/extract and research evidence ledger MVP:
+
+- Added `src/research/` with evidence source types, SHA-256 hashing, conservative HTML/plain-text extraction, untrusted web context message creation, and `/sources` rendering.
+- Added a layered SSRF-style URL guard for explicit web fetches: only `http`/`https` are allowed; localhost, loopback, private IPv4, link-local, shared/reserved/documentation/multicast IPv4, IPv6 loopback/link-local/unique-local/multicast, IPv4-mapped local IPv6, embedded credentials, and obvious cloud metadata hosts/IPs are blocked before network.
+- Added bounded direct fetch using a Node-native guarded transport by default. Production fetch resolves DNS, rejects any local/private/reserved resolved address, and binds the request to a vetted address while preserving the original hostname for HTTP host/SNI/certificate validation. A separate `webFetch` injection exists only for tests and is not shared with OpenRouter metadata fetch hooks.
+- Fetch timeout now covers DNS/request/header and body-read phases; byte/text extraction limits, sanitized errors, guarded redirects, terminal-control stripping, secret-like path/query redaction in canonical URLs, and stable content/text hashes are in place.
+- Added chat slash commands `/web fetch <url>`, `/fetch <url>`, `/web` help, and `/sources`.
+- `/web fetch` is operator-only slash behavior, not a model-autonomous browsing tool. It records source metadata and appends a bounded user-role context message that marks fetched content as untrusted and unable to authorize tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.
+- Session JSON now persists `evidenceSources` metadata while the bounded extracted text remains in the transcript message; `/status` shows the current chat evidence source count.
+- Added tests for URL guard defaults, reserved-IP coverage, DNS resolution blocking, DNS timeout, blocked URL no-network behavior, bounded fetch/extract, body-read timeout, terminal-control stripping, sanitized errors, slash `/web fetch`, `/sources`, prompt-injection marking, chat/session persistence, and source status visibility.
+- `npm run typecheck`, targeted research/slash/chat/session tests, and `npm test` pass with 191 tests.
 
 Implemented and verified the Phase 9 Slice 2 Agent Skills loader with progressive disclosure:
 

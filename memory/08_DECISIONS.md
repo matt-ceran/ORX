@@ -4,6 +4,12 @@ Last updated: 2026-06-26
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-26: Keep Initial Web Fetch Slash-Only And Untrusted
+
+Decision: ORX's first web/research implementation should expose direct URL fetch/extract only through explicit operator slash commands (`/web fetch <url>` and `/fetch <url>`), not as a model-autonomous browsing tool. Fetched pages are stored as evidence source metadata plus a bounded user-role untrusted context message. A testable URL guard blocks localhost, loopback, private/link-local/shared/reserved/documentation/multicast IP ranges, IPv6 local ranges, obvious cloud metadata hosts/IPs, and embedded credentials before network. Production fetch must use ORX's DNS-vetted Node transport rather than the generic OpenRouter fetch hook: resolve every hostname, reject any blocked resolved address, and bind the request to a vetted address while preserving the original hostname for host/SNI/certificate validation. Redirects are followed only after each `Location` is rechecked by the same guard, canonical source URLs redact secret-like path/query data, fetch timeouts cover body reads, and terminal control characters are stripped before rendering or context insertion.
+
+Reasoning: Web pages are prompt-injection surface, not authority. Slash-only fetch gives the operator current-source retrieval and source ledgers without allowing model output or fetched text to expand ORX's tool surface, enable plugins/MCP/profiles/hooks/bins, change permissions, execute commands, or alter policy.
+
 ## 2026-06-26: Plugin Skills Use Progressive Disclosure Only
 
 Decision: ORX should discover Agent Skills only from enabled plugins and expose compact, sanitized metadata automatically. Full `SKILL.md` content is loaded only after an explicit `/skills activate <id>` action, then rejected if it contains secret-like values or terminal control characters, appended as an untrusted system message with provenance, and recorded in session metadata. Compact metadata may be injected into model requests as ephemeral system context so it does not become normal conversation history.

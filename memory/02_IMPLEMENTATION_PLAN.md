@@ -135,6 +135,8 @@ Handoff: `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`.
 
 Done when ORX can research current information, verify sources, and cite evidence in task work.
 
+Status: in progress as of 2026-06-26. Slice 1 implemented a slash-only direct web fetch/extract MVP, `src/research/` evidence source model, layered SSRF-style URL guard, DNS-vetted Node-native fetch transport, bounded untrusted context injection, `/web fetch`, `/fetch`, `/sources`, source count in interactive `/status`, and session-persisted `evidenceSources`. Model-autonomous browsing, web search providers, browser automation, citations, and bibliography remain future work.
+
 ## Phase 11: Orchestration And Delegation
 
 - Add orchestration profiles with one controller and a delegate pool.

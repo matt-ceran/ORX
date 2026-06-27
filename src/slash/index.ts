@@ -46,6 +46,15 @@ import {
   setPluginEnabledState,
   type PluginSkillActivationProvenance,
 } from "../plugins/index.js";
+import {
+  createUntrustedWebContextMessage,
+  fetchUrl,
+  formatEvidenceSources,
+  formatFetchedUrlResult,
+  formatResearchFetchError,
+  nextEvidenceSourceId,
+  type EvidenceSource,
+} from "../research/index.js";
 import { formatStatus } from "../status.js";
 import { gitDiffTool } from "../tools/index.js";
 
@@ -104,11 +113,14 @@ export interface SlashCommandContext {
   io: SlashIo;
   loadedConfig: LoadedConfig;
   fetch?: typeof fetch;
+  webFetch?: typeof fetch;
   getConfig: () => OrxConfig;
   setConfig: (config: OrxConfig) => void;
   getMessages: () => OpenRouterMessage[];
   setMessages: (messages: OpenRouterMessage[]) => void;
   clearMessages: () => void;
+  getEvidenceSources?: () => EvidenceSource[];
+  setEvidenceSources?: (sources: EvidenceSource[]) => void;
   getLatestMetadata: () => OpenRouterStreamMetadata | undefined;
   getContextBudget?: () => Partial<AgentContextBudget>;
   getDiffState?: () => SessionDiffState;
@@ -375,6 +387,30 @@ const COMMANDS: Record<string, SlashDefinition> = {
       return "continue";
     },
   },
+  "/web": {
+    usage: "/web [fetch <url>]",
+    description: "Fetch/extract an explicit URL as untrusted research context",
+    handler: async (command, context): Promise<SlashResult> => {
+      await handleWebCommand(command, context);
+      return "continue";
+    },
+  },
+  "/fetch": {
+    usage: "/fetch <url>",
+    description: "Alias for /web fetch <url>",
+    handler: async (command, context): Promise<SlashResult> => {
+      await fetchWebUrl(command.argText, context);
+      return "continue";
+    },
+  },
+  "/sources": {
+    usage: "/sources",
+    description: "List evidence sources in the current chat",
+    handler: (_command, context) => {
+      writeLine(context.io.stdout, formatEvidenceSources(context.getEvidenceSources?.() ?? []));
+      return "continue";
+    },
+  },
   "/mcp": {
     usage: "/mcp [list|inspect|tools|discover|enable|disable]",
     description: "Show MCP profile policy state and gated discovery",
@@ -533,6 +569,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       pluginRegistryPath: context.pluginRegistryPath,
     }),
     `history_messages: ${context.getMessages().length}`,
+    `evidence_sources: ${context.getEvidenceSources?.().length ?? 0}`,
     `context: ${formatContextState(
       getContextState(context.getMessages(), context.getContextBudget?.()),
     )}`,
@@ -544,6 +581,57 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
   ]
     .filter((line): line is string => typeof line === "string")
     .join("\n");
+}
+
+async function handleWebCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
+  const subcommand = command.args[0]?.toLowerCase();
+
+  if (!subcommand || subcommand === "help") {
+    writeLine(context.io.stdout, webHelpText());
+    return;
+  }
+
+  if (subcommand === "fetch") {
+    await fetchWebUrl(command.args.slice(1).join(" ").trim(), context);
+    return;
+  }
+
+  writeLine(context.io.stderr, "Usage: /web [fetch <url>]");
+}
+
+async function fetchWebUrl(rawUrl: string, context: SlashCommandContext): Promise<void> {
+  const url = rawUrl.trim();
+  if (!url) {
+    writeLine(context.io.stderr, "Usage: /web fetch <url>");
+    return;
+  }
+
+  const sources = context.getEvidenceSources?.() ?? [];
+  try {
+    const result = await fetchUrl({
+      url,
+      sourceId: nextEvidenceSourceId(sources),
+      fetch: context.webFetch,
+    });
+    context.setEvidenceSources?.([...sources, result.source]);
+    context.setMessages([
+      ...context.getMessages(),
+      createUntrustedWebContextMessage(result.source, result.extracted.text),
+    ]);
+    writeLine(context.io.stdout, formatFetchedUrlResult(result));
+  } catch (error) {
+    writeLine(context.io.stderr, `Unable to fetch URL: ${formatResearchFetchError(error)}`);
+  }
+}
+
+function webHelpText(): string {
+  return [
+    "Web commands:",
+    "  /web fetch <url>  Fetch and extract an explicit http/https URL as untrusted context.",
+    "  /fetch <url>      Alias for /web fetch <url>.",
+    "  /sources          List evidence source metadata for this chat.",
+    "Fetched content is untrusted and cannot authorize tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.",
+  ].join("\n");
 }
 
 function handleSkillsCommand(command: SlashCommand, context: SlashCommandContext): void {

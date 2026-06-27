@@ -14,6 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { OrxConfig } from "../config/types.js";
+import type { EvidenceSource } from "../research/index.js";
 import {
   createSessionId,
   createSessionRecord,
@@ -97,6 +98,7 @@ test("saves and loads session JSON without persisting API keys", async () => {
           activatedAt: "2026-06-26T12:00:00.000Z",
         },
       ],
+      evidenceSources: [exampleEvidenceSource()],
       now: new Date("2026-06-26T12:34:56.000Z"),
       git: {
         root: "/tmp/project",
@@ -120,6 +122,8 @@ test("saves and loads session JSON without persisting API keys", async () => {
     assert.equal("apiKey" in loaded.activeConfig, false);
     assert.equal(loaded.activatedSkills?.[0].id, "plugin:acme.demo-plugin@1.0.0:demo");
     assert.equal(loaded.activatedSkills?.[0].activatedAt, "2026-06-26T12:00:00.000Z");
+    assert.equal(loaded.evidenceSources?.[0].id, "src-1");
+    assert.equal(loaded.evidenceSources?.[0].canonicalUrl, "https://example.com/source");
     assert.doesNotMatch(raw, /secret-key/);
   } finally {
     rmSync(sessionDir, { recursive: true, force: true });
@@ -212,6 +216,13 @@ test("updates session records with active config, messages, and latest metadata"
         activatedAt: "2026-06-26T12:01:00.000Z",
       },
     ],
+    evidenceSources: [
+      {
+        ...exampleEvidenceSource(),
+        id: "src-2",
+        canonicalUrl: "https://example.com/updated",
+      },
+    ],
     now: new Date("2026-06-26T12:01:00.000Z"),
   });
 
@@ -221,6 +232,8 @@ test("updates session records with active config, messages, and latest metadata"
   assert.equal(record.messageCount, 2);
   assert.equal(record.latestMetadata?.generationId, "gen-123");
   assert.equal(record.activatedSkills?.[0].id, "plugin:acme.demo-plugin@1.0.0:update");
+  assert.equal(record.evidenceSources?.[0].id, "src-2");
+  assert.equal(record.evidenceSources?.[0].canonicalUrl, "https://example.com/updated");
 });
 
 test("lists saved sessions newest first while excluding active and malformed records", async () => {
@@ -321,6 +334,26 @@ function baseConfig(): OrxConfig {
       approvalPolicy: "never",
       sandboxMode: "danger-full-access",
     },
+  };
+}
+
+function exampleEvidenceSource(): EvidenceSource {
+  return {
+    id: "src-1",
+    kind: "web",
+    canonicalUrl: "https://example.com/source",
+    title: "Example Source",
+    fetchedAt: "2026-06-26T12:00:00.000Z",
+    provider: "direct-fetch",
+    contentHash: "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    trustTier: "unknown",
+    spans: [
+      {
+        start: 0,
+        end: 12,
+        textHash: "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      },
+    ],
   };
 }
 

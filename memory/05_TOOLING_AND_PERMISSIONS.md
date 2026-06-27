@@ -107,3 +107,14 @@ Current Phase 9 plugin scaffold:
 - Skill content and metadata cannot authorize tool use, permission changes, MCP enablement, hooks, bins, plugin commands, or command execution.
 - Hooks, bins, plugin MCP servers, plugin slash commands, and all plugin code execution are inactive in this scaffold even when a plugin is marked enabled.
 - `/plugins inspect`, `/skills`, and `/status` show this trust boundary explicitly; enabled hook/bin/MCP counts remain `0`.
+
+Current Phase 10 research scaffold:
+
+- `src/research/` exposes slash-only direct URL fetch/extract helpers and evidence ledger metadata.
+- `/web fetch <url>` and `/fetch <url>` are explicit operator commands; there is no model-autonomous `fetch_url` tool yet.
+- Production web fetch uses ORX's Node-native guarded transport, not the generic OpenRouter metadata `fetch` hook. Tests can inject a separate `webFetch` transport.
+- The transport resolves DNS before connecting, rejects any local/private/shared/reserved/documentation/multicast or metadata resolved address, then binds the request to a vetted address while preserving the original hostname for host/SNI/certificate validation.
+- Fetch uses timeout coverage across DNS/request/header/body-read phases, byte/text bounds, guarded redirects, sanitized errors, terminal-control stripping before rendering/context insertion, canonical URL redaction for secret-like path/query data, and stable SHA-256 content/text hashes.
+- URL guard defaults allow only `http`/`https` and block localhost, loopback, private IPv4, link-local, shared/reserved/documentation/multicast IPv4, IPv6 loopback/link-local/unique-local/multicast, IPv4-mapped local IPv6, obvious cloud metadata hosts/IPs, and embedded credentials before network.
+- Fetched content is always marked untrusted in chat context and cannot authorize tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.
+- `/sources` renders source ids, URLs, titles, fetchedAt, hashes, trust tier, and provider, not full page text.
