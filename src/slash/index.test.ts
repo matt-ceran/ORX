@@ -17,7 +17,13 @@ import {
   type SessionDiffState,
 } from "../agent/index.js";
 import { resetMcpProfileRuntimeState } from "../mcp/index.js";
-import { handleSlashCommand, parseSlashCommand, type SlashCommandContext } from "./index.js";
+import {
+  handleSlashCommand,
+  parseSlashCommand,
+  renderCommandPalette,
+  renderSlashHelp,
+  type SlashCommandContext,
+} from "./index.js";
 
 afterEach(() => {
   resetMcpProfileRuntimeState();
@@ -44,7 +50,117 @@ test("handles unknown commands predictably", () => {
 
   assert.equal(handleSlashCommand("  /unknown   value  ", harness.context), "continue");
   assert.equal(harness.stdout(), "");
-  assert.match(harness.stderr(), /Unknown command: \/unknown\. Type \/help for commands\./);
+  assert.match(harness.stderr(), /Unknown command: \/unknown\. Type \/help <query> or \/help all\./);
+});
+
+test("help shows concise grouped common commands by default", () => {
+  const harness = createSlashHarness();
+
+  assert.equal(handleSlashCommand("/help", harness.context), "continue");
+
+  const output = harness.stdout();
+  assert.match(output, /^Common chat commands:/);
+  assert.match(output, /Core:/);
+  assert.match(output, /Models & routing:/);
+  assert.match(output, /Workspace:/);
+  assert.match(output, /Account & metadata:/);
+  assert.match(output, /\/help\s+Show grouped command help \(aliases: \/h\)/);
+  assert.match(output, /\/status\s+Show current chat status/);
+  assert.match(output, /\/model <id-or-search>\s+Resolve and switch OpenRouter model \(aliases: \/m\)/);
+  assert.match(output, /\/quit\s+Leave chat \(aliases: \/q, \/exit\)/);
+  assert.doesNotMatch(output, /Advanced chat commands:/);
+  assert.doesNotMatch(output, /\/mcp/);
+  assert.doesNotMatch(output, /\/plugins/);
+  assert.doesNotMatch(output, /\/web/);
+  assert.doesNotMatch(output, /\/resume/);
+  assert.doesNotMatch(output, /^Chat commands:/m);
+
+  const commandLines = output.split("\n").filter((line) => line.startsWith("  /"));
+  assert.ok(commandLines.length <= 11, `expected concise common help, got ${commandLines.length}`);
+});
+
+test("help all shows common commands first plus advanced surfaces", () => {
+  const harness = createSlashHarness();
+
+  assert.equal(handleSlashCommand("/help all", harness.context), "continue");
+
+  const output = harness.stdout();
+  assert.ok(output.indexOf("Common chat commands:") < output.indexOf("Advanced chat commands:"));
+  assert.ok(output.indexOf("/status") < output.indexOf("/mcp"));
+  assert.match(output, /Advanced chat commands:/);
+  assert.match(output, /\/generation <id>/);
+  assert.match(output, /\/compact/);
+  assert.match(output, /\/resume \[id\|prefix\|number\|latest\]/);
+  assert.match(output, /\/web \[fetch <url>\]/);
+  assert.match(output, /\/fetch <url>/);
+  assert.match(output, /\/cite <source-id>/);
+  assert.match(output, /\/bibliography/);
+  assert.match(output, /\/mcp \[list\|inspect\|tools\|discover\|enable\|disable\]/);
+  assert.match(output, /\/plugins \[list\|inspect\|register\|enable\|disable\]/);
+  assert.match(output, /\/skills \[list\|activate <id>\]/);
+});
+
+test("help query filters by command fields, aliases, and groups", () => {
+  const mcp = createSlashHarness();
+  assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
+  assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
+  assert.match(mcp.stdout(), /Integrations:/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|inspect\|tools\|discover\|enable\|disable\]/);
+  assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
+
+  const sessions = createSlashHarness();
+  assert.equal(handleSlashCommand("/help session", sessions.context), "continue");
+  assert.match(sessions.stdout(), /Sessions:/);
+  assert.match(sessions.stdout(), /\/compact/);
+  assert.match(sessions.stdout(), /\/resume \[id\|prefix\|number\|latest\]/);
+  assert.doesNotMatch(sessions.stdout(), /\/models \[filter\]/);
+
+  const alias = renderSlashHelp("q");
+  assert.match(alias, /\/quit\s+Leave chat \(aliases: \/q, \/exit\)/);
+  assert.doesNotMatch(alias, /\/status/);
+});
+
+test("command palette renderer is a pure grouped listing surface", () => {
+  const palette = renderCommandPalette("plugin");
+
+  assert.match(palette, /^Command palette matching "plugin":/);
+  assert.match(palette, /Integrations:/);
+  assert.match(palette, /\/plugins \[list\|inspect\|register\|enable\|disable\]/);
+  assert.match(palette, /\/skills \[list\|activate <id>\]/);
+  assert.doesNotMatch(palette, /\/model <id-or-search>/);
+});
+
+test("low-friction slash aliases dispatch to canonical commands", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-slash-aliases-"));
+  const harness = createSlashHarness({
+    mcpConfigPath: join(cwd, "profiles.json"),
+    fetch: modelsFetch([
+      {
+        id: "example/test-model",
+        name: "Example Test Model",
+      },
+    ]),
+  });
+
+  try {
+    assert.equal(await handleSlashCommand("/m example/test-model", harness.context), "continue");
+    assert.equal(harness.config().mode, "exact");
+    assert.equal(harness.config().model, "example/test-model");
+    assert.match(harness.stdout(), /Model set to example\/test-model/);
+
+    const statusStart = harness.stdout().length;
+    assert.equal(handleSlashCommand("/s", harness.context), "continue");
+    assert.match(harness.stdout().slice(statusStart), /model: example\/test-model/);
+
+    const helpStart = harness.stdout().length;
+    assert.equal(handleSlashCommand("/h q", harness.context), "continue");
+    assert.match(harness.stdout().slice(helpStart), /\/quit\s+Leave chat/);
+
+    assert.equal(handleSlashCommand("/q", harness.context), "exit");
+    assert.match(harness.stdout(), /Exiting ORX chat/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("mode command updates active routing config", () => {

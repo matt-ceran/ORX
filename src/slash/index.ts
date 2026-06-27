@@ -160,23 +160,75 @@ type SlashHandler = (
 interface SlashDefinition {
   usage: string;
   description: string;
+  group: SlashCommandGroup;
+  tier: SlashCommandTier;
+  aliases?: string[];
   handler: SlashHandler;
 }
 
+export type SlashCommandGroup =
+  | "Core"
+  | "Models & routing"
+  | "Workspace"
+  | "Account & metadata"
+  | "Sessions"
+  | "Research"
+  | "Integrations";
+
+type SlashCommandTier = "common" | "advanced";
+
+export interface SlashCommandMetadata {
+  name: string;
+  usage: string;
+  description: string;
+  group: SlashCommandGroup;
+  tier: SlashCommandTier;
+  aliases: string[];
+}
+
 const MAX_RENDERED_RESUME_SESSIONS = 20;
+const MAX_HELP_QUERY_LENGTH = 80;
+const HELP_CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/g;
+const COMMON_GROUP_ORDER: SlashCommandGroup[] = [
+  "Core",
+  "Models & routing",
+  "Workspace",
+  "Account & metadata",
+];
+const ADVANCED_GROUP_ORDER: SlashCommandGroup[] = [
+  "Account & metadata",
+  "Sessions",
+  "Research",
+  "Integrations",
+];
+const ALL_GROUP_ORDER: SlashCommandGroup[] = [
+  "Core",
+  "Models & routing",
+  "Workspace",
+  "Account & metadata",
+  "Sessions",
+  "Research",
+  "Integrations",
+];
 
 const COMMANDS: Record<string, SlashDefinition> = {
   "/help": {
     usage: "/help",
-    description: "Show this help",
-    handler: (_command, context) => {
-      writeLine(context.io.stdout, chatHelpText());
+    description: "Show grouped command help",
+    group: "Core",
+    tier: "common",
+    aliases: ["/h"],
+    handler: (command, context) => {
+      writeLine(context.io.stdout, renderSlashHelp(command.argText || undefined));
       return "continue";
     },
   },
   "/status": {
     usage: "/status",
-    description: "Show cwd, routing, config, key, permissions, history, and latest metadata",
+    description: "Show current chat status, config, permissions, and metadata",
+    group: "Core",
+    tier: "common",
+    aliases: ["/s"],
     handler: (_command, context) => {
       writeLine(context.io.stdout, renderInteractiveStatus(context));
       return "continue";
@@ -185,6 +237,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/compact": {
     usage: "/compact",
     description: "Compact older in-session context locally",
+    group: "Sessions",
+    tier: "advanced",
     handler: (_command, context) => {
       const result = boundMessagesForContext(context.getMessages(), {
         budget: context.getContextBudget?.(),
@@ -211,6 +265,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/diff": {
     usage: "/diff [path...]",
     description: "Show the current working tree diff",
+    group: "Workspace",
+    tier: "common",
     handler: async (command, context): Promise<SlashResult> => {
       const result = await gitDiffTool({
         cwd: context.io.cwd,
@@ -244,7 +300,10 @@ const COMMANDS: Record<string, SlashDefinition> = {
   },
   "/model": {
     usage: "/model <id-or-search>",
-    description: "Resolve and switch to an OpenRouter model",
+    description: "Resolve and switch OpenRouter model",
+    group: "Models & routing",
+    tier: "common",
+    aliases: ["/m"],
     handler: async (command, context): Promise<SlashResult> => {
       if (!command.argText) {
         writeLine(context.io.stdout, `Current model: ${context.getConfig().model}`);
@@ -276,6 +335,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/mode": {
     usage: "/mode <auto|fusion>",
     description: "Switch OpenRouter routing mode",
+    group: "Models & routing",
+    tier: "common",
     handler: (command, context) => {
       const mode = command.args[0];
       const extra = command.args.slice(1).join(" ");
@@ -314,6 +375,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/fusion": {
     usage: "/fusion [preset]",
     description: "Show or set the active OpenRouter Fusion preset",
+    group: "Models & routing",
+    tier: "common",
     handler: (command, context) => {
       if (!command.argText) {
         writeLine(
@@ -338,7 +401,9 @@ const COMMANDS: Record<string, SlashDefinition> = {
   },
   "/models": {
     usage: "/models [filter]",
-    description: "List live OpenRouter models with optional text filter",
+    description: "Search live OpenRouter model catalog",
+    group: "Models & routing",
+    tier: "common",
     handler: async (command, context): Promise<SlashResult> => {
       const config = context.getConfig();
       if (!context.loadedConfig.apiKeyPresent || !config.apiKey) {
@@ -364,6 +429,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/credits": {
     usage: "/credits",
     description: "Show live OpenRouter credit balance",
+    group: "Account & metadata",
+    tier: "common",
     handler: async (_command, context): Promise<SlashResult> => {
       const config = context.getConfig();
       if (!context.loadedConfig.apiKeyPresent || !config.apiKey) {
@@ -393,6 +460,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/generation": {
     usage: "/generation <id>",
     description: "Show OpenRouter generation metadata",
+    group: "Account & metadata",
+    tier: "advanced",
     handler: async (command, context): Promise<SlashResult> => {
       const config = context.getConfig();
       const generationId = command.argText || context.getLatestMetadata()?.generationId;
@@ -425,6 +494,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/web": {
     usage: "/web [fetch <url>]",
     description: "Fetch/extract an explicit URL as untrusted research context",
+    group: "Research",
+    tier: "advanced",
     handler: async (command, context): Promise<SlashResult> => {
       await handleWebCommand(command, context);
       return "continue";
@@ -433,6 +504,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/fetch": {
     usage: "/fetch <url>",
     description: "Alias for /web fetch <url>",
+    group: "Research",
+    tier: "advanced",
     handler: async (command, context): Promise<SlashResult> => {
       await fetchWebUrl(command.argText, context);
       return "continue";
@@ -441,6 +514,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/sources": {
     usage: "/sources",
     description: "List evidence sources in the current chat",
+    group: "Research",
+    tier: "advanced",
     handler: (_command, context) => {
       writeLine(context.io.stdout, formatEvidenceSources(context.getEvidenceSources?.() ?? []));
       return "continue";
@@ -449,6 +524,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/cite": {
     usage: "/cite <source-id>",
     description: "Render a concise citation for one evidence source",
+    group: "Research",
+    tier: "advanced",
     handler: (command, context) => {
       const sources = context.getEvidenceSources?.() ?? [];
       if (!command.argText) {
@@ -474,6 +551,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/bibliography": {
     usage: "/bibliography",
     description: "Render all evidence source citations",
+    group: "Research",
+    tier: "advanced",
     handler: (command, context) => {
       if (command.argText) {
         writeLine(context.io.stderr, "Usage: /bibliography");
@@ -490,6 +569,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/mcp": {
     usage: "/mcp [list|inspect|tools|discover|enable|disable]",
     description: "Show MCP profile policy state and gated discovery",
+    group: "Integrations",
+    tier: "advanced",
     handler: async (command, context): Promise<SlashResult> => {
       await handleMcpCommand(command, context);
       return "continue";
@@ -498,6 +579,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/plugins": {
     usage: "/plugins [list|inspect|register|enable|disable]",
     description: "Show and update inert plugin registry state",
+    group: "Integrations",
+    tier: "advanced",
     handler: (command, context): SlashResult => {
       handlePluginsCommand(command, context);
       return "continue";
@@ -506,6 +589,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/skills": {
     usage: "/skills [list|activate <id>]",
     description: "List enabled plugin skills or activate one for this chat",
+    group: "Integrations",
+    tier: "advanced",
     handler: (command, context): SlashResult => {
       handleSkillsCommand(command, context);
       return "continue";
@@ -514,6 +599,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/clear": {
     usage: "/clear",
     description: "Clear in-session message history",
+    group: "Workspace",
+    tier: "common",
     handler: (_command, context) => {
       context.clearMessages();
       writeLine(context.io.stdout, "Conversation history cleared.");
@@ -523,6 +610,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/new": {
     usage: "/new",
     description: "Start a new in-process chat",
+    group: "Workspace",
+    tier: "common",
     handler: async (_command, context): Promise<SlashResult> => {
       context.clearMessages();
       await context.startNewSession?.();
@@ -533,6 +622,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/resume": {
     usage: "/resume [id|prefix|number|latest]",
     description: "List or resume a saved chat session",
+    group: "Sessions",
+    tier: "advanced",
     handler: async (command, context): Promise<SlashResult> => {
       if (!context.resumeSession) {
         writeLine(context.io.stderr, "Session resume is not available in this context.");
@@ -573,20 +664,17 @@ const COMMANDS: Record<string, SlashDefinition> = {
   "/quit": {
     usage: "/quit",
     description: "Leave chat",
-    handler: (_command, context) => {
-      writeLine(context.io.stdout, "Exiting ORX chat.");
-      return "exit";
-    },
-  },
-  "/exit": {
-    usage: "/exit",
-    description: "Leave chat",
+    group: "Core",
+    tier: "common",
+    aliases: ["/q", "/exit"],
     handler: (_command, context) => {
       writeLine(context.io.stdout, "Exiting ORX chat.");
       return "exit";
     },
   },
 };
+
+const COMMAND_ALIASES = createCommandAliasMap(COMMANDS);
 
 export function parseSlashCommand(rawInput: string): SlashCommand | undefined {
   const trimmed = rawInput.trim();
@@ -602,6 +690,10 @@ export function parseSlashCommand(rawInput: string): SlashCommand | undefined {
   };
 }
 
+export function resolveSlashCommandName(name: string): string {
+  return COMMAND_ALIASES[name.toLowerCase()] ?? name.toLowerCase();
+}
+
 export function handleSlashCommand(
   rawInput: string,
   context: SlashCommandContext,
@@ -611,21 +703,175 @@ export function handleSlashCommand(
     return "continue";
   }
 
-  const definition = COMMANDS[command.name];
+  const canonicalName = resolveSlashCommandName(command.name);
+  const definition = COMMANDS[canonicalName];
   if (!definition) {
-    writeLine(context.io.stderr, `Unknown command: ${command.name}. Type /help for commands.`);
+    writeLine(
+      context.io.stderr,
+      `Unknown command: ${command.name}. Type /help <query> or /help all.`,
+    );
     return "continue";
   }
 
-  return definition.handler(command, context);
+  return definition.handler({ ...command, name: canonicalName }, context);
 }
 
-export function chatHelpText(): string {
-  const lines = ["Chat commands:"];
-  for (const definition of Object.values(COMMANDS)) {
-    lines.push(`  ${definition.usage.padEnd(18)} ${definition.description}`);
+export function listSlashCommands(): SlashCommandMetadata[] {
+  return Object.entries(COMMANDS).map(([name, definition]) => ({
+    name,
+    usage: definition.usage,
+    description: definition.description,
+    group: definition.group,
+    tier: definition.tier,
+    aliases: definition.aliases ?? [],
+  }));
+}
+
+export function filterSlashCommands(query: string): SlashCommandMetadata[] {
+  const normalizedQuery = normalizeHelpQuery(query);
+  if (!normalizedQuery) {
+    return listSlashCommands();
   }
+
+  const tokens = normalizedQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  return listSlashCommands().filter((command) => {
+    const haystack = [
+      command.name,
+      command.usage,
+      command.description,
+      command.group,
+      command.tier,
+      ...command.aliases,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return tokens.every((token) => haystack.includes(token));
+  });
+}
+
+export function renderSlashHelp(query?: string): string {
+  const normalizedQuery = normalizeHelpQuery(query ?? "");
+
+  if (!normalizedQuery) {
+    return renderGroupedCommandList({
+      title: "Common chat commands:",
+      commands: listSlashCommands().filter((command) => command.tier === "common"),
+      groupOrder: COMMON_GROUP_ORDER,
+      footer:
+        "Use /help <query> to filter. Use /help all for advanced, plugin, MCP, research, and session commands.",
+    });
+  }
+
+  if (normalizedQuery.toLowerCase() === "all") {
+    return [
+      renderGroupedCommandList({
+        title: "Common chat commands:",
+        commands: listSlashCommands().filter((command) => command.tier === "common"),
+        groupOrder: COMMON_GROUP_ORDER,
+      }),
+      "",
+      renderGroupedCommandList({
+        title: "Advanced chat commands:",
+        commands: listSlashCommands().filter((command) => command.tier === "advanced"),
+        groupOrder: ADVANCED_GROUP_ORDER,
+      }),
+      "",
+      "Use /help <query> to filter by name, alias, group, usage, or description.",
+    ].join("\n");
+  }
+
+  return renderGroupedCommandList({
+    title: `Slash commands matching "${normalizedQuery}":`,
+    commands: filterSlashCommands(normalizedQuery),
+    groupOrder: ALL_GROUP_ORDER,
+    emptyMessage: `No slash commands matched "${normalizedQuery}".`,
+    footer: "Use /help all to show every command.",
+  });
+}
+
+export function renderCommandPalette(query?: string): string {
+  const normalizedQuery = normalizeHelpQuery(query ?? "");
+  return renderGroupedCommandList({
+    title: normalizedQuery
+      ? `Command palette matching "${normalizedQuery}":`
+      : "Command palette:",
+    commands: normalizedQuery ? filterSlashCommands(normalizedQuery) : listSlashCommands(),
+    groupOrder: ALL_GROUP_ORDER,
+    emptyMessage: normalizedQuery
+      ? `No commands matched "${normalizedQuery}".`
+      : "No slash commands registered.",
+  });
+}
+
+export function chatHelpText(query?: string): string {
+  return renderSlashHelp(query);
+}
+
+function createCommandAliasMap(commands: Record<string, SlashDefinition>): Record<string, string> {
+  const aliases: Record<string, string> = {};
+  for (const [name, definition] of Object.entries(commands)) {
+    for (const alias of definition.aliases ?? []) {
+      aliases[alias.toLowerCase()] = name;
+    }
+  }
+  return aliases;
+}
+
+function normalizeHelpQuery(query: string): string {
+  return query.replace(HELP_CONTROL_PATTERN, "").trim().slice(0, MAX_HELP_QUERY_LENGTH);
+}
+
+function renderGroupedCommandList({
+  title,
+  commands,
+  groupOrder,
+  emptyMessage,
+  footer,
+}: {
+  title: string;
+  commands: SlashCommandMetadata[];
+  groupOrder: SlashCommandGroup[];
+  emptyMessage?: string;
+  footer?: string;
+}): string {
+  const lines = [title];
+
+  if (commands.length === 0) {
+    lines.push(emptyMessage ?? "No commands matched.");
+    if (footer) {
+      lines.push("", footer);
+    }
+    return lines.join("\n");
+  }
+
+  const usageWidth = Math.min(
+    32,
+    Math.max(12, ...commands.map((command) => command.usage.length)),
+  );
+
+  for (const group of groupOrder) {
+    const groupedCommands = commands.filter((command) => command.group === group);
+    if (groupedCommands.length === 0) {
+      continue;
+    }
+
+    lines.push("", `${group}:`);
+    for (const command of groupedCommands) {
+      lines.push(renderCommandHelpLine(command, usageWidth));
+    }
+  }
+
+  if (footer) {
+    lines.push("", footer);
+  }
+
   return lines.join("\n");
+}
+
+function renderCommandHelpLine(command: SlashCommandMetadata, usageWidth: number): string {
+  const aliases =
+    command.aliases.length > 0 ? ` (aliases: ${command.aliases.join(", ")})` : "";
+  return `  ${command.usage.padEnd(usageWidth)} ${command.description}${aliases}`;
 }
 
 function renderInteractiveStatus(context: SlashCommandContext): string {
