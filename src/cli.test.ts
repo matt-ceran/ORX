@@ -452,6 +452,8 @@ test("metadata CLI command failures are sanitized", async () => {
 
 test("ask prints visible tool start and result summaries", async () => {
   const cwd = createTempDir();
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
   const patch = [
     "*** Begin Patch",
     "*** Add File: created.txt",
@@ -462,8 +464,12 @@ test("ask prints visible tool start and result summaries", async () => {
   let callCount = 0;
 
   try {
+    mkdirSync(join(cwd, ".orx"), { recursive: true });
+    writeFileSync(join(cwd, ".orx", "config.toml"), ['theme = "vivid"', ""].join("\n"));
+
     const capture = createIo({
       cwd,
+      tty: true,
       fetch: async (_input, init) => {
         const body = JSON.parse(String(init?.body));
         callCount += 1;
@@ -528,15 +534,23 @@ test("ask prints visible tool start and result summaries", async () => {
 
     assert.equal(exitCode, 0);
     assert.equal(readFileSync(join(cwd, "created.txt"), "utf8"), "SHOULD_NOT_APPEAR_IN_TOOL_SUMMARY\n");
-    assert.match(capture.stdout(), /\[tool\] apply_patch patch=<\d+B, 4 lines>/);
+    assert.match(capture.stdout(), /\x1b\[96m\[tool\]\x1b\[0m apply_patch/);
+    assert.match(capture.stdout(), /\x1b\[92mok\x1b\[0m/);
+    const stdout = stripAnsi(capture.stdout());
+    assert.match(stdout, /\[tool\] apply_patch patch=<\d+B, 4 lines>/);
     assert.match(
-      capture.stdout(),
+      stdout,
       /\[tool\] apply_patch ok duration=\d+ms changed_files=1 \["created\.txt"\]/,
     );
-    assert.match(capture.stdout(), /Patched\./);
-    assert.doesNotMatch(capture.stdout(), /\+SHOULD_NOT_APPEAR_IN_TOOL_SUMMARY/);
+    assert.match(stdout, /Patched\./);
+    assert.doesNotMatch(stdout, /\+SHOULD_NOT_APPEAR_IN_TOOL_SUMMARY/);
     assert.equal(capture.stderr(), "");
   } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
     rmSync(cwd, { recursive: true, force: true });
   }
 });
@@ -911,19 +925,25 @@ test("chat prints visible tool start and result summaries", async () => {
   }
 });
 
-function createIo(options: { fetch?: typeof fetch; stdin?: NodeJS.ReadableStream; cwd?: string } = {}) {
+function createIo(
+  options: { fetch?: typeof fetch; stdin?: NodeJS.ReadableStream; cwd?: string; tty?: boolean } = {},
+) {
   let stdoutText = "";
   let stderrText = "";
+  const stdout: Pick<NodeJS.WriteStream, "write"> & { isTTY?: boolean } = {
+    write(chunk: string | Uint8Array) {
+      stdoutText += String(chunk);
+      return true;
+    },
+  };
+  if (options.tty) {
+    stdout.isTTY = true;
+  }
 
   return {
     io: {
       stdin: options.stdin,
-      stdout: {
-        write(chunk: string | Uint8Array) {
-          stdoutText += String(chunk);
-          return true;
-        },
-      },
+      stdout,
       stderr: {
         write(chunk: string | Uint8Array) {
           stderrText += String(chunk);
@@ -940,6 +960,10 @@ function createIo(options: { fetch?: typeof fetch; stdin?: NodeJS.ReadableStream
       return stderrText;
     },
   };
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
 }
 
 function createTempDir(): string {

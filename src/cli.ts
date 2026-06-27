@@ -80,7 +80,7 @@ export async function runCli(
         loadedConfig,
         mcpConfigPath,
         pluginRegistryPath,
-        renderOptions: { stream: io.stdout },
+        renderOptions: { stream: io.stdout, theme: loadedConfig.config.theme },
       }),
     );
     return 0;
@@ -105,7 +105,7 @@ export async function runCli(
   }
 
   if (first === "credits") {
-    return runCreditsCommand(loadedConfig.config.apiKey ?? "", io);
+    return runCreditsCommand(loadedConfig.config.apiKey ?? "", loadedConfig.config, io);
   }
 
   if (first === "generation") {
@@ -195,13 +195,16 @@ async function runModelsCommand(args: string[], apiKey: string, io: CliIo): Prom
   }
 }
 
-async function runCreditsCommand(apiKey: string, io: CliIo): Promise<number> {
+async function runCreditsCommand(apiKey: string, config: OrxConfig, io: CliIo): Promise<number> {
   try {
     const credits = await getOpenRouterCredits({
       apiKey,
       fetch: io.fetch,
     });
-    writeLine(io.stdout, formatOpenRouterCredits(credits, { stream: io.stdout }));
+    writeLine(
+      io.stdout,
+      formatOpenRouterCredits(credits, { stream: io.stdout, theme: config.theme }),
+    );
     return 0;
   } catch (error) {
     writeLine(io.stderr, formatOpenRouterLiveError(error, { apiKey }));
@@ -266,10 +269,14 @@ async function runAskCommand(
             io.stdout.write(text);
           },
           onToolCall(toolCall) {
-            io.stdout.write(`\n${formatToolCallStart(toolCall, { stream: io.stdout })}\n`);
+            io.stdout.write(
+              `\n${formatToolCallStart(toolCall, { stream: io.stdout, theme: requestConfig.theme })}\n`,
+            );
           },
           onToolResult(result) {
-            io.stdout.write(`${formatToolResult(result, { stream: io.stdout })}\n`);
+            io.stdout.write(
+              `${formatToolResult(result, { stream: io.stdout, theme: requestConfig.theme })}\n`,
+            );
           },
         },
       },

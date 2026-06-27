@@ -7,8 +7,10 @@ import {
   DEFAULT_MODE,
   DEFAULT_MODEL,
   DEFAULT_SANDBOX_MODE,
+  DEFAULT_THEME,
+  TERMINAL_THEMES,
 } from "../constants.js";
-import type { LoadedConfig, OrxConfig, OrxMode } from "./types.js";
+import type { LoadedConfig, OrxConfig, OrxMode, OrxTheme } from "./types.js";
 
 type TomlValue = string | number | boolean | Date | TomlValue[] | TomlTable;
 type TomlTable = { [key: string]: TomlValue };
@@ -23,6 +25,7 @@ export interface LoadConfigOptions {
 }
 
 const VALID_MODES = new Set<OrxMode>(["exact", "auto", "fusion"]);
+const VALID_THEMES = new Set<OrxTheme>(TERMINAL_THEMES);
 
 export function loadConfig(options: LoadConfigOptions = {}): LoadedConfig {
   const cwd = options.cwd ?? process.cwd();
@@ -32,6 +35,7 @@ export function loadConfig(options: LoadConfigOptions = {}): LoadedConfig {
   const defaults: OrxConfig = {
     model: DEFAULT_MODEL,
     mode: DEFAULT_MODE,
+    theme: DEFAULT_THEME,
     permissions: {
       approvalPolicy: DEFAULT_APPROVAL_POLICY,
       sandboxMode: DEFAULT_SANDBOX_MODE,
@@ -107,11 +111,19 @@ function readConfigFile(path: string): ConfigPatch {
     throw new Error(`Invalid mode in ${path}: ${mode}. Expected exact, auto, or fusion.`);
   }
 
+  const theme = cleanString(parsed.theme);
+  if (theme && !VALID_THEMES.has(theme as OrxTheme)) {
+    throw new Error(
+      `Invalid theme in ${path}: ${theme}. Expected default, mono, or vivid.`,
+    );
+  }
+
   const permissions = asTable(parsed.permissions);
 
   return {
     model: cleanString(parsed.model),
     mode: mode as OrxMode | undefined,
+    theme: theme as OrxTheme | undefined,
     fusionPreset: cleanString(parsed.fusion_preset ?? parsed.fusionPreset),
     apiKey: cleanString(parsed.api_key ?? parsed.openrouter_api_key ?? parsed.apiKey),
     permissions: {
@@ -130,6 +142,7 @@ function mergeConfig(base: OrxConfig, next: ConfigPatch): OrxConfig {
     ...definedOnly({
       model: next.model,
       mode: next.mode,
+      theme: next.theme,
       fusionPreset: next.fusionPreset,
       apiKey: next.apiKey,
     }),

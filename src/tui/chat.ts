@@ -161,7 +161,7 @@ export async function runChat({
         contextBudget,
         costMeterState,
         latestCredits,
-        renderOptions: { stream: io.stdout },
+        renderOptions: { stream: io.stdout, theme: activeConfig.theme },
       }),
     );
     writePrompt(io.stdout);
@@ -335,13 +335,17 @@ export async function runChat({
               },
               onToolCall(toolCall) {
                 finishTtyActivityLine();
-                io.stdout.write(`\n${formatToolCallStart(toolCall, { stream: io.stdout })}\n`);
+                io.stdout.write(
+                  `\n${formatToolCallStart(toolCall, { stream: io.stdout, theme: activeConfig.theme })}\n`,
+                );
                 startTtyActivity("tool", toolCall.function.name);
                 needsAssistantPrefix = true;
               },
               onToolResult(result) {
                 finishTtyActivityLine();
-                io.stdout.write(`${formatToolResult(result, { stream: io.stdout })}\n`);
+                io.stdout.write(
+                  `${formatToolResult(result, { stream: io.stdout, theme: activeConfig.theme })}\n`,
+                );
                 startTtyActivity("assistant");
                 needsAssistantPrefix = true;
               },
@@ -375,7 +379,7 @@ export async function runChat({
               contextBudget,
               costMeterState,
               latestCredits,
-              renderOptions: { stream: io.stdout },
+              renderOptions: { stream: io.stdout, theme: activeConfig.theme },
             }),
           );
         }
@@ -425,7 +429,7 @@ export async function runChat({
       latestCredits,
       activity,
       width: resolveTerminalWidth(io.stdout),
-      renderOptions: { stream: io.stdout },
+      renderOptions: { stream: io.stdout, theme: activeConfig.theme },
     });
   }
 

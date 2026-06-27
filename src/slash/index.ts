@@ -7,7 +7,11 @@ import {
   type AgentContextBudget,
   type SessionDiffState,
 } from "../agent/index.js";
-import type { LoadedConfig, OrxConfig } from "../config/types.js";
+import type { LoadedConfig, OrxConfig, OrxTheme } from "../config/types.js";
+import {
+  DEFAULT_THEME,
+  TERMINAL_THEMES,
+} from "../constants.js";
 import {
   DelegationStateError,
   addOpenRouterDelegate,
@@ -230,6 +234,7 @@ const HELP_CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/g;
 const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const MODE_COMPLETIONS = ["auto", "fusion"] as const;
 const FUSION_PRESET_COMPLETIONS = ["general-budget"] as const;
+const THEME_COMPLETIONS = [...TERMINAL_THEMES];
 const OPENROUTER_MODEL_SHORTCUT_COMPLETIONS = [
   "openrouter/auto",
   "openrouter/fusion",
@@ -303,7 +308,11 @@ const COMMANDS: Record<string, SlashDefinition> = {
     handler: (command, context) => {
       writeLine(
         context.io.stdout,
-        renderCommandPaletteForOutput(command.argText || undefined, context.io.stdout),
+        renderCommandPaletteForOutput(
+          command.argText || undefined,
+          context.io.stdout,
+          context.getConfig().theme,
+        ),
       );
       return "continue";
     },
@@ -316,6 +325,31 @@ const COMMANDS: Record<string, SlashDefinition> = {
     aliases: ["/s"],
     handler: (_command, context) => {
       writeLine(context.io.stdout, renderInteractiveStatus(context));
+      return "continue";
+    },
+  },
+  "/theme": {
+    usage: "/theme [default|mono|vivid]",
+    description: "Show or set the TTY color theme",
+    group: "Core",
+    tier: "common",
+    handler: (command, context) => {
+      if (!command.argText) {
+        writeLine(context.io.stdout, `Current theme: ${context.getConfig().theme ?? DEFAULT_THEME}`);
+        return "continue";
+      }
+
+      const theme = command.args[0]?.toLowerCase();
+      if (command.args.length !== 1 || !isTerminalTheme(theme)) {
+        writeLine(context.io.stderr, "Usage: /theme [default|mono|vivid]");
+        return "continue";
+      }
+
+      context.setConfig({
+        ...context.getConfig(),
+        theme,
+      });
+      writeLine(context.io.stdout, `Theme set to ${theme}.`);
       return "continue";
     },
   },
@@ -534,7 +568,10 @@ const COMMANDS: Record<string, SlashDefinition> = {
         context.setLatestCredits?.(credits);
         writeLine(
           context.io.stdout,
-          formatOpenRouterCredits(credits, { stream: context.io.stdout }),
+          formatOpenRouterCredits(credits, {
+            stream: context.io.stdout,
+            theme: context.getConfig().theme,
+          }),
         );
       } catch (error) {
         writeLine(context.io.stderr, formatOpenRouterLiveError(error, { apiKey: config.apiKey }));
@@ -1101,6 +1138,8 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       return argIndex === 0 ? [...MODE_COMPLETIONS] : [];
     case "/fusion":
       return argIndex === 0 ? [...FUSION_PRESET_COMPLETIONS] : [];
+    case "/theme":
+      return argIndex === 0 ? [...THEME_COMPLETIONS] : [];
     case "/web":
       return argIndex === 0 ? [...WEB_SUBCOMMAND_COMPLETIONS] : [];
     case "/mcp":
@@ -1139,6 +1178,10 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
   }
 }
 
+function isTerminalTheme(value: string | undefined): value is OrxTheme {
+  return Boolean(value && (TERMINAL_THEMES as readonly string[]).includes(value));
+}
+
 function isMcpProfileSubcommand(subcommand: string | undefined): boolean {
   return (
     subcommand === "inspect" ||
@@ -1149,14 +1192,18 @@ function isMcpProfileSubcommand(subcommand: string | undefined): boolean {
   );
 }
 
-function renderCommandPaletteForOutput(query: string | undefined, stream: WritableLike): string {
+function renderCommandPaletteForOutput(
+  query: string | undefined,
+  stream: WritableLike,
+  theme: OrxTheme | undefined,
+): string {
   if (!shouldUseAnsiColor({ stream })) {
     return renderCommandPalette(query);
   }
 
   return renderCompactCommandPalette(query, {
     width: resolveOutputWidth(stream),
-    renderOptions: { stream },
+    renderOptions: { stream, theme },
   });
 }
 
@@ -1269,7 +1316,10 @@ function renderCommandHelpLine(command: SlashCommandMetadata, usageWidth: number
 }
 
 function renderInteractiveStatus(context: SlashCommandContext): string {
-  const renderer = createTerminalRenderer({ stream: context.io.stdout });
+  const renderer = createTerminalRenderer({
+    stream: context.io.stdout,
+    theme: context.getConfig().theme,
+  });
   const loadedConfig = {
     ...context.loadedConfig,
     config: context.getConfig(),
@@ -1288,7 +1338,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       mcpConfigPath: context.mcpConfigPath,
       pluginRegistryPath: context.pluginRegistryPath,
       delegationState: getDelegationState(context),
-      renderOptions: { stream: context.io.stdout },
+      renderOptions: { stream: context.io.stdout, theme: context.getConfig().theme },
     }),
     `history_messages: ${context.getMessages().length}`,
     `evidence_sources: ${context.getEvidenceSources?.().length ?? 0}`,

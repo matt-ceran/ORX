@@ -20,6 +20,7 @@ Urgent UX recovery additions from user testing:
 - TTY command discovery now has `/commands [query]` / `/palette [query]`, a compact TTY palette, and Tab completion for slash command names and aliases.
 - Tab completion now also covers deterministic slash subcommands/arguments for `/mode`, `/fusion`, `/web`, `/mcp`, `/plugins`, `/skills`, `/orchestrator`, `/delegate`, `/resume`, `/help`, and `/commands`.
 - The TTY bottom status notch now uses compact model badges for OpenRouter routing shortcuts, rendering `openrouter/auto` as `auto` and `openrouter/fusion` as `fusion`; full model ids remain unchanged in config, request construction, plain status, and non-TTY output.
+- TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -54,6 +55,16 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented and verified Phase 12 TTY theme controls:
+
+- Added a persisted config theme option with default `default` and allowed values `default`, `mono`, and `vivid`.
+- Added `/theme [default|mono|vivid]` for interactive theme inspection and mutation; invalid values render usage and leave config unchanged.
+- TTY render helpers now resolve theme from explicit render options, then `ORX_TTY_THEME`, then `ORX_THEME`, while preserving `NO_COLOR` and non-TTY plain output behavior.
+- Wired the active theme through chat status/composer rendering, visible tool summaries, `/credits`, `/commands`/`/palette`, CLI `status`, CLI `credits`, and one-shot `ask` summaries.
+- Session config snapshots persist `theme` while continuing to exclude API keys.
+- Verifier initially found incomplete theme propagation to tool summaries, slash `/credits`, compact palette output, and CLI one-shot ask; main session fixed all findings and verifier recheck reported no findings.
+- `npm run typecheck`, `npm run build`, build-backed targeted render/config/slash/session/TUI/CLI tests, `git diff --check`, `npm test` with 265 tests, and `npm run dev -- status` pass.
 
 Implemented and verified Phase 12 TTY input ergonomics: deterministic slash argument completion:
 

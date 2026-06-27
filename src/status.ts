@@ -1,5 +1,6 @@
 import { formatConfigSources } from "./config/index.js";
 import type { LoadedConfig } from "./config/types.js";
+import { DEFAULT_THEME } from "./constants.js";
 import { getDelegationStatusSummary, type DelegationState } from "./delegation/index.js";
 import { getMcpStatusSummary, formatMcpProfile } from "./mcp/index.js";
 import { getEnabledPluginSkillSummary, getPluginStatusSummary } from "./plugins/index.js";
@@ -38,6 +39,7 @@ export function formatStatus({
     `mode: ${config.mode}`,
     `model: ${config.model}`,
     `fusion_preset: ${config.fusionPreset ?? "none"}`,
+    `theme: ${config.theme ?? DEFAULT_THEME}`,
     `api_key_present: ${loadedConfig.apiKeyPresent ? "yes" : "no"}`,
     `api_key_source: ${loadedConfig.apiKeySource}`,
     `approval_policy: ${config.permissions.approvalPolicy}`,

@@ -1288,6 +1288,8 @@ test("tty chat renders activity while a tool is active", async () => {
 
   try {
     writeFileSync(join(cwd, "sample.txt"), "tool content\n");
+    const loadedConfig = baseLoadedConfig();
+    loadedConfig.config.theme = "vivid";
     const capture = createIo({
       stdin: Readable.from(["Read sample\n", "/exit\n"]),
       cwd,
@@ -1348,14 +1350,17 @@ test("tty chat renders activity while a tool is active", async () => {
 
     const exitCode = await runChat({
       apiKey: "test-key",
-      loadedConfig: baseLoadedConfig(),
+      loadedConfig,
       io: capture.io,
       sessionDirectory,
     });
 
-    const stdout = stripAnsi(capture.stdout());
+    const rawStdout = capture.stdout();
+    const stdout = stripAnsi(rawStdout);
     assert.equal(exitCode, 0);
     assert.equal(callCount, 2);
+    assert.match(rawStdout, /\x1b\[96m\[tool\]\x1b\[0m read_file/);
+    assert.match(rawStdout, /\x1b\[92mok\x1b\[0m/);
     assert.match(stdout, /work ⠋ assistant/);
     assert.match(stdout, /work [⠙⠹⠸⠼⠴⠦⠧⠇⠏⠋] tool read_/);
     assert.match(stdout, /\[tool\] read_file path="sample\.txt"/);

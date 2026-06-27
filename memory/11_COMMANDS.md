@@ -53,10 +53,18 @@ OPENROUTER_API_KEY="sk-or-..." npm run dev -- models claude
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- credits
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- generation "gen_..."
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- chat
-printf '/mode fusion\n/fusion general-budget\n/models claude\n/credits\n/generation gen_...\n/web\n/web fetch https://example.com\n/web search openrouter models\n/web browse https://example.com\n/search orx cli\n/browse https://example.com\n/orchestrator openrouter openrouter/fusion\n/delegate add reviewer openrouter anthropic/claude-sonnet-4.5\n/delegates\n/sources\n/cite src-1\n/bibliography\n/mcp\n/status\n/new\n/exit\n' | OPENROUTER_API_KEY="sk-or-..." BRAVE_SEARCH_API_KEY="..." npm run dev -- chat
+printf '/mode fusion\n/fusion general-budget\n/theme vivid\n/models claude\n/credits\n/generation gen_...\n/web\n/web fetch https://example.com\n/web search openrouter models\n/web browse https://example.com\n/search orx cli\n/browse https://example.com\n/orchestrator openrouter openrouter/fusion\n/delegate add reviewer openrouter anthropic/claude-sonnet-4.5\n/delegates\n/sources\n/cite src-1\n/bibliography\n/mcp\n/status\n/new\n/exit\n' | OPENROUTER_API_KEY="sk-or-..." BRAVE_SEARCH_API_KEY="..." npm run dev -- chat
 ```
 
 If `.orx/config.toml` contains the API key, the `OPENROUTER_API_KEY=...` prefix is not needed. The `.orx/` directory is ignored and must remain uncommitted.
+
+Optional TTY theme config:
+
+```toml
+theme = "vivid"
+```
+
+Allowed theme values are `default`, `mono`, and `vivid`. Chat supports `/theme` to inspect the current theme and `/theme <value>` to change it for the active session/config. `ORX_TTY_THEME` or `ORX_THEME` can override the configured theme for rendering. `NO_COLOR=1` still forces plain output.
 
 In chat, `/model <id-or-search>` resolves through the OpenRouter catalog before changing active state. Exact `provider/model` slugs still work, but unknown friendly names such as `/model deepseek v4` are refused with a `/models <query>` suggestion instead of becoming invalid model ids.
 
@@ -71,6 +79,8 @@ Orchestration commands are scaffolds only. `/orchestrator` shows local controlle
 `/status` now includes local approximate context and OpenRouter metadata cost meters. `/credits` and `orx credits` now include a live OpenRouter credits usage meter when the credits endpoint returns usable fields. Set `NO_COLOR=1` to force plain output.
 
 TTY chat uses compact model badges in the bottom status notch for OpenRouter routing shortcuts: `openrouter/auto` appears as `model auto` and `openrouter/fusion` appears as `model fusion`. Plain status and non-TTY output keep the full configured model id.
+
+`/status` and `orx status` include the active theme. TTY status/composer output, tool summaries, `/credits`, `/commands`, `/palette`, CLI `credits`, and one-shot `ask` tool summaries all use the active theme when color is enabled.
 
 ## Planned Environment
 

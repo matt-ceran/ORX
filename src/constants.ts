@@ -3,6 +3,8 @@ export const BIN_NAME = "orx";
 
 export const DEFAULT_MODE = "auto";
 export const DEFAULT_MODEL = "openrouter/auto";
+export const DEFAULT_THEME = "default";
+export const TERMINAL_THEMES = ["default", "mono", "vivid"] as const;
 
 export const DEFAULT_APPROVAL_POLICY = "never";
 export const DEFAULT_SANDBOX_MODE = "danger-full-access";

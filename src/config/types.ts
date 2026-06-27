@@ -1,4 +1,5 @@
 export type OrxMode = "exact" | "auto" | "fusion";
+export type OrxTheme = "default" | "mono" | "vivid";
 
 export interface PermissionConfig {
   approvalPolicy: string;
@@ -9,6 +10,7 @@ export interface OrxConfig {
   model: string;
   mode: OrxMode;
   fusionPreset?: string;
+  theme?: OrxTheme;
   apiKey?: string;
   permissions: PermissionConfig;
 }

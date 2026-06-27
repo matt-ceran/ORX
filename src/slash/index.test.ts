@@ -70,6 +70,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.match(output, /\/help\s+Show grouped command help \(aliases: \/h\)/);
   assert.match(output, /\/commands \[query\]\s+Show a compact slash command palette \(aliases: \/palette\)/);
   assert.match(output, /\/status\s+Show current chat status/);
+  assert.match(output, /\/theme \[default\|mono\|vivid\]\s+Show or set the TTY color theme/);
   assert.match(output, /\/model <id-or-search>\s+Resolve and switch OpenRouter model \(aliases: \/m\)/);
   assert.match(output, /\/quit\s+Leave chat \(aliases: \/q, \/exit\)/);
   assert.doesNotMatch(output, /Advanced chat commands:/);
@@ -80,7 +81,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.doesNotMatch(output, /^Chat commands:/m);
 
   const commandLines = output.split("\n").filter((line) => line.startsWith("  /"));
-  assert.ok(commandLines.length <= 12, `expected concise common help, got ${commandLines.length}`);
+  assert.ok(commandLines.length <= 13, `expected concise common help, got ${commandLines.length}`);
 });
 
 test("help all shows common commands first plus advanced surfaces", () => {
@@ -165,6 +166,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mode "), [["auto ", "fusion "], ""]);
   assert.deepEqual(completeSlashCommandLine("/mode a"), [["auto "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/fusion g"), [["general-budget "], "g"]);
+  assert.deepEqual(completeSlashCommandLine("/theme v"), [["vivid "], "v"]);
   assert.deepEqual(completeSlashCommandLine("/web b"), [["browse "], "b"]);
   assert.deepEqual(completeSlashCommandLine("/web h"), [["help "], "h"]);
   assert.deepEqual(completeSlashCommandLine("/mcp inspect o"), [["openrouter "], "o"]);
@@ -256,6 +258,55 @@ test("mode command updates active routing config", () => {
   assert.equal(handleSlashCommand("/mode fusion", harness.context), "continue");
   assert.equal(harness.config().mode, "fusion");
   assert.equal(harness.config().model, "openrouter/fusion");
+});
+
+test("theme command shows and updates active TTY theme", () => {
+  const harness = createSlashHarness();
+
+  assert.equal(handleSlashCommand("/theme", harness.context), "continue");
+  assert.match(harness.stdout(), /Current theme: default/);
+
+  assert.equal(handleSlashCommand("/theme vivid", harness.context), "continue");
+  assert.equal(harness.config().theme, "vivid");
+  assert.match(harness.stdout(), /Theme set to vivid/);
+
+  assert.equal(handleSlashCommand("/theme neon", harness.context), "continue");
+  assert.equal(harness.config().theme, "vivid");
+  assert.match(harness.stderr(), /Usage: \/theme \[default\|mono\|vivid\]/);
+});
+
+test("theme applies to TTY slash palette and credits output", async () => {
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  const harness = createSlashHarness({
+    tty: true,
+    columns: 90,
+    config: {
+      ...baseConfig(),
+      theme: "vivid",
+    },
+    fetch: async (input) => {
+      assert.equal(String(input), "https://openrouter.ai/api/v1/credits");
+      return new Response(JSON.stringify({ data: { total_credits: 4, total_usage: 1 } }), {
+        status: 200,
+      });
+    },
+  });
+
+  try {
+    assert.equal(handleSlashCommand("/commands status", harness.context), "continue");
+    assert.match(harness.stdout(), /\x1b\[96m\/status/);
+
+    assert.equal(await handleSlashCommand("/credits", harness.context), "continue");
+    assert.match(harness.stdout(), /\x1b\[92m\[###---------\] 25\.00%/);
+    assert.equal(harness.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+  }
 });
 
 test("model command switches for an exact catalog-confirmed id", async () => {
@@ -1931,6 +1982,7 @@ test("status reports active routing, config, key, permissions, history, and meta
     assert.match(harness.stdout(), /mode: fusion/);
     assert.match(harness.stdout(), /model: openrouter\/fusion/);
     assert.match(harness.stdout(), /fusion_preset: general-budget/);
+    assert.match(harness.stdout(), /theme: default/);
     assert.match(harness.stdout(), /api_key_present: yes/);
     assert.match(harness.stdout(), /api_key_source: OPENROUTER_API_KEY/);
     assert.match(harness.stdout(), /approval_policy: never/);
@@ -2035,6 +2087,8 @@ function createSlashHarness(
     browserSnapshot?: SlashCommandContext["browserSnapshot"];
     browserResolveHost?: SlashCommandContext["browserResolveHost"];
     braveSearchApiKey?: string;
+    tty?: boolean;
+    columns?: number;
   } = {},
 ) {
   let stdoutText = "";
@@ -2047,6 +2101,16 @@ function createSlashHarness(
   let latestCredits: OpenRouterCreditsInfo | undefined;
   const costMeterState = options.costMeterState;
   const diffState = options.diffState ?? createSessionDiffState();
+  const stdout: Pick<NodeJS.WriteStream, "write"> & { isTTY?: boolean; columns?: number } = {
+    write(chunk: string | Uint8Array) {
+      stdoutText += String(chunk);
+      return true;
+    },
+  };
+  if (options.tty) {
+    stdout.isTTY = true;
+    stdout.columns = options.columns;
+  }
   const loadedConfig: LoadedConfig = {
     config,
     loadedFiles: [],
@@ -2057,12 +2121,7 @@ function createSlashHarness(
   return {
     context: {
       io: {
-        stdout: {
-          write(chunk: string | Uint8Array) {
-            stdoutText += String(chunk);
-            return true;
-          },
-        },
+        stdout,
         stderr: {
           write(chunk: string | Uint8Array) {
             stderrText += String(chunk);

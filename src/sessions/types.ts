@@ -1,4 +1,4 @@
-import type { OrxMode, PermissionConfig } from "../config/types.js";
+import type { OrxMode, OrxTheme, PermissionConfig } from "../config/types.js";
 import type { DelegationState } from "../delegation/index.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import type { EvidenceSource } from "../research/index.js";
@@ -9,6 +9,7 @@ export interface SessionConfigSnapshot {
   model: string;
   mode: OrxMode;
   fusionPreset?: string;
+  theme?: OrxTheme;
   permissions: PermissionConfig;
 }
 

@@ -28,6 +28,7 @@ Requirements:
 - width-aware bottom status/composer that stays aligned
 - activity spinner or subtle progress animation while the assistant/tools run; TTY-only assistant/tool activity is now implemented
 - color-coded badges for model, mode, permissions, context, cost, and credits
+- selectable TTY themes for default color, monochrome terminals, and higher-contrast color
 - accurate labels for approximate context, observed generation cost, and live credits
 - non-TTY and `NO_COLOR=1` fallback stays plain and script-safe
 
@@ -48,6 +49,7 @@ Current MVP:
 - TTY chat uses a compact bottom status notch and `orx ›` composer instead of the older long header/footer. Non-TTY and `NO_COLOR=1` keep the plain `orx>` line-oriented fallback.
 - The status notch shows cwd, mode, model, permissions, session id, local approximate context, OpenRouter metadata cost, and account credits after `/credits` has succeeded in the current process.
 - The TTY model badge uses compact labels for OpenRouter routing shortcuts: `openrouter/auto` renders as `auto`, and `openrouter/fusion` renders as `fusion`. Full ids remain visible in plain status and request/config surfaces.
+- TTY render helpers support `default`, `mono`, and `vivid` themes. Theme can be set in config as `theme = "default" | "mono" | "vivid"`, overridden with `ORX_TTY_THEME`/`ORX_THEME`, or changed in chat with `/theme [default|mono|vivid]`. `NO_COLOR=1` and non-TTY output still force plain text.
 - TTY chat shows a subtle `work <spinner> assistant` activity state while waiting for assistant output and `work <spinner> tool <name>` while native tools run. The activity composer clears in place before assistant/tool scrollback is printed.
 - Readline Tab completion now covers slash command names, aliases, and deterministic arguments for common command families such as routing, web, MCP, plugins, skills, orchestration, resume, help, and palette filtering.
 - Assistant responses stream inline as chunks arrive.
@@ -65,7 +67,7 @@ bottom status notch: model | mode | context | cost | credits | permissions
 bottom composer: orx › current input
 ```
 
-Next TTY polish should focus on theme/profile controls and any remaining provider badge polish without a broad raw-mode rewrite.
+Next TTY polish should focus on richer multiline/input ergonomics, saved profile controls, and any remaining provider badge polish without a broad raw-mode rewrite.
 
 ## Slash Commands
 
@@ -78,6 +80,7 @@ Initial commands:
 /mode auto
 /mode fusion
 /fusion
+/theme
 /credits
 /cost
 /status

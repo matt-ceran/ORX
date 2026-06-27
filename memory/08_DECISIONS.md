@@ -4,6 +4,12 @@ Last updated: 2026-06-27
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-27: Keep TTY Themes Small And Built In
+
+Decision: ORX TTY rendering should use a small built-in theme enum: `default`, `mono`, and `vivid`. Theme can be configured with `theme = "..."`, overridden at render time with `ORX_TTY_THEME` or `ORX_THEME`, and changed for the active chat session with `/theme [default|mono|vivid]`. `NO_COLOR=1` and non-TTY output still force plain rendering. Arbitrary color customization should wait until there is a stronger product need.
+
+Reasoning: Phase 12 needs useful polish without creating a large styling API. A small enum covers normal terminals, monochrome/screenshot-safe output, and higher-contrast color while keeping tests deterministic and preserving script-safe output.
+
 ## 2026-06-27: Terminal Meters Must State Their Data Source
 
 Decision: ORX terminal meters should be deterministic local renderings with explicit source labels. Context meters use local approximate serialized-message bytes against ORX's configured local budget, not provider-token context. Cost meters use only OpenRouter generation/usage metadata ORX has received and show `n/a` when unavailable. Account credits meters use live OpenRouter credits data only after the credits endpoint has been fetched. ANSI styling should be light, TTY-only, and disabled by `NO_COLOR`.

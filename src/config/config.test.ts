@@ -18,6 +18,7 @@ test("loads built-in defaults when config files are absent", () => {
 
     assert.equal(loaded.config.mode, "auto");
     assert.equal(loaded.config.model, "openrouter/auto");
+    assert.equal(loaded.config.theme, "default");
     assert.equal(loaded.apiKeyPresent, false);
     assert.equal(loaded.apiKeySource, "missing");
     assert.match(validateApiKey(loaded) ?? "", /OpenRouter API key not found/);
@@ -41,6 +42,7 @@ test("merges repo-local config, user config, and OPENROUTER_API_KEY", () => {
         'mode = "fusion"',
         'model = "openrouter/fusion"',
         'fusion_preset = "general-budget"',
+        'theme = "mono"',
         "",
       ].join("\n"),
     );
@@ -67,10 +69,37 @@ test("merges repo-local config, user config, and OPENROUTER_API_KEY", () => {
     assert.equal(loaded.config.mode, "fusion");
     assert.equal(loaded.config.model, "openrouter/fusion");
     assert.equal(loaded.config.fusionPreset, "general-budget");
+    assert.equal(loaded.config.theme, "mono");
     assert.equal(loaded.apiKeyPresent, true);
     assert.equal(loaded.apiKeySource, "OPENROUTER_API_KEY");
     assert.equal(validateApiKey(loaded), undefined);
     assert.equal(loaded.loadedFiles.length, 2);
+  } finally {
+    rmSync(tempHome, { recursive: true, force: true });
+    rmSync(tempCwd, { recursive: true, force: true });
+  }
+});
+
+test("rejects invalid configured themes", () => {
+  const tempHome = mkdtempSync(join(tmpdir(), "orx-home-"));
+  const tempCwd = mkdtempSync(join(tmpdir(), "orx-cwd-"));
+
+  try {
+    mkdirSync(join(tempCwd, ".orx"), { recursive: true });
+    writeFileSync(
+      join(tempCwd, ".orx", "config.toml"),
+      ['theme = "neon"', ""].join("\n"),
+    );
+
+    assert.throws(
+      () =>
+        loadConfig({
+          cwd: tempCwd,
+          homeDir: tempHome,
+          env: {},
+        }),
+      /Invalid theme .* Expected default, mono, or vivid/,
+    );
   } finally {
     rmSync(tempHome, { recursive: true, force: true });
     rmSync(tempCwd, { recursive: true, force: true });
