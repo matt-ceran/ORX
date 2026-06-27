@@ -11,6 +11,7 @@ export interface OrxConfig {
   mode: OrxMode;
   fusionPreset?: string;
   theme?: OrxTheme;
+  activeProfile?: string;
   apiKey?: string;
   permissions: PermissionConfig;
 }

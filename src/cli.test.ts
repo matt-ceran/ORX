@@ -8,6 +8,7 @@ import { Readable } from "node:stream";
 import { runCli } from "./cli.js";
 import { setMcpProfilePersistentState } from "./mcp/index.js";
 import { registerPluginManifest, setPluginEnabledState } from "./plugins/index.js";
+import { saveCurrentProfile } from "./profiles/index.js";
 
 const encoder = new TextEncoder();
 
@@ -31,7 +32,10 @@ test("help, version, and status work without an API key", async () => {
     assert.equal(
       await runCli(
         ["node", "cli", "status"],
-        { ORX_MCP_CONFIG_PATH: join(cwd, "mcp", "profiles.json") },
+        {
+          ORX_MCP_CONFIG_PATH: join(cwd, "mcp", "profiles.json"),
+          ORX_PROFILE_CONFIG_PATH: join(cwd, "profiles.json"),
+        },
         status.io,
       ),
       0,
@@ -54,6 +58,128 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /plugin_enabled_bins: 0/);
     assert.match(status.stdout(), /plugin_enabled_mcp: 0/);
     assert.match(status.stdout(), /plugin_enabled_skills: 0/);
+    assert.match(status.stdout(), /active_profile: none/);
+    assert.match(status.stdout(), /profile_count: 0/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli profile commands manage saved config profiles without an API key", async () => {
+  const cwd = createTempDir();
+  const profileConfigPath = join(cwd, "profiles.json");
+
+  try {
+    const save = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "profile", "save", "daily"],
+        {
+          ORX_PROFILE_CONFIG_PATH: profileConfigPath,
+        },
+        save.io,
+      ),
+      0,
+    );
+    assert.match(save.stdout(), /Profile daily saved/);
+    assert.doesNotMatch(readFileSync(profileConfigPath, "utf8"), /OPENROUTER/);
+
+    const list = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "profile"],
+        {
+          ORX_PROFILE_CONFIG_PATH: profileConfigPath,
+        },
+        list.io,
+      ),
+      0,
+    );
+    assert.match(list.stdout(), /saved_profiles: 1/);
+    assert.match(list.stdout(), /daily mode=auto model=openrouter\/auto/);
+
+    const inspect = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "profile", "inspect", "daily"],
+        {
+          ORX_PROFILE_CONFIG_PATH: profileConfigPath,
+        },
+        inspect.io,
+      ),
+      0,
+    );
+    assert.match(inspect.stdout(), /ORX profile: daily/);
+    assert.match(inspect.stdout(), /api_key: not stored/);
+
+    const deleted = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "profile", "delete", "daily"],
+        {
+          ORX_PROFILE_CONFIG_PATH: profileConfigPath,
+        },
+        deleted.io,
+      ),
+      0,
+    );
+    assert.match(deleted.stdout(), /Profile daily deleted/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli --profile applies saved profiles to status", async () => {
+  const cwd = createTempDir();
+  const profileConfigPath = join(cwd, "profiles.json");
+
+  try {
+    saveCurrentProfile(
+      "fusion-vivid",
+      {
+        mode: "fusion",
+        model: "openrouter/fusion",
+        fusionPreset: "general-budget",
+        theme: "vivid",
+        permissions: {
+          approvalPolicy: "never",
+          sandboxMode: "danger-full-access",
+        },
+      },
+      { configPath: profileConfigPath },
+    );
+
+    const status = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "--profile", "fusion-vivid", "status"],
+        {
+          ORX_PROFILE_CONFIG_PATH: profileConfigPath,
+          ORX_MCP_CONFIG_PATH: join(cwd, "mcp", "profiles.json"),
+        },
+        status.io,
+      ),
+      0,
+    );
+    assert.match(status.stdout(), /mode: fusion/);
+    assert.match(status.stdout(), /model: openrouter\/fusion/);
+    assert.match(status.stdout(), /fusion_preset: general-budget/);
+    assert.match(status.stdout(), /theme: vivid/);
+    assert.match(status.stdout(), /active_profile: fusion-vivid/);
+    assert.match(status.stdout(), /profile_count: 1/);
+
+    const missing = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "--profile", "missing", "status"],
+        {
+          ORX_PROFILE_CONFIG_PATH: profileConfigPath,
+        },
+        missing.io,
+      ),
+      1,
+    );
+    assert.match(missing.stderr(), /Unknown profile: missing/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -10,6 +10,7 @@ export interface SessionConfigSnapshot {
   mode: OrxMode;
   fusionPreset?: string;
   theme?: OrxTheme;
+  activeProfile?: string;
   permissions: PermissionConfig;
 }
 

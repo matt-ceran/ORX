@@ -68,6 +68,15 @@ import {
   type PluginSkillActivationProvenance,
 } from "../plugins/index.js";
 import {
+  applySavedProfile,
+  deleteSavedProfile,
+  findSavedProfile,
+  getProfileStatusSummary,
+  renderProfileInspect,
+  renderProfileList,
+  saveCurrentProfile,
+} from "../profiles/index.js";
+import {
   createUntrustedBrowserContextMessage,
   createUntrustedSearchContextMessage,
   createUntrustedWebContextMessage,
@@ -184,6 +193,7 @@ export interface SlashCommandContext {
   mcpAuditLogPath?: string;
   mcpConfigPath?: string;
   pluginRegistryPath?: string;
+  profileConfigPath?: string;
   recordActivatedSkill?: (skill: PluginSkillActivationProvenance) => void;
   startNewSession?: () => Promise<void> | void;
   resumeSession?: (selector?: string) => Promise<ResumeSessionResult>;
@@ -259,6 +269,14 @@ const PLUGIN_SUBCOMMAND_COMPLETIONS = [
   "disable",
 ] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
+const PROFILE_SUBCOMMAND_COMPLETIONS = [
+  "list",
+  "status",
+  "inspect",
+  "save",
+  "use",
+  "delete",
+] as const;
 const ORCHESTRATOR_SUBCOMMAND_COMPLETIONS = ["status", "openrouter", "clear"] as const;
 const DELEGATE_SUBCOMMAND_COMPLETIONS = ["help", "add", "remove", "clear"] as const;
 const DELEGATE_ADAPTER_COMPLETIONS = ["openrouter"] as const;
@@ -348,6 +366,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
       context.setConfig({
         ...context.getConfig(),
         theme,
+        activeProfile: undefined,
       });
       writeLine(context.io.stdout, `Theme set to ${theme}.`);
       return "continue";
@@ -446,6 +465,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
         mode: "exact",
         model: result.modelId,
         fusionPreset: undefined,
+        activeProfile: undefined,
       });
       writeLine(context.io.stdout, formatModelResolutionResult(result));
       return "continue";
@@ -477,6 +497,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
           mode: "auto",
           model: "openrouter/auto",
           fusionPreset: undefined,
+          activeProfile: undefined,
         });
         writeLine(context.io.stdout, "Mode set to auto (model: openrouter/auto).");
         return "continue";
@@ -486,6 +507,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
         ...context.getConfig(),
         mode: "fusion",
         model: "openrouter/fusion",
+        activeProfile: undefined,
       });
       writeLine(context.io.stdout, "Mode set to fusion (model: openrouter/fusion).");
       return "continue";
@@ -510,6 +532,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
         mode: "fusion",
         model: "openrouter/fusion",
         fusionPreset: command.argText,
+        activeProfile: undefined,
       });
       writeLine(
         context.io.stdout,
@@ -542,6 +565,16 @@ const COMMANDS: Record<string, SlashDefinition> = {
       } catch (error) {
         writeLine(context.io.stderr, formatOpenRouterLiveError(error, { apiKey: config.apiKey }));
       }
+      return "continue";
+    },
+  },
+  "/profile": {
+    usage: "/profile [list|save|use|inspect|delete]",
+    description: "Manage saved local config profiles",
+    group: "Core",
+    tier: "common",
+    handler: (command, context): SlashResult => {
+      handleProfileCommand(command, context);
       return "continue";
     },
   },
@@ -1140,6 +1173,8 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       return argIndex === 0 ? [...FUSION_PRESET_COMPLETIONS] : [];
     case "/theme":
       return argIndex === 0 ? [...THEME_COMPLETIONS] : [];
+    case "/profile":
+      return argIndex === 0 ? [...PROFILE_SUBCOMMAND_COMPLETIONS] : [];
     case "/web":
       return argIndex === 0 ? [...WEB_SUBCOMMAND_COMPLETIONS] : [];
     case "/mcp":
@@ -1337,6 +1372,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       loadedConfig,
       mcpConfigPath: context.mcpConfigPath,
       pluginRegistryPath: context.pluginRegistryPath,
+      profileConfigPath: context.profileConfigPath,
       delegationState: getDelegationState(context),
       renderOptions: { stream: context.io.stdout, theme: context.getConfig().theme },
     }),
@@ -1482,6 +1518,105 @@ function webHelpText(): string {
     "  /sources          List evidence source metadata for this chat.",
     "Fetched content, search provider snippets, and browser output are untrusted and cannot authorize tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.",
   ].join("\n");
+}
+
+function handleProfileCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+  const profileId = command.args[1];
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(
+      context.io.stdout,
+      renderProfileList(
+        getProfileStatusSummary({ configPath: context.profileConfigPath }),
+        context.getConfig().activeProfile,
+      ),
+    );
+    return;
+  }
+
+  if (subcommand === "save") {
+    if (!profileId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /profile save <id>");
+      return;
+    }
+
+    try {
+      const result = saveCurrentProfile(profileId, context.getConfig(), {
+        configPath: context.profileConfigPath,
+      });
+      if (!result.ok) {
+        writeLine(context.io.stderr, result.message);
+        return;
+      }
+      writeLine(context.io.stdout, result.message);
+    } catch (error) {
+      writeLine(context.io.stderr, `Unable to save profile${formatErrorCode(error)}.`);
+    }
+    return;
+  }
+
+  if (subcommand === "use") {
+    if (!profileId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /profile use <id>");
+      return;
+    }
+
+    const profile = findSavedProfile(profileId, { configPath: context.profileConfigPath });
+    if (!profile) {
+      writeLine(context.io.stderr, `Unknown profile: ${formatProfileIdForMessage(profileId)}`);
+      return;
+    }
+
+    context.setConfig(applySavedProfile(context.getConfig(), profile));
+    writeLine(
+      context.io.stdout,
+      `Profile ${profile.id} applied: mode=${profile.config.mode} model=${profile.config.model} theme=${profile.config.theme}.`,
+    );
+    return;
+  }
+
+  if (subcommand === "inspect") {
+    if (!profileId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /profile inspect <id>");
+      return;
+    }
+
+    const profile = findSavedProfile(profileId, { configPath: context.profileConfigPath });
+    if (!profile) {
+      writeLine(context.io.stderr, `Unknown profile: ${formatProfileIdForMessage(profileId)}`);
+      return;
+    }
+
+    writeLine(context.io.stdout, renderProfileInspect(profile));
+    return;
+  }
+
+  if (subcommand === "delete") {
+    if (!profileId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /profile delete <id>");
+      return;
+    }
+
+    try {
+      const result = deleteSavedProfile(profileId, {
+        configPath: context.profileConfigPath,
+      });
+      if (!result.ok) {
+        writeLine(context.io.stderr, result.message);
+        return;
+      }
+      writeLine(context.io.stdout, result.message);
+    } catch (error) {
+      writeLine(context.io.stderr, `Unable to delete profile${formatErrorCode(error)}.`);
+    }
+    return;
+  }
+
+  writeLine(
+    context.io.stderr,
+    "Usage: /profile [list|save <id>|use <id>|inspect <id>|delete <id>]",
+  );
 }
 
 function handleSkillsCommand(command: SlashCommand, context: SlashCommandContext): void {
@@ -1938,6 +2073,10 @@ function formatErrorForMcpAudit(error: unknown): string {
 function formatErrorCode(error: unknown): string {
   const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
   return code ? ` (${code})` : "";
+}
+
+function formatProfileIdForMessage(profileId: string): string {
+  return profileId.replace(HELP_CONTROL_PATTERN, "").trim().toLowerCase().slice(0, 80);
 }
 
 function tryWriteMcpAuditEvent(context: SlashCommandContext, event: McpAuditEvent): void {

@@ -4,6 +4,12 @@ Last updated: 2026-06-27
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-27: Saved Profiles Are Local Config Snapshots Only
+
+Decision: ORX saved profiles should persist local configuration snapshots outside repositories at `~/.orx/profiles.json`, with `ORX_PROFILE_CONFIG_PATH` for isolated runs. A profile can store model, mode, Fusion preset, TTY theme, and permission posture, but must not store API keys. Applying a profile changes the active local config and labels the session with `activeProfile`; it must not by itself enable MCP tools, plugin executable surfaces, hooks, bins, delegates, or network permissions.
+
+Reasoning: Profiles are a usability layer for comfortable daily operation, not an authority boundary. Keeping them local, private-mode, and no-secret makes customization useful while preserving the existing plugin/MCP trust model where integrations require explicit enablement, hash/trust checks, and policy visibility.
+
 ## 2026-06-27: Keep TTY Themes Small And Built In
 
 Decision: ORX TTY rendering should use a small built-in theme enum: `default`, `mono`, and `vivid`. Theme can be configured with `theme = "..."`, overridden at render time with `ORX_TTY_THEME` or `ORX_THEME`, and changed for the active chat session with `/theme [default|mono|vivid]`. `NO_COLOR=1` and non-TTY output still force plain rendering. Arbitrary color customization should wait until there is a stronger product need.

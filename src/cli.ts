@@ -20,6 +20,16 @@ import {
 } from "./openrouter/live.js";
 import { resolveMcpConfigPath } from "./mcp/index.js";
 import { createEnabledPluginSkillsSystemMessage, resolvePluginRegistryPath } from "./plugins/index.js";
+import {
+  applySavedProfile,
+  deleteSavedProfile,
+  findSavedProfile,
+  getProfileStatusSummary,
+  renderProfileInspect,
+  renderProfileList,
+  resolveProfileConfigPath,
+  saveCurrentProfile,
+} from "./profiles/index.js";
 import type { BrowserSnapshotDriver } from "./research/index.js";
 import { resolveSessionDirectory } from "./sessions/index.js";
 import { formatStatus } from "./status.js";
@@ -43,6 +53,11 @@ interface AskCommand {
   overrides: AskRequestOverrides;
 }
 
+interface GlobalCliOptions {
+  profile?: string;
+  args: string[];
+}
+
 const VALID_MODES = new Set<OrxMode>(["auto", "fusion", "exact"]);
 
 export async function runCli(
@@ -56,7 +71,13 @@ export async function runCli(
     fetch: globalThis.fetch,
   },
 ): Promise<number> {
-  const args = argv.slice(2);
+  const parsedGlobalOptions = parseGlobalOptions(argv.slice(2));
+  if (typeof parsedGlobalOptions === "string") {
+    writeLine(io.stderr, parsedGlobalOptions);
+    return 1;
+  }
+
+  const args = parsedGlobalOptions.args;
   const first = args[0];
 
   if (first === "help" || first === "--help" || first === "-h") {
@@ -69,10 +90,22 @@ export async function runCli(
     return 0;
   }
 
+  const mcpConfigPath = resolveMcpConfigPath({ env, cwd: io.cwd });
+  const pluginRegistryPath = resolvePluginRegistryPath({ env, cwd: io.cwd });
+  const profileConfigPath = resolveProfileConfigPath({ env, cwd: io.cwd });
+  const loadedConfigResult = loadConfigWithProfile({
+    env,
+    cwd: io.cwd,
+    profileId: parsedGlobalOptions.profile,
+    profileConfigPath,
+  });
+  if (typeof loadedConfigResult === "string") {
+    writeLine(io.stderr, loadedConfigResult);
+    return 1;
+  }
+  const loadedConfig = loadedConfigResult;
+
   if (first === "status") {
-    const loadedConfig = loadConfig({ env, cwd: io.cwd });
-    const mcpConfigPath = resolveMcpConfigPath({ env, cwd: io.cwd });
-    const pluginRegistryPath = resolvePluginRegistryPath({ env, cwd: io.cwd });
     writeLine(
       io.stdout,
       formatStatus({
@@ -80,13 +113,17 @@ export async function runCli(
         loadedConfig,
         mcpConfigPath,
         pluginRegistryPath,
+        profileConfigPath,
         renderOptions: { stream: io.stdout, theme: loadedConfig.config.theme },
       }),
     );
     return 0;
   }
 
-  const loadedConfig = loadConfig({ env, cwd: io.cwd });
+  if (first === "profile" || first === "profiles") {
+    return runProfileCommand(args.slice(1), loadedConfig.config, io, profileConfigPath);
+  }
+
   const apiKeyError = validateApiKey(loadedConfig);
   if (apiKeyError) {
     writeLine(io.stderr, apiKeyError);
@@ -94,7 +131,6 @@ export async function runCli(
   }
 
   if (first === "ask") {
-    const pluginRegistryPath = resolvePluginRegistryPath({ env, cwd: io.cwd });
     return runAskCommand(args.slice(1), loadedConfig.config.apiKey ?? "", loadedConfig.config, io, {
       pluginRegistryPath,
     });
@@ -113,7 +149,11 @@ export async function runCli(
   }
 
   if (!first || first === "chat") {
-    return runChatCommand(env, loadedConfig, io);
+    return runChatCommand(env, loadedConfig, io, {
+      mcpConfigPath,
+      pluginRegistryPath,
+      profileConfigPath,
+    });
   }
 
   writeLine(io.stderr, `Unknown command: ${first}\n\n${helpText()}`);
@@ -137,6 +177,7 @@ function helpText(): string {
     "  models [q]    List live OpenRouter models with an optional filter",
     "  credits       Show live OpenRouter credits",
     "  generation <id>  Show OpenRouter generation metadata",
+    "  profile       List, inspect, save, or delete local ORX profiles",
     "  status        Show runtime status and config defaults",
     "  help          Show this help message",
     "  version       Show the current version",
@@ -147,6 +188,7 @@ function helpText(): string {
     "  --fusion <preset>       Use an OpenRouter Fusion preset",
     "",
     "Global options:",
+    "  --profile <id>          Apply a saved ORX profile for this invocation",
     "  -h, --help              Show this help message",
     "  -v, --version           Show the current version",
   ].join("\n");
@@ -156,9 +198,12 @@ function runChatCommand(
   env: NodeJS.ProcessEnv,
   loadedConfig: LoadedConfig,
   io: CliIo,
+  paths?: {
+    mcpConfigPath?: string;
+    pluginRegistryPath?: string;
+    profileConfigPath?: string;
+  },
 ): Promise<number> {
-  const mcpConfigPath = resolveMcpConfigPath({ env, cwd: io.cwd });
-  const pluginRegistryPath = resolvePluginRegistryPath({ env, cwd: io.cwd });
   return runChat({
     apiKey: loadedConfig.config.apiKey ?? "",
     loadedConfig,
@@ -173,8 +218,9 @@ function runChatCommand(
     },
     sessionDirectory: resolveSessionDirectory({ env, cwd: io.cwd }),
     mcpAuditLogPath: env.ORX_MCP_AUDIT_PATH,
-    mcpConfigPath,
-    pluginRegistryPath,
+    mcpConfigPath: paths?.mcpConfigPath,
+    pluginRegistryPath: paths?.pluginRegistryPath,
+    profileConfigPath: paths?.profileConfigPath,
     braveSearchApiKey: env.BRAVE_SEARCH_API_KEY,
   });
 }
@@ -231,6 +277,106 @@ async function runGenerationCommand(args: string[], apiKey: string, io: CliIo): 
     writeLine(io.stderr, formatOpenRouterLiveError(error, { apiKey }));
     return 1;
   }
+}
+
+function runProfileCommand(
+  args: string[],
+  config: OrxConfig,
+  io: CliIo,
+  profileConfigPath: string,
+): number {
+  const subcommand = args[0]?.toLowerCase() ?? "list";
+  const profileId = args[1];
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(
+      io.stdout,
+      renderProfileList(
+        getProfileStatusSummary({ configPath: profileConfigPath }),
+        config.activeProfile,
+      ),
+    );
+    return 0;
+  }
+
+  if (subcommand === "save") {
+    if (!profileId || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx profile save <id>");
+      return 1;
+    }
+
+    let result: ReturnType<typeof saveCurrentProfile>;
+    try {
+      result = saveCurrentProfile(profileId, config, { configPath: profileConfigPath });
+    } catch (error) {
+      writeLine(io.stderr, `Unable to save profile${formatErrorCode(error)}.`);
+      return 1;
+    }
+
+    if (!result.ok) {
+      writeLine(io.stderr, result.message);
+      return 1;
+    }
+    writeLine(io.stdout, result.message);
+    return 0;
+  }
+
+  if (subcommand === "inspect" || subcommand === "use") {
+    if (!profileId || args.length !== 2) {
+      writeLine(io.stderr, `Usage: orx profile ${subcommand} <id>`);
+      return 1;
+    }
+
+    const profile = findSavedProfile(profileId, { configPath: profileConfigPath });
+    if (!profile) {
+      writeLine(io.stderr, `Unknown profile: ${formatProfileIdForMessage(profileId)}`);
+      return 1;
+    }
+
+    if (subcommand === "use") {
+      const applied = applySavedProfile(config, profile);
+      writeLine(
+        io.stdout,
+        [
+          `Profile ${profile.id} applied for this invocation.`,
+          `mode: ${applied.mode}`,
+          `model: ${applied.model}`,
+          `fusion_preset: ${applied.fusionPreset ?? "none"}`,
+          `theme: ${applied.theme}`,
+          "Use `orx --profile <id>` before another command to run with it.",
+        ].join("\n"),
+      );
+      return 0;
+    }
+
+    writeLine(io.stdout, renderProfileInspect(profile));
+    return 0;
+  }
+
+  if (subcommand === "delete") {
+    if (!profileId || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx profile delete <id>");
+      return 1;
+    }
+
+    let result: ReturnType<typeof deleteSavedProfile>;
+    try {
+      result = deleteSavedProfile(profileId, { configPath: profileConfigPath });
+    } catch (error) {
+      writeLine(io.stderr, `Unable to delete profile${formatErrorCode(error)}.`);
+      return 1;
+    }
+
+    if (!result.ok) {
+      writeLine(io.stderr, result.message);
+      return 1;
+    }
+    writeLine(io.stdout, result.message);
+    return 0;
+  }
+
+  writeLine(io.stderr, "Usage: orx profile [list|save <id>|use <id>|inspect <id>|delete <id>]");
+  return 1;
 }
 
 function getVersion(): string {
@@ -303,6 +449,7 @@ function applyAskOverrides(config: OrxConfig, overrides: AskRequestOverrides): O
       mode: "exact",
       model: overrides.model,
       fusionPreset: undefined,
+      activeProfile: undefined,
     };
   }
 
@@ -312,6 +459,7 @@ function applyAskOverrides(config: OrxConfig, overrides: AskRequestOverrides): O
       mode: "auto",
       model: "openrouter/auto",
       fusionPreset: undefined,
+      activeProfile: undefined,
     };
   }
 
@@ -320,6 +468,7 @@ function applyAskOverrides(config: OrxConfig, overrides: AskRequestOverrides): O
       ...config,
       mode: "exact",
       fusionPreset: undefined,
+      activeProfile: undefined,
     };
   }
 
@@ -329,10 +478,54 @@ function applyAskOverrides(config: OrxConfig, overrides: AskRequestOverrides): O
       mode: "fusion",
       model: "openrouter/fusion",
       fusionPreset: overrides.fusionPreset ?? config.fusionPreset,
+      activeProfile: undefined,
     };
   }
 
   return config;
+}
+
+function parseGlobalOptions(args: string[]): GlobalCliOptions | string {
+  const rest = [...args];
+  let profile: string | undefined;
+
+  while (rest[0] === "--profile") {
+    const value = rest[1];
+    if (!value || value.startsWith("--")) {
+      return "Missing value for --profile.";
+    }
+    profile = value;
+    rest.splice(0, 2);
+  }
+
+  return {
+    profile,
+    args: rest,
+  };
+}
+
+function loadConfigWithProfile(options: {
+  env: NodeJS.ProcessEnv;
+  cwd: string;
+  profileId?: string;
+  profileConfigPath: string;
+}): LoadedConfig | string {
+  const loadedConfig = loadConfig({ env: options.env, cwd: options.cwd });
+  if (!options.profileId) {
+    return loadedConfig;
+  }
+
+  const profile = findSavedProfile(options.profileId, {
+    configPath: options.profileConfigPath,
+  });
+  if (!profile) {
+    return `Unknown profile: ${formatProfileIdForMessage(options.profileId)}`;
+  }
+
+  return {
+    ...loadedConfig,
+    config: applySavedProfile(loadedConfig.config, profile),
+  };
 }
 
 function parseAskArgs(args: string[]): AskCommand | string {
@@ -399,6 +592,15 @@ function parseAskArgs(args: string[]): AskCommand | string {
     prompt,
     overrides,
   };
+}
+
+function formatProfileIdForMessage(profileId: string): string {
+  return profileId.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim().toLowerCase().slice(0, 80);
+}
+
+function formatErrorCode(error: unknown): string {
+  const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
+  return code ? ` (${code})` : "";
 }
 
 function writeLine(stream: Pick<NodeJS.WriteStream, "write">, text: string) {

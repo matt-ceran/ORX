@@ -50,6 +50,7 @@ Current MVP:
 - The status notch shows cwd, mode, model, permissions, session id, local approximate context, OpenRouter metadata cost, and account credits after `/credits` has succeeded in the current process.
 - The TTY model badge uses compact labels for OpenRouter routing shortcuts: `openrouter/auto` renders as `auto`, and `openrouter/fusion` renders as `fusion`. Full ids remain visible in plain status and request/config surfaces.
 - TTY render helpers support `default`, `mono`, and `vivid` themes. Theme can be set in config as `theme = "default" | "mono" | "vivid"`, overridden with `ORX_TTY_THEME`/`ORX_THEME`, or changed in chat with `/theme [default|mono|vivid]`. `NO_COLOR=1` and non-TTY output still force plain text.
+- Saved profile controls persist named local config snapshots outside repos at `~/.orx/profiles.json`. Use `orx profile ...`, global `orx --profile <id>`, or chat `/profile [list|save|use|inspect|delete]` to manage/apply them. Profiles do not store API keys or enable MCP/plugin executable surfaces.
 - TTY chat shows a subtle `work <spinner> assistant` activity state while waiting for assistant output and `work <spinner> tool <name>` while native tools run. The activity composer clears in place before assistant/tool scrollback is printed.
 - Readline Tab completion now covers slash command names, aliases, and deterministic arguments for common command families such as routing, web, MCP, plugins, skills, orchestration, resume, help, and palette filtering.
 - Assistant responses stream inline as chunks arrive.
@@ -67,7 +68,7 @@ bottom status notch: model | mode | context | cost | credits | permissions
 bottom composer: orx › current input
 ```
 
-Next TTY polish should focus on richer multiline/input ergonomics, saved profile controls, and any remaining provider badge polish without a broad raw-mode rewrite.
+Next TTY polish should focus on richer multiline/input ergonomics and any remaining provider badge polish without a broad raw-mode rewrite.
 
 ## Slash Commands
 

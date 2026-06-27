@@ -221,6 +221,7 @@ export function snapshotConfig(config: OrxConfig): SessionConfigSnapshot {
     mode: config.mode,
     fusionPreset: config.fusionPreset,
     theme: config.theme,
+    activeProfile: config.activeProfile,
     permissions: {
       approvalPolicy: config.permissions.approvalPolicy,
       sandboxMode: config.permissions.sandboxMode,

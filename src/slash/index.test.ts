@@ -71,6 +71,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.match(output, /\/commands \[query\]\s+Show a compact slash command palette \(aliases: \/palette\)/);
   assert.match(output, /\/status\s+Show current chat status/);
   assert.match(output, /\/theme \[default\|mono\|vivid\]\s+Show or set the TTY color theme/);
+  assert.match(output, /\/profile \[list\|save\|use\|inspect\|delete\]\s+Manage saved local config profiles/);
   assert.match(output, /\/model <id-or-search>\s+Resolve and switch OpenRouter model \(aliases: \/m\)/);
   assert.match(output, /\/quit\s+Leave chat \(aliases: \/q, \/exit\)/);
   assert.doesNotMatch(output, /Advanced chat commands:/);
@@ -81,7 +82,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.doesNotMatch(output, /^Chat commands:/m);
 
   const commandLines = output.split("\n").filter((line) => line.startsWith("  /"));
-  assert.ok(commandLines.length <= 13, `expected concise common help, got ${commandLines.length}`);
+  assert.ok(commandLines.length <= 14, `expected concise common help, got ${commandLines.length}`);
 });
 
 test("help all shows common commands first plus advanced surfaces", () => {
@@ -167,6 +168,10 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mode a"), [["auto "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/fusion g"), [["general-budget "], "g"]);
   assert.deepEqual(completeSlashCommandLine("/theme v"), [["vivid "], "v"]);
+  assert.deepEqual(completeSlashCommandLine("/profile s"), [
+    ["status ", "save "],
+    "s",
+  ]);
   assert.deepEqual(completeSlashCommandLine("/web b"), [["browse "], "b"]);
   assert.deepEqual(completeSlashCommandLine("/web h"), [["help "], "h"]);
   assert.deepEqual(completeSlashCommandLine("/mcp inspect o"), [["openrouter "], "o"]);
@@ -261,18 +266,79 @@ test("mode command updates active routing config", () => {
 });
 
 test("theme command shows and updates active TTY theme", () => {
-  const harness = createSlashHarness();
+  const harness = createSlashHarness({
+    config: {
+      ...baseConfig(),
+      activeProfile: "daily",
+    },
+  });
 
   assert.equal(handleSlashCommand("/theme", harness.context), "continue");
   assert.match(harness.stdout(), /Current theme: default/);
 
   assert.equal(handleSlashCommand("/theme vivid", harness.context), "continue");
   assert.equal(harness.config().theme, "vivid");
+  assert.equal(harness.config().activeProfile, undefined);
   assert.match(harness.stdout(), /Theme set to vivid/);
 
   assert.equal(handleSlashCommand("/theme neon", harness.context), "continue");
   assert.equal(harness.config().theme, "vivid");
   assert.match(harness.stderr(), /Usage: \/theme \[default\|mono\|vivid\]/);
+});
+
+test("profile command saves lists applies inspects and deletes local profiles", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-profile-slash-"));
+  const profileConfigPath = join(cwd, "profiles.json");
+  const harness = createSlashHarness({
+    profileConfigPath,
+    config: {
+      ...baseConfig(),
+      mode: "fusion",
+      model: "openrouter/fusion",
+      fusionPreset: "general-budget",
+      theme: "vivid",
+    },
+  });
+
+  try {
+    assert.equal(handleSlashCommand("/profile", harness.context), "continue");
+    assert.match(harness.stdout(), /saved_profiles: 0/);
+
+    assert.equal(handleSlashCommand("/profile save Deep-Review", harness.context), "continue");
+    assert.match(harness.stdout(), /Profile deep-review saved/);
+    assert.doesNotMatch(readFileSync(profileConfigPath, "utf8"), /test-key/);
+
+    harness.context.setConfig({
+      ...harness.config(),
+      mode: "auto",
+      model: "openrouter/auto",
+      fusionPreset: undefined,
+      theme: "default",
+    });
+
+    assert.equal(handleSlashCommand("/profile use deep-review", harness.context), "continue");
+    assert.equal(harness.config().activeProfile, "deep-review");
+    assert.equal(harness.config().mode, "fusion");
+    assert.equal(harness.config().model, "openrouter/fusion");
+    assert.equal(harness.config().fusionPreset, "general-budget");
+    assert.equal(harness.config().theme, "vivid");
+    assert.match(harness.stdout(), /Profile deep-review applied/);
+
+    assert.equal(handleSlashCommand("/profile inspect deep-review", harness.context), "continue");
+    assert.match(harness.stdout(), /ORX profile: deep-review/);
+    assert.match(harness.stdout(), /api_key: not stored/);
+
+    assert.equal(handleSlashCommand("/theme mono", harness.context), "continue");
+    assert.equal(harness.config().activeProfile, undefined);
+
+    assert.equal(handleSlashCommand("/profile delete deep-review", harness.context), "continue");
+    assert.match(harness.stdout(), /Profile deep-review deleted/);
+
+    assert.equal(handleSlashCommand("/profile use deep-review", harness.context), "continue");
+    assert.match(harness.stderr(), /Unknown profile: deep-review/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("theme applies to TTY slash palette and credits output", async () => {
@@ -2079,6 +2145,7 @@ function createSlashHarness(
     mcpAuditLogPath?: string;
     mcpConfigPath?: string;
     pluginRegistryPath?: string;
+    profileConfigPath?: string;
     recordActivatedSkill?: SlashCommandContext["recordActivatedSkill"];
     resumeSession?: SlashCommandContext["resumeSession"];
     fetch?: typeof fetch;
@@ -2169,6 +2236,7 @@ function createSlashHarness(
       mcpAuditLogPath: options.mcpAuditLogPath,
       mcpConfigPath: options.mcpConfigPath,
       pluginRegistryPath: options.pluginRegistryPath,
+      profileConfigPath: options.profileConfigPath,
       recordActivatedSkill: options.recordActivatedSkill,
       resumeSession: options.resumeSession,
     },

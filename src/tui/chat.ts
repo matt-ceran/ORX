@@ -92,6 +92,7 @@ export interface ChatOptions {
   mcpAuditLogPath?: string;
   mcpConfigPath?: string;
   pluginRegistryPath?: string;
+  profileConfigPath?: string;
   braveSearchApiKey?: string;
 }
 
@@ -111,6 +112,7 @@ export async function runChat({
   mcpAuditLogPath,
   mcpConfigPath,
   pluginRegistryPath,
+  profileConfigPath,
   braveSearchApiKey = process.env.BRAVE_SEARCH_API_KEY,
 }: ChatOptions): Promise<number> {
   let activeConfig: OrxConfig = { ...loadedConfig.config };
@@ -224,6 +226,7 @@ export async function runChat({
           mcpAuditLogPath,
           mcpConfigPath,
           pluginRegistryPath,
+          profileConfigPath,
           recordActivatedSkill: (skill) => {
             activatedSkills = upsertActivatedSkill(activatedSkills, skill);
           },

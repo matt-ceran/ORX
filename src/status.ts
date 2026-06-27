@@ -4,6 +4,7 @@ import { DEFAULT_THEME } from "./constants.js";
 import { getDelegationStatusSummary, type DelegationState } from "./delegation/index.js";
 import { getMcpStatusSummary, formatMcpProfile } from "./mcp/index.js";
 import { getEnabledPluginSkillSummary, getPluginStatusSummary } from "./plugins/index.js";
+import { getProfileStatusSummary } from "./profiles/index.js";
 import { createTerminalRenderer, type TerminalRenderOptions } from "./terminal/render.js";
 
 export interface StatusOptions {
@@ -11,6 +12,7 @@ export interface StatusOptions {
   loadedConfig: LoadedConfig;
   mcpConfigPath?: string;
   pluginRegistryPath?: string;
+  profileConfigPath?: string;
   delegationState?: DelegationState;
   renderOptions?: TerminalRenderOptions;
 }
@@ -20,6 +22,7 @@ export function formatStatus({
   loadedConfig,
   mcpConfigPath,
   pluginRegistryPath,
+  profileConfigPath,
   delegationState,
   renderOptions,
 }: StatusOptions): string {
@@ -28,6 +31,7 @@ export function formatStatus({
   const mcpStatus = getMcpStatusSummary({ configPath: mcpConfigPath });
   const pluginStatus = getPluginStatusSummary({ registryPath: pluginRegistryPath });
   const pluginSkillStatus = getEnabledPluginSkillSummary({ registryPath: pluginRegistryPath });
+  const profileStatus = getProfileStatusSummary({ configPath: profileConfigPath });
   const delegationStatus =
     delegationState === undefined ? undefined : getDelegationStatusSummary(delegationState);
   const activeMcpProfiles =
@@ -40,6 +44,7 @@ export function formatStatus({
     `model: ${config.model}`,
     `fusion_preset: ${config.fusionPreset ?? "none"}`,
     `theme: ${config.theme ?? DEFAULT_THEME}`,
+    `active_profile: ${config.activeProfile ?? "none"}`,
     `api_key_present: ${loadedConfig.apiKeyPresent ? "yes" : "no"}`,
     `api_key_source: ${loadedConfig.apiKeySource}`,
     `approval_policy: ${config.permissions.approvalPolicy}`,
@@ -70,6 +75,7 @@ export function formatStatus({
     `plugin_enabled_skills: ${pluginSkillStatus.skillCount}${
       pluginSkillStatus.truncated ? " (truncated)" : ""
     }`,
+    `profile_count: ${profileStatus.count}`,
     delegationStatus ? `orchestration_controller: ${delegationStatus.controller}` : undefined,
     delegationStatus ? "orchestration_execution: disabled" : undefined,
     delegationStatus ? `delegate_count: ${delegationStatus.delegateCount}` : undefined,

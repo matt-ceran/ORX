@@ -50,6 +50,17 @@ The npm `prepare` lifecycle builds `dist/cli.js` for local source installs. `orx
 
 Config is discovered from repo-local `.orx/config.toml` development defaults and `~/.orx/config.toml`. `OPENROUTER_API_KEY` takes precedence for API key detection. The `status` command reports whether a key is present without printing it.
 
+Saved local profiles can bundle model, mode, Fusion preset, theme, and permission posture without storing API keys:
+
+```sh
+orx profile save daily
+orx profile list
+orx profile inspect daily
+OPENROUTER_API_KEY=... orx --profile daily
+```
+
+Profiles are stored outside repos at `~/.orx/profiles.json`; set `ORX_PROFILE_CONFIG_PATH` to isolate or test that registry.
+
 Send one non-interactive streaming request with:
 
 ```sh
@@ -81,6 +92,8 @@ The chat UI keeps in-session message history for the current process, streams as
 /mode auto
 /mode fusion
 /fusion [preset]
+/theme [default|mono|vivid]
+/profile [list|save|use|inspect|delete]
 /models
 /clear
 /new

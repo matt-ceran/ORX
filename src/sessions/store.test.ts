@@ -78,6 +78,7 @@ test("saves and loads session JSON without persisting API keys", async () => {
       activeConfig: {
         ...baseConfig(),
         theme: "vivid",
+        activeProfile: "deep-review",
         apiKey: "secret-key",
       },
       messages: [{ role: "user", content: "Build the thing" }],
@@ -137,6 +138,7 @@ test("saves and loads session JSON without persisting API keys", async () => {
     assert.equal(loaded.summary.title, "Build the thing");
     assert.equal(loaded.activeConfig.model, "openrouter/auto");
     assert.equal(loaded.activeConfig.theme, "vivid");
+    assert.equal(loaded.activeConfig.activeProfile, "deep-review");
     assert.equal("apiKey" in loaded.activeConfig, false);
     assert.equal(loaded.activatedSkills?.[0].id, "plugin:acme.demo-plugin@1.0.0:demo");
     assert.equal(loaded.activatedSkills?.[0].activatedAt, "2026-06-26T12:00:00.000Z");

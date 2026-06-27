@@ -21,6 +21,7 @@ Urgent UX recovery additions from user testing:
 - Tab completion now also covers deterministic slash subcommands/arguments for `/mode`, `/fusion`, `/web`, `/mcp`, `/plugins`, `/skills`, `/orchestrator`, `/delegate`, `/resume`, `/help`, and `/commands`.
 - The TTY bottom status notch now uses compact model badges for OpenRouter routing shortcuts, rendering `openrouter/auto` as `auto` and `openrouter/fusion` as `fusion`; full model ids remain unchanged in config, request construction, plain status, and non-TTY output.
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
+- Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -55,6 +56,17 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented and verified Phase 12 saved profile controls:
+
+- Added `src/profiles/` for private saved profile storage under `~/.orx/profiles.json`, with `ORX_PROFILE_CONFIG_PATH` override support, `0700` parent directories, `0600` files, malformed-record sanitization, secret-like value filtering, and no API-key persistence.
+- Saved profile snapshots include model, mode, Fusion preset, theme, and permission posture. Applying a profile preserves the runtime API key and sets `activeProfile` for status/session visibility.
+- Added `orx profile list|save|use|inspect|delete` and global `orx --profile <id>` application before `status`, `ask`, or chat startup.
+- Added `/profile [list|save|use|inspect|delete]` in chat. Manual `/model`, `/mode`, `/fusion`, and `/theme` changes clear `activeProfile` so the status label does not become stale.
+- `orx status` and interactive `/status` now show `active_profile` and `profile_count`; session config snapshots persist `activeProfile` while continuing to exclude API keys.
+- Added focused tests for profile registry persistence, path overrides, file modes, no-key storage, CLI profile commands, `--profile` status behavior, slash profile lifecycle, completion/help, and session snapshots.
+- Verifier found that existing override parent directories could be chmodded accidentally; main session fixed profile storage to preserve existing override parent permissions while keeping default/new ORX-owned profile directories private and profile files `0600`.
+- Main-session `npm run typecheck`, build-backed targeted profile/slash/session/CLI/request tests, exact `/tmp` override repro, `git diff --check`, `npm test` with 273 tests, and `npm run dev -- status` pass. Verifier recheck reported no findings.
 
 Implemented and verified Phase 12 TTY theme controls:
 
