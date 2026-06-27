@@ -50,6 +50,7 @@ import {
   renderTtyStatusComposer,
   resolveTerminalWidth,
   shouldUseTtyScreen,
+  type TtyActivityState,
 } from "./screen.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
@@ -85,6 +86,8 @@ export interface ChatTerminalModes {
   useTtyScreen: boolean;
 }
 
+const TTY_ACTIVITY_INTERVAL_MS = 120;
+
 export async function runChat({
   apiKey,
   loadedConfig,
@@ -102,6 +105,10 @@ export async function runChat({
   let costMeterState = emptySessionCostMeterState();
   let latestCredits: OpenRouterCreditsInfo | undefined;
   let activeAbort: AbortController | undefined;
+  let activeTtyActivity: TtyActivityState | undefined;
+  let activeTtyActivityLineCount = 0;
+  let activeTtyActivityTimer: ReturnType<typeof setInterval> | undefined;
+  let ttyActivityFrame = 0;
   const diffState = createSessionDiffState();
   let session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
   let activatedSkills: SessionActivatedSkill[] = session.record.activatedSkills ?? [];
@@ -118,6 +125,7 @@ export async function runChat({
   rl.on("SIGINT", () => {
     if (activeAbort) {
       activeAbort.abort();
+      finishTtyActivityLine();
       writeLine(io.stdout, "\nInterrupted current request.");
       return;
     }
@@ -269,8 +277,12 @@ export async function runChat({
 
       activeAbort = new AbortController();
       writeLine(io.stdout, `\nyou: ${line}`);
-      io.stdout.write("assistant: ");
-      let needsAssistantPrefix = false;
+      if (useTtyScreen) {
+        startTtyActivity("assistant");
+      } else {
+        io.stdout.write("assistant: ");
+      }
+      let needsAssistantPrefix = useTtyScreen;
 
       try {
         const result = await runAgentTurn(
@@ -286,6 +298,7 @@ export async function runChat({
             ephemeralSystemMessages: compactPluginSkillMessages(pluginRegistryPath),
             callbacks: {
               onText(text) {
+                finishTtyActivityLine();
                 if (needsAssistantPrefix) {
                   io.stdout.write("assistant: ");
                   needsAssistantPrefix = false;
@@ -293,18 +306,24 @@ export async function runChat({
                 io.stdout.write(text);
               },
               onToolCall(toolCall) {
+                finishTtyActivityLine();
                 io.stdout.write(`\n${formatToolCallStart(toolCall, { stream: io.stdout })}\n`);
+                startTtyActivity("tool", toolCall.function.name);
                 needsAssistantPrefix = true;
               },
               onToolResult(result) {
+                finishTtyActivityLine();
                 io.stdout.write(`${formatToolResult(result, { stream: io.stdout })}\n`);
+                startTtyActivity("assistant");
                 needsAssistantPrefix = true;
               },
             },
           },
         );
 
-        io.stdout.write("\n");
+        if (!finishTtyActivityLine()) {
+          io.stdout.write("\n");
+        }
         messages = result.messages;
         latestMetadata = result.metadata;
         costMeterState = recordSessionTurnCost(costMeterState, result.metadata);
@@ -332,7 +351,9 @@ export async function runChat({
           );
         }
       } catch (error) {
-        io.stdout.write("\n");
+        if (!finishTtyActivityLine()) {
+          io.stdout.write("\n");
+        }
         if (isAbortError(error)) {
           writeLine(io.stderr, "Request interrupted.");
         } else {
@@ -340,12 +361,14 @@ export async function runChat({
           writeLine(io.stderr, message);
         }
       } finally {
+        stopTtyActivity();
         activeAbort = undefined;
       }
 
       writePromptOrComposer();
     }
   } finally {
+    stopTtyActivity();
     rl.close();
   }
 
@@ -360,7 +383,7 @@ export async function runChat({
     writePrompt(io.stdout);
   }
 
-  function renderCurrentTtyComposer(): string {
+  function renderCurrentTtyComposer(activity?: TtyActivityState): string {
     return renderTtyStatusComposer({
       cwd: activeCwd,
       model: activeConfig.model,
@@ -371,9 +394,67 @@ export async function runChat({
       contextBudget,
       costMeterState,
       latestCredits,
+      activity,
       width: resolveTerminalWidth(io.stdout),
       renderOptions: { stream: io.stdout },
     });
+  }
+
+  function startTtyActivity(kind: TtyActivityState["kind"], label?: string): void {
+    if (!useTtyScreen) {
+      return;
+    }
+
+    stopTtyActivity();
+    const activity = nextTtyActivity(kind, label);
+    const composer = renderCurrentTtyComposer(activity);
+    activeTtyActivity = activity;
+    activeTtyActivityLineCount = countLines(composer);
+    writeComposer(io.stdout, composer);
+
+    activeTtyActivityTimer = setInterval(() => {
+      if (!activeTtyActivity) {
+        return;
+      }
+
+      const nextActivity = nextTtyActivity(kind, label);
+      const nextComposer = renderCurrentTtyComposer(nextActivity);
+      io.stdout.write(clearRenderedLines(activeTtyActivityLineCount));
+      activeTtyActivity = nextActivity;
+      activeTtyActivityLineCount = countLines(nextComposer);
+      writeComposer(io.stdout, nextComposer);
+    }, TTY_ACTIVITY_INTERVAL_MS);
+    activeTtyActivityTimer.unref?.();
+  }
+
+  function nextTtyActivity(kind: TtyActivityState["kind"], label?: string): TtyActivityState {
+    const activity = {
+      kind,
+      label,
+      frame: ttyActivityFrame,
+    };
+    ttyActivityFrame += 1;
+    return activity;
+  }
+
+  function finishTtyActivityLine(): boolean {
+    if (!activeTtyActivity) {
+      return false;
+    }
+
+    const lineCount = activeTtyActivityLineCount;
+    stopTtyActivity();
+    io.stdout.write(clearRenderedLines(lineCount));
+    return true;
+  }
+
+  function stopTtyActivity(): void {
+    if (activeTtyActivityTimer) {
+      clearInterval(activeTtyActivityTimer);
+      activeTtyActivityTimer = undefined;
+    }
+    activeTtyActivity = undefined;
+    activeTtyActivityLineCount = 0;
   }
 }
 
@@ -448,6 +529,18 @@ function writeComposer(stream: WritableLike, composer: string) {
 
 function writeLine(stream: WritableLike, text: string) {
   stream.write(`${text}\n`);
+}
+
+function countLines(value: string): number {
+  return value.split("\n").length;
+}
+
+function clearRenderedLines(lineCount: number): string {
+  const count = Math.max(1, Math.floor(lineCount));
+  return [
+    "\r\x1b[2K",
+    ...Array.from({ length: count - 1 }, () => "\x1b[1F\x1b[2K"),
+  ].join("");
 }
 
 async function createChatSession(

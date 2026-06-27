@@ -97,6 +97,88 @@ test("tty screen truncates long status fields at narrow widths", () => {
   assertLinesFit(output, 44);
 });
 
+test("tty screen renders assistant and tool activity without widening the notch", () => {
+  const assistant = renderTtyStatusComposer({
+    cwd: "/Users/draingang/Documents/ORX",
+    model: "openrouter/auto",
+    mode: "auto",
+    permissions: {
+      approvalPolicy: "never",
+      sandboxMode: "danger-full-access",
+    },
+    sessionId: "20260627T120000Z-abcdef12",
+    messages: [],
+    costMeterState: {
+      costedTurnCount: 0,
+      uncostedTurnCount: 0,
+    },
+    activity: {
+      kind: "assistant",
+      frame: 0,
+    },
+    width: 96,
+    renderOptions: { color: false },
+  });
+  const tool = renderTtyStatusComposer({
+    cwd: "/Users/draingang/Documents/ORX",
+    model: "provider/really-long-model-name-with-many-segments",
+    mode: "auto",
+    permissions: {
+      approvalPolicy: "never",
+      sandboxMode: "danger-full-access",
+    },
+    sessionId: "20260627T120000Z-abcdef12",
+    messages: [],
+    costMeterState: {
+      costedTurnCount: 0,
+      uncostedTurnCount: 0,
+    },
+    activity: {
+      kind: "tool",
+      label: "read_file",
+      frame: 3,
+    },
+    width: 52,
+    renderOptions: { color: false },
+  });
+
+  assert.match(assistant, /work ⠋ assistant/);
+  assert.match(tool, /work ⠸ tool re/);
+  assertLinesFit(assistant, 96);
+  assertLinesFit(tool, 52);
+});
+
+test("tty screen sanitizes activity labels without adding status lines", () => {
+  const output = renderTtyStatusComposer({
+    cwd: "/Users/draingang/Documents/ORX",
+    model: "openrouter/auto",
+    mode: "auto",
+    permissions: {
+      approvalPolicy: "never",
+      sandboxMode: "danger-full-access",
+    },
+    sessionId: "20260627T120000Z-abcdef12",
+    messages: [],
+    costMeterState: {
+      costedTurnCount: 0,
+      uncostedTurnCount: 0,
+    },
+    activity: {
+      kind: "tool",
+      label: "read_file\nINJECTED\rname\tend\x1b[31mred",
+      frame: 0,
+    },
+    width: 140,
+    renderOptions: { color: false },
+  });
+
+  assert.equal(output.split("\n").length, 3);
+  assert.match(output.split("\n")[0], /work ⠋ tool read_file INJECTED name endred/);
+  assert.doesNotMatch(output, /\r/);
+  assert.doesNotMatch(output, ANSI_PATTERN);
+  assertLinesFit(output, 140);
+});
+
 test("tty screen respects NO_COLOR and prompt fallbacks", () => {
   const output = renderTtyStatusNotch({
     cwd: "/tmp/orx",

@@ -27,8 +27,15 @@ export interface TtyStatusComposerState {
   contextBudget?: Partial<AgentContextBudget>;
   costMeterState: SessionCostMeterState;
   latestCredits?: OpenRouterCreditsInfo;
+  activity?: TtyActivityState;
   width?: number;
   renderOptions?: TerminalRenderOptions;
+}
+
+export interface TtyActivityState {
+  kind: "assistant" | "tool";
+  label?: string;
+  frame?: number;
 }
 
 const DEFAULT_SCREEN_WIDTH = 80;
@@ -36,6 +43,8 @@ const MIN_SCREEN_WIDTH = 20;
 const MAX_SCREEN_WIDTH = 220;
 const WIDE_LAYOUT_WIDTH = 72;
 const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
+const CONTROL_PATTERN = /[\x00-\x1F\x7F]/g;
+const ACTIVITY_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
 export function shouldUseTtyScreen(
   stdin: unknown,
@@ -62,6 +71,7 @@ export function renderTtyStatusNotch(state: TtyStatusComposerState): string {
   const width = normalizeWidth(state.width);
   const renderer = createTerminalRenderer(state.renderOptions);
   const contextState = getContextState(state.messages, state.contextBudget);
+  const activity = formatActivity(state.activity, renderer);
   const model = keyValue("model", state.model, renderer, "accent");
   const mode = keyValue("mode", state.mode, renderer, "success");
   const context = keyValue("ctx", formatNotchContext(contextState, renderer, width), renderer);
@@ -80,13 +90,13 @@ export function renderTtyStatusNotch(state: TtyStatusComposerState): string {
 
   if (width >= WIDE_LAYOUT_WIDTH) {
     return [
-      fitStatusLine("╭─ ", [renderer.bold("orx"), model, mode, context, cost, credits], width),
+      fitStatusLine("╭─ ", [renderer.bold("orx"), activity, model, mode, context, cost, credits], width),
       fitStatusLine("╰─ ", [cwd, permissions, session], width),
     ].join("\n");
   }
 
   return [
-    fitStatusLine("╭─ ", [renderer.bold("orx"), model, mode], width),
+    fitStatusLine("╭─ ", [renderer.bold("orx"), activity, model, mode], width),
     fitStatusLine("│  ", [context, cost, credits], width),
     fitStatusLine("╰─ ", [cwd, permissions, session], width),
   ].join("\n");
@@ -152,6 +162,41 @@ function formatNotchCredits(
 
 function colorMoney(value: string, renderer: TerminalRenderer): string {
   return value === "n/a" ? value : renderer.success(value);
+}
+
+function formatActivity(
+  activity: TtyActivityState | undefined,
+  renderer: TerminalRenderer,
+): string | undefined {
+  if (!activity) {
+    return undefined;
+  }
+
+  const frame = ACTIVITY_FRAMES[normalizeActivityFrame(activity.frame)];
+  const detail = compactActivityDetail(activity);
+  const label = detail ? `${activity.kind} ${detail}` : activity.kind;
+  return `${renderer.dim("work")} ${renderer.accent(frame)} ${label}`;
+}
+
+function compactActivityDetail(activity: TtyActivityState): string {
+  if (!activity.label) {
+    return "";
+  }
+
+  return activity.label
+    .replace(ANSI_PATTERN, "")
+    .replace(CONTROL_PATTERN, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 32);
+}
+
+function normalizeActivityFrame(frame: number | undefined): number {
+  if (typeof frame !== "number" || !Number.isFinite(frame)) {
+    return 0;
+  }
+
+  return Math.abs(Math.floor(frame)) % ACTIVITY_FRAMES.length;
 }
 
 function keyValue(

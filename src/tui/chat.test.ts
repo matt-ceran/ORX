@@ -959,10 +959,16 @@ test("tty chat renders bottom status composer instead of the repeated plain foot
       sessionDirectory,
     });
 
-    const stdout = stripAnsi(capture.stdout());
+    const rawStdout = capture.stdout();
+    const stdout = stripAnsi(rawStdout);
     assert.equal(exitCode, 0);
     assert.match(stdout, /╭─ orx/);
     assert.match(stdout, /orx › /);
+    assert.match(stdout, /work ⠋ assistant/);
+    assert.match(
+      rawStdout,
+      /\r\x1b\[2K\x1b\[1F\x1b\[2K\x1b\[1F\x1b\[2Kassistant: TTY reply/,
+    );
     assert.match(stdout, /assistant: TTY reply/);
     assert.match(stdout, /model openrouter\/auto/);
     assert.match(stdout, /mode auto/);
@@ -978,6 +984,101 @@ test("tty chat renders bottom status composer instead of the repeated plain foot
     } else {
       process.env.NO_COLOR = previousNoColor;
     }
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat renders activity while a tool is active", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-chat-tty-tool-cwd-"));
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  let callCount = 0;
+
+  try {
+    writeFileSync(join(cwd, "sample.txt"), "tool content\n");
+    const capture = createIo({
+      stdin: Readable.from(["Read sample\n", "/exit\n"]),
+      cwd,
+      tty: true,
+      columns: 104,
+      fetch: async (_input, init) => {
+        callCount += 1;
+        const body = JSON.parse(String(init?.body));
+
+        if (callCount === 1) {
+          assert.equal(body.messages.at(-1).content, "Read sample");
+          return new Response(
+            streamFrom([
+              sse({
+                choices: [
+                  {
+                    delta: {
+                      tool_calls: [
+                        {
+                          index: 0,
+                          id: "call_read",
+                          type: "function",
+                          function: {
+                            name: "read_file",
+                            arguments: JSON.stringify({ path: "sample.txt" }),
+                          },
+                        },
+                      ],
+                    },
+                    finish_reason: "tool_calls",
+                  },
+                ],
+              }),
+              "data: [DONE]\n\n",
+            ]),
+            { status: 200 },
+          );
+        }
+
+        assert.equal(body.messages.at(-1).role, "tool");
+        return new Response(
+          streamFrom([
+            sse({
+              choices: [
+                {
+                  delta: {
+                    content: "Read complete.",
+                  },
+                },
+              ],
+            }),
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    const stdout = stripAnsi(capture.stdout());
+    assert.equal(exitCode, 0);
+    assert.equal(callCount, 2);
+    assert.match(stdout, /work ⠋ assistant/);
+    assert.match(stdout, /work [⠙⠹⠸⠼⠴⠦⠧⠇⠏⠋] tool read_/);
+    assert.match(stdout, /\[tool\] read_file path="sample\.txt"/);
+    assert.match(stdout, /\[tool\] read_file ok duration=\d+ms/);
+    assert.match(stdout, /assistant: Read complete\./);
+    assert.doesNotMatch(stdout, /cwd: .* \| mode: .* \| model:/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(cwd, { recursive: true, force: true });
     rmSync(sessionDirectory, { recursive: true, force: true });
   }
 });
@@ -1071,6 +1172,10 @@ function streamFrom(chunks: string[]): ReadableStream<Uint8Array> {
       controller.close();
     },
   });
+}
+
+function sse(value: unknown): string {
+  return `data: ${JSON.stringify(value)}\n\n`;
 }
 
 function escapeRegExp(value: string): string {
