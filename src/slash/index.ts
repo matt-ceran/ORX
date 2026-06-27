@@ -72,7 +72,12 @@ import {
   formatSessionCostMeter,
   type SessionCostMeterState,
 } from "../terminal/meters.js";
-import { createTerminalRenderer } from "../terminal/render.js";
+import {
+  createTerminalRenderer,
+  shouldUseAnsiColor,
+  type TerminalRenderOptions,
+  type TerminalRenderer,
+} from "../terminal/render.js";
 import { gitDiffTool } from "../tools/index.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
@@ -188,7 +193,12 @@ export interface SlashCommandMetadata {
 
 const MAX_RENDERED_RESUME_SESSIONS = 20;
 const MAX_HELP_QUERY_LENGTH = 80;
+const MAX_COMPACT_PALETTE_MATCHES = 8;
+const DEFAULT_COMPACT_PALETTE_WIDTH = 88;
+const MIN_COMPACT_PALETTE_WIDTH = 32;
+const MAX_COMPACT_PALETTE_WIDTH = 140;
 const HELP_CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/g;
+const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const COMMON_GROUP_ORDER: SlashCommandGroup[] = [
   "Core",
   "Models & routing",
@@ -220,6 +230,20 @@ const COMMANDS: Record<string, SlashDefinition> = {
     aliases: ["/h"],
     handler: (command, context) => {
       writeLine(context.io.stdout, renderSlashHelp(command.argText || undefined));
+      return "continue";
+    },
+  },
+  "/commands": {
+    usage: "/commands [query]",
+    description: "Show a compact slash command palette",
+    group: "Core",
+    tier: "common",
+    aliases: ["/palette"],
+    handler: (command, context) => {
+      writeLine(
+        context.io.stdout,
+        renderCommandPaletteForOutput(command.argText || undefined, context.io.stdout),
+      );
       return "continue";
     },
   },
@@ -749,6 +773,20 @@ export function filterSlashCommands(query: string): SlashCommandMetadata[] {
   });
 }
 
+export function completeSlashCommandLine(line: string): [string[], string] {
+  const fragment = slashCompletionFragment(line);
+  if (fragment === undefined) {
+    return [[], line];
+  }
+
+  const normalizedFragment = fragment.toLowerCase();
+  const completions = slashCommandCompletionValues()
+    .filter((completion) => completion.startsWith(normalizedFragment))
+    .map((completion) => `${completion} `);
+
+  return [completions, fragment];
+}
+
 export function renderSlashHelp(query?: string): string {
   const normalizedQuery = normalizeHelpQuery(query ?? "");
 
@@ -803,6 +841,48 @@ export function renderCommandPalette(query?: string): string {
   });
 }
 
+export interface CompactCommandPaletteOptions {
+  width?: number;
+  limit?: number;
+  renderOptions?: TerminalRenderOptions;
+}
+
+export function renderCompactCommandPalette(
+  query?: string,
+  options: CompactCommandPaletteOptions = {},
+): string {
+  const normalizedQuery = normalizeHelpQuery(query ?? "");
+  const width = normalizeCompactPaletteWidth(options.width);
+  const limit = normalizeCompactPaletteLimit(options.limit);
+  const renderer = createTerminalRenderer(options.renderOptions);
+  const commands = normalizedQuery ? filterSlashCommands(normalizedQuery) : listSlashCommands();
+  const visibleCommands = commands.slice(0, limit);
+  const usageWidth = Math.min(
+    28,
+    Math.max(10, ...visibleCommands.map((command) => command.usage.length)),
+  );
+  const title = normalizedQuery
+    ? `Command palette matching "${normalizedQuery}" (${commands.length})`
+    : `Command palette (${commands.length})`;
+  const lines = [renderer.bold(truncateVisible(title, width))];
+
+  if (visibleCommands.length === 0) {
+    lines.push(truncateVisible("  No commands matched.", width));
+    return lines.join("\n");
+  }
+
+  for (const command of visibleCommands) {
+    lines.push(renderCompactCommandPaletteLine(command, usageWidth, width, renderer));
+  }
+
+  const omitted = commands.length - visibleCommands.length;
+  if (omitted > 0) {
+    lines.push(renderer.dim(truncateVisible(`  ... ${omitted} more; use /help all`, width)));
+  }
+
+  return lines.join("\n");
+}
+
 export function chatHelpText(query?: string): string {
   return renderSlashHelp(query);
 }
@@ -819,6 +899,97 @@ function createCommandAliasMap(commands: Record<string, SlashDefinition>): Recor
 
 function normalizeHelpQuery(query: string): string {
   return query.replace(HELP_CONTROL_PATTERN, "").trim().slice(0, MAX_HELP_QUERY_LENGTH);
+}
+
+function slashCompletionFragment(line: string): string | undefined {
+  const leadingWhitespaceLength = line.match(/^\s*/)?.[0].length ?? 0;
+  const trimmedLeft = line.slice(leadingWhitespaceLength);
+  if (!trimmedLeft.startsWith("/")) {
+    return undefined;
+  }
+
+  if (/\s/.test(trimmedLeft)) {
+    return undefined;
+  }
+
+  return trimmedLeft;
+}
+
+function slashCommandCompletionValues(): string[] {
+  return Array.from(
+    new Set(
+      listSlashCommands().flatMap((command) => [
+        command.name,
+        ...command.aliases,
+      ]),
+    ),
+  ).sort((left, right) => left.localeCompare(right));
+}
+
+function renderCommandPaletteForOutput(query: string | undefined, stream: WritableLike): string {
+  if (!shouldUseAnsiColor({ stream })) {
+    return renderCommandPalette(query);
+  }
+
+  return renderCompactCommandPalette(query, {
+    width: resolveOutputWidth(stream),
+    renderOptions: { stream },
+  });
+}
+
+function renderCompactCommandPaletteLine(
+  command: SlashCommandMetadata,
+  usageWidth: number,
+  width: number,
+  renderer: TerminalRenderer,
+): string {
+  const aliasText =
+    command.aliases.length > 0
+      ? renderer.dim(` aliases ${command.aliases.join(", ")}`)
+      : "";
+  const usage = renderer.accent(command.usage.padEnd(usageWidth));
+  return truncateVisible(`  ${usage} ${command.description}${aliasText}`, width);
+}
+
+function normalizeCompactPaletteWidth(width: number | undefined): number {
+  if (typeof width !== "number" || !Number.isFinite(width)) {
+    return DEFAULT_COMPACT_PALETTE_WIDTH;
+  }
+
+  return Math.max(
+    MIN_COMPACT_PALETTE_WIDTH,
+    Math.min(MAX_COMPACT_PALETTE_WIDTH, Math.floor(width)),
+  );
+}
+
+function normalizeCompactPaletteLimit(limit: number | undefined): number {
+  if (typeof limit !== "number" || !Number.isFinite(limit)) {
+    return MAX_COMPACT_PALETTE_MATCHES;
+  }
+
+  return Math.max(1, Math.min(20, Math.floor(limit)));
+}
+
+function resolveOutputWidth(stream: WritableLike): number {
+  const columns = (stream as { columns?: unknown }).columns;
+  return typeof columns === "number" ? columns : DEFAULT_COMPACT_PALETTE_WIDTH;
+}
+
+function truncateVisible(value: string, width: number): string {
+  const plain = stripAnsi(value);
+  if (plain.length <= width) {
+    return value;
+  }
+
+  if (width <= 1) {
+    return "…";
+  }
+
+  return `${plain.slice(0, width - 1)}…`;
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(ANSI_PATTERN, "");
 }
 
 function renderGroupedCommandList({

@@ -18,8 +18,10 @@ import {
 } from "../agent/index.js";
 import { resetMcpProfileRuntimeState } from "../mcp/index.js";
 import {
+  completeSlashCommandLine,
   handleSlashCommand,
   parseSlashCommand,
+  renderCompactCommandPalette,
   renderCommandPalette,
   renderSlashHelp,
   type SlashCommandContext,
@@ -65,6 +67,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.match(output, /Workspace:/);
   assert.match(output, /Account & metadata:/);
   assert.match(output, /\/help\s+Show grouped command help \(aliases: \/h\)/);
+  assert.match(output, /\/commands \[query\]\s+Show a compact slash command palette \(aliases: \/palette\)/);
   assert.match(output, /\/status\s+Show current chat status/);
   assert.match(output, /\/model <id-or-search>\s+Resolve and switch OpenRouter model \(aliases: \/m\)/);
   assert.match(output, /\/quit\s+Leave chat \(aliases: \/q, \/exit\)/);
@@ -76,7 +79,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.doesNotMatch(output, /^Chat commands:/m);
 
   const commandLines = output.split("\n").filter((line) => line.startsWith("  /"));
-  assert.ok(commandLines.length <= 11, `expected concise common help, got ${commandLines.length}`);
+  assert.ok(commandLines.length <= 12, `expected concise common help, got ${commandLines.length}`);
 });
 
 test("help all shows common commands first plus advanced surfaces", () => {
@@ -128,6 +131,49 @@ test("command palette renderer is a pure grouped listing surface", () => {
   assert.match(palette, /\/plugins \[list\|inspect\|register\|enable\|disable\]/);
   assert.match(palette, /\/skills \[list\|activate <id>\]/);
   assert.doesNotMatch(palette, /\/model <id-or-search>/);
+});
+
+test("compact command palette renderer bounds TTY-oriented command discovery", () => {
+  const palette = renderCompactCommandPalette("plugin", {
+    width: 64,
+    limit: 3,
+    renderOptions: { color: false },
+  });
+
+  assert.match(palette, /^Command palette matching "plugin" \(2\)/);
+  assert.match(palette, /\/plugins \[list\|inspect\|register\|enable\|disable\]/);
+  assert.match(palette, /\/skills \[list\|activate <id>\]/);
+  assert.doesNotMatch(palette, /\/model <id-or-search>/);
+  for (const line of palette.split("\n")) {
+    assert.ok(line.length <= 64, `palette line exceeds width: ${line}`);
+  }
+});
+
+test("slash command completer suggests command names and aliases only for the command token", () => {
+  assert.deepEqual(completeSlashCommandLine("/stat"), [["/status "], "/stat"]);
+
+  const [modelMatches, modelFragment] = completeSlashCommandLine("/m");
+  assert.equal(modelFragment, "/m");
+  assert.deepEqual(modelMatches, ["/m ", "/mcp ", "/mode ", "/model ", "/models "]);
+
+  assert.deepEqual(completeSlashCommandLine("/model claude"), [[], "/model claude"]);
+  assert.deepEqual(completeSlashCommandLine("plain text"), [[], "plain text"]);
+});
+
+test("commands slash command renders the deterministic plain palette in non-tty output", () => {
+  const harness = createSlashHarness();
+
+  assert.equal(handleSlashCommand("/commands plugin", harness.context), "continue");
+  assert.match(harness.stdout(), /^Command palette matching "plugin":/);
+  assert.match(harness.stdout(), /Integrations:/);
+  assert.match(harness.stdout(), /\/plugins \[list\|inspect\|register\|enable\|disable\]/);
+  assert.match(harness.stdout(), /\/skills \[list\|activate <id>\]/);
+  assert.doesNotMatch(harness.stdout(), /\/model <id-or-search>/);
+
+  const alias = createSlashHarness();
+  assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
+  assert.match(alias.stdout(), /^Command palette matching "mcp":/);
+  assert.match(alias.stdout(), /\/mcp \[list\|inspect\|tools\|discover\|enable\|disable\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {

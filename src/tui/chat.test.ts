@@ -988,6 +988,46 @@ test("tty chat renders bottom status composer instead of the repeated plain foot
   }
 });
 
+test("tty chat renders compact command palette without a model request", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+
+  try {
+    const capture = createIo({
+      stdin: Readable.from(["/commands plugin\n", "/exit\n"]),
+      tty: true,
+      columns: 72,
+      fetch: async () => {
+        throw new Error("chat /commands should not call OpenRouter.");
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    const stdout = stripAnsi(capture.stdout());
+    assert.equal(exitCode, 0);
+    assert.match(stdout, /Command palette matching "plugin" \(2\)/);
+    assert.match(stdout, /\/plugins \[list\|inspect\|register\|enable\|disable\]/);
+    assert.match(stdout, /\/skills \[list\|activate <id>\]/);
+    assert.doesNotMatch(stdout, /Integrations:/);
+    assert.doesNotMatch(stdout, /\/model <id-or-search>/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 test("tty chat renders activity while a tool is active", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-chat-tty-tool-cwd-"));
   const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));

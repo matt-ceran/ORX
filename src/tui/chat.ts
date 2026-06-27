@@ -30,6 +30,7 @@ import {
   type SessionActivatedSkill,
 } from "../sessions/index.js";
 import {
+  completeSlashCommandLine,
   handleSlashCommand,
   type ResumeSessionResult,
   type ResumeSessionSummary,
@@ -118,6 +119,7 @@ export async function runChat({
   const rl = createInterface({
     input: io.stdin,
     output: writableStreamOrUndefined(io.stdout),
+    completer: useReadlineTerminal ? completeSlashCommandLine : undefined,
     terminal: useReadlineTerminal,
     crlfDelay: Infinity,
   });
