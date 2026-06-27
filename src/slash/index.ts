@@ -32,6 +32,10 @@ import {
   listOpenRouterModels,
   type OpenRouterCreditsInfo,
 } from "../openrouter/live.js";
+import {
+  formatModelResolutionResult,
+  resolveOpenRouterModel,
+} from "../openrouter/model-resolver.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import {
@@ -239,21 +243,33 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/model": {
-    usage: "/model <slug>",
-    description: "Switch to an exact OpenRouter model",
-    handler: (command, context) => {
+    usage: "/model <id-or-search>",
+    description: "Resolve and switch to an OpenRouter model",
+    handler: async (command, context): Promise<SlashResult> => {
       if (!command.argText) {
         writeLine(context.io.stdout, `Current model: ${context.getConfig().model}`);
         return "continue";
       }
 
+      const config = context.getConfig();
+      const result = await resolveOpenRouterModel({
+        input: command.argText,
+        apiKey: config.apiKey,
+        fetch: context.fetch,
+      });
+
+      if (result.kind !== "resolved") {
+        writeLine(context.io.stderr, formatModelResolutionResult(result));
+        return "continue";
+      }
+
       context.setConfig({
-        ...context.getConfig(),
+        ...config,
         mode: "exact",
-        model: command.argText,
+        model: result.modelId,
         fusionPreset: undefined,
       });
-      writeLine(context.io.stdout, `Model set to ${command.argText} (mode: exact).`);
+      writeLine(context.io.stdout, formatModelResolutionResult(result));
       return "continue";
     },
   },
@@ -340,7 +356,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
         });
         writeLine(context.io.stdout, formatOpenRouterModels(models, command.argText || undefined));
       } catch (error) {
-        writeLine(context.io.stderr, formatOpenRouterLiveError(error));
+        writeLine(context.io.stderr, formatOpenRouterLiveError(error, { apiKey: config.apiKey }));
       }
       return "continue";
     },
@@ -369,7 +385,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
           formatOpenRouterCredits(credits, { stream: context.io.stdout }),
         );
       } catch (error) {
-        writeLine(context.io.stderr, formatOpenRouterLiveError(error));
+        writeLine(context.io.stderr, formatOpenRouterLiveError(error, { apiKey: config.apiKey }));
       }
       return "continue";
     },
@@ -401,7 +417,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
         });
         writeLine(context.io.stdout, formatOpenRouterGeneration(generation));
       } catch (error) {
-        writeLine(context.io.stderr, formatOpenRouterLiveError(error));
+        writeLine(context.io.stderr, formatOpenRouterLiveError(error, { apiKey: config.apiKey }));
       }
       return "continue";
     },

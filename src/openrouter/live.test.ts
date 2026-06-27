@@ -178,3 +178,13 @@ test("reports sanitized live API failures without leaking keys", async () => {
     },
   );
 });
+
+test("formats generic live failures without leaking known API keys", () => {
+  const output = formatOpenRouterLiveError(
+    new Error("network failed for test-key Authorization: Bearer test-key and sk-or-v1-secret"),
+    { apiKey: "test-key" },
+  );
+
+  assert.doesNotMatch(output, /test-key|sk-or-v1-secret/);
+  assert.match(output, /\[redacted\]/);
+});

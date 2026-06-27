@@ -175,7 +175,7 @@ async function runModelsCommand(args: string[], apiKey: string, io: CliIo): Prom
     writeLine(io.stdout, formatOpenRouterModels(models, query));
     return 0;
   } catch (error) {
-    writeLine(io.stderr, formatOpenRouterLiveError(error));
+    writeLine(io.stderr, formatOpenRouterLiveError(error, { apiKey }));
     return 1;
   }
 }
@@ -189,7 +189,7 @@ async function runCreditsCommand(apiKey: string, io: CliIo): Promise<number> {
     writeLine(io.stdout, formatOpenRouterCredits(credits, { stream: io.stdout }));
     return 0;
   } catch (error) {
-    writeLine(io.stderr, formatOpenRouterLiveError(error));
+    writeLine(io.stderr, formatOpenRouterLiveError(error, { apiKey }));
     return 1;
   }
 }
@@ -210,7 +210,7 @@ async function runGenerationCommand(args: string[], apiKey: string, io: CliIo): 
     writeLine(io.stdout, formatOpenRouterGeneration(generation));
     return 0;
   } catch (error) {
-    writeLine(io.stderr, formatOpenRouterLiveError(error));
+    writeLine(io.stderr, formatOpenRouterLiveError(error, { apiKey }));
     return 1;
   }
 }

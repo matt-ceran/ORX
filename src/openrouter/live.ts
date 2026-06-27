@@ -228,15 +228,18 @@ export function formatOpenRouterGeneration(generation: OpenRouterGenerationInfo)
   ].join("\n");
 }
 
-export function formatOpenRouterLiveError(error: unknown): string {
+export function formatOpenRouterLiveError(
+  error: unknown,
+  options: { apiKey?: string } = {},
+): string {
   if (error instanceof OpenRouterLiveApiError) {
     const permissionNote = error.managementPermissionLikelyRequired
       ? " The configured key may lack OpenRouter management permission."
       : "";
-    return `${error.message}${permissionNote}`;
+    return sanitizeErrorText(`${error.message}${permissionNote}`, options.apiKey);
   }
 
-  return error instanceof Error ? error.message : String(error);
+  return sanitizeErrorText(error instanceof Error ? error.message : String(error), options.apiKey);
 }
 
 async function requestJson(
@@ -308,9 +311,11 @@ async function readSanitizedBody(response: Response, apiKey: string): Promise<st
   return sanitized.length > 0 ? sanitized : undefined;
 }
 
-function sanitizeErrorText(text: string, apiKey: string): string {
-  return text
-    .replaceAll(apiKey, "[redacted]")
+function sanitizeErrorText(text: string, apiKey?: string): string {
+  const apiKeyRedacted = apiKey ? text.replaceAll(apiKey, "[redacted]") : text;
+  return apiKeyRedacted
+    .replace(/sk-or-v\d+-[A-Za-z0-9_-]+/g, "[redacted]")
+    .replace(/sk-or-[A-Za-z0-9_-]+/g, "[redacted]")
     .replace(/(Authorization:\s*Bearer\s+)[^\s"'\\]+/gi, "$1[redacted]")
     .replace(/(Bearer\s+)[^\s"'\\]+/gi, "$1[redacted]");
 }

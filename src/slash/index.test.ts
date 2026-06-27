@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
-import type { OpenRouterCreditsInfo } from "../openrouter/live.js";
+import type { OpenRouterCreditsInfo, OpenRouterModelInfo } from "../openrouter/live.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import type { EvidenceSource } from "../research/index.js";
 import type { SessionCostMeterState } from "../terminal/meters.js";
@@ -47,7 +47,7 @@ test("handles unknown commands predictably", () => {
   assert.match(harness.stderr(), /Unknown command: \/unknown\. Type \/help for commands\./);
 });
 
-test("mode and model commands update active routing config", () => {
+test("mode command updates active routing config", () => {
   const harness = createSlashHarness({
     config: {
       ...baseConfig(),
@@ -66,11 +66,119 @@ test("mode and model commands update active routing config", () => {
   assert.equal(handleSlashCommand("/mode fusion", harness.context), "continue");
   assert.equal(harness.config().mode, "fusion");
   assert.equal(harness.config().model, "openrouter/fusion");
+});
 
-  assert.equal(handleSlashCommand("/model example/test-model", harness.context), "continue");
+test("model command switches for an exact catalog-confirmed id", async () => {
+  const harness = createSlashHarness({
+    config: {
+      ...baseConfig(),
+      mode: "fusion",
+      model: "openrouter/fusion",
+      fusionPreset: "general-budget",
+    },
+    fetch: modelsFetch([
+      {
+        id: "example/test-model",
+        name: "Example Test Model",
+      },
+    ]),
+  });
+
+  assert.equal(await handleSlashCommand("/model example/test-model", harness.context), "continue");
   assert.equal(harness.config().mode, "exact");
   assert.equal(harness.config().model, "example/test-model");
   assert.equal(harness.config().fusionPreset, undefined);
+  assert.match(harness.stdout(), /Model set to example\/test-model \(mode: exact\)\./);
+  assert.equal(harness.stderr(), "");
+});
+
+test("model command resolves a friendly single match to an exact id", async () => {
+  const harness = createSlashHarness({
+    fetch: modelsFetch([
+      {
+        id: "anthropic/claude-sonnet-4.5",
+        name: "Claude Sonnet 4.5",
+      },
+      {
+        id: "openai/gpt-5.5",
+        name: "GPT 5.5",
+      },
+    ]),
+  });
+
+  assert.equal(await handleSlashCommand("/model claude sonnet 4.5", harness.context), "continue");
+  assert.equal(harness.config().mode, "exact");
+  assert.equal(harness.config().model, "anthropic/claude-sonnet-4.5");
+  assert.match(harness.stdout(), /Model set to anthropic\/claude-sonnet-4\.5/);
+  assert.equal(harness.stderr(), "");
+});
+
+test("model command reports multiple friendly matches without mutating state", async () => {
+  const harness = createSlashHarness({
+    config: {
+      ...baseConfig(),
+      mode: "auto",
+      model: "openrouter/auto",
+    },
+    fetch: modelsFetch([
+      {
+        id: "deepseek/deepseek-chat-v3.1",
+        name: "DeepSeek Chat V3.1",
+      },
+      {
+        id: "deepseek/deepseek-r1",
+        name: "DeepSeek R1",
+      },
+    ]),
+  });
+
+  assert.equal(await handleSlashCommand("/model deepseek", harness.context), "continue");
+  assert.equal(harness.config().mode, "auto");
+  assert.equal(harness.config().model, "openrouter/auto");
+  assert.equal(harness.stdout(), "");
+  assert.match(harness.stderr(), /Multiple OpenRouter models matched "deepseek"/);
+  assert.match(harness.stderr(), /\/model deepseek\/deepseek-chat-v3\.1/);
+  assert.match(harness.stderr(), /\/model deepseek\/deepseek-r1/);
+});
+
+test("model command rejects unknown friendly names without mutating state", async () => {
+  const harness = createSlashHarness({
+    config: {
+      ...baseConfig(),
+      mode: "auto",
+      model: "openrouter/auto",
+    },
+    fetch: modelsFetch([
+      {
+        id: "deepseek/deepseek-chat-v3.1",
+        name: "DeepSeek Chat V3.1",
+      },
+    ]),
+  });
+
+  assert.equal(await handleSlashCommand("/model deepseek v4", harness.context), "continue");
+  assert.equal(harness.config().mode, "auto");
+  assert.equal(harness.config().model, "openrouter/auto");
+  assert.equal(harness.stdout(), "");
+  assert.match(harness.stderr(), /No OpenRouter model matched "deepseek v4"/);
+  assert.match(harness.stderr(), /Try \/models deepseek v4/);
+});
+
+test("model command catalog failures do not leak API keys or mutate friendly names", async () => {
+  const harness = createSlashHarness({
+    fetch: async () => {
+      throw new Error(
+        "network failed for test-key Authorization: Bearer test-key and sk-or-v1-secret",
+      );
+    },
+  });
+
+  assert.equal(await handleSlashCommand("/model deepseek v4", harness.context), "continue");
+  assert.equal(harness.config().mode, "auto");
+  assert.equal(harness.config().model, "openrouter/auto");
+  assert.doesNotMatch(harness.stderr(), /test-key|sk-or-v1-secret/);
+  assert.match(harness.stderr(), /cannot safely resolve a friendly name/);
+  assert.match(harness.stderr(), /\[redacted\]/);
 });
 
 test("fusion command shows and sets presets", () => {
@@ -1554,6 +1662,13 @@ function baseConfig(): OrxConfig {
       approvalPolicy: "never",
       sandboxMode: "danger-full-access",
     },
+  };
+}
+
+function modelsFetch(models: OpenRouterModelInfo[]): typeof fetch {
+  return async (input) => {
+    assert.equal(String(input), "https://openrouter.ai/api/v1/models");
+    return new Response(JSON.stringify({ data: models }), { status: 200 });
   };
 }
 
