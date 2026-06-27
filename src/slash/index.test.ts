@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
+import type { DelegationState } from "../delegation/index.js";
 import type { OpenRouterCreditsInfo, OpenRouterModelInfo } from "../openrouter/live.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import type { EvidenceSource, ResolveBrowserHost } from "../research/index.js";
@@ -100,6 +101,9 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/browse <url>/);
   assert.match(output, /\/cite <source-id>/);
   assert.match(output, /\/bibliography/);
+  assert.match(output, /\/orchestrator \[openrouter <model>\|clear\]/);
+  assert.match(output, /\/delegate <add\|remove\|clear>/);
+  assert.match(output, /\/delegates/);
   assert.match(output, /\/mcp \[list\|inspect\|tools\|discover\|enable\|disable\]/);
   assert.match(output, /\/plugins \[list\|inspect\|register\|enable\|disable\]/);
   assert.match(output, /\/skills \[list\|activate <id>\]/);
@@ -425,6 +429,106 @@ test("live metadata slash commands use OpenRouter metadata APIs", async () => {
   assert.match(harness.stdout(), /usage_meter: \[###---------\] 25\.00%/);
   assert.match(harness.stdout(), /provider: OpenAI/);
   assert.equal(harness.credits()?.remainingCredits, 7.5);
+});
+
+test("orchestrator and delegate commands mutate inert local state without network", () => {
+  let fetchCalls = 0;
+  const harness = createSlashHarness({
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("delegation scaffold should not call OpenRouter.");
+    },
+  });
+
+  assert.equal(handleSlashCommand("/orchestrator", harness.context), "continue");
+  assert.match(harness.stdout(), /ORX orchestrator scaffold:/);
+  assert.match(harness.stdout(), /controller: none/);
+  assert.match(harness.stdout(), /delegate_task: unavailable/);
+  assert.match(harness.stdout(), /network_calls: none/);
+
+  assert.equal(
+    handleSlashCommand("/orchestrator openrouter openrouter/fusion", harness.context),
+    "continue",
+  );
+  assert.equal(harness.delegation().controller?.model, "openrouter/fusion");
+  assert.match(harness.stdout(), /Orchestration controller set: openrouter openrouter\/fusion/);
+
+  assert.equal(
+    handleSlashCommand(
+      "/delegate add reviewer openrouter anthropic/claude-sonnet-4.5",
+      harness.context,
+    ),
+    "continue",
+  );
+  assert.equal(harness.delegation().delegates.length, 1);
+  assert.equal(harness.delegation().delegates[0].name, "reviewer");
+  assert.equal(harness.delegation().delegates[0].execution, "disabled");
+  assert.match(harness.stdout(), /Registered delegate reviewer: openrouter anthropic\/claude-sonnet-4\.5/);
+
+  assert.equal(handleSlashCommand("/delegates", harness.context), "continue");
+  assert.match(harness.stdout(), /ORX delegates scaffold:/);
+  assert.match(harness.stdout(), /delegate_task: unavailable in this scaffold/);
+  assert.match(
+    harness.stdout(),
+    /reviewer: provider=openrouter model=anthropic\/claude-sonnet-4\.5 execution=disabled/,
+  );
+
+  assert.equal(handleSlashCommand("/status", harness.context), "continue");
+  assert.match(harness.stdout(), /approval_policy: never/);
+  assert.match(harness.stdout(), /sandbox_mode: danger-full-access/);
+  assert.match(harness.stdout(), /orchestration_controller: openrouter:openrouter\/fusion/);
+  assert.match(harness.stdout(), /orchestration_execution: disabled/);
+  assert.match(harness.stdout(), /delegate_count: 1/);
+  assert.match(harness.stdout(), /delegate_task: unavailable/);
+
+  assert.equal(handleSlashCommand("/clear", harness.context), "continue");
+  assert.equal(harness.delegation().controller?.model, "openrouter/fusion");
+  assert.equal(harness.delegation().delegates.length, 1);
+  assert.match(harness.stdout(), /Conversation history cleared/);
+
+  assert.equal(handleSlashCommand("/delegate remove reviewer", harness.context), "continue");
+  assert.equal(harness.delegation().delegates.length, 0);
+  assert.match(harness.stdout(), /Removed delegate reviewer/);
+
+  assert.equal(handleSlashCommand("/orchestrator clear", harness.context), "continue");
+  assert.equal(harness.delegation().controller, undefined);
+  assert.equal(fetchCalls, 0);
+  assert.equal(harness.stderr(), "");
+});
+
+test("delegation slash commands reject unsafe values without mutating state", () => {
+  const harness = createSlashHarness({
+    delegationState: {
+      controller: {
+        provider: "openrouter",
+        model: "openrouter/auto",
+        execution: "disabled",
+      },
+      delegates: [],
+      executionEnabled: false,
+    },
+  });
+
+  assert.equal(
+    handleSlashCommand("/delegate add Reviewer openrouter openrouter/auto", harness.context),
+    "continue",
+  );
+  assert.match(harness.stderr(), /Delegate name must match \[a-z\]\[a-z0-9_-\]\{0,31\}/);
+  assert.equal(harness.delegation().delegates.length, 0);
+
+  assert.equal(
+    handleSlashCommand("/delegate add bad\u001bname openrouter openrouter/auto", harness.context),
+    "continue",
+  );
+  assert.match(harness.stderr(), /Delegate name must not contain control characters/);
+
+  assert.equal(
+    handleSlashCommand("/orchestrator openrouter provider/sk-or-v1-secret", harness.context),
+    "continue",
+  );
+  assert.match(harness.stderr(), /OpenRouter model must not contain secret-like values/);
+  assert.equal(harness.delegation().controller?.model, "openrouter/auto");
+  assert.doesNotMatch(harness.stdout(), /sk-or-v1-secret|\u001b/);
 });
 
 test("web fetch records evidence, appends untrusted context, and sources lists metadata", async () => {
@@ -1820,6 +1924,10 @@ test("status reports active routing, config, key, permissions, history, and meta
     assert.match(harness.stdout(), /mcp_pending_schema_changes: none/);
     assert.match(harness.stdout(), /mcp_profile: profile=openrouter state=disabled/);
     assert.match(harness.stdout(), /hash=sha256:[a-f0-9]{64}/);
+    assert.match(harness.stdout(), /orchestration_controller: none/);
+    assert.match(harness.stdout(), /orchestration_execution: disabled/);
+    assert.match(harness.stdout(), /delegate_count: 0/);
+    assert.match(harness.stdout(), /delegate_task: unavailable/);
     assert.match(harness.stdout(), /history_messages: 1/);
     assert.match(harness.stdout(), /context: 1 messages, \d+B approx, budget \d+B\/\d+ messages/);
     assert.match(harness.stdout(), /context_meter: \[[#-]{12}\] \d+\.\d% approx_local_bytes=\d+B\/\d+B messages=1\/\d+ compacted=no/);
@@ -1889,6 +1997,7 @@ function createSlashHarness(
     evidenceSources?: EvidenceSource[];
     metadata?: OpenRouterStreamMetadata;
     costMeterState?: SessionCostMeterState;
+    delegationState?: DelegationState;
     contextBudget?: Partial<AgentContextBudget>;
     diffState?: SessionDiffState;
     sessionInfo?: { id: string; path: string };
@@ -1911,6 +2020,7 @@ function createSlashHarness(
   let config = options.config ?? baseConfig();
   let messages = options.messages ?? [];
   let evidenceSources = options.evidenceSources ?? [];
+  let delegationState: DelegationState = options.delegationState ?? emptyDelegationState();
   let metadata = options.metadata;
   let latestCredits: OpenRouterCreditsInfo | undefined;
   const costMeterState = options.costMeterState;
@@ -1963,6 +2073,10 @@ function createSlashHarness(
       setEvidenceSources: (nextSources: EvidenceSource[]) => {
         evidenceSources = nextSources;
       },
+      getDelegationState: () => delegationState,
+      setDelegationState: (nextState: DelegationState) => {
+        delegationState = nextState;
+      },
       getLatestMetadata: () => metadata,
       getCostMeterState: costMeterState ? () => costMeterState : undefined,
       getContextBudget: () => options.contextBudget ?? {},
@@ -1980,6 +2094,7 @@ function createSlashHarness(
     config: () => config,
     messages: () => messages,
     sources: () => evidenceSources,
+    delegation: () => delegationState,
     metadata: () => metadata,
     credits: () => latestCredits,
     setMessages: (nextMessages: OpenRouterMessage[]) => {
@@ -2045,6 +2160,13 @@ function baseConfig(): OrxConfig {
       approvalPolicy: "never",
       sandboxMode: "danger-full-access",
     },
+  };
+}
+
+function emptyDelegationState(): DelegationState {
+  return {
+    delegates: [],
+    executionEnabled: false,
   };
 }
 

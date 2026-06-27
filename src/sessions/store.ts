@@ -3,6 +3,8 @@ import { chmod, mkdir, readFile, readdir, rename, writeFile } from "node:fs/prom
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import type { OrxConfig } from "../config/types.js";
+import { compactDelegationStateForStorage } from "../delegation/index.js";
+import type { DelegationState } from "../delegation/index.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import type { EvidenceSource } from "../research/index.js";
 import { resolveGitRepositoryMetadata } from "./git.js";
@@ -31,6 +33,7 @@ export interface CreateSessionRecordOptions {
   latestMetadata?: OpenRouterStreamMetadata;
   activatedSkills?: SessionActivatedSkill[];
   evidenceSources?: EvidenceSource[];
+  delegation?: DelegationState;
   git?: GitRepositoryMetadata;
   now?: Date;
 }
@@ -43,6 +46,7 @@ export interface UpdateSessionRecordOptions {
   latestMetadata?: OpenRouterStreamMetadata;
   activatedSkills?: SessionActivatedSkill[];
   evidenceSources?: EvidenceSource[];
+  delegation?: DelegationState;
   now?: Date;
 }
 
@@ -90,6 +94,7 @@ export async function createSessionRecord(
     latestMetadata: cloneOptionalJson(options.latestMetadata),
     activatedSkills: cloneOptionalJson(options.activatedSkills),
     evidenceSources: cloneOptionalJson(options.evidenceSources),
+    delegation: cloneOptionalJson(compactDelegationStateForStorage(options.delegation)),
     messageCount: messages.length,
     summary: summarizeMessages(messages),
   };
@@ -129,6 +134,10 @@ export function updateSessionRecord(
 
   if ("evidenceSources" in options) {
     record.evidenceSources = cloneOptionalJson(options.evidenceSources);
+  }
+
+  if ("delegation" in options) {
+    record.delegation = cloneOptionalJson(compactDelegationStateForStorage(options.delegation));
   }
 
   return record;
@@ -261,6 +270,7 @@ function parseSessionRecord(value: unknown, filePath: string): OrxSessionRecord 
   }
 
   assertSafeSessionId(value.id);
+  value.delegation = compactDelegationStateForStorage(value.delegation);
   return value as unknown as OrxSessionRecord;
 }
 

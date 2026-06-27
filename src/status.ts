@@ -1,5 +1,6 @@
 import { formatConfigSources } from "./config/index.js";
 import type { LoadedConfig } from "./config/types.js";
+import { getDelegationStatusSummary, type DelegationState } from "./delegation/index.js";
 import { getMcpStatusSummary, formatMcpProfile } from "./mcp/index.js";
 import { getEnabledPluginSkillSummary, getPluginStatusSummary } from "./plugins/index.js";
 import { createTerminalRenderer, type TerminalRenderOptions } from "./terminal/render.js";
@@ -9,6 +10,7 @@ export interface StatusOptions {
   loadedConfig: LoadedConfig;
   mcpConfigPath?: string;
   pluginRegistryPath?: string;
+  delegationState?: DelegationState;
   renderOptions?: TerminalRenderOptions;
 }
 
@@ -17,6 +19,7 @@ export function formatStatus({
   loadedConfig,
   mcpConfigPath,
   pluginRegistryPath,
+  delegationState,
   renderOptions,
 }: StatusOptions): string {
   const renderer = createTerminalRenderer(renderOptions);
@@ -24,6 +27,8 @@ export function formatStatus({
   const mcpStatus = getMcpStatusSummary({ configPath: mcpConfigPath });
   const pluginStatus = getPluginStatusSummary({ registryPath: pluginRegistryPath });
   const pluginSkillStatus = getEnabledPluginSkillSummary({ registryPath: pluginRegistryPath });
+  const delegationStatus =
+    delegationState === undefined ? undefined : getDelegationStatusSummary(delegationState);
   const activeMcpProfiles =
     mcpStatus.activeProfileIds.length > 0 ? mcpStatus.activeProfileIds.join(",") : "none";
   const lines = [
@@ -63,6 +68,10 @@ export function formatStatus({
     `plugin_enabled_skills: ${pluginSkillStatus.skillCount}${
       pluginSkillStatus.truncated ? " (truncated)" : ""
     }`,
+    delegationStatus ? `orchestration_controller: ${delegationStatus.controller}` : undefined,
+    delegationStatus ? "orchestration_execution: disabled" : undefined,
+    delegationStatus ? `delegate_count: ${delegationStatus.delegateCount}` : undefined,
+    delegationStatus ? "delegate_task: unavailable" : undefined,
     ...mcpStatus.profiles.map(
       (profile) =>
         `mcp_profile: ${formatMcpProfile(profile, mcpStatus.profileHashes[profile.id], {
@@ -73,5 +82,5 @@ export function formatStatus({
     ),
   ];
 
-  return lines.join("\n");
+  return lines.filter((line): line is string => typeof line === "string").join("\n");
 }

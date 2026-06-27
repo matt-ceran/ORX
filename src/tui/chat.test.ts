@@ -837,6 +837,106 @@ test("chat resume restores evidence sources for cite and bibliography commands",
   }
 });
 
+test("chat persists delegation scaffold state and restores it on resume", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-delegation-sessions-"));
+  const firstCwd = mkdtempSync(join(tmpdir(), "orx-chat-delegation-cwd-"));
+  const requests: Array<Record<string, unknown>> = [];
+
+  try {
+    const firstCapture = createIo({
+      stdin: Readable.from([
+        "/orchestrator openrouter openrouter/fusion\n",
+        "/delegate add reviewer openrouter anthropic/claude-sonnet-4.5\n",
+        "Hello with delegation scaffold\n",
+        "/exit\n",
+      ]),
+      cwd: firstCwd,
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        requests.push(body);
+        return new Response(
+          streamFrom([
+            sse({ choices: [{ delta: { content: "Delegation stayed inert." } }] }),
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    assert.equal(
+      await runChat({
+        apiKey: "test-key",
+        loadedConfig: baseLoadedConfig(),
+        io: firstCapture.io,
+        sessionDirectory,
+      }),
+      0,
+    );
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].model, "openrouter/auto");
+    assert.equal("delegation" in requests[0], false);
+    assert.equal("delegate_task" in requests[0], false);
+    assert.match(firstCapture.stdout(), /Orchestration controller set: openrouter openrouter\/fusion/);
+    assert.match(firstCapture.stdout(), /Registered delegate reviewer/);
+
+    const savedSessionFiles = readdirSync(sessionDirectory).filter((file) => file.endsWith(".json"));
+    assert.equal(savedSessionFiles.length, 1);
+    const saved = JSON.parse(
+      readFileSync(join(sessionDirectory, savedSessionFiles[0]), "utf8"),
+    ) as {
+      id: string;
+      delegation?: {
+        controller?: { provider: string; model: string; execution: string };
+        delegates: Array<{ name: string; provider: string; model: string; execution: string }>;
+        executionEnabled: boolean;
+      };
+    };
+    assert.equal(saved.delegation?.controller?.model, "openrouter/fusion");
+    assert.deepEqual(saved.delegation?.delegates, [
+      {
+        name: "reviewer",
+        provider: "openrouter",
+        model: "anthropic/claude-sonnet-4.5",
+        execution: "disabled",
+      },
+    ]);
+    assert.equal(saved.delegation?.executionEnabled, false);
+    assert.doesNotMatch(readFileSync(join(sessionDirectory, savedSessionFiles[0]), "utf8"), /test-key/);
+
+    const resumeCapture = createIo({
+      stdin: Readable.from([`/resume ${saved.id}\n`, "/delegates\n", "/status\n", "/exit\n"]),
+      fetch: async () => {
+        throw new Error("resume delegation scaffold commands should not call OpenRouter.");
+      },
+    });
+
+    assert.equal(
+      await runChat({
+        apiKey: "test-key",
+        loadedConfig: baseLoadedConfig(),
+        io: resumeCapture.io,
+        sessionDirectory,
+      }),
+      0,
+    );
+
+    assert.match(resumeCapture.stdout(), new RegExp(`Resumed session ${saved.id}`));
+    assert.match(
+      resumeCapture.stdout(),
+      /reviewer: provider=openrouter model=anthropic\/claude-sonnet-4\.5 execution=disabled/,
+    );
+    assert.match(resumeCapture.stdout(), /orchestration_controller: openrouter:openrouter\/fusion/);
+    assert.match(resumeCapture.stdout(), /delegate_count: 1/);
+    assert.match(resumeCapture.stdout(), /delegate_task: unavailable/);
+    assert.equal(resumeCapture.stderr(), "");
+  } finally {
+    rmSync(firstCwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 test("chat prunes activated skill context after plugin disable", async () => {
   const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
   const registryPath = join(sessionDirectory, "plugins", "registry.json");

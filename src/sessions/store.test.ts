@@ -99,6 +99,22 @@ test("saves and loads session JSON without persisting API keys", async () => {
         },
       ],
       evidenceSources: [exampleEvidenceSource()],
+      delegation: {
+        controller: {
+          provider: "openrouter",
+          model: "openrouter/fusion",
+          execution: "disabled",
+        },
+        delegates: [
+          {
+            name: "reviewer",
+            provider: "openrouter",
+            model: "anthropic/claude-sonnet-4.5",
+            execution: "disabled",
+          },
+        ],
+        executionEnabled: false,
+      },
       now: new Date("2026-06-26T12:34:56.000Z"),
       git: {
         root: "/tmp/project",
@@ -124,6 +140,10 @@ test("saves and loads session JSON without persisting API keys", async () => {
     assert.equal(loaded.activatedSkills?.[0].activatedAt, "2026-06-26T12:00:00.000Z");
     assert.equal(loaded.evidenceSources?.[0].id, "src-1");
     assert.equal(loaded.evidenceSources?.[0].canonicalUrl, "https://example.com/source");
+    assert.equal(loaded.delegation?.controller?.model, "openrouter/fusion");
+    assert.equal(loaded.delegation?.delegates[0].name, "reviewer");
+    assert.equal(loaded.delegation?.delegates[0].model, "anthropic/claude-sonnet-4.5");
+    assert.equal(loaded.delegation?.executionEnabled, false);
     assert.doesNotMatch(raw, /secret-key/);
   } finally {
     rmSync(sessionDir, { recursive: true, force: true });
@@ -223,6 +243,22 @@ test("updates session records with active config, messages, and latest metadata"
         canonicalUrl: "https://example.com/updated",
       },
     ],
+    delegation: {
+      controller: {
+        provider: "openrouter",
+        model: "openrouter/auto",
+        execution: "disabled",
+      },
+      delegates: [
+        {
+          name: "coder",
+          provider: "openrouter",
+          model: "openai/gpt-5.5",
+          execution: "disabled",
+        },
+      ],
+      executionEnabled: false,
+    },
     now: new Date("2026-06-26T12:01:00.000Z"),
   });
 
@@ -234,6 +270,9 @@ test("updates session records with active config, messages, and latest metadata"
   assert.equal(record.activatedSkills?.[0].id, "plugin:acme.demo-plugin@1.0.0:update");
   assert.equal(record.evidenceSources?.[0].id, "src-2");
   assert.equal(record.evidenceSources?.[0].canonicalUrl, "https://example.com/updated");
+  assert.equal(record.delegation?.controller?.model, "openrouter/auto");
+  assert.equal(record.delegation?.delegates[0].name, "coder");
+  assert.equal(record.delegation?.delegates[0].model, "openai/gpt-5.5");
 });
 
 test("lists saved sessions newest first while excluding active and malformed records", async () => {

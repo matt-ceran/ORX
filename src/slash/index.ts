@@ -9,6 +9,18 @@ import {
 } from "../agent/index.js";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
 import {
+  DelegationStateError,
+  addOpenRouterDelegate,
+  clearController,
+  clearDelegates,
+  createEmptyDelegationState,
+  removeDelegate,
+  renderDelegates,
+  renderOrchestratorStatus,
+  setOpenRouterController,
+  type DelegationState,
+} from "../delegation/index.js";
+import {
   discoverMcpProfile,
   findMcpProfile,
   formatMcpDiscoveryResult,
@@ -157,6 +169,8 @@ export interface SlashCommandContext {
   clearMessages: () => void;
   getEvidenceSources?: () => EvidenceSource[];
   setEvidenceSources?: (sources: EvidenceSource[]) => void;
+  getDelegationState?: () => DelegationState;
+  setDelegationState?: (state: DelegationState) => void;
   getLatestMetadata: () => OpenRouterStreamMetadata | undefined;
   getCostMeterState?: () => SessionCostMeterState;
   getContextBudget?: () => Partial<AgentContextBudget>;
@@ -192,6 +206,7 @@ export type SlashCommandGroup =
   | "Account & metadata"
   | "Sessions"
   | "Research"
+  | "Orchestration"
   | "Integrations";
 
 type SlashCommandTier = "common" | "advanced";
@@ -223,6 +238,7 @@ const ADVANCED_GROUP_ORDER: SlashCommandGroup[] = [
   "Account & metadata",
   "Sessions",
   "Research",
+  "Orchestration",
   "Integrations",
 ];
 const ALL_GROUP_ORDER: SlashCommandGroup[] = [
@@ -232,6 +248,7 @@ const ALL_GROUP_ORDER: SlashCommandGroup[] = [
   "Account & metadata",
   "Sessions",
   "Research",
+  "Orchestration",
   "Integrations",
 ];
 
@@ -651,6 +668,41 @@ const COMMANDS: Record<string, SlashDefinition> = {
     tier: "advanced",
     handler: (command, context): SlashResult => {
       handleSkillsCommand(command, context);
+      return "continue";
+    },
+  },
+  "/orchestrator": {
+    usage: "/orchestrator [openrouter <model>|clear]",
+    description: "Show or configure inert OpenRouter orchestration",
+    group: "Orchestration",
+    tier: "advanced",
+    handler: (command, context): SlashResult => {
+      handleOrchestratorCommand(command, context);
+      return "continue";
+    },
+  },
+  "/delegate": {
+    usage: "/delegate <add|remove|clear>",
+    description: "Register or remove inert OpenRouter delegates",
+    group: "Orchestration",
+    tier: "advanced",
+    handler: (command, context): SlashResult => {
+      handleDelegateCommand(command, context);
+      return "continue";
+    },
+  },
+  "/delegates": {
+    usage: "/delegates",
+    description: "List inert delegates and disabled execution state",
+    group: "Orchestration",
+    tier: "advanced",
+    handler: (command, context): SlashResult => {
+      if (command.argText) {
+        writeLine(context.io.stderr, "Usage: /delegates");
+        return "continue";
+      }
+
+      writeLine(context.io.stdout, renderDelegates(getDelegationState(context)));
       return "continue";
     },
   },
@@ -1098,6 +1150,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       loadedConfig,
       mcpConfigPath: context.mcpConfigPath,
       pluginRegistryPath: context.pluginRegistryPath,
+      delegationState: getDelegationState(context),
       renderOptions: { stream: context.io.stdout },
     }),
     `history_messages: ${context.getMessages().length}`,
@@ -1359,6 +1412,131 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
   );
 }
 
+function handleOrchestratorCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const subcommand = command.args[0]?.toLowerCase();
+
+  if (!subcommand || subcommand === "status") {
+    writeLine(context.io.stdout, renderOrchestratorStatus(getDelegationState(context)));
+    return;
+  }
+
+  if (subcommand === "clear") {
+    if (command.args.length !== 1) {
+      writeLine(context.io.stderr, "Usage: /orchestrator clear");
+      return;
+    }
+
+    if (!setDelegationState(context, clearController(getDelegationState(context)))) {
+      return;
+    }
+    writeLine(context.io.stdout, "Orchestration controller cleared. Execution remains disabled.");
+    return;
+  }
+
+  if (subcommand === "openrouter") {
+    if (command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /orchestrator openrouter <model>");
+      return;
+    }
+
+    try {
+      const nextState = setOpenRouterController(getDelegationState(context), command.args[1]);
+      if (!setDelegationState(context, nextState)) {
+        return;
+      }
+      writeLine(
+        context.io.stdout,
+        `Orchestration controller set: openrouter ${nextState.controller?.model}. Execution remains disabled.`,
+      );
+    } catch (error) {
+      writeLine(context.io.stderr, formatDelegationError(error));
+    }
+    return;
+  }
+
+  writeLine(context.io.stderr, "Usage: /orchestrator [openrouter <model>|clear]");
+}
+
+function handleDelegateCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const subcommand = command.args[0]?.toLowerCase();
+
+  if (!subcommand || subcommand === "help") {
+    writeLine(
+      context.io.stdout,
+      [
+        "Delegate commands:",
+        "  /delegate add <name> openrouter <model>",
+        "  /delegate remove <name>",
+        "  /delegate clear",
+        "  /delegates",
+        "Execution is disabled; delegate_task is unavailable in this scaffold.",
+      ].join("\n"),
+    );
+    return;
+  }
+
+  if (subcommand === "add") {
+    if (command.args.length !== 4 || command.args[2]?.toLowerCase() !== "openrouter") {
+      writeLine(context.io.stderr, "Usage: /delegate add <name> openrouter <model>");
+      return;
+    }
+
+    try {
+      const result = addOpenRouterDelegate(
+        getDelegationState(context),
+        command.args[1],
+        command.args[3],
+      );
+      if (!setDelegationState(context, result.state)) {
+        return;
+      }
+      writeLine(
+        context.io.stdout,
+        `${result.created ? "Registered" : "Updated"} delegate ${result.delegate.name}: openrouter ${result.delegate.model}. Execution remains disabled.`,
+      );
+    } catch (error) {
+      writeLine(context.io.stderr, formatDelegationError(error));
+    }
+    return;
+  }
+
+  if (subcommand === "remove") {
+    if (command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /delegate remove <name>");
+      return;
+    }
+
+    try {
+      const result = removeDelegate(getDelegationState(context), command.args[1]);
+      if (!setDelegationState(context, result.state)) {
+        return;
+      }
+      writeLine(
+        context.io.stdout,
+        `Removed delegate ${result.removed.name}. Execution remains disabled.`,
+      );
+    } catch (error) {
+      writeLine(context.io.stderr, formatDelegationError(error));
+    }
+    return;
+  }
+
+  if (subcommand === "clear") {
+    if (command.args.length !== 1) {
+      writeLine(context.io.stderr, "Usage: /delegate clear");
+      return;
+    }
+
+    if (!setDelegationState(context, clearDelegates(getDelegationState(context)))) {
+      return;
+    }
+    writeLine(context.io.stdout, "Delegates cleared. Execution remains disabled.");
+    return;
+  }
+
+  writeLine(context.io.stderr, "Usage: /delegate <add|remove|clear>");
+}
+
 async function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
   const subcommand = command.args[0]?.toLowerCase() ?? "list";
   const profileId = command.args[1];
@@ -1583,6 +1761,26 @@ function tryWriteMcpAuditEvent(context: SlashCommandContext, event: McpAuditEven
     const suffix = code ? ` (${code})` : "";
     writeLine(context.io.stderr, `Warning: unable to write MCP audit log${suffix}.`);
   }
+}
+
+function getDelegationState(context: SlashCommandContext): DelegationState {
+  return context.getDelegationState?.() ?? createEmptyDelegationState();
+}
+
+function setDelegationState(context: SlashCommandContext, state: DelegationState): boolean {
+  if (!context.setDelegationState) {
+    writeLine(context.io.stderr, "Delegation state is not available in this context.");
+    return false;
+  }
+  context.setDelegationState(state);
+  return true;
+}
+
+function formatDelegationError(error: unknown): string {
+  if (error instanceof DelegationStateError) {
+    return error.message;
+  }
+  return "Unable to update delegation state.";
 }
 
 function indent(text: string): string {

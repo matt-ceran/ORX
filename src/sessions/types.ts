@@ -1,4 +1,5 @@
 import type { OrxMode, PermissionConfig } from "../config/types.js";
+import type { DelegationState } from "../delegation/index.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import type { EvidenceSource } from "../research/index.js";
 
@@ -46,6 +47,7 @@ export interface OrxSessionRecord {
   latestMetadata?: OpenRouterStreamMetadata;
   activatedSkills?: SessionActivatedSkill[];
   evidenceSources?: EvidenceSource[];
+  delegation?: DelegationState;
   messageCount: number;
   summary: SessionSummary;
 }

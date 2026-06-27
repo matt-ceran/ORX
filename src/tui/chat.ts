@@ -10,6 +10,11 @@ import {
   type AgentContextBudget,
 } from "../agent/index.js";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
+import {
+  createEmptyDelegationState,
+  normalizeDelegationState,
+  type DelegationState,
+} from "../delegation/index.js";
 import type { OpenRouterCreditsInfo } from "../openrouter/live.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
@@ -123,6 +128,7 @@ export async function runChat({
   let session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
   let activatedSkills: SessionActivatedSkill[] = session.record.activatedSkills ?? [];
   let evidenceSources: EvidenceSource[] = session.record.evidenceSources ?? [];
+  let delegationState: DelegationState = normalizeDelegationState(session.record.delegation);
   const { useReadlineTerminal, useTtyScreen } = resolveChatTerminalModes(io.stdin, io.stdout);
 
   const rl = createInterface({
@@ -203,6 +209,10 @@ export async function runChat({
           setEvidenceSources: (sources) => {
             evidenceSources = sources;
           },
+          getDelegationState: () => delegationState,
+          setDelegationState: (state) => {
+            delegationState = normalizeDelegationState(state);
+          },
           getLatestMetadata: () => latestMetadata,
           getCostMeterState: () => costMeterState,
           getContextBudget: () => contextBudget,
@@ -221,6 +231,7 @@ export async function runChat({
             session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
             activatedSkills = [];
             evidenceSources = [];
+            delegationState = createEmptyDelegationState();
           },
           resumeSession: async (selector) => {
             const result = await resumeChatSession({
@@ -244,6 +255,7 @@ export async function runChat({
             costMeterState = createSessionCostMeterState(latestMetadata);
             activatedSkills = cloneJson(record.activatedSkills ?? []);
             evidenceSources = cloneJson(record.evidenceSources ?? []);
+            delegationState = normalizeDelegationState(record.delegation);
             resetSessionDiffState(diffState);
             session = {
               record,
@@ -270,6 +282,7 @@ export async function runChat({
           latestMetadata,
           activatedSkills,
           evidenceSources,
+          delegationState,
           io.stderr,
         );
 
@@ -350,6 +363,7 @@ export async function runChat({
           latestMetadata,
           activatedSkills,
           evidenceSources,
+          delegationState,
           io.stderr,
         );
         writeLine(io.stdout, formatOpenRouterMetadata(result.metadata));
@@ -591,6 +605,7 @@ async function persistSession(
   latestMetadata: OpenRouterStreamMetadata | undefined,
   activatedSkills: SessionActivatedSkill[],
   evidenceSources: EvidenceSource[],
+  delegationState: DelegationState,
   stderr: WritableLike,
 ): Promise<void> {
   try {
@@ -600,6 +615,7 @@ async function persistSession(
       latestMetadata,
       activatedSkills,
       evidenceSources,
+      delegation: delegationState,
       cwd,
     });
     await refreshSessionGitMetadata(session.record);
