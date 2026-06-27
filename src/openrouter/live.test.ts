@@ -89,6 +89,36 @@ test("fetches OpenRouter credits and computes remaining and percent used", async
   assert.equal(credits.remainingCredits, 15);
   assert.equal(credits.percentUsed, 40);
   assert.match(formatOpenRouterCredits(credits), /percent_used: 40\.00%/);
+  assert.match(formatOpenRouterCredits(credits), /usage_meter: \[#####-------\] 40\.00%/);
+});
+
+test("fetches OpenRouter credits from explicit remaining and percent fields", async () => {
+  const mockFetch: typeof fetch = async (input) => {
+    assert.equal(String(input), "https://example.test/credits");
+    return new Response(
+      JSON.stringify({
+        data: {
+          total: 50,
+          used: 12.5,
+          remaining_credits: 37.5,
+          percent_used: 25,
+        },
+      }),
+      { status: 200 },
+    );
+  };
+
+  const credits = await getOpenRouterCredits({
+    apiKey: "test-key",
+    baseUrl: "https://example.test",
+    fetch: mockFetch,
+  });
+
+  assert.equal(credits.totalCredits, 50);
+  assert.equal(credits.totalUsage, 12.5);
+  assert.equal(credits.remainingCredits, 37.5);
+  assert.equal(credits.percentUsed, 25);
+  assert.match(formatOpenRouterCredits(credits), /usage_meter: \[###---------\] 25\.00%/);
 });
 
 test("fetches OpenRouter generation metadata", async () => {

@@ -30,6 +30,7 @@ import {
   getOpenRouterCredits,
   getOpenRouterGeneration,
   listOpenRouterModels,
+  type OpenRouterCreditsInfo,
 } from "../openrouter/live.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
@@ -61,6 +62,13 @@ import {
   type EvidenceSource,
 } from "../research/index.js";
 import { formatStatus } from "../status.js";
+import {
+  createSessionCostMeterState,
+  formatContextUsageMeter,
+  formatSessionCostMeter,
+  type SessionCostMeterState,
+} from "../terminal/meters.js";
+import { createTerminalRenderer } from "../terminal/render.js";
 import { gitDiffTool } from "../tools/index.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
@@ -127,9 +135,11 @@ export interface SlashCommandContext {
   getEvidenceSources?: () => EvidenceSource[];
   setEvidenceSources?: (sources: EvidenceSource[]) => void;
   getLatestMetadata: () => OpenRouterStreamMetadata | undefined;
+  getCostMeterState?: () => SessionCostMeterState;
   getContextBudget?: () => Partial<AgentContextBudget>;
   getDiffState?: () => SessionDiffState;
   getSessionInfo?: () => { id: string; path: string } | undefined;
+  setLatestCredits?: (credits: OpenRouterCreditsInfo) => void;
   mcpAuditLogPath?: string;
   mcpConfigPath?: string;
   pluginRegistryPath?: string;
@@ -353,7 +363,11 @@ const COMMANDS: Record<string, SlashDefinition> = {
           apiKey: config.apiKey,
           fetch: context.fetch,
         });
-        writeLine(context.io.stdout, formatOpenRouterCredits(credits));
+        context.setLatestCredits?.(credits);
+        writeLine(
+          context.io.stdout,
+          formatOpenRouterCredits(credits, { stream: context.io.stdout }),
+        );
       } catch (error) {
         writeLine(context.io.stderr, formatOpenRouterLiveError(error));
       }
@@ -599,11 +613,15 @@ export function chatHelpText(): string {
 }
 
 function renderInteractiveStatus(context: SlashCommandContext): string {
+  const renderer = createTerminalRenderer({ stream: context.io.stdout });
   const loadedConfig = {
     ...context.loadedConfig,
     config: context.getConfig(),
   };
   const latestMetadata = context.getLatestMetadata();
+  const contextState = getContextState(context.getMessages(), context.getContextBudget?.());
+  const costState =
+    context.getCostMeterState?.() ?? createSessionCostMeterState(latestMetadata);
   const diffState = context.getDiffState?.();
   const sessionInfo = context.getSessionInfo?.();
 
@@ -613,12 +631,13 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       loadedConfig,
       mcpConfigPath: context.mcpConfigPath,
       pluginRegistryPath: context.pluginRegistryPath,
+      renderOptions: { stream: context.io.stdout },
     }),
     `history_messages: ${context.getMessages().length}`,
     `evidence_sources: ${context.getEvidenceSources?.().length ?? 0}`,
-    `context: ${formatContextState(
-      getContextState(context.getMessages(), context.getContextBudget?.()),
-    )}`,
+    `context: ${formatContextState(contextState)}`,
+    `context_meter: ${formatContextUsageMeter(contextState, renderer)}`,
+    `cost_meter: ${formatSessionCostMeter(costState, renderer)}`,
     sessionInfo ? `session: ${sessionInfo.id} (${sessionInfo.path})` : undefined,
     diffState ? `diff_state: ${formatSessionDiffState(diffState)}` : undefined,
     latestMetadata

@@ -1,6 +1,6 @@
 # OpenRouter Integration
 
-Last updated: 2026-06-25
+Last updated: 2026-06-27
 
 ## API Base
 
@@ -56,6 +56,7 @@ plugins: [{ id: "fusion", preset: "general-budget" }]
 - `/fusion` with no argument shows the current Fusion preset.
 - `/models [filter]` fetches the live OpenRouter model catalog through the direct Models API when an API key is available, then shows concise id/name/context/pricing fields.
 - `/credits` fetches live OpenRouter credit totals, usage, remaining credits, and percent used through the direct Credits API. A 401/403 notes that a management-capable key may be required.
+- `/credits` renders a deterministic usage meter from returned or derived total/used/remaining/percent fields. Chat stores this result only in process and shows account credits in the footer only after `/credits` succeeds.
 - `/generation <id>` fetches generation cost/token/provider metadata through the direct Generation API. In chat, `/generation` can use the latest in-session generation id when available.
 - `orx models [query]`, `orx credits`, and `orx generation <id>` expose the same live metadata outside interactive chat.
 - `/status` shows active mode, model, Fusion config, generation id, tokens, and spend.
@@ -66,6 +67,8 @@ plugins: [{ id: "fusion", preset: "general-budget" }]
 The current CLI reads token and cost metadata from the streaming response when OpenRouter provides it, captures `X-Generation-Id`, and performs a best-effort `/generation?id=<id>` lookup without failing the main response if that lookup is unavailable.
 
 The streaming parser also aggregates OpenAI-compatible `delta.tool_calls` chunks and returns completed tool calls to the agent runtime.
+
+Interactive status and chat footer cost meters use only OpenRouter metadata ORX has received. They report latest turn cost, known session cost, and metadata coverage; unavailable cost data is rendered as `n/a`.
 
 ## Orchestration Boundary
 

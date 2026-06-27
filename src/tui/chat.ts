@@ -4,11 +4,13 @@ import {
   createSessionDiffState,
   formatToolCallStart,
   formatToolResult,
+  getContextState,
   resetSessionDiffState,
   runAgentTurn,
   type AgentContextBudget,
 } from "../agent/index.js";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
+import type { OpenRouterCreditsInfo } from "../openrouter/live.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import {
@@ -32,6 +34,16 @@ import {
   type ResumeSessionResult,
   type ResumeSessionSummary,
 } from "../slash/index.js";
+import {
+  createSessionCostMeterState,
+  emptySessionCostMeterState,
+  formatCompactContextUsageMeter,
+  formatCompactCreditsUsageMeter,
+  formatCompactSessionCostMeter,
+  recordSessionTurnCost,
+  type SessionCostMeterState,
+} from "../terminal/meters.js";
+import { createTerminalRenderer, type TerminalRenderOptions } from "../terminal/render.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
 
@@ -75,6 +87,8 @@ export async function runChat({
   let activeCwd = io.cwd;
   let messages: OpenRouterMessage[] = [];
   let latestMetadata: OpenRouterStreamMetadata | undefined;
+  let costMeterState = emptySessionCostMeterState();
+  let latestCredits: OpenRouterCreditsInfo | undefined;
   let activeAbort: AbortController | undefined;
   const diffState = createSessionDiffState();
   let session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
@@ -99,7 +113,16 @@ export async function runChat({
     rl.close();
   });
 
-  writeLine(io.stdout, renderHeader(activeCwd, loadedConfig, activeConfig, session));
+  writeLine(
+    io.stdout,
+    renderHeader(activeCwd, loadedConfig, activeConfig, session, {
+      messages,
+      contextBudget,
+      costMeterState,
+      latestCredits,
+      renderOptions: { stream: io.stdout },
+    }),
+  );
   writePrompt(io.stdout);
 
   try {
@@ -132,6 +155,7 @@ export async function runChat({
           clearMessages: () => {
             messages = [];
             latestMetadata = undefined;
+            costMeterState = emptySessionCostMeterState();
             activatedSkills = [];
             evidenceSources = [];
           },
@@ -140,9 +164,13 @@ export async function runChat({
             evidenceSources = sources;
           },
           getLatestMetadata: () => latestMetadata,
+          getCostMeterState: () => costMeterState,
           getContextBudget: () => contextBudget,
           getDiffState: () => diffState,
           getSessionInfo: () => sessionInfo(session),
+          setLatestCredits: (credits) => {
+            latestCredits = credits;
+          },
           mcpAuditLogPath,
           mcpConfigPath,
           pluginRegistryPath,
@@ -173,6 +201,7 @@ export async function runChat({
             };
             messages = cloneJson(record.messages);
             latestMetadata = cloneOptionalJson(record.latestMetadata);
+            costMeterState = createSessionCostMeterState(latestMetadata);
             activatedSkills = cloneJson(record.activatedSkills ?? []);
             evidenceSources = cloneJson(record.evidenceSources ?? []);
             resetSessionDiffState(diffState);
@@ -247,11 +276,11 @@ export async function runChat({
                 io.stdout.write(text);
               },
               onToolCall(toolCall) {
-                io.stdout.write(`\n${formatToolCallStart(toolCall)}\n`);
+                io.stdout.write(`\n${formatToolCallStart(toolCall, { stream: io.stdout })}\n`);
                 needsAssistantPrefix = true;
               },
               onToolResult(result) {
-                io.stdout.write(`${formatToolResult(result)}\n`);
+                io.stdout.write(`${formatToolResult(result, { stream: io.stdout })}\n`);
                 needsAssistantPrefix = true;
               },
             },
@@ -261,6 +290,7 @@ export async function runChat({
         io.stdout.write("\n");
         messages = result.messages;
         latestMetadata = result.metadata;
+        costMeterState = recordSessionTurnCost(costMeterState, result.metadata);
         await persistSession(
           session,
           activeCwd,
@@ -272,7 +302,16 @@ export async function runChat({
           io.stderr,
         );
         writeLine(io.stdout, formatOpenRouterMetadata(result.metadata));
-        writeLine(io.stdout, renderFooter(activeCwd, loadedConfig, activeConfig, session));
+        writeLine(
+          io.stdout,
+          renderFooter(activeCwd, loadedConfig, activeConfig, session, {
+            messages,
+            contextBudget,
+            costMeterState,
+            latestCredits,
+            renderOptions: { stream: io.stdout },
+          }),
+        );
       } catch (error) {
         io.stdout.write("\n");
         if (isAbortError(error)) {
@@ -299,12 +338,22 @@ function renderHeader(
   loadedConfig: LoadedConfig,
   activeConfig: OrxConfig,
   session: ChatSessionHandle,
+  meterState: ChatFooterMeterState,
 ): string {
+  const renderer = createTerminalRenderer(meterState.renderOptions);
   return [
-    "ORX chat",
-    renderFooter(cwd, loadedConfig, activeConfig, session),
+    renderer.bold("ORX chat"),
+    renderFooter(cwd, loadedConfig, activeConfig, session, meterState),
     "Type /help for commands. Ctrl+C interrupts an active response or exits when idle.",
   ].join("\n");
+}
+
+interface ChatFooterMeterState {
+  messages: OpenRouterMessage[];
+  contextBudget: Partial<AgentContextBudget>;
+  costMeterState: SessionCostMeterState;
+  latestCredits?: OpenRouterCreditsInfo;
+  renderOptions?: TerminalRenderOptions;
 }
 
 function renderFooter(
@@ -312,16 +361,26 @@ function renderFooter(
   loadedConfig: LoadedConfig,
   activeConfig: OrxConfig,
   session: ChatSessionHandle,
+  meterState: ChatFooterMeterState,
 ): string {
+  const renderer = createTerminalRenderer(meterState.renderOptions);
+  const contextState = getContextState(meterState.messages, meterState.contextBudget);
   const key = loadedConfig.apiKeyPresent ? `yes (${loadedConfig.apiKeySource})` : "no";
   return [
     `cwd: ${cwd}`,
     `mode: ${activeConfig.mode}`,
     `model: ${activeConfig.model}`,
     `key: ${key}`,
+    `context: ${formatCompactContextUsageMeter(contextState, renderer)}`,
+    `cost: ${formatCompactSessionCostMeter(meterState.costMeterState, renderer)}`,
+    meterState.latestCredits
+      ? `credits: ${formatCompactCreditsUsageMeter(meterState.latestCredits, renderer)}`
+      : undefined,
     `permissions: ${activeConfig.permissions.approvalPolicy}/${activeConfig.permissions.sandboxMode}`,
     `session: ${session.record.id} @ ${session.filePath}`,
-  ].join(" | ");
+  ]
+    .filter((part): part is string => typeof part === "string")
+    .join(" | ");
 }
 
 function writePrompt(stream: WritableLike) {

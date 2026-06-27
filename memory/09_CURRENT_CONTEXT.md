@@ -2,14 +2,14 @@
 
 Last updated: 2026-06-27
 
-## Fast Phase 10 Handoff
+## Fast Phase 12 Handoff
 
-To continue Phase 10 in a fresh session, read:
+To continue Phase 12 in a fresh session, read:
 
 1. `memory/00_INDEX.md`
 2. `memory/01_PROJECT_BRIEF.md`
 3. `memory/09_CURRENT_CONTEXT.md`
-4. `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`
+4. `memory/06_TUI_DESIGN.md`
 
 Then retrieve supporting shards from the index as needed.
 
@@ -42,6 +42,18 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented and verified Phase 12 Slice 1 CLI polish foundation:
+
+- Added `src/terminal/render.ts` for internal ANSI styles and ASCII-safe meters. Color is disabled for non-TTY output and when `NO_COLOR` is set; tests stay readable in plain text.
+- Added `src/terminal/meters.ts` for local context, OpenRouter metadata cost, and OpenRouter credits meters.
+- Interactive `/status` now includes `context_meter` derived from local approximate serialized message bytes versus the configured local budget. It is labeled `approx_local_bytes` and does not claim provider-token accuracy.
+- Interactive `/status` and the chat footer now include a cost meter from OpenRouter metadata ORX has actually received, showing metadata coverage, latest turn cost, and known session cost. Unknown cost metadata is rendered as `n/a`.
+- `/credits` now renders a live OpenRouter credits usage meter from returned/derived total, used, remaining, and percent fields. Chat stores fetched credits only in process and shows account credits in the footer only after `/credits` succeeds.
+- Chat header/footer, interactive status headings, and visible tool summaries use light TTY-only color styling while preserving plain non-TTY output.
+- Extended live credits parsing to accept explicit `total`, `used`, `remaining`, and `percent` field variants while retaining the existing derived fallback.
+- Added focused tests for terminal rendering, NO_COLOR/non-TTY behavior, meter formatting, `/status` context/cost meters, `/credits` meter output, and chat footer rendering.
+- `npm run typecheck` and targeted build-backed terminal/openrouter/slash/chat/CLI tests pass.
 
 Implemented and verified the bounded Phase 10 Slice 2 citation/bibliography MVP:
 

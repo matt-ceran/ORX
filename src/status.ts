@@ -2,12 +2,14 @@ import { formatConfigSources } from "./config/index.js";
 import type { LoadedConfig } from "./config/types.js";
 import { getMcpStatusSummary, formatMcpProfile } from "./mcp/index.js";
 import { getEnabledPluginSkillSummary, getPluginStatusSummary } from "./plugins/index.js";
+import { createTerminalRenderer, type TerminalRenderOptions } from "./terminal/render.js";
 
 export interface StatusOptions {
   cwd: string;
   loadedConfig: LoadedConfig;
   mcpConfigPath?: string;
   pluginRegistryPath?: string;
+  renderOptions?: TerminalRenderOptions;
 }
 
 export function formatStatus({
@@ -15,7 +17,9 @@ export function formatStatus({
   loadedConfig,
   mcpConfigPath,
   pluginRegistryPath,
+  renderOptions,
 }: StatusOptions): string {
+  const renderer = createTerminalRenderer(renderOptions);
   const { config } = loadedConfig;
   const mcpStatus = getMcpStatusSummary({ configPath: mcpConfigPath });
   const pluginStatus = getPluginStatusSummary({ registryPath: pluginRegistryPath });
@@ -23,7 +27,7 @@ export function formatStatus({
   const activeMcpProfiles =
     mcpStatus.activeProfileIds.length > 0 ? mcpStatus.activeProfileIds.join(",") : "none";
   const lines = [
-    "ORX status",
+    renderer.bold("ORX status"),
     `cwd: ${cwd}`,
     `config_source: ${formatConfigSources(loadedConfig.loadedFiles)}`,
     `mode: ${config.mode}`,

@@ -78,6 +78,7 @@ export async function runCli(
         loadedConfig,
         mcpConfigPath,
         pluginRegistryPath,
+        renderOptions: { stream: io.stdout },
       }),
     );
     return 0;
@@ -185,7 +186,7 @@ async function runCreditsCommand(apiKey: string, io: CliIo): Promise<number> {
       apiKey,
       fetch: io.fetch,
     });
-    writeLine(io.stdout, formatOpenRouterCredits(credits));
+    writeLine(io.stdout, formatOpenRouterCredits(credits, { stream: io.stdout }));
     return 0;
   } catch (error) {
     writeLine(io.stderr, formatOpenRouterLiveError(error));
@@ -250,10 +251,10 @@ async function runAskCommand(
             io.stdout.write(text);
           },
           onToolCall(toolCall) {
-            io.stdout.write(`\n${formatToolCallStart(toolCall)}\n`);
+            io.stdout.write(`\n${formatToolCallStart(toolCall, { stream: io.stdout })}\n`);
           },
           onToolResult(result) {
-            io.stdout.write(`${formatToolResult(result)}\n`);
+            io.stdout.write(`${formatToolResult(result, { stream: io.stdout })}\n`);
           },
         },
       },

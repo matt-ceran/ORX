@@ -372,6 +372,7 @@ test("metadata CLI commands use live OpenRouter APIs", async () => {
   ]);
   assert.match(capture.stdout(), /OpenRouter models matching "claude": 1/);
   assert.match(capture.stdout(), /remaining: \$9\.000000/);
+  assert.match(capture.stdout(), /usage_meter: \[###---------\] 25\.00%/);
   assert.match(capture.stdout(), /id: gen_123/);
   assert.match(capture.stdout(), /provider: OpenAI/);
   assert.equal(capture.stderr(), "");

@@ -845,6 +845,69 @@ test("chat resumes an exact session id outside the recent display window", async
   }
 });
 
+test("chat footer renders context, known cost, and fetched credits meters", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const seenUrls: string[] = [];
+  const loadedConfig = baseLoadedConfig();
+  loadedConfig.config.apiKey = "test-key";
+
+  try {
+    const capture = createIo({
+      stdin: Readable.from(["/credits\n", "Hello\n", "/exit\n"]),
+      fetch: async (input, init) => {
+        const url = String(input);
+        seenUrls.push(url);
+
+        if (url.endsWith("/credits")) {
+          return new Response(
+            JSON.stringify({ data: { total_credits: 4, total_usage: 1 } }),
+            { status: 200 },
+          );
+        }
+
+        assert.equal(url, "https://openrouter.ai/api/v1/chat/completions");
+        const body = JSON.parse(String(init?.body));
+        assert.equal(body.model, "openrouter/auto");
+
+        return new Response(
+          streamFrom([
+            'data: {"model":"openrouter/auto","choices":[{"delta":{"content":"Priced reply"}}]}\n\n',
+            'data: {"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3,"cost":0.0002},"choices":[]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig,
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(seenUrls, [
+      "https://openrouter.ai/api/v1/credits",
+      "https://openrouter.ai/api/v1/chat/completions",
+    ]);
+    assert.match(capture.stdout(), /usage_meter: \[###---------\] 25\.00%/);
+    assert.match(
+      capture.stdout(),
+      /context: \[[#-]{10}\] \d+\.\d% approx local bytes \d+B\/\d+B messages \d+\/\d+/,
+    );
+    assert.match(
+      capture.stdout(),
+      /cost: \[########\] 100\.0% latest \$0\.000200 known \$0\.000200/,
+    );
+    assert.match(capture.stdout(), /credits: \[##------\] 25\.0% remaining \$3\.000000/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 function createIo(options: {
   fetch: typeof fetch;
   webFetch?: typeof fetch;

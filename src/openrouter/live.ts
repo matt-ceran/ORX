@@ -1,4 +1,6 @@
 import { OPENROUTER_API_BASE } from "./client.js";
+import { formatCreditsUsageMeter } from "../terminal/meters.js";
+import type { TerminalRenderOptions, TerminalRenderer } from "../terminal/render.js";
 
 export interface OpenRouterLiveOptions {
   apiKey: string;
@@ -98,14 +100,27 @@ export async function getOpenRouterCredits(
     return {};
   }
 
-  const totalCredits = numberFromUnknown(data.total_credits) ?? numberFromUnknown(data.totalCredits);
-  const totalUsage = numberFromUnknown(data.total_usage) ?? numberFromUnknown(data.totalUsage);
+  const totalCredits =
+    numberFromUnknown(data.total_credits) ??
+    numberFromUnknown(data.totalCredits) ??
+    numberFromUnknown(data.total);
+  const totalUsage =
+    numberFromUnknown(data.total_usage) ??
+    numberFromUnknown(data.totalUsage) ??
+    numberFromUnknown(data.used) ??
+    numberFromUnknown(data.usedCredits);
   const remainingCredits =
-    totalCredits !== undefined && totalUsage !== undefined ? totalCredits - totalUsage : undefined;
+    numberFromUnknown(data.remaining_credits) ??
+    numberFromUnknown(data.remainingCredits) ??
+    numberFromUnknown(data.remaining) ??
+    (totalCredits !== undefined && totalUsage !== undefined ? totalCredits - totalUsage : undefined);
   const percentUsed =
-    totalCredits !== undefined && totalUsage !== undefined && totalCredits > 0
+    numberFromUnknown(data.percent_used) ??
+    numberFromUnknown(data.percentUsed) ??
+    numberFromUnknown(data.usage_percent) ??
+    (totalCredits !== undefined && totalUsage !== undefined && totalCredits > 0
       ? (totalUsage / totalCredits) * 100
-      : undefined;
+      : undefined);
 
   return {
     totalCredits,
@@ -183,13 +198,17 @@ export function formatOpenRouterModels(models: OpenRouterModelInfo[], query?: st
   return lines.join("\n");
 }
 
-export function formatOpenRouterCredits(credits: OpenRouterCreditsInfo): string {
+export function formatOpenRouterCredits(
+  credits: OpenRouterCreditsInfo,
+  renderOptions: TerminalRenderOptions | TerminalRenderer = {},
+): string {
   return [
     "OpenRouter credits",
     `  total: ${formatMoney(credits.totalCredits)}`,
     `  used: ${formatMoney(credits.totalUsage)}`,
     `  remaining: ${formatMoney(credits.remainingCredits)}`,
     `  percent_used: ${formatPercent(credits.percentUsed)}`,
+    `  usage_meter: ${formatCreditsUsageMeter(credits, renderOptions)}`,
   ].join("\n");
 }
 

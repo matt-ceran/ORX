@@ -4,6 +4,12 @@ Last updated: 2026-06-27
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-27: Terminal Meters Must State Their Data Source
+
+Decision: ORX terminal meters should be deterministic local renderings with explicit source labels. Context meters use local approximate serialized-message bytes against ORX's configured local budget, not provider-token context. Cost meters use only OpenRouter generation/usage metadata ORX has received and show `n/a` when unavailable. Account credits meters use live OpenRouter credits data only after the credits endpoint has been fetched. ANSI styling should be light, TTY-only, and disabled by `NO_COLOR`.
+
+Reasoning: Phase 12 polish should improve operator visibility without implying precision ORX does not have. Distinguishing local approximations, in-session metadata, and live account credits keeps the UI useful while preserving OpenRouter-native behavior and avoiding fake balances or exact-context claims.
+
 ## 2026-06-27: Keep Citations Metadata-Only And Local
 
 Decision: ORX citations and bibliographies should be deterministic local renderings of persisted `EvidenceSource` metadata only. `/cite <source-id>` renders one source with hashes/provenance; `/bibliography` renders all current evidence sources in stable source-id order. These commands must not fetch, search, call providers, or render extracted page text. Rendered fields should strip terminal/ANSI/OSC control sequences, bound inline values, use redacted `canonicalUrl` metadata, and omit invalid canonical URLs rather than displaying potentially secret-bearing malformed URLs.

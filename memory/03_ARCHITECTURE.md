@@ -25,6 +25,7 @@ src/agent/                 agent loop, messages, tool dispatch, compaction
 src/openrouter/            API client, models, routing modes, cost tracking
 src/tools/                 local tools: files, shell, search, git, patch
 src/slash/                 slash command registry and handlers
+src/terminal/              ANSI style helpers and deterministic ASCII meters
 src/permissions/           permission policy, YOLO defaults, future safe modes
 src/mcp/                   MCP client and server registry
 src/plugins/               plugin install cache, manifests, skills, commands, hooks, plugin MCP presets
@@ -72,6 +73,8 @@ Keep research provenance behind `src/research/` so search results, fetched pages
 ## Current Implementation Notes
 
 `src/openrouter/` currently owns request construction, streaming SSE parsing, metadata capture, metadata formatting, and streamed tool-call aggregation.
+
+`src/terminal/` owns small internal render helpers for TTY-only ANSI styling and deterministic ASCII meters. Domain-specific meters label their source explicitly: local approximate context bytes, OpenRouter metadata cost coverage, and live OpenRouter credits.
 
 `src/tools/` currently owns standalone native local coding tools for file reads, directory listing, file search, shell execution, git diff, patch application, shared truncation, and process execution. Phase 6 now exposes these tools to models through `src/agent/`.
 

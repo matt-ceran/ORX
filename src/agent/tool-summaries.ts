@@ -1,8 +1,9 @@
 import type { OpenRouterToolCall } from "../openrouter/types.js";
+import { createTerminalRenderer, type TerminalRenderOptions } from "../terminal/render.js";
 import type { TextTruncation } from "../tools/types.js";
 import type { ToolDispatchResult } from "./tool-dispatch.js";
 
-interface ToolSummaryOptions {
+interface ToolSummaryOptions extends TerminalRenderOptions {
   maxStringLength?: number;
   maxListItems?: number;
 }
@@ -16,20 +17,23 @@ export function formatToolCallStart(
   toolCall: OpenRouterToolCall,
   options: ToolSummaryOptions = {},
 ): string {
+  const renderer = createTerminalRenderer(options);
   const argumentSummary = formatToolArguments(toolCall, options);
   return argumentSummary
-    ? `[tool] ${toolCall.function.name} ${argumentSummary}`
-    : `[tool] ${toolCall.function.name}`;
+    ? `${renderer.accent("[tool]")} ${toolCall.function.name} ${argumentSummary}`
+    : `${renderer.accent("[tool]")} ${toolCall.function.name}`;
 }
 
 export function formatToolResult(
   result: ToolDispatchResult,
   options: ToolSummaryOptions = {},
 ): string {
+  const renderer = createTerminalRenderer(options);
   const details = formatToolResultDetails(result, options);
   return [
-    `[tool] ${result.toolCall.function.name}`,
-    result.ok ? "ok" : "failed",
+    renderer.accent("[tool]"),
+    result.toolCall.function.name,
+    result.ok ? renderer.success("ok") : renderer.danger("failed"),
     `duration=${formatDuration(result.durationMs)}`,
     ...details,
   ].join(" ");

@@ -1,6 +1,6 @@
 # TUI Design
 
-Last updated: 2026-06-25
+Last updated: 2026-06-27
 
 ## Interface Goals
 
@@ -32,10 +32,12 @@ Current MVP:
 
 - `orx chat` uses a readline-based terminal loop.
 - The header/footer show cwd, mode, model, API key presence/source, and permission posture.
+- The footer now also shows deterministic ASCII meters for local approximate context bytes and OpenRouter metadata cost coverage. It shows OpenRouter account credits only after `/credits` has succeeded in the current process.
 - The composer prompt is `orx>`.
 - Assistant responses stream inline as chunks arrive.
 - In-process user/assistant history is sent with follow-up turns.
 - Ctrl+C aborts an active response or exits when idle.
+- ANSI styling is light and TTY-only; non-TTY output and `NO_COLOR=1` remain plain text.
 
 ## Slash Commands
 
@@ -105,6 +107,7 @@ Future orchestration commands:
 - Tool failure: red accent.
 - Warnings: yellow accent.
 - Metadata: dim.
+- Meters: ASCII `#`/`-` bars with explicit source labels. Context meters are local approximate bytes versus ORX's configured budget, not provider-token context. Cost meters are OpenRouter metadata coverage/latest/known costs only. Credits meters are live OpenRouter account credits only after the credits endpoint is fetched.
 - Diffs: green additions, red removals.
 - Delegation: show the delegate name, adapter type, status, elapsed time, and cost or external budget when available.
 

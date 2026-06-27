@@ -5,8 +5,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
+import type { OpenRouterCreditsInfo } from "../openrouter/live.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import type { EvidenceSource } from "../research/index.js";
+import type { SessionCostMeterState } from "../terminal/meters.js";
 import {
   COMPACTED_CONTEXT_PROVENANCE,
   createSessionDiffState,
@@ -148,7 +150,9 @@ test("live metadata slash commands use OpenRouter metadata APIs", async () => {
   assert.match(harness.stdout(), /OpenRouter models matching "claude": 1/);
   assert.match(harness.stdout(), /anthropic\/claude-sonnet-4\.5/);
   assert.match(harness.stdout(), /remaining: \$7\.500000/);
+  assert.match(harness.stdout(), /usage_meter: \[###---------\] 25\.00%/);
   assert.match(harness.stdout(), /provider: OpenAI/);
+  assert.equal(harness.credits()?.remainingCredits, 7.5);
 });
 
 test("web fetch records evidence, appends untrusted context, and sources lists metadata", async () => {
@@ -1339,6 +1343,8 @@ test("status reports active routing, config, key, permissions, history, and meta
     assert.match(harness.stdout(), /hash=sha256:[a-f0-9]{64}/);
     assert.match(harness.stdout(), /history_messages: 1/);
     assert.match(harness.stdout(), /context: 1 messages, \d+B approx, budget \d+B\/\d+ messages/);
+    assert.match(harness.stdout(), /context_meter: \[[#-]{12}\] \d+\.\d% approx_local_bytes=\d+B\/\d+B messages=1\/\d+ compacted=no/);
+    assert.match(harness.stdout(), /cost_meter: \[############\] 100\.0% metadata_coverage=1\/1 turns latest_turn=\$0\.000100 known_session=\$0\.000100 source=OpenRouter metadata/);
     assert.match(
       harness.stdout(),
       /session: 20260626T123456Z-test \(\/tmp\/orx-sessions\/20260626T123456Z-test\.json\)/,
@@ -1403,6 +1409,7 @@ function createSlashHarness(
     messages?: OpenRouterMessage[];
     evidenceSources?: EvidenceSource[];
     metadata?: OpenRouterStreamMetadata;
+    costMeterState?: SessionCostMeterState;
     contextBudget?: Partial<AgentContextBudget>;
     diffState?: SessionDiffState;
     sessionInfo?: { id: string; path: string };
@@ -1422,6 +1429,8 @@ function createSlashHarness(
   let messages = options.messages ?? [];
   let evidenceSources = options.evidenceSources ?? [];
   let metadata = options.metadata;
+  let latestCredits: OpenRouterCreditsInfo | undefined;
+  const costMeterState = options.costMeterState;
   const diffState = options.diffState ?? createSessionDiffState();
   const loadedConfig: LoadedConfig = {
     config,
@@ -1468,9 +1477,13 @@ function createSlashHarness(
         evidenceSources = nextSources;
       },
       getLatestMetadata: () => metadata,
+      getCostMeterState: costMeterState ? () => costMeterState : undefined,
       getContextBudget: () => options.contextBudget ?? {},
       getDiffState: () => diffState,
       getSessionInfo: () => options.sessionInfo,
+      setLatestCredits: (credits: OpenRouterCreditsInfo) => {
+        latestCredits = credits;
+      },
       mcpAuditLogPath: options.mcpAuditLogPath,
       mcpConfigPath: options.mcpConfigPath,
       pluginRegistryPath: options.pluginRegistryPath,
@@ -1481,6 +1494,7 @@ function createSlashHarness(
     messages: () => messages,
     sources: () => evidenceSources,
     metadata: () => metadata,
+    credits: () => latestCredits,
     setMessages: (nextMessages: OpenRouterMessage[]) => {
       messages = nextMessages;
     },

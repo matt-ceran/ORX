@@ -50,6 +50,8 @@ printf '/mode fusion\n/fusion general-budget\n/models claude\n/credits\n/generat
 
 If `.orx/config.toml` contains the API key, the `OPENROUTER_API_KEY=...` prefix is not needed. The `.orx/` directory is ignored and must remain uncommitted.
 
+`/status` now includes local approximate context and OpenRouter metadata cost meters. `/credits` and `orx credits` now include a live OpenRouter credits usage meter when the credits endpoint returns usable fields. Set `NO_COLOR=1` to force plain output.
+
 ## Planned Environment
 
 ```bash

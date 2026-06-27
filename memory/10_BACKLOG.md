@@ -124,4 +124,6 @@ Next:
 - Add Devin delegate adapter through MCP/API when credentials are configured.
 - Add budget, permission, timeout, and result-truncation controls for delegated tasks.
 - Add tests for slash parsing, config loading, and tool execution.
+- Completed Phase 12 Slice 1 CLI polish foundation: internal terminal render helpers, ASCII-safe context/cost/credits meters, TTY-only color styling, `/status` context/cost meters, `/credits` usage meter, chat footer meters, and focused render/status/credits/chat tests.
+- Add next Phase 12 UI polish slices: command palette/help filtering, theme profiles, compact model/provider badges, and package/global install hardening.
 - Add packaging for global install.
