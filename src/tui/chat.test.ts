@@ -9,9 +9,28 @@ import { COMPACTED_CONTEXT_PROVENANCE } from "../agent/index.js";
 import type { LoadedConfig } from "../config/types.js";
 import { registerPluginManifest, setPluginEnabledState } from "../plugins/index.js";
 import { createSessionRecord, saveSessionRecord } from "../sessions/index.js";
-import { runChat } from "./chat.js";
+import { resolveChatTerminalModes, runChat } from "./chat.js";
 
 const encoder = new TextEncoder();
+
+test("chat keeps readline terminal mode when NO_COLOR disables the tty screen", () => {
+  const stdin = { isTTY: true };
+  const stdout = {
+    isTTY: true,
+    write() {
+      return true;
+    },
+  };
+
+  assert.deepEqual(resolveChatTerminalModes(stdin, stdout, { NO_COLOR: "1" }), {
+    useReadlineTerminal: true,
+    useTtyScreen: false,
+  });
+  assert.deepEqual(resolveChatTerminalModes(stdin, stdout, {}), {
+    useReadlineTerminal: true,
+    useTtyScreen: true,
+  });
+});
 
 test("chat bounds in-process history before later turns", async () => {
   const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
@@ -908,24 +927,91 @@ test("chat footer renders context, known cost, and fetched credits meters", asyn
   }
 });
 
+test("tty chat renders bottom status composer instead of the repeated plain footer", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+
+  try {
+    const capture = createIo({
+      stdin: Readable.from(["Hello\n", "/exit\n"]),
+      tty: true,
+      columns: 96,
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        assert.equal(body.model, "openrouter/auto");
+
+        return new Response(
+          streamFrom([
+            'data: {"model":"openrouter/auto","choices":[{"delta":{"content":"TTY reply"}}]}\n\n',
+            'data: {"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3,"cost":0.0002},"choices":[]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    const stdout = stripAnsi(capture.stdout());
+    assert.equal(exitCode, 0);
+    assert.match(stdout, /╭─ orx/);
+    assert.match(stdout, /orx › /);
+    assert.match(stdout, /assistant: TTY reply/);
+    assert.match(stdout, /model openrouter\/auto/);
+    assert.match(stdout, /mode auto/);
+    assert.match(stdout, /ctx \[[#-]{8}\] \d+\.\d% approx/);
+    assert.match(stdout, /cost \$0\.000200 meta 1\/1/);
+    assert.match(stdout, /perm never\/danger-full-access/);
+    assert.doesNotMatch(stdout, /cwd: .* \| mode: .* \| model:/);
+    assert.doesNotMatch(stdout, /session: .* @ /);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 function createIo(options: {
   fetch: typeof fetch;
   webFetch?: typeof fetch;
   stdin: NodeJS.ReadableStream;
   cwd?: string;
+  tty?: boolean;
+  columns?: number;
 }) {
   let stdoutText = "";
   let stderrText = "";
+  const stdin = options.stdin;
+  if (options.tty) {
+    (stdin as NodeJS.ReadableStream & { isTTY?: boolean }).isTTY = true;
+  }
+
+  const stdout: Pick<NodeJS.WriteStream, "write"> & { isTTY?: boolean; columns?: number } = {
+    write(chunk: string | Uint8Array) {
+      stdoutText += String(chunk);
+      return true;
+    },
+  };
+  if (options.tty) {
+    stdout.isTTY = true;
+    stdout.columns = options.columns;
+  }
 
   return {
     io: {
-      stdin: options.stdin,
-      stdout: {
-        write(chunk: string | Uint8Array) {
-          stdoutText += String(chunk);
-          return true;
-        },
-      },
+      stdin,
+      stdout,
       stderr: {
         write(chunk: string | Uint8Array) {
           stderrText += String(chunk);
@@ -989,4 +1075,8 @@ function streamFrom(chunks: string[]): ReadableStream<Uint8Array> {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
 }

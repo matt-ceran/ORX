@@ -44,6 +44,13 @@ import {
   type SessionCostMeterState,
 } from "../terminal/meters.js";
 import { createTerminalRenderer, type TerminalRenderOptions } from "../terminal/render.js";
+import {
+  isInteractiveTerminal,
+  renderPlainComposerPrompt,
+  renderTtyStatusComposer,
+  resolveTerminalWidth,
+  shouldUseTtyScreen,
+} from "./screen.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
 
@@ -73,6 +80,11 @@ export interface ChatOptions {
   pluginRegistryPath?: string;
 }
 
+export interface ChatTerminalModes {
+  useReadlineTerminal: boolean;
+  useTtyScreen: boolean;
+}
+
 export async function runChat({
   apiKey,
   loadedConfig,
@@ -94,11 +106,12 @@ export async function runChat({
   let session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
   let activatedSkills: SessionActivatedSkill[] = session.record.activatedSkills ?? [];
   let evidenceSources: EvidenceSource[] = session.record.evidenceSources ?? [];
+  const { useReadlineTerminal, useTtyScreen } = resolveChatTerminalModes(io.stdin, io.stdout);
 
   const rl = createInterface({
     input: io.stdin,
     output: writableStreamOrUndefined(io.stdout),
-    terminal: isTty(io.stdin) && isTty(io.stdout),
+    terminal: useReadlineTerminal,
     crlfDelay: Infinity,
   });
 
@@ -113,24 +126,28 @@ export async function runChat({
     rl.close();
   });
 
-  writeLine(
-    io.stdout,
-    renderHeader(activeCwd, loadedConfig, activeConfig, session, {
-      messages,
-      contextBudget,
-      costMeterState,
-      latestCredits,
-      renderOptions: { stream: io.stdout },
-    }),
-  );
-  writePrompt(io.stdout);
+  if (useTtyScreen) {
+    writeComposer(io.stdout, renderCurrentTtyComposer());
+  } else {
+    writeLine(
+      io.stdout,
+      renderHeader(activeCwd, loadedConfig, activeConfig, session, {
+        messages,
+        contextBudget,
+        costMeterState,
+        latestCredits,
+        renderOptions: { stream: io.stdout },
+      }),
+    );
+    writePrompt(io.stdout);
+  }
 
   try {
     for await (const rawLine of rl) {
       const line = rawLine.trim();
 
       if (!line) {
-        writePrompt(io.stdout);
+        writePromptOrComposer();
         continue;
       }
 
@@ -238,7 +255,7 @@ export async function runChat({
           break;
         }
 
-        writePrompt(io.stdout);
+        writePromptOrComposer();
         continue;
       }
 
@@ -302,16 +319,18 @@ export async function runChat({
           io.stderr,
         );
         writeLine(io.stdout, formatOpenRouterMetadata(result.metadata));
-        writeLine(
-          io.stdout,
-          renderFooter(activeCwd, loadedConfig, activeConfig, session, {
-            messages,
-            contextBudget,
-            costMeterState,
-            latestCredits,
-            renderOptions: { stream: io.stdout },
-          }),
-        );
+        if (!useTtyScreen) {
+          writeLine(
+            io.stdout,
+            renderFooter(activeCwd, loadedConfig, activeConfig, session, {
+              messages,
+              contextBudget,
+              costMeterState,
+              latestCredits,
+              renderOptions: { stream: io.stdout },
+            }),
+          );
+        }
       } catch (error) {
         io.stdout.write("\n");
         if (isAbortError(error)) {
@@ -324,13 +343,49 @@ export async function runChat({
         activeAbort = undefined;
       }
 
-      writePrompt(io.stdout);
+      writePromptOrComposer();
     }
   } finally {
     rl.close();
   }
 
   return 0;
+
+  function writePromptOrComposer(): void {
+    if (useTtyScreen) {
+      writeComposer(io.stdout, renderCurrentTtyComposer());
+      return;
+    }
+
+    writePrompt(io.stdout);
+  }
+
+  function renderCurrentTtyComposer(): string {
+    return renderTtyStatusComposer({
+      cwd: activeCwd,
+      model: activeConfig.model,
+      mode: activeConfig.mode,
+      permissions: activeConfig.permissions,
+      sessionId: session.record.id,
+      messages,
+      contextBudget,
+      costMeterState,
+      latestCredits,
+      width: resolveTerminalWidth(io.stdout),
+      renderOptions: { stream: io.stdout },
+    });
+  }
+}
+
+export function resolveChatTerminalModes(
+  stdin: unknown,
+  stdout: unknown,
+  env: Partial<Pick<NodeJS.ProcessEnv, "NO_COLOR">> = process.env,
+): ChatTerminalModes {
+  return {
+    useReadlineTerminal: isInteractiveTerminal(stdin, stdout),
+    useTtyScreen: shouldUseTtyScreen(stdin, stdout, env),
+  };
 }
 
 function renderHeader(
@@ -384,7 +439,11 @@ function renderFooter(
 }
 
 function writePrompt(stream: WritableLike) {
-  stream.write("\norx> ");
+  stream.write(`\n${renderPlainComposerPrompt()}`);
+}
+
+function writeComposer(stream: WritableLike, composer: string) {
+  stream.write(composer);
 }
 
 function writeLine(stream: WritableLike, text: string) {
@@ -648,10 +707,6 @@ function isAbortError(error: unknown): boolean {
       error.name === "AbortError") ||
     (error instanceof Error && (error.name === "AbortError" || error.message === "AbortError"))
   );
-}
-
-function isTty(stream: unknown): boolean {
-  return Boolean((stream as { isTTY?: boolean }).isTTY);
 }
 
 function writableStreamOrUndefined(stream: WritableLike): NodeJS.WritableStream | undefined {
