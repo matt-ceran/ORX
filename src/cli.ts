@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { BIN_NAME } from "./constants.js";
 import { formatToolCallStart, formatToolResult, runAgentTurn } from "./agent/index.js";
 import { loadConfig, validateApiKey } from "./config/index.js";
-import type { OrxConfig, OrxMode } from "./config/types.js";
+import type { LoadedConfig, OrxConfig, OrxMode } from "./config/types.js";
 import type { AskRequestOverrides } from "./openrouter/request.js";
 import type { OpenRouterMessage } from "./openrouter/types.js";
 import { formatOpenRouterMetadata } from "./openrouter/summary.js";
@@ -57,7 +57,7 @@ export async function runCli(
   const args = argv.slice(2);
   const first = args[0];
 
-  if (!first || first === "help" || first === "--help" || first === "-h") {
+  if (first === "help" || first === "--help" || first === "-h") {
     writeLine(io.stdout, helpText());
     return 0;
   }
@@ -110,24 +110,8 @@ export async function runCli(
     return runGenerationCommand(args.slice(1), loadedConfig.config.apiKey ?? "", io);
   }
 
-  if (first === "chat") {
-    const mcpConfigPath = resolveMcpConfigPath({ env, cwd: io.cwd });
-    const pluginRegistryPath = resolvePluginRegistryPath({ env, cwd: io.cwd });
-    return runChat({
-      apiKey: loadedConfig.config.apiKey ?? "",
-      loadedConfig,
-      io: {
-        stdin: io.stdin ?? process.stdin,
-        stdout: io.stdout,
-        stderr: io.stderr,
-        cwd: io.cwd,
-        fetch: io.fetch,
-      },
-      sessionDirectory: resolveSessionDirectory({ env, cwd: io.cwd }),
-      mcpAuditLogPath: env.ORX_MCP_AUDIT_PATH,
-      mcpConfigPath,
-      pluginRegistryPath,
-    });
+  if (!first || first === "chat") {
+    return runChatCommand(env, loadedConfig, io);
   }
 
   writeLine(io.stderr, `Unknown command: ${first}\n\n${helpText()}`);
@@ -141,9 +125,11 @@ function helpText(): string {
     "OpenRouter-native terminal coding agent.",
     "",
     "Usage:",
-    `  ${BIN_NAME} [command] [options]`,
+    `  ${BIN_NAME}`,
+    `  ${BIN_NAME} <command> [options]`,
     "",
     "Commands:",
+    "  (no command)  Start an interactive OpenRouter chat session",
     '  ask "prompt"  Send one prompt to OpenRouter and stream the answer',
     "  chat          Start an interactive OpenRouter chat session",
     "  models [q]    List live OpenRouter models with an optional filter",
@@ -162,6 +148,30 @@ function helpText(): string {
     "  -h, --help              Show this help message",
     "  -v, --version           Show the current version",
   ].join("\n");
+}
+
+function runChatCommand(
+  env: NodeJS.ProcessEnv,
+  loadedConfig: LoadedConfig,
+  io: CliIo,
+): Promise<number> {
+  const mcpConfigPath = resolveMcpConfigPath({ env, cwd: io.cwd });
+  const pluginRegistryPath = resolvePluginRegistryPath({ env, cwd: io.cwd });
+  return runChat({
+    apiKey: loadedConfig.config.apiKey ?? "",
+    loadedConfig,
+    io: {
+      stdin: io.stdin ?? process.stdin,
+      stdout: io.stdout,
+      stderr: io.stderr,
+      cwd: io.cwd,
+      fetch: io.fetch,
+    },
+    sessionDirectory: resolveSessionDirectory({ env, cwd: io.cwd }),
+    mcpAuditLogPath: env.ORX_MCP_AUDIT_PATH,
+    mcpConfigPath,
+    pluginRegistryPath,
+  });
 }
 
 async function runModelsCommand(args: string[], apiKey: string, io: CliIo): Promise<number> {

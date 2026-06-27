@@ -12,9 +12,14 @@ import { registerPluginManifest, setPluginEnabledState } from "./plugins/index.j
 const encoder = new TextEncoder();
 
 test("help, version, and status work without an API key", async () => {
-  const help = createIo();
-  assert.equal(await runCli(["node", "cli", "--help"], {}, help.io), 0);
-  assert.match(help.stdout(), /Commands:/);
+  for (const helpArg of ["help", "--help", "-h"]) {
+    const help = createIo();
+    assert.equal(await runCli(["node", "cli", helpArg], {}, help.io), 0);
+    assert.match(help.stdout(), /Commands:/);
+    assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
+    assert.doesNotMatch(help.stdout(), /ORX chat/);
+    assert.equal(help.stderr(), "");
+  }
 
   const version = createIo();
   assert.equal(await runCli(["node", "cli", "--version"], {}, version.io), 0);
@@ -154,6 +159,56 @@ test("ask and chat require an OpenRouter API key", async () => {
 
   assert.equal(chatExitCode, 1);
   assert.match(chat.stderr(), /OpenRouter API key not found/);
+
+  const noArg = createIo({
+    stdin: Readable.from(["/exit\n"]),
+  });
+  const noArgExitCode = await runCli(["node", "cli"], {}, noArg.io);
+
+  assert.equal(noArgExitCode, 1);
+  assert.match(noArg.stderr(), /OpenRouter API key not found/);
+  assert.doesNotMatch(noArg.stdout(), /Commands:/);
+});
+
+test("no-arg cli starts chat in the current working directory", async () => {
+  const cwd = createTempDir();
+  const sessionDirectory = createTempDir();
+
+  try {
+    const capture = createIo({
+      cwd,
+      stdin: Readable.from(["/status\n", "/exit\n"]),
+      fetch: async () => {
+        throw new Error("no-arg chat launch should not fetch without a prompt");
+      },
+    });
+
+    const exitCode = await runCli(
+      ["node", "cli"],
+      {
+        OPENROUTER_API_KEY: "test-key",
+        ORX_SESSION_DIR: sessionDirectory,
+        ORX_MCP_CONFIG_PATH: join(sessionDirectory, "mcp", "profiles.json"),
+      },
+      capture.io,
+    );
+
+    assert.equal(exitCode, 0);
+    assert.match(capture.stdout(), /ORX chat/);
+    assert.match(capture.stdout(), new RegExp(`cwd: ${escapeRegExp(cwd)}`));
+    assert.match(capture.stdout(), /Exiting ORX chat/);
+    assert.equal(capture.stderr(), "");
+
+    const sessionFiles = readdirSync(sessionDirectory).filter((file) => file.endsWith(".json"));
+    assert.equal(sessionFiles.length, 1);
+    const session = JSON.parse(readFileSync(join(sessionDirectory, sessionFiles[0]), "utf8")) as {
+      cwd: string;
+    };
+    assert.equal(session.cwd, cwd);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
 });
 
 test("ask streams text and prints compact metadata summary", async () => {
@@ -877,4 +932,8 @@ function assertNativeTools(tools: unknown) {
 
 function sse(value: unknown): string {
   return `data: ${JSON.stringify(value)}\n\n`;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
