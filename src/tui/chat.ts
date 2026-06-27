@@ -17,7 +17,11 @@ import {
   createEnabledPluginSkillsSystemMessage,
   discoverEnabledPluginSkills,
 } from "../plugins/index.js";
-import type { EvidenceSource } from "../research/index.js";
+import type {
+  BrowserSnapshotDriver,
+  EvidenceSource,
+  ResolveBrowserHost,
+} from "../research/index.js";
 import {
   createSessionRecord,
   listSessionRecords,
@@ -70,6 +74,8 @@ export interface ChatIo {
   fetch?: typeof fetch;
   webFetch?: typeof fetch;
   webSearchFetch?: typeof fetch;
+  browserSnapshot?: BrowserSnapshotDriver;
+  browserResolveHost?: ResolveBrowserHost;
 }
 
 export interface ChatOptions {
@@ -175,6 +181,8 @@ export async function runChat({
           fetch: io.fetch,
           webFetch: io.webFetch,
           webSearchFetch: io.webSearchFetch,
+          browserSnapshot: io.browserSnapshot,
+          browserResolveHost: io.browserResolveHost,
           braveSearchApiKey,
           getConfig: () => activeConfig,
           setConfig: (nextConfig) => {

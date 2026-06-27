@@ -20,6 +20,7 @@ import {
 } from "./openrouter/live.js";
 import { resolveMcpConfigPath } from "./mcp/index.js";
 import { createEnabledPluginSkillsSystemMessage, resolvePluginRegistryPath } from "./plugins/index.js";
+import type { BrowserSnapshotDriver } from "./research/index.js";
 import { resolveSessionDirectory } from "./sessions/index.js";
 import { formatStatus } from "./status.js";
 import { runChat } from "./tui/chat.js";
@@ -34,6 +35,7 @@ interface CliIo {
   stderr: Pick<NodeJS.WriteStream, "write">;
   cwd: string;
   fetch?: typeof fetch;
+  browserSnapshot?: BrowserSnapshotDriver;
 }
 
 interface AskCommand {
@@ -167,6 +169,7 @@ function runChatCommand(
       cwd: io.cwd,
       fetch: io.fetch,
       webSearchFetch: io.fetch,
+      browserSnapshot: io.browserSnapshot,
     },
     sessionDirectory: resolveSessionDirectory({ env, cwd: io.cwd }),
     mcpAuditLogPath: env.ORX_MCP_AUDIT_PATH,

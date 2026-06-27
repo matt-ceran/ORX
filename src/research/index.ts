@@ -1,4 +1,16 @@
 export { extractContent, sha256 } from "./extract.js";
+export {
+  createUntrustedBrowserContextMessage,
+  formatBrowserSnapshotResult,
+  formatResearchBrowserError,
+  snapshotBrowserUrl,
+  ResearchBrowserError,
+  type BrowserSnapshotDriver,
+  type BrowserSnapshotDriverOptions,
+  type BrowserSnapshotPage,
+  type ResolveBrowserHost,
+  type ResearchBrowserResult,
+} from "./browser.js";
 export { fetchUrl, formatResearchFetchError, ResearchFetchError } from "./fetch.js";
 export {
   findEvidenceSourceById,
