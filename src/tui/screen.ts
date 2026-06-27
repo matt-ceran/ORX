@@ -72,7 +72,7 @@ export function renderTtyStatusNotch(state: TtyStatusComposerState): string {
   const renderer = createTerminalRenderer(state.renderOptions);
   const contextState = getContextState(state.messages, state.contextBudget);
   const activity = formatActivity(state.activity, renderer);
-  const model = keyValue("model", state.model, renderer, "accent");
+  const model = keyValue("model", compactModelLabel(state.model), renderer, "accent");
   const mode = keyValue("mode", state.mode, renderer, "success");
   const context = keyValue("ctx", formatNotchContext(contextState, renderer, width), renderer);
   const cost = keyValue("cost", formatNotchCost(state.costMeterState, renderer), renderer);
@@ -189,6 +189,32 @@ function compactActivityDetail(activity: TtyActivityState): string {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 32);
+}
+
+function compactModelLabel(model: string): string {
+  const clean = model
+    .replace(ANSI_PATTERN, "")
+    .replace(CONTROL_PATTERN, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!clean) {
+    return "unknown";
+  }
+
+  if (clean === "openrouter/auto") {
+    return "auto";
+  }
+
+  if (clean === "openrouter/fusion") {
+    return "fusion";
+  }
+
+  const [provider, ...modelParts] = clean.split("/");
+  if (!provider || modelParts.length === 0) {
+    return clean;
+  }
+
+  return `${provider}/${modelParts.join("/")}`;
 }
 
 function normalizeActivityFrame(frame: number | undefined): number {

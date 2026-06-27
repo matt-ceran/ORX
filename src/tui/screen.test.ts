@@ -143,6 +143,8 @@ test("tty screen renders assistant and tool activity without widening the notch"
   });
 
   assert.match(assistant, /work ⠋ assistant/);
+  assert.match(assistant, /model auto/);
+  assert.doesNotMatch(assistant, /model openrouter\/auto/);
   assert.match(tool, /work ⠸ tool re/);
   assertLinesFit(assistant, 96);
   assertLinesFit(tool, 52);

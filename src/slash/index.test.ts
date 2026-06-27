@@ -155,14 +155,36 @@ test("compact command palette renderer bounds TTY-oriented command discovery", (
   }
 });
 
-test("slash command completer suggests command names and aliases only for the command token", () => {
+test("slash command completer suggests command names, aliases, and deterministic arguments", () => {
   assert.deepEqual(completeSlashCommandLine("/stat"), [["/status "], "/stat"]);
 
   const [modelMatches, modelFragment] = completeSlashCommandLine("/m");
   assert.equal(modelFragment, "/m");
   assert.deepEqual(modelMatches, ["/m ", "/mcp ", "/mode ", "/model ", "/models "]);
 
+  assert.deepEqual(completeSlashCommandLine("/mode "), [["auto ", "fusion "], ""]);
+  assert.deepEqual(completeSlashCommandLine("/mode a"), [["auto "], "a"]);
+  assert.deepEqual(completeSlashCommandLine("/fusion g"), [["general-budget "], "g"]);
+  assert.deepEqual(completeSlashCommandLine("/web b"), [["browse "], "b"]);
+  assert.deepEqual(completeSlashCommandLine("/web h"), [["help "], "h"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp inspect o"), [["openrouter "], "o"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins en"), [["enable "], "en"]);
+  assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
+  assert.deepEqual(completeSlashCommandLine("/orchestrator openrouter openrouter/"), [
+    ["openrouter/auto ", "openrouter/fusion "],
+    "openrouter/",
+  ]);
+  assert.deepEqual(completeSlashCommandLine("/delegate add reviewer o"), [["openrouter "], "o"]);
+  assert.deepEqual(completeSlashCommandLine("/delegate add reviewer openrouter openrouter/f"), [
+    ["openrouter/fusion "],
+    "openrouter/f",
+  ]);
+  assert.deepEqual(completeSlashCommandLine("/resume l"), [["latest "], "l"]);
+  assert.deepEqual(completeSlashCommandLine("/help a"), [["all "], "a"]);
+  assert.deepEqual(completeSlashCommandLine("/commands /sta"), [["/status "], "/sta"]);
+
   assert.deepEqual(completeSlashCommandLine("/model claude"), [[], "/model claude"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins enable "), [[], "/plugins enable "]);
   assert.deepEqual(completeSlashCommandLine("plain text"), [[], "plain text"]);
 });
 

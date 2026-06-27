@@ -17,6 +17,20 @@ The UI should feel like a professional terminal coding agent:
 
 Do not use Codex branding, exact assets, or proprietary UI code.
 
+## Urgent UX Recovery
+
+The Phase 12 Slice 1 meter foundation is functional but not visually sufficient. The next UI slice should replace the current readline header/footer style with a TTY-only bottom composer and status notch inspired by modern coding CLIs such as Codex and Claude, without copying their branding or private implementation.
+
+Requirements:
+
+- no long raw status line at the top
+- no repeated full footer line after every assistant turn in TTY mode
+- width-aware bottom status/composer that stays aligned
+- activity spinner or subtle progress animation while the assistant/tools run; TTY-only assistant/tool activity is now implemented
+- color-coded badges for model, mode, permissions, context, cost, and credits
+- accurate labels for approximate context, observed generation cost, and live credits
+- non-TTY and `NO_COLOR=1` fallback stays plain and script-safe
+
 ## Core Layout
 
 ```text
@@ -31,13 +45,27 @@ footer: cwd | mode | model | cost | context | permissions
 Current MVP:
 
 - `orx chat` uses a readline-based terminal loop.
-- The header/footer show cwd, mode, model, API key presence/source, and permission posture.
-- The footer now also shows deterministic ASCII meters for local approximate context bytes and OpenRouter metadata cost coverage. It shows OpenRouter account credits only after `/credits` has succeeded in the current process.
-- The composer prompt is `orx>`.
+- TTY chat uses a compact bottom status notch and `orx ›` composer instead of the older long header/footer. Non-TTY and `NO_COLOR=1` keep the plain `orx>` line-oriented fallback.
+- The status notch shows cwd, mode, model, permissions, session id, local approximate context, OpenRouter metadata cost, and account credits after `/credits` has succeeded in the current process.
+- The TTY model badge uses compact labels for OpenRouter routing shortcuts: `openrouter/auto` renders as `auto`, and `openrouter/fusion` renders as `fusion`. Full ids remain visible in plain status and request/config surfaces.
+- TTY chat shows a subtle `work <spinner> assistant` activity state while waiting for assistant output and `work <spinner> tool <name>` while native tools run. The activity composer clears in place before assistant/tool scrollback is printed.
+- Readline Tab completion now covers slash command names, aliases, and deterministic arguments for common command families such as routing, web, MCP, plugins, skills, orchestration, resume, help, and palette filtering.
 - Assistant responses stream inline as chunks arrive.
 - In-process user/assistant history is sent with follow-up turns.
-- Ctrl+C aborts an active response or exits when idle.
+- Ctrl+C aborts an active response or exits when idle, and active TTY activity is cleared before the interruption message.
 - ANSI styling is light and TTY-only; non-TTY output and `NO_COLOR=1` remain plain text.
+
+Target next iteration:
+
+```text
+message scrollback
+assistant and tool output
+
+bottom status notch: model | mode | context | cost | credits | permissions
+bottom composer: orx › current input
+```
+
+Next TTY polish should focus on theme/profile controls and any remaining provider badge polish without a broad raw-mode rewrite.
 
 ## Slash Commands
 
@@ -118,3 +146,4 @@ Future orchestration commands:
 - Ctrl+C interrupts the current task before quitting.
 - Arrow keys navigate command history.
 - Slash command menu filters as the user types.
+- Tab completes slash command names, aliases, and deterministic subcommands/arguments where ORX has stable choices.

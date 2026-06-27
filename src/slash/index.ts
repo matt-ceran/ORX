@@ -228,6 +228,36 @@ const MIN_COMPACT_PALETTE_WIDTH = 32;
 const MAX_COMPACT_PALETTE_WIDTH = 140;
 const HELP_CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/g;
 const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
+const MODE_COMPLETIONS = ["auto", "fusion"] as const;
+const FUSION_PRESET_COMPLETIONS = ["general-budget"] as const;
+const OPENROUTER_MODEL_SHORTCUT_COMPLETIONS = [
+  "openrouter/auto",
+  "openrouter/fusion",
+] as const;
+const WEB_SUBCOMMAND_COMPLETIONS = ["help", "fetch", "search", "browse"] as const;
+const MCP_SUBCOMMAND_COMPLETIONS = [
+  "list",
+  "status",
+  "inspect",
+  "tools",
+  "discover",
+  "enable",
+  "disable",
+] as const;
+const MCP_PROFILE_COMPLETIONS = ["openrouter"] as const;
+const PLUGIN_SUBCOMMAND_COMPLETIONS = [
+  "list",
+  "status",
+  "inspect",
+  "register",
+  "enable",
+  "disable",
+] as const;
+const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
+const ORCHESTRATOR_SUBCOMMAND_COMPLETIONS = ["status", "openrouter", "clear"] as const;
+const DELEGATE_SUBCOMMAND_COMPLETIONS = ["help", "add", "remove", "clear"] as const;
+const DELEGATE_ADAPTER_COMPLETIONS = ["openrouter"] as const;
+const RESUME_SELECTOR_COMPLETIONS = ["latest"] as const;
 const COMMON_GROUP_ORDER: SlashCommandGroup[] = [
   "Core",
   "Models & routing",
@@ -860,17 +890,25 @@ export function filterSlashCommands(query: string): SlashCommandMetadata[] {
 }
 
 export function completeSlashCommandLine(line: string): [string[], string] {
-  const fragment = slashCompletionFragment(line);
-  if (fragment === undefined) {
+  const context = slashCompletionContext(line);
+  if (!context) {
     return [[], line];
   }
 
-  const normalizedFragment = fragment.toLowerCase();
-  const completions = slashCommandCompletionValues()
-    .filter((completion) => completion.startsWith(normalizedFragment))
+  const values =
+    context.kind === "command"
+      ? slashCommandCompletionValues()
+      : slashArgumentCompletionValues(context.commandName, context.completedArgs);
+  const normalizedFragment = context.fragment.toLowerCase();
+  const completions = values
+    .filter((completion) => completion.toLowerCase().startsWith(normalizedFragment))
     .map((completion) => `${completion} `);
 
-  return [completions, fragment];
+  if (completions.length === 0) {
+    return [[], line];
+  }
+
+  return [completions, context.fragment];
 }
 
 export function renderSlashHelp(query?: string): string {
@@ -987,18 +1025,52 @@ function normalizeHelpQuery(query: string): string {
   return query.replace(HELP_CONTROL_PATTERN, "").trim().slice(0, MAX_HELP_QUERY_LENGTH);
 }
 
-function slashCompletionFragment(line: string): string | undefined {
+type SlashCompletionContext =
+  | {
+      kind: "command";
+      fragment: string;
+    }
+  | {
+      kind: "argument";
+      commandName: string;
+      completedArgs: string[];
+      fragment: string;
+    };
+
+function slashCompletionContext(line: string): SlashCompletionContext | undefined {
   const leadingWhitespaceLength = line.match(/^\s*/)?.[0].length ?? 0;
   const trimmedLeft = line.slice(leadingWhitespaceLength);
   if (!trimmedLeft.startsWith("/")) {
     return undefined;
   }
 
-  if (/\s/.test(trimmedLeft)) {
+  const commandMatch = /^(\S+)(?:\s+([\s\S]*))?$/.exec(trimmedLeft);
+  if (!commandMatch) {
     return undefined;
   }
 
-  return trimmedLeft;
+  const commandToken = commandMatch[1];
+  const rest = commandMatch[2];
+  if (rest === undefined) {
+    return {
+      kind: "command",
+      fragment: commandToken,
+    };
+  }
+
+  const commandName = resolveSlashCommandName(commandToken.toLowerCase());
+  if (!COMMANDS[commandName]) {
+    return undefined;
+  }
+
+  const restEndsWithWhitespace = /\s$/.test(trimmedLeft);
+  const restTokens = rest.trim().length > 0 ? rest.trim().split(/\s+/) : [];
+  return {
+    kind: "argument",
+    commandName,
+    completedArgs: restEndsWithWhitespace ? restTokens : restTokens.slice(0, -1),
+    fragment: restEndsWithWhitespace ? "" : restTokens.at(-1) ?? "",
+  };
 }
 
 function slashCommandCompletionValues(): string[] {
@@ -1010,6 +1082,71 @@ function slashCommandCompletionValues(): string[] {
       ]),
     ),
   ).sort((left, right) => left.localeCompare(right));
+}
+
+function slashArgumentCompletionValues(commandName: string, completedArgs: string[]): string[] {
+  const argIndex = completedArgs.length;
+  const firstArg = completedArgs[0]?.toLowerCase();
+  const secondArg = completedArgs[1]?.toLowerCase();
+  const thirdArg = completedArgs[2]?.toLowerCase();
+
+  switch (commandName) {
+    case "/help":
+      return argIndex === 0 ? ["all", ...slashCommandCompletionValues()] : [];
+    case "/commands":
+      return argIndex === 0 ? slashCommandCompletionValues() : [];
+    case "/model":
+      return argIndex === 0 ? [...OPENROUTER_MODEL_SHORTCUT_COMPLETIONS] : [];
+    case "/mode":
+      return argIndex === 0 ? [...MODE_COMPLETIONS] : [];
+    case "/fusion":
+      return argIndex === 0 ? [...FUSION_PRESET_COMPLETIONS] : [];
+    case "/web":
+      return argIndex === 0 ? [...WEB_SUBCOMMAND_COMPLETIONS] : [];
+    case "/mcp":
+      if (argIndex === 0) {
+        return [...MCP_SUBCOMMAND_COMPLETIONS];
+      }
+      return isMcpProfileSubcommand(firstArg) && argIndex === 1
+        ? [...MCP_PROFILE_COMPLETIONS]
+        : [];
+    case "/plugins":
+      return argIndex === 0 ? [...PLUGIN_SUBCOMMAND_COMPLETIONS] : [];
+    case "/skills":
+      return argIndex === 0 ? [...SKILL_SUBCOMMAND_COMPLETIONS] : [];
+    case "/orchestrator":
+      if (argIndex === 0) {
+        return [...ORCHESTRATOR_SUBCOMMAND_COMPLETIONS];
+      }
+      return firstArg === "openrouter" && argIndex === 1
+        ? [...OPENROUTER_MODEL_SHORTCUT_COMPLETIONS]
+        : [];
+    case "/delegate":
+      if (argIndex === 0) {
+        return [...DELEGATE_SUBCOMMAND_COMPLETIONS];
+      }
+      if (firstArg === "add" && argIndex === 2) {
+        return [...DELEGATE_ADAPTER_COMPLETIONS];
+      }
+      if (firstArg === "add" && secondArg && thirdArg === "openrouter" && argIndex === 3) {
+        return [...OPENROUTER_MODEL_SHORTCUT_COMPLETIONS];
+      }
+      return [];
+    case "/resume":
+      return argIndex === 0 ? [...RESUME_SELECTOR_COMPLETIONS] : [];
+    default:
+      return [];
+  }
+}
+
+function isMcpProfileSubcommand(subcommand: string | undefined): boolean {
+  return (
+    subcommand === "inspect" ||
+    subcommand === "tools" ||
+    subcommand === "discover" ||
+    subcommand === "enable" ||
+    subcommand === "disable"
+  );
 }
 
 function renderCommandPaletteForOutput(query: string | undefined, stream: WritableLike): string {

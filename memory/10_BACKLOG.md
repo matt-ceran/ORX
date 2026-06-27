@@ -4,8 +4,20 @@ Last updated: 2026-06-27
 
 ## P0
 
+Urgent UX recovery:
+
+- Continue TTY polish after deterministic slash argument completion and compact OpenRouter model badges: theme/profile controls and any remaining provider badge polish.
+
 Completed:
 
+- Add compact TTY model badges for OpenRouter routing shortcuts (`auto` and `fusion`) while preserving full model ids in config, requests, plain status, and non-TTY output.
+- Add deterministic readline Tab completion for slash subcommands/arguments on high-traffic commands while avoiding dynamic IDs, paths, URLs, and free-form text.
+- Wire command discovery into TTY interaction: `/commands [query]` with `/palette` alias, compact TTY palette rendering, deterministic plain fallback, and readline Tab completion for slash command names and aliases.
+- Add TTY-only assistant/tool activity animation to the bottom status composer, with in-place clear behavior, sanitized activity labels, Ctrl+C cleanup, and non-TTY/NO_COLOR plain fallback preservation.
+- Simplify command discovery with grouped `/help`, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
+- Replace the raw readline header/footer with a first bottom-oriented TTY composer/status notch, color-coded compact labels/meters, width-aware truncation, and non-TTY/NO_COLOR fallback preservation.
+- Make `orx` with no args launch interactive chat from any directory after global install.
+- Add catalog-backed model resolution so `/model deepseek v4` and similar friendly names cannot become invalid exact OpenRouter ids.
 - Scaffold TypeScript project.
 - Add `orx` executable.
 - Add config loader.
@@ -77,12 +89,13 @@ Completed:
 - Update the declared OpenRouter MCP tool surface to current docs and keep `chat-send` visibly billable.
 - Add MCP declared-tool allow/deny policy evaluation and `/mcp tools <profile>` render-only visibility.
 - Add `/status`, `/mcp list`, and `/mcp inspect` visibility for MCP policy-allowed, policy-denied, configured default-denied, and risky declared tool counts.
+- Add Phase 11 orchestration/delegation command scaffold: inert session-local OpenRouter controller/delegate metadata, `/orchestrator`, `/delegate`, `/delegates`, interactive `/status` visibility, session persistence/resume, count-bounded sanitized state, and no `delegate_task` execution/tool exposure.
 
 Next:
 
 - Add authenticated OpenRouter MCP schema/tool listing after OAuth or dedicated expiring MCP key handling is designed.
 - Design explicit future allowlist storage for billable/write/destructive MCP tools before any remote tool execution.
-- Persist active orchestrator and delegate metadata in sessions.
+- Add OpenRouter delegate adapter and ORX-owned `delegate_task` tool only after budget, timeout, credential, and result-truncation policy is designed.
 - Add MCP policy engine outside the model loop.
 - Add secret redaction and minimal env forwarding for MCP child processes.
 
@@ -93,9 +106,10 @@ Next:
   - Add Phase 9 Slice 2 Agent Skills progressive loader: bounded enabled-plugin-only `SKILL.md` discovery, compact metadata in model context through ephemeral system messages, `/skills list`, `/skills activate <id>`, activated skill provenance in sessions, and `/status` enabled skill count while keeping hooks/bins/plugin commands/MCP/code execution inactive.
   - Add Phase 10 Slice 1 research foundation: `src/research/` evidence source model, slash-only `/web fetch <url>` and `/fetch <url>`, `/sources`, bounded direct fetch/extract, layered SSRF-style URL guard, DNS-vetted Node-native fetch transport, untrusted web context messages, session-persisted `evidenceSources`, and interactive `/status` source count.
   - Add Phase 10 Slice 2 citation/bibliography MVP: deterministic metadata-only citation formatting, `/cite <source-id>`, no-arg `/cite` usage/available-id listing, `/bibliography`, stable source-id ordering, citation provenance/hashes, sanitized rendered fields, and resume-aware use of persisted `evidenceSources`.
+  - Add Phase 10 slash-only web search MVP: `/web search <query>` and `/search <query>` backed by `BRAVE_SEARCH_API_KEY`, bounded Brave queries, blocked-result URL filtering, secondary snippet evidence, untrusted search context insertion, and citation provenance marking for provider snippets.
+  - Add Phase 10 browser automation foundation: `/web browse <url>` and `/browse <url>` slash-only browser snapshots, `kind=browser` evidence, bounded untrusted browser context insertion, session persistence, DNS-bound document fetch before browser rendering, disabled JavaScript, aborted browser network routes, guarded redirects/final URLs, and optional dynamic Playwright runtime.
 
-- Add web search.
-- Add Playwright browser automation.
+- Extend browser automation beyond static DNS-bound document snapshots when a safe browser-network/proxy design can preserve SSRF protections.
 - Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
 - Follow `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md` for the full-stack plugin/MCP/research build order.
 - Add MCP presets: `openrouter`, `context7`, `github-readonly`, `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
@@ -118,12 +132,16 @@ Next:
 - Add cloud/devops profiles only as explicit opt-ins with account/project/region visible in `/status`.
 - Add research profiles: `research-web`, `research-crawl`, `research-scholar`, `research-docs`, `research-browser`, `research-rag`, and `research-memory`.
 - Extend citation support later with style selection and richer paper/PDF identifiers after scholarly/document source adapters exist.
-- Add orchestration profiles: `/orchestrator`, `/delegate`, `/delegates`, and `/team`.
+- Extend orchestration profiles with `/team` save/load and execution policy.
 - Add OpenRouter delegate adapter.
 - Add Codex delegate adapter.
 - Add Devin delegate adapter through MCP/API when credentials are configured.
 - Add budget, permission, timeout, and result-truncation controls for delegated tasks.
 - Add tests for slash parsing, config loading, and tool execution.
+- Completed Phase 12 UX Recovery Slice 4 grouped command help: common/advanced tiers, filtered help, palette renderer, aliases `/m` `/s` `/q` `/h`, and concise unknown-command guidance.
+- Completed Phase 12 UX Recovery Slice 3 first TTY screen pass: pure `src/tui/screen.ts` renderer, compact bottom status/composer, long-footer suppression in TTY mode, width-aware truncation tests, and readline/NO_COLOR separation.
+- Completed Phase 12 UX Recovery Slice 2 no-arg launch: `orx` starts chat from cwd, explicit help remains `orx help`/`--help`/`-h`, no-key no-arg fails like `orx chat`, and cwd is persisted in session JSON.
+- Completed Phase 12 UX Recovery Slice 1 model resolver: catalog-backed `/model <id-or-search>`, safe friendly-name resolution, bounded multiple-match choices, explicit slug fallback on catalog outage, and redacted live metadata errors.
 - Completed Phase 12 Slice 1 CLI polish foundation: internal terminal render helpers, ASCII-safe context/cost/credits meters, TTY-only color styling, `/status` context/cost meters, `/credits` usage meter, chat footer meters, and focused render/status/credits/chat tests.
-- Add next Phase 12 UI polish slices: command palette/help filtering, theme profiles, compact model/provider badges, and package/global install hardening.
-- Add packaging for global install.
+- Add next Phase 12 UI polish slices: richer multiline/input ergonomics, theme profiles, and compact model/provider badge polish.
+- Completed Phase 12 package/global install hardening: npm `prepare`, temp-prefix `verify:global-install`, symlink-aware bin entrypoint detection, and README source-global install docs.

@@ -1220,7 +1220,8 @@ test("tty chat renders bottom status composer instead of the repeated plain foot
       /\r\x1b\[2K\x1b\[1F\x1b\[2K\x1b\[1F\x1b\[2Kassistant: TTY reply/,
     );
     assert.match(stdout, /assistant: TTY reply/);
-    assert.match(stdout, /model openrouter\/auto/);
+    assert.match(stdout, /model auto/);
+    assert.doesNotMatch(stdout, /model openrouter\/auto/);
     assert.match(stdout, /mode auto/);
     assert.match(stdout, /ctx \[[#-]{8}\] \d+\.\d% approx/);
     assert.match(stdout, /cost \$0\.000200 meta 1\/1/);

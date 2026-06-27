@@ -10,6 +10,18 @@ To continue Phase 12 in a fresh session, read:
 2. `memory/01_PROJECT_BRIEF.md`
 3. `memory/09_CURRENT_CONTEXT.md`
 4. `memory/06_TUI_DESIGN.md`
+5. `memory/15_PHASE_12_UX_RECOVERY_HANDOFF.md`
+
+Urgent UX recovery additions from user testing:
+
+- Catalog-backed `/model` resolution is implemented. Unknown friendly names such as `/model deepseek v4` are refused without mutating state; exact provider/model slugs still work.
+- The first bottom-oriented TTY composer/status notch pass is implemented.
+- TTY-only assistant/tool activity animation is implemented in the bottom status composer; continue polishing richer command discovery and input ergonomics.
+- TTY command discovery now has `/commands [query]` / `/palette [query]`, a compact TTY palette, and Tab completion for slash command names and aliases.
+- Tab completion now also covers deterministic slash subcommands/arguments for `/mode`, `/fusion`, `/web`, `/mcp`, `/plugins`, `/skills`, `/orchestrator`, `/delegate`, `/resume`, `/help`, and `/commands`.
+- The TTY bottom status notch now uses compact model badges for OpenRouter routing shortcuts, rendering `openrouter/auto` as `auto` and `openrouter/fusion` as `fusion`; full model ids remain unchanged in config, request construction, plain status, and non-TTY output.
+- `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
+- Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
 Then retrieve supporting shards from the index as needed.
 
@@ -42,6 +54,132 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented and verified Phase 12 TTY input ergonomics: deterministic slash argument completion:
+
+- Extended readline Tab completion beyond command names and aliases to deterministic slash arguments.
+- Completion now suggests stable values for `/mode <auto|fusion>`, `/fusion general-budget`, `/web <help|fetch|search|browse>`, `/mcp` subcommands plus the built-in `openrouter` profile, `/plugins` and `/skills` subcommands, `/orchestrator` subcommands/model shortcuts, `/delegate` subcommands/adapter/model shortcuts, `/resume latest`, `/help all`, and `/commands <slash-command>`.
+- Completion intentionally avoids dynamic model IDs, plugin IDs, skill IDs, session IDs, file paths, URLs, and free-form search/model text.
+- Slash dispatch, network behavior, and metadata commands are unchanged.
+- Verifier found one missing deterministic `/web help` completion; main session fixed it and added focused coverage.
+- `npm run typecheck`, build-backed targeted slash tests, `git diff --check -- src/slash/index.ts src/slash/index.test.ts`, `npm test` with 261 tests, full `git diff --check`, and `npm run dev -- status` pass.
+
+Implemented and verified Phase 12 compact TTY model badge polish:
+
+- The TTY bottom status notch now shortens `openrouter/auto` to `model auto` and `openrouter/fusion` to `model fusion`.
+- This is display-only TTY polish; active config, OpenRouter request model ids, plain `/status`, and non-TTY/footer output still use the full model id.
+- Added focused screen/chat assertions for the compact `auto` badge and verifier manually checked the `fusion` badge path.
+- Verifier reported no findings after typecheck, focused TUI/slash tests, diff check, and a manual render probe. Main-session `npm run typecheck`, `npm test` with 261 tests, full `git diff --check`, and `npm run dev -- status` pass.
+
+Implemented and verified Phase 11 orchestration/delegation command scaffold:
+
+- Added inert session-local delegation state for an optional OpenRouter controller and named OpenRouter delegates. Execution remains disabled and no `delegate_task` tool/schema exists yet.
+- Added `/orchestrator`, `/delegate`, and `/delegates` slash command scaffolds. They mutate only local session metadata and make no OpenRouter, subprocess, Codex, Devin, or external agent calls.
+- `/status` in interactive chat now shows `orchestration_controller`, `orchestration_execution=disabled`, `delegate_count`, and `delegate_task=unavailable`.
+- Session JSON can persist and restore delegation metadata on `/resume`; API keys are still excluded.
+- Delegate names/models reject control characters and secret-like values. Stored delegation state is normalized, deduped, sorted, capped at 16 delegates, and forced to `executionEnabled=false`.
+- `/clear` intentionally preserves orchestration/delegate state; use `/orchestrator clear`, `/delegate remove <name>`, or `/delegate clear` for scaffold state.
+- Implementor and verifier agent sessions were used. Verifier found missing delegate count bounds and overly broad `/clear` behavior; main session fixed both and verifier recheck reported no findings.
+- `npm run typecheck`, build-backed targeted delegation/slash/session/TUI tests, `git diff --check`, and `npm test` pass with 261 tests.
+
+Implemented and verified Phase 10 browser automation foundation:
+
+- Added `/web browse <url>` and `/browse <url>` as explicit operator slash commands; no model-autonomous browser tool was added.
+- Browser snapshots create `EvidenceSource` records with `kind=browser`, `provider=playwright-browser-snapshot`, hashes, title/URL metadata, `/sources` visibility, and session persistence.
+- Chat appends bounded untrusted browser-output context; browser output cannot authorize tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.
+- The default browser path dynamically loads Playwright if available, fetches the target document through ORX's DNS-bound Node transport, loads that HTML into the browser with `page.setContent`, disables JavaScript, and aborts all browser-routed network requests. This avoids letting Chromium resolve/connect to remote URLs in this first foundation slice.
+- Initial and final URLs are guarded, DNS results are vetted against local/private/reserved/metadata addresses, redirects are guarded, and fetched document bytes are bounded.
+- Default browser capture no longer serializes full `page.content()`; injected-driver HTML is bounded before hashing.
+- Normal tests use injected browser drivers/resolvers and do not require launching a real browser. Clean installs without Playwright render an explicit unavailable error for `/web browse`.
+- Implementor and verifier agent sessions were used. Verifier initially found a DNS-rebinding gap and unbounded DOM/HTML capture risk; main session fixed both and verifier recheck reported no browser-code findings.
+- `npm run typecheck`, build-backed targeted research/slash/TUI tests, `git diff --check`, and `npm test` pass with 253 tests.
+
+Implemented and verified Phase 10 slash-only web search MVP:
+
+- Added `/web search <query>` and `/search <query>` as explicit operator slash commands backed by Brave Web Search when `BRAVE_SEARCH_API_KEY` is configured.
+- Search requests are bounded to Brave's documented 400-character / 50-word query limits and use a dedicated injected search fetch path in tests/CLI plumbing.
+- Search results become secondary evidence-source metadata with sanitized title/snippet/URL fields, stable snippet/content hashes, and `provider=brave-search-snippet`.
+- Blocked local/private/reserved result URLs are skipped before they enter source state or chat context.
+- Chat appends bounded untrusted search-snippet context only when usable results exist; provider snippets are explicitly unable to authorize tools, permissions, MCP/profile/plugin changes, hooks, bins, command execution, policy changes, or instruction priority changes.
+- `/cite` and `/bibliography` now mark search-snippet provenance as provider snippets, not fetched primary-page evidence.
+- Non-key runs do not make a network request and render a plain explanatory message.
+- Implementor and verifier agent sessions were used. Verifier found Brave query-bound and CLI env plumbing issues; main session fixed both and verifier recheck reported no findings.
+- `npm run typecheck`, build-backed targeted research/slash/TUI/CLI tests, `git diff --check`, and `npm test` pass with 244 tests.
+
+Implemented and verified Phase 12 TTY command-discovery slice:
+
+- Added `/commands [query]` with `/palette` alias as a direct command-discovery surface backed by existing slash command metadata.
+- TTY/color-capable output uses a compact width-aware command palette with a bounded number of matches; non-TTY and `NO_COLOR=1` continue to render the deterministic grouped plain palette.
+- Wired Node readline's completer for interactive terminal sessions only, completing slash command names and aliases such as `/sta<Tab>` to `/status ` without touching command arguments.
+- Added pure tests for compact palette rendering and slash completion, slash tests for `/commands` and `/palette`, and TTY chat coverage proving `/commands` does not call OpenRouter.
+- Implementor and verifier agent sessions were used. Verifier reported no findings and also ran a real PTY smoke for `/commands plugin`, `/sta<Tab>`, `/status`, and `/exit`.
+- `npm run typecheck`, build-backed targeted slash/TUI tests, `git diff --check`, and `npm test` pass with 236 tests.
+
+Implemented and verified Phase 12 TTY polish: activity animation:
+
+- Added a TTY-only activity state to the bottom status composer: `work <spinner> assistant` while waiting for assistant text and `work <spinner> tool <name>` while native tool calls are active.
+- The activity composer updates in place with terminal line clearing and is cleared before assistant/tool scrollback is printed, so stale status prompts do not remain above output.
+- Activity labels strip ANSI and C0 control characters, collapse whitespace, and remain bounded before rendering.
+- Non-TTY and `NO_COLOR=1` still use the existing plain/script-safe output; readline terminal mode remains independent from the styled screen gate.
+- Ctrl+C still aborts an active request before idle exit, now clearing active TTY activity before printing the interruption message.
+- Added pure TTY screen tests for activity rendering, width bounds, and label sanitization; added chat integration coverage for assistant activity, terminal clear sequencing, and real `read_file` tool activity.
+- Implementor and verifier agent sessions were used. Verifier initially found stale activity scrollback and CR/LF label sanitization gaps; main session fixed both and verifier recheck reported no findings.
+- `npm run typecheck`, build-backed targeted TUI/terminal tests, `git diff --check`, and `npm test` pass with 232 tests.
+
+Implemented and verified Phase 12 package/global install hardening:
+
+- Added `prepare` to `package.json` so local source/global installs build `dist/cli.js` automatically through npm lifecycle.
+- Added `npm run verify:global-install`, backed by `scripts/verify-global-install.mjs`, which installs a no-`dist` source copy with a temporary npm prefix and temp HOME/session/MCP/plugin paths.
+- The verifier script checks installed `orx --version`, `orx status` from outside the repo, no-arg `orx` with `/exit`, and persisted session cwd.
+- Fixed CLI entrypoint detection to resolve npm symlinks before comparing the invoked bin path with `dist/cli.js`.
+- Updated README with the source-global install flow: `npm install`, `npm install -g .`, then `orx`.
+- `npm pack --dry-run --json` confirms packaged `dist/cli.js` is executable. Compiled test files are still included under `dist`; that packaging shape is unchanged for now.
+- Verifier reported no findings. `npm run verify:global-install`, `npm run typecheck`, `npm run build`, targeted CLI tests, `git diff --check`, `npm pack --dry-run --json`, and `npm test` pass.
+
+Implemented and verified Phase 12 UX Recovery Slice 4: grouped/help-filtered slash commands and first palette surface:
+
+- Added grouped slash command metadata with common vs advanced tiers.
+- `/help` now renders concise grouped common commands instead of a giant ungrouped dump.
+- `/help all` shows common commands first, then advanced account/session/research/integration commands.
+- `/help <query>` filters by command name, usage, description, aliases, tier, and group.
+- Added low-friction aliases: `/m` -> `/model`, `/s` -> `/status`, `/q` and `/exit` -> `/quit`, `/h` -> `/help`.
+- Added pure command listing/palette helpers: `listSlashCommands`, `filterSlashCommands`, `renderSlashHelp`, and `renderCommandPalette`.
+- Unknown slash commands now point to `/help <query>` and `/help all`.
+- Verifier checked help grouping/filtering, alias dispatch, canonical command behavior, and metadata completeness; no findings.
+- `npm run typecheck`, `git diff --check`, targeted slash/chat tests, and `npm test` pass with 229 tests.
+
+Implemented and verified Phase 12 UX Recovery Slice 3: first bottom-oriented TTY status/composer pass:
+
+- Added `src/tui/screen.ts` with pure width-aware TTY status/composer rendering helpers.
+- TTY chat now starts with a compact bottom-oriented `orx` status notch and `orx >`-style composer prompt instead of the old long top header/footer.
+- TTY chat no longer prints the long plain footer after each assistant turn; non-TTY and `NO_COLOR` retain the script-safe line-oriented fallback.
+- The notch includes compact cwd, model, mode, permissions, session id, approximate local context meter, observed OpenRouter metadata cost, and live credits when available.
+- Long cwd/model/session fields truncate to the terminal width without overlapping; focused narrow/wide render tests cover this.
+- Readline terminal mode is now separate from the styled screen gate, so `NO_COLOR=1` disables the styled screen without disabling interactive readline behavior.
+- Verifier found the readline/NO_COLOR coupling, the issue was fixed, and a chat-level regression test now guards it.
+- `npm run typecheck`, `git diff --check`, targeted TUI/terminal/CLI tests, and `npm test` pass with 224 tests.
+
+Implemented and verified Phase 12 UX Recovery Slice 2: no-arg `orx` chat launch:
+
+- `orx` with no args now starts the same interactive chat path as `orx chat` after config/API-key validation.
+- `orx help`, `orx --help`, and `orx -h` still render help without requiring an API key.
+- No-arg `orx` without an API key now fails like `orx chat` instead of silently showing help.
+- The no-arg chat path preserves the terminal cwd as the active workspace/session cwd.
+- Added focused CLI tests for explicit help variants, no-key no-arg failure, and no-arg chat/session cwd persistence.
+- Verifier ran targeted tests, direct source-entrypoint smokes from a temp cwd, and `npm test`; no findings.
+- Main session verification: `npm run typecheck`, `git diff --check`, targeted CLI tests, and `npm test` pass with 219 tests.
+
+Implemented and verified Phase 12 UX Recovery Slice 1: model resolver and safer `/model`:
+
+- Added `src/openrouter/model-resolver.ts` for catalog-backed model resolution.
+- `/model <id-or-search>` now fetches the OpenRouter model catalog when possible and only mutates active config after resolving to an exact model id.
+- Friendly single matches resolve to the exact catalog id; multiple matches render bounded `/model <id>` choices and leave state unchanged.
+- Unknown friendly names such as `/model deepseek v4` show a helpful `/models <query>` suggestion and leave state unchanged.
+- Exact provider/model slugs are accepted when catalog-confirmed and remain available as an explicit unverified fallback if the catalog is unavailable.
+- Live OpenRouter metadata errors now redact the known API key and common OpenRouter key patterns before rendering in CLI or slash command output.
+- Added focused resolver, slash command, and live-error redaction tests.
+- Verifier reproduced the `/model deepseek v4` failure path and reported no findings.
+- `npm run typecheck`, `git diff --check`, targeted resolver/live/slash tests, and `npm test` pass with 218 tests.
 
 Implemented and verified Phase 12 Slice 1 CLI polish foundation:
 

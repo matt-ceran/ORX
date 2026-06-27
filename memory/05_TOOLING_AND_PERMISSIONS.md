@@ -112,10 +112,26 @@ Current Phase 10 research scaffold:
 
 - `src/research/` exposes slash-only direct URL fetch/extract helpers and evidence ledger metadata.
 - `/web fetch <url>` and `/fetch <url>` are explicit operator commands; there is no model-autonomous `fetch_url` tool yet.
+- `/web search <query>` and `/search <query>` are explicit operator commands backed by Brave Web Search when `BRAVE_SEARCH_API_KEY` is configured; there is still no model-autonomous web-search tool.
+- `/web browse <url>` and `/browse <url>` are explicit operator commands for browser evidence snapshots; there is still no model-autonomous browser tool.
+- Search requests are bounded to Brave's documented query limits before network dispatch, and the CLI passes the key/fetch transport through the normal `runCli(argv, env, io)` boundary for testability.
+- Search result URLs go through the same public URL guard; local/private/reserved/metadata-style URLs are skipped before they enter evidence state or chat context.
+- Search results are stored as secondary `brave-search-snippet` evidence with sanitized provider title/snippet metadata and stable hashes. `/cite` and `/bibliography` mark them as provider snippets, not fetched primary-page evidence.
+- Browser snapshots use `kind=browser` and `provider=playwright-browser-snapshot` evidence metadata, persist with sessions, and appear in `/sources`, `/cite`, and `/bibliography`.
+- The default browser path dynamically imports Playwright when available but does not let Chromium resolve/connect to remote URLs in the foundation slice. ORX first fetches the target document with a DNS-bound Node transport, guards redirects/final URLs, loads the bounded document into a browser context with JavaScript disabled, aborts all browser-routed network requests, and hashes only bounded HTML/text inputs.
 - Production web fetch uses ORX's Node-native guarded transport, not the generic OpenRouter metadata `fetch` hook. Tests can inject a separate `webFetch` transport.
 - The transport resolves DNS before connecting, rejects any local/private/shared/reserved/documentation/multicast or metadata resolved address, then binds the request to a vetted address while preserving the original hostname for host/SNI/certificate validation.
 - Fetch uses timeout coverage across DNS/request/header/body-read phases, byte/text bounds, guarded redirects, sanitized errors, terminal-control stripping before rendering/context insertion, canonical URL redaction for secret-like path/query data, and stable SHA-256 content/text hashes.
 - URL guard defaults allow only `http`/`https` and block localhost, loopback, private IPv4, link-local, shared/reserved/documentation/multicast IPv4, IPv6 loopback/link-local/unique-local/multicast, IPv4-mapped local IPv6, obvious cloud metadata hosts/IPs, and embedded credentials before network.
-- Fetched content is always marked untrusted in chat context and cannot authorize tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.
+- Fetched content, search snippets, and browser output are always marked untrusted in chat context and cannot authorize tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.
 - `/sources` renders source ids, URLs, titles, fetchedAt, hashes, trust tier, and provider, not full page text.
 - `/cite <source-id>` and `/bibliography` render deterministic citation text from `EvidenceSource` metadata only. They include source hashes/provenance/trust-boundary text, sort bibliography entries stably, sanitize terminal/ANSI/OSC sequences in rendered fields, rely on redacted canonical URLs, omit invalid canonical URLs, and never dump fetched page text or perform network calls.
+
+Current Phase 11 orchestration scaffold:
+
+- `src/delegation/` stores inert session-local metadata for an optional OpenRouter controller and named OpenRouter delegates.
+- `/orchestrator`, `/delegate`, and `/delegates` mutate or render only local session metadata. They do not call OpenRouter, spawn subprocess agents, contact Codex/Devin, or expose a `delegate_task` tool to the model.
+- Delegation state is sanitized before storage/rendering: delegate names and models reject control characters and secret-like values, persisted delegates are sorted/deduped, at most 16 delegates are stored, and execution is always forced disabled.
+- Session JSON persists delegation metadata for `/resume`; API keys are still excluded.
+- Interactive `/status` shows orchestration controller, disabled execution state, delegate count, and `delegate_task=unavailable`.
+- `/clear` preserves orchestration/delegate metadata; only `/orchestrator clear`, `/delegate remove <name>`, and `/delegate clear` intentionally remove scaffold state.
