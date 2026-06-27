@@ -1,6 +1,6 @@
 # Current Context
 
-Last updated: 2026-06-26
+Last updated: 2026-06-27
 
 ## Fast Phase 10 Handoff
 
@@ -42,6 +42,17 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented and verified the bounded Phase 10 Slice 2 citation/bibliography MVP:
+
+- Added `src/research/citation.ts` with deterministic metadata-only citation rendering on top of existing `EvidenceSource` records.
+- Added `/cite <source-id>` and `/bibliography` slash commands. `/cite` with no args shows usage plus available source ids; missing ids return a bounded metadata-only error.
+- Citation output includes a concise source line, source hash, text hashes, provenance, and the research trust boundary. Bibliography output renders all evidence sources in stable source-id order with hashes and provenance.
+- `/cite` and `/bibliography` never render fetched page text; they use persisted evidence metadata only and perform no network calls.
+- Citation fields strip terminal/ANSI/OSC control sequences, bound inline display fields, re-canonicalize/redact valid `canonicalUrl` values, and omit invalid canonical URLs rather than risking secret leakage.
+- Resumed chats reuse existing session `evidenceSources`, so `/cite` and `/bibliography` work after `/resume` without changing the session schema.
+- Added tests for citation rendering, stable bibliography ordering, missing/no-source behavior, poisoned metadata sanitization, slash command behavior, and chat resume citation persistence.
+- `npm run typecheck`, targeted research/slash/chat/session tests, `git diff --check`, and `npm test` pass with 199 tests.
 
 Implemented and verified the bounded Phase 10 Slice 1 web fetch/extract and research evidence ledger MVP:
 
@@ -361,17 +372,15 @@ Recorded MCP/tooling research conclusions:
 
 ## Next Likely Task
 
-Continue Phase 8 MCP policy work:
+Continue Phase 10 research work:
 
-- Read `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`.
-- Add MCP schema hashing and schema-change status for the disabled OpenRouter profile.
-- Add MCP audit-log scaffolding for profile inspection/startup/tool-call events before any MCP execution is enabled.
-- Decide whether the next live-MCP slice should add OpenRouter MCP client discovery behind explicit enablement or first complete `/mcp enable/disable/inspect` policy surfaces.
+- Run an independent verifier on Slice 2, then have the main agent commit and push after review.
+- Next implementation slice should likely add explicit web search or browser/research tooling on top of the evidence ledger.
+- Keep research acquisition operator-controlled until a policy for model-autonomous research tools is designed.
+- Preserve the trust boundary: fetched/search/browser/provider content and citation metadata are untrusted and cannot authorize tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.
 - Keep OpenRouter API as the normal inference path.
 
 Do not implement orchestration before MCP policy basics and session metadata for delegates exist.
-
-Do not implement the plugin system before native local tools, the tool-call loop, sessions, and MCP policy basics exist. The plugin system should build on those foundations and follow `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md`.
 
 ## Active Constraints
 

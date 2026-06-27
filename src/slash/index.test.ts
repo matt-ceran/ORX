@@ -238,6 +238,61 @@ test("fetch alias records evidence and blocked web URLs do not call network", as
   assert.match(harness.stderr(), /Unable to fetch URL: Blocked local or private IPv4 address/);
 });
 
+test("cite and bibliography render evidence metadata without source text", () => {
+  const harness = createSlashHarness({
+    messages: [{ role: "user", content: "Hidden page text should not appear in citations." }],
+    evidenceSources: [
+      {
+        ...exampleEvidenceSource(),
+        id: "src-2",
+        title: "Second Source",
+      },
+      exampleEvidenceSource(),
+    ],
+  });
+
+  assert.equal(handleSlashCommand("/cite", harness.context), "continue");
+  assert.match(harness.stdout(), /Usage: \/cite <source-id>/);
+  assert.match(harness.stdout(), /Available source ids: src-1, src-2/);
+
+  assert.equal(handleSlashCommand("/cite src-1", harness.context), "continue");
+  assert.match(harness.stdout(), /Citation \[src-1\]: Example Source/);
+  assert.match(harness.stdout(), /source_hash: sha256:[a-f0-9]{64}/);
+  assert.match(harness.stdout(), /provenance: kind=web provider=direct-fetch/);
+  assert.match(harness.stdout(), /trust_boundary: citations are untrusted source metadata only/);
+  assert.doesNotMatch(harness.stdout(), /Hidden page text/);
+
+  assert.equal(handleSlashCommand("/cite missing", harness.context), "continue");
+  assert.match(harness.stderr(), /Unknown evidence source: missing/);
+  assert.match(harness.stderr(), /Available source ids: src-1, src-2/);
+
+  assert.equal(handleSlashCommand("/cite src-1 extra", harness.context), "continue");
+  assert.match(harness.stderr(), /Usage: \/cite <source-id>/);
+
+  assert.equal(handleSlashCommand("/bibliography", harness.context), "continue");
+  const output = harness.stdout();
+  assert.match(output, /Bibliography: 2 sources/);
+  assert.ok(output.indexOf("[src-1]") < output.indexOf("[src-2]"));
+  assert.doesNotMatch(output, /Hidden page text/);
+
+  assert.equal(handleSlashCommand("/bibliography extra", harness.context), "continue");
+  assert.match(harness.stderr(), /Usage: \/bibliography/);
+});
+
+test("cite and bibliography report no-source behavior", () => {
+  const harness = createSlashHarness();
+
+  assert.equal(handleSlashCommand("/cite", harness.context), "continue");
+  assert.match(harness.stdout(), /No evidence sources in this chat/);
+
+  assert.equal(handleSlashCommand("/bibliography", harness.context), "continue");
+  assert.match(harness.stdout(), /No evidence sources in this chat/);
+
+  assert.equal(handleSlashCommand("/cite src-1", harness.context), "continue");
+  assert.match(harness.stderr(), /Unknown evidence source: src-1/);
+  assert.match(harness.stderr(), /No evidence sources in this chat/);
+});
+
 test("mcp slash command reports disabled OpenRouter profile without network and audits status", async () => {
   let fetchCalls = 0;
   const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-slash-"));
@@ -1454,6 +1509,26 @@ function readAuditEvents(path: string): Array<{
       ok: boolean;
       details: Record<string, unknown>;
     });
+}
+
+function exampleEvidenceSource(): EvidenceSource {
+  return {
+    id: "src-1",
+    kind: "web",
+    canonicalUrl: "https://example.com/source",
+    title: "Example Source",
+    fetchedAt: "2026-06-26T12:00:00.000Z",
+    provider: "direct-fetch",
+    contentHash: "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    trustTier: "unknown",
+    spans: [
+      {
+        start: 0,
+        end: 16,
+        textHash: "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      },
+    ],
+  };
 }
 
 function baseConfig(): OrxConfig {

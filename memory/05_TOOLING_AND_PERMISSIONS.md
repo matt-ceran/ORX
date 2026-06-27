@@ -1,6 +1,6 @@
 # Tooling And Permissions
 
-Last updated: 2026-06-26
+Last updated: 2026-06-27
 
 ## Default Permission Policy
 
@@ -118,3 +118,4 @@ Current Phase 10 research scaffold:
 - URL guard defaults allow only `http`/`https` and block localhost, loopback, private IPv4, link-local, shared/reserved/documentation/multicast IPv4, IPv6 loopback/link-local/unique-local/multicast, IPv4-mapped local IPv6, obvious cloud metadata hosts/IPs, and embedded credentials before network.
 - Fetched content is always marked untrusted in chat context and cannot authorize tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.
 - `/sources` renders source ids, URLs, titles, fetchedAt, hashes, trust tier, and provider, not full page text.
+- `/cite <source-id>` and `/bibliography` render deterministic citation text from `EvidenceSource` metadata only. They include source hashes/provenance/trust-boundary text, sort bibliography entries stably, sanitize terminal/ANSI/OSC sequences in rendered fields, rely on redacted canonical URLs, omit invalid canonical URLs, and never dump fetched page text or perform network calls.

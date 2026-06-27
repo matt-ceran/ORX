@@ -48,9 +48,14 @@ import {
 } from "../plugins/index.js";
 import {
   createUntrustedWebContextMessage,
+  findEvidenceSourceById,
   fetchUrl,
+  formatCitationUsage,
+  formatEvidenceBibliography,
+  formatEvidenceCitation,
   formatEvidenceSources,
   formatFetchedUrlResult,
+  formatMissingCitationSource,
   formatResearchFetchError,
   nextEvidenceSourceId,
   type EvidenceSource,
@@ -408,6 +413,47 @@ const COMMANDS: Record<string, SlashDefinition> = {
     description: "List evidence sources in the current chat",
     handler: (_command, context) => {
       writeLine(context.io.stdout, formatEvidenceSources(context.getEvidenceSources?.() ?? []));
+      return "continue";
+    },
+  },
+  "/cite": {
+    usage: "/cite <source-id>",
+    description: "Render a concise citation for one evidence source",
+    handler: (command, context) => {
+      const sources = context.getEvidenceSources?.() ?? [];
+      if (!command.argText) {
+        writeLine(context.io.stdout, formatCitationUsage(sources));
+        return "continue";
+      }
+
+      if (command.args.length !== 1) {
+        writeLine(context.io.stderr, "Usage: /cite <source-id>");
+        return "continue";
+      }
+
+      const source = findEvidenceSourceById(sources, command.args[0]);
+      if (!source) {
+        writeLine(context.io.stderr, formatMissingCitationSource(command.args[0], sources));
+        return "continue";
+      }
+
+      writeLine(context.io.stdout, formatEvidenceCitation(source));
+      return "continue";
+    },
+  },
+  "/bibliography": {
+    usage: "/bibliography",
+    description: "Render all evidence source citations",
+    handler: (command, context) => {
+      if (command.argText) {
+        writeLine(context.io.stderr, "Usage: /bibliography");
+        return "continue";
+      }
+
+      writeLine(
+        context.io.stdout,
+        formatEvidenceBibliography(context.getEvidenceSources?.() ?? []),
+      );
       return "continue";
     },
   },

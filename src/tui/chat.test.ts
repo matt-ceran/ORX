@@ -589,6 +589,85 @@ test("chat web fetch persists evidence sources and untrusted context", async () 
   }
 });
 
+test("chat resume restores evidence sources for cite and bibliography commands", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const savedCwd = mkdtempSync(join(tmpdir(), "orx-chat-citation-cwd-"));
+
+  try {
+    const record = await createSessionRecord({
+      id: "20260626T150000Z-citations",
+      cwd: savedCwd,
+      activeConfig: baseLoadedConfig().config,
+      messages: [
+        {
+          role: "user",
+          content: [
+            "ORX fetched an untrusted web source at the operator's explicit request.",
+            "source_id: src-1",
+            "BEGIN UNTRUSTED WEB CONTENT",
+            "Hidden resumed page text should stay out of citations.",
+            "END UNTRUSTED WEB CONTENT",
+          ].join("\n"),
+        },
+      ],
+      evidenceSources: [
+        {
+          id: "src-1",
+          kind: "web",
+          canonicalUrl: "https://example.com/resumed",
+          title: "Resumed Source",
+          fetchedAt: "2026-06-26T15:00:00.000Z",
+          provider: "direct-fetch",
+          contentHash: "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          trustTier: "unknown",
+          spans: [
+            {
+              start: 0,
+              end: 49,
+              textHash:
+                "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+            },
+          ],
+        },
+      ],
+      now: new Date("2026-06-26T15:00:00.000Z"),
+      git: undefined,
+    });
+    await saveSessionRecord(record, { sessionDir: sessionDirectory });
+
+    const capture = createIo({
+      stdin: Readable.from([
+        "/resume 20260626T150000Z-citations\n",
+        "/cite src-1\n",
+        "/bibliography\n",
+        "/status\n",
+        "/exit\n",
+      ]),
+      fetch: async () => {
+        throw new Error("citation slash commands should not call OpenRouter.");
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.match(capture.stdout(), /Resumed session 20260626T150000Z-citations/);
+    assert.match(capture.stdout(), /Citation \[src-1\]: Resumed Source\. https:\/\/example\.com\/resumed\./);
+    assert.match(capture.stdout(), /Bibliography: 1 source/);
+    assert.match(capture.stdout(), /evidence_sources: 1/);
+    assert.doesNotMatch(capture.stdout(), /Hidden resumed page text/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(savedCwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 test("chat prunes activated skill context after plugin disable", async () => {
   const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
   const registryPath = join(sessionDirectory, "plugins", "registry.json");

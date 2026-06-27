@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-06-26
+Last updated: 2026-06-27
 
 ## Target Stack
 
@@ -83,6 +83,6 @@ Keep research provenance behind `src/research/` so search results, fetched pages
 
 `src/sessions/` can store activated plugin skill provenance in `activatedSkills`; the full activated skill content is represented by the explicit system message in the transcript.
 
-`src/research/` now owns the Phase 10 Slice 1 direct web fetch/extract foundation: evidence source types, source ids, stable content/text hashes, conservative HTML/plain-text extraction, untrusted context message formatting, `/sources` rendering, a layered SSRF-style URL guard, and a Node-native DNS-vetted web fetch transport. Production fetch resolves and vets every hostname before connecting, binds the request to an allowed address, rechecks redirects, covers body reads with the same timeout, and strips terminal control characters before rendering or context insertion. `orx chat` stores evidence source metadata in session `evidenceSources`; bounded extracted text is represented by an explicit untrusted user-role context message in the transcript. Research fetch is currently reachable only through explicit operator slash commands, not model tool calls.
+`src/research/` now owns the Phase 10 direct research foundation: evidence source types, source ids, stable content/text hashes, conservative HTML/plain-text extraction, untrusted context message formatting, `/sources` rendering, deterministic metadata-only citation/bibliography formatting, a layered SSRF-style URL guard, and a Node-native DNS-vetted web fetch transport. Production fetch resolves and vets every hostname before connecting, binds the request to an allowed address, rechecks redirects, covers body reads with the same timeout, and strips terminal control characters before rendering or context insertion. `orx chat` stores evidence source metadata in session `evidenceSources`; bounded extracted text is represented by an explicit untrusted user-role context message in the transcript. `/cite <source-id>` and `/bibliography` render only source metadata, hashes, provenance, and the trust boundary; they do not render fetched text or perform network calls. Research fetch is currently reachable only through explicit operator slash commands, not model tool calls.
 
 The next plugin work should add source/cache semantics, plugin-provided commands/prompts, rules, and hooks without changing the current trust boundary.

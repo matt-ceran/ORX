@@ -1,8 +1,14 @@
 # Decisions
 
-Last updated: 2026-06-26
+Last updated: 2026-06-27
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
+
+## 2026-06-27: Keep Citations Metadata-Only And Local
+
+Decision: ORX citations and bibliographies should be deterministic local renderings of persisted `EvidenceSource` metadata only. `/cite <source-id>` renders one source with hashes/provenance; `/bibliography` renders all current evidence sources in stable source-id order. These commands must not fetch, search, call providers, or render extracted page text. Rendered fields should strip terminal/ANSI/OSC control sequences, bound inline values, use redacted `canonicalUrl` metadata, and omit invalid canonical URLs rather than displaying potentially secret-bearing malformed URLs.
+
+Reasoning: Citations improve reproducibility but source metadata is still untrusted data. A local metadata-only layer preserves the evidence-ledger boundary and prevents fetched pages, provider output, browser DOM, or citation fields from authorizing tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.
 
 ## 2026-06-26: Keep Initial Web Fetch Slash-Only And Untrusted
 

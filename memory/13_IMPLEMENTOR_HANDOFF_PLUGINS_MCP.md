@@ -1,6 +1,6 @@
 # Implementor Handoff: Plugins, MCP, And Research Stack
 
-Last updated: 2026-06-26
+Last updated: 2026-06-27
 
 ## Purpose
 
@@ -240,6 +240,8 @@ interface EvidenceSource {
   spans: Array<{ page?: number; start?: number; end?: number; textHash: string }>;
 }
 ```
+
+Current status as of 2026-06-27: Phase 10 has implemented slash-only direct web fetch/extract, `/sources`, session-persisted `evidenceSources`, and a metadata-only `/cite` plus `/bibliography` MVP. Citation commands are deterministic, local, no-network, sanitized, and do not render fetched page text.
 
 Acceptance:
 

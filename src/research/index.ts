@@ -1,6 +1,13 @@
 export { extractContent, sha256 } from "./extract.js";
 export { fetchUrl, formatResearchFetchError, ResearchFetchError } from "./fetch.js";
 export {
+  findEvidenceSourceById,
+  formatCitationUsage,
+  formatEvidenceBibliography,
+  formatEvidenceCitation,
+  formatMissingCitationSource,
+} from "./citation.js";
+export {
   createUntrustedWebContextMessage,
   formatEvidenceSources,
   formatFetchedUrlResult,
