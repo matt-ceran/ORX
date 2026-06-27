@@ -13,6 +13,16 @@ export {
   formatFetchedUrlResult,
   nextEvidenceSourceId,
 } from "./ledger.js";
+export {
+  createUntrustedSearchContextMessage,
+  formatResearchSearchError,
+  formatSearchResults,
+  isSearchProviderSnippetSource,
+  searchWeb,
+  ResearchSearchError,
+  type ResearchSearchResult,
+  type SearchResultSnippet,
+} from "./search.js";
 export { canonicalizeUrl, guardFetchUrl } from "./url-guard.js";
 export type {
   EvidenceSource,

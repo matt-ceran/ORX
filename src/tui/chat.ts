@@ -69,6 +69,7 @@ export interface ChatIo {
   cwd: string;
   fetch?: typeof fetch;
   webFetch?: typeof fetch;
+  webSearchFetch?: typeof fetch;
 }
 
 export interface ChatOptions {
@@ -80,6 +81,7 @@ export interface ChatOptions {
   mcpAuditLogPath?: string;
   mcpConfigPath?: string;
   pluginRegistryPath?: string;
+  braveSearchApiKey?: string;
 }
 
 export interface ChatTerminalModes {
@@ -98,6 +100,7 @@ export async function runChat({
   mcpAuditLogPath,
   mcpConfigPath,
   pluginRegistryPath,
+  braveSearchApiKey = process.env.BRAVE_SEARCH_API_KEY,
 }: ChatOptions): Promise<number> {
   let activeConfig: OrxConfig = { ...loadedConfig.config };
   let activeCwd = io.cwd;
@@ -171,6 +174,8 @@ export async function runChat({
           loadedConfig,
           fetch: io.fetch,
           webFetch: io.webFetch,
+          webSearchFetch: io.webSearchFetch,
+          braveSearchApiKey,
           getConfig: () => activeConfig,
           setConfig: (nextConfig) => {
             activeConfig = nextConfig;

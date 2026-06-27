@@ -608,6 +608,85 @@ test("chat web fetch persists evidence sources and untrusted context", async () 
   }
 });
 
+test("chat web search persists secondary snippet evidence and status", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-search-sessions-"));
+  let openRouterFetchCalls = 0;
+  let searchFetchCalls = 0;
+
+  try {
+    const capture = createIo({
+      stdin: Readable.from([
+        "/search durable research\n",
+        "/sources\n",
+        "/status\n",
+        "/exit\n",
+      ]),
+      fetch: async () => {
+        openRouterFetchCalls += 1;
+        throw new Error("OpenRouter fetch should not be used for web search.");
+      },
+      webSearchFetch: async (input, init) => {
+        searchFetchCalls += 1;
+        assert.match(String(input), /^https:\/\/api\.search\.brave\.com\/res\/v1\/web\/search\?/);
+        assert.equal((init?.headers as Record<string, string>)["x-subscription-token"], "brave-test-key");
+        return new Response(
+          JSON.stringify({
+            web: {
+              results: [
+                {
+                  title: "Search Persisted Source",
+                  url: "https://example.com/search-result",
+                  description: "Provider search snippet only.",
+                },
+              ],
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      braveSearchApiKey: "brave-test-key",
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(openRouterFetchCalls, 0);
+    assert.equal(searchFetchCalls, 1);
+    assert.match(capture.stdout(), /Search results: 1 source/);
+    assert.match(capture.stdout(), /provider=brave-search-snippet/);
+    assert.match(capture.stdout(), /evidence_sources: 1/);
+    assert.equal(capture.stderr(), "");
+
+    const sessionFiles = readdirSync(sessionDirectory).filter((file) => file.endsWith(".json"));
+    assert.equal(sessionFiles.length, 1);
+    const saved = JSON.parse(
+      readFileSync(join(sessionDirectory, sessionFiles[0]), "utf8"),
+    ) as {
+      evidenceSources?: Array<{ id: string; title?: string; provider: string; trustTier: string }>;
+      messages: Array<{ role: string; content: string | null }>;
+    };
+    assert.equal(saved.evidenceSources?.[0].id, "src-1");
+    assert.equal(saved.evidenceSources?.[0].title, "Search Persisted Source");
+    assert.equal(saved.evidenceSources?.[0].provider, "brave-search-snippet");
+    assert.equal(saved.evidenceSources?.[0].trustTier, "secondary");
+    assert.equal(saved.messages[0].role, "user");
+    assert.match(String(saved.messages[0].content), /BEGIN UNTRUSTED SEARCH PROVIDER SNIPPETS/);
+    assert.match(String(saved.messages[0].content), /primary result pages/);
+    assert.doesNotMatch(readFileSync(join(sessionDirectory, sessionFiles[0]), "utf8"), /test-key/);
+    assert.doesNotMatch(readFileSync(join(sessionDirectory, sessionFiles[0]), "utf8"), /brave-test-key/);
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 test("chat resume restores evidence sources for cite and bibliography commands", async () => {
   const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
   const savedCwd = mkdtempSync(join(tmpdir(), "orx-chat-citation-cwd-"));
@@ -1126,6 +1205,7 @@ test("tty chat renders activity while a tool is active", async () => {
 function createIo(options: {
   fetch: typeof fetch;
   webFetch?: typeof fetch;
+  webSearchFetch?: typeof fetch;
   stdin: NodeJS.ReadableStream;
   cwd?: string;
   tty?: boolean;
@@ -1162,6 +1242,7 @@ function createIo(options: {
       cwd: options.cwd ?? "/tmp/orx-chat-test",
       fetch: options.fetch,
       webFetch: options.webFetch,
+      webSearchFetch: options.webSearchFetch,
     },
     stdout() {
       return stdoutText;

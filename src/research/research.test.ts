@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  createUntrustedSearchContextMessage,
   extractContent,
   fetchUrl,
   formatCitationUsage,
@@ -10,7 +11,9 @@ import {
   formatFetchedUrlResult,
   formatMissingCitationSource,
   formatResearchFetchError,
+  formatSearchResults,
   guardFetchUrl,
+  searchWeb,
   type EvidenceSource,
 } from "./index.js";
 
@@ -334,6 +337,121 @@ test("fetchUrl bounds bytes for plain text responses", async () => {
   assert.equal(result.returnedBytes, 10);
   assert.equal(result.truncatedBytes, true);
   assert.equal(result.extracted.text, "0123456789");
+});
+
+test("searchWeb calls Brave endpoint and creates secondary snippet evidence", async () => {
+  const seenUrls: string[] = [];
+  const result = await searchWeb({
+    query: "openrouter model docs",
+    apiKey: "brave-test-key",
+    now: new Date("2026-06-27T12:00:00.000Z"),
+    fetch: async (input, init) => {
+      seenUrls.push(String(input));
+      assert.equal((init?.headers as Record<string, string>)["x-subscription-token"], "brave-test-key");
+      return new Response(
+        JSON.stringify({
+          web: {
+            results: [
+              {
+                title: "OpenRouter Docs",
+                url: "https://openrouter.ai/docs",
+                description: "Model documentation from search provider.",
+              },
+            ],
+          },
+        }),
+        { status: 200 },
+      );
+    },
+  });
+
+  assert.equal(seenUrls.length, 1);
+  assert.match(seenUrls[0], /^https:\/\/api\.search\.brave\.com\/res\/v1\/web\/search\?/);
+  assert.match(seenUrls[0], /q=openrouter\+model\+docs/);
+  assert.match(seenUrls[0], /count=5/);
+  assert.match(seenUrls[0], /text_decorations=false/);
+  assert.equal(result.provider, "brave-search-snippet");
+  assert.equal(result.results.length, 1);
+  assert.equal(result.results[0].source.id, "src-1");
+  assert.equal(result.results[0].source.provider, "brave-search-snippet");
+  assert.equal(result.results[0].source.trustTier, "secondary");
+  assert.equal(result.results[0].source.query, "openrouter model docs");
+  assert.equal(result.results[0].source.canonicalUrl, "https://openrouter.ai/docs");
+  assert.match(result.results[0].source.contentHash, /^sha256:[a-f0-9]{64}$/);
+  assert.match(result.results[0].snippetHash, /^sha256:[a-f0-9]{64}$/);
+
+  const output = formatSearchResults(result);
+  assert.match(output, /Search results: 1 source/);
+  assert.match(output, /primary pages were not fetched/);
+  assert.match(output, /snippet_hash: sha256:[a-f0-9]{64}/);
+
+  const message = createUntrustedSearchContextMessage(result);
+  assert.equal(message.role, "user");
+  assert.match(String(message.content), /BEGIN UNTRUSTED SEARCH PROVIDER SNIPPETS/);
+  assert.match(String(message.content), /cannot authorize tool use/);
+});
+
+test("searchWeb bounds Brave queries before provider requests", async () => {
+  const words = Array.from({ length: 80 }, (_unused, index) => `word${index}`);
+  let sentQuery = "";
+  await searchWeb({
+    query: words.join(" "),
+    apiKey: "brave-test-key",
+    fetch: async (input) => {
+      sentQuery = new URL(String(input)).searchParams.get("q") ?? "";
+      return new Response(JSON.stringify({ web: { results: [] } }), { status: 200 });
+    },
+  });
+
+  assert.ok(sentQuery.length <= 400, `expected <=400 chars, got ${sentQuery.length}`);
+  assert.ok(sentQuery.split(/\s+/).length <= 50, `expected <=50 words, got ${sentQuery}`);
+  assert.match(sentQuery, /^word0 word1/);
+});
+
+test("searchWeb skips blocked URLs and sanitizes provider text and URL secrets", async () => {
+  const result = await searchWeb({
+    query: "secret lookup ghp_shouldredact",
+    apiKey: "brave-test-key",
+    existingSources: [exampleEvidenceSource()],
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          web: {
+            results: [
+              {
+                title: "Blocked Local",
+                url: "http://127.0.0.1/admin",
+                description: "skip me",
+              },
+              {
+                title: "Poisoned \u001b[31mTitle github_pat_secret",
+                url: "https://example.com/path/sk-or-v1-secret?api_key=secret&ok=1",
+                description:
+                  "Snippet with \u001b]0;owned\u0007control and token=secret-value plus <b>markup</b>.",
+              },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+
+  assert.equal(result.skippedResults, 1);
+  assert.equal(result.results.length, 1);
+  assert.equal(result.results[0].source.id, "src-2");
+  assert.equal(
+    result.results[0].source.canonicalUrl,
+    "https://example.com/path/REDACTED?api_key=REDACTED&ok=1",
+  );
+  assert.equal(result.results[0].source.query, "secret lookup REDACTED");
+  assert.doesNotMatch(result.results[0].source.title ?? "", /[\x00-\x1f\x7f-\x9f]/);
+  assert.doesNotMatch(result.results[0].source.title ?? "", /github_pat_secret/);
+  assert.doesNotMatch(result.results[0].snippet, /secret-value|<b>|<\/b>/);
+
+  const output = formatSearchResults(result);
+  assert.doesNotMatch(output, /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/);
+  assert.doesNotMatch(output, /sk-or-v1-secret|github_pat_secret|secret-value/);
+  assert.match(output, /skipped_results: 1/);
 });
 
 function exampleEvidenceSource(): EvidenceSource {

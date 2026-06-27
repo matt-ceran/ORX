@@ -94,8 +94,9 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/generation <id>/);
   assert.match(output, /\/compact/);
   assert.match(output, /\/resume \[id\|prefix\|number\|latest\]/);
-  assert.match(output, /\/web \[fetch <url>\]/);
+  assert.match(output, /\/web \[fetch <url>\|search <query>\]/);
   assert.match(output, /\/fetch <url>/);
+  assert.match(output, /\/search <query>/);
   assert.match(output, /\/cite <source-id>/);
   assert.match(output, /\/bibliography/);
   assert.match(output, /\/mcp \[list\|inspect\|tools\|discover\|enable\|disable\]/);
@@ -510,6 +511,129 @@ test("fetch alias records evidence and blocked web URLs do not call network", as
   assert.equal(fetchCalls, 1);
   assert.equal(harness.sources().length, 1);
   assert.match(harness.stderr(), /Unable to fetch URL: Blocked local or private IPv4 address/);
+});
+
+test("web search without Brave key does not call network", async () => {
+  let searchFetchCalls = 0;
+  const harness = createSlashHarness({
+    fetch: async () => {
+      throw new Error("OpenRouter fetch should not be used for web search.");
+    },
+    webSearchFetch: async () => {
+      searchFetchCalls += 1;
+      throw new Error("search fetch should not be called without a key");
+    },
+  });
+
+  assert.equal(await handleSlashCommand("/web search latest TypeScript release", harness.context), "continue");
+  assert.equal(searchFetchCalls, 0);
+  assert.equal(harness.sources().length, 0);
+  assert.equal(harness.messages().length, 0);
+  assert.match(harness.stderr(), /BRAVE_SEARCH_API_KEY is not set/);
+  assert.match(harness.stderr(), /No network request was made/);
+});
+
+test("web search records secondary snippet evidence and skips blocked result URLs", async () => {
+  const seenUrls: string[] = [];
+  const harness = createSlashHarness({
+    braveSearchApiKey: "brave-test-key",
+    fetch: async () => {
+      throw new Error("OpenRouter fetch should not be used for web search.");
+    },
+    webSearchFetch: async (input, init) => {
+      seenUrls.push(String(input));
+      assert.equal((init?.headers as Record<string, string>)["x-subscription-token"], "brave-test-key");
+      return new Response(
+        JSON.stringify({
+          web: {
+            results: [
+              {
+                title: "Alpha \u001b[31mResult",
+                url: "https://example.com/docs/sk-or-v1-secret?token=secret-token&ok=1",
+                description:
+                  "Provider <strong>snippet</strong> with \u001b]0;owned\u0007control and api_key=supersecret.",
+              },
+              {
+                title: "Local metadata",
+                url: "http://169.254.169.254/latest",
+                description: "Should be skipped.",
+              },
+              {
+                title: "Second Result",
+                url: "https://example.org/page",
+                description: "Another provider snippet.",
+              },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    },
+  });
+
+  assert.equal(await handleSlashCommand("/web search alpha docs", harness.context), "continue");
+  assert.equal(seenUrls.length, 1);
+  assert.match(seenUrls[0], /^https:\/\/api\.search\.brave\.com\/res\/v1\/web\/search\?/);
+  assert.match(seenUrls[0], /q=alpha\+docs/);
+  assert.match(seenUrls[0], /text_decorations=false/);
+  assert.equal(harness.sources().length, 2);
+  assert.equal(harness.sources()[0].id, "src-1");
+  assert.equal(harness.sources()[0].provider, "brave-search-snippet");
+  assert.equal(harness.sources()[0].trustTier, "secondary");
+  assert.equal(
+    harness.sources()[0].canonicalUrl,
+    "https://example.com/docs/REDACTED?token=REDACTED&ok=1",
+  );
+  assert.match(harness.sources()[0].spans[0].textHash, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(harness.sources()[1].id, "src-2");
+  assert.equal(harness.messages().length, 1);
+  assert.match(String(harness.messages()[0].content), /BEGIN UNTRUSTED SEARCH PROVIDER SNIPPETS/);
+  assert.match(String(harness.messages()[0].content), /secondary provider snippets and metadata only/);
+  assert.match(String(harness.messages()[0].content), /ORX has not fetched the primary result pages/);
+  assert.doesNotMatch(String(harness.messages()[0].content), /supersecret|sk-or-v1-secret|secret-token/);
+  assert.match(harness.stdout(), /Search results: 2 sources/);
+  assert.match(harness.stdout(), /provider: brave-search-snippet/);
+  assert.match(harness.stdout(), /skipped_results: 1/);
+  assert.match(harness.stdout(), /snippet_hash: sha256:[a-f0-9]{64}/);
+  assert.match(harness.stdout(), /primary pages were not fetched/);
+  assert.doesNotMatch(harness.stdout(), /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/);
+  assert.doesNotMatch(harness.stdout(), /supersecret|sk-or-v1-secret|secret-token/);
+
+  const citeStart = harness.stdout().length;
+  assert.equal(handleSlashCommand("/cite src-1", harness.context), "continue");
+  const citeOutput = harness.stdout().slice(citeStart);
+  assert.match(citeOutput, /provider=brave-search-snippet/);
+  assert.match(citeOutput, /source_note=provider_search_snippet_not_fetched_primary_page/);
+});
+
+test("search alias uses Brave search and appends after existing sources", async () => {
+  const harness = createSlashHarness({
+    braveSearchApiKey: "brave-test-key",
+    evidenceSources: [exampleEvidenceSource()],
+    webSearchFetch: async () =>
+      new Response(
+        JSON.stringify({
+          web: {
+            results: [
+              {
+                title: "Alias Result",
+                url: "https://example.net/alias",
+                description: "Alias snippet.",
+              },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+
+  assert.equal(await handleSlashCommand("/search alias query", harness.context), "continue");
+  assert.equal(harness.sources().length, 2);
+  assert.equal(harness.sources()[1].id, "src-2");
+  assert.match(harness.stdout(), /Search results: 1 source/);
 });
 
 test("cite and bibliography render evidence metadata without source text", () => {
@@ -1691,6 +1815,8 @@ function createSlashHarness(
     resumeSession?: SlashCommandContext["resumeSession"];
     fetch?: typeof fetch;
     webFetch?: typeof fetch;
+    webSearchFetch?: typeof fetch;
+    braveSearchApiKey?: string;
   } = {},
 ) {
   let stdoutText = "";
@@ -1729,6 +1855,8 @@ function createSlashHarness(
       loadedConfig,
       fetch: options.fetch,
       webFetch: options.webFetch,
+      webSearchFetch: options.webSearchFetch,
+      braveSearchApiKey: options.braveSearchApiKey,
       getConfig: () => config,
       setConfig: (nextConfig: OrxConfig) => {
         config = nextConfig;

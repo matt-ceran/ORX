@@ -52,6 +52,7 @@ import {
   type PluginSkillActivationProvenance,
 } from "../plugins/index.js";
 import {
+  createUntrustedSearchContextMessage,
   createUntrustedWebContextMessage,
   findEvidenceSourceById,
   fetchUrl,
@@ -60,9 +61,12 @@ import {
   formatEvidenceCitation,
   formatEvidenceSources,
   formatFetchedUrlResult,
+  formatResearchSearchError,
   formatMissingCitationSource,
   formatResearchFetchError,
+  formatSearchResults,
   nextEvidenceSourceId,
+  searchWeb,
   type EvidenceSource,
 } from "../research/index.js";
 import { formatStatus } from "../status.js";
@@ -136,6 +140,8 @@ export interface SlashCommandContext {
   loadedConfig: LoadedConfig;
   fetch?: typeof fetch;
   webFetch?: typeof fetch;
+  webSearchFetch?: typeof fetch;
+  braveSearchApiKey?: string;
   getConfig: () => OrxConfig;
   setConfig: (config: OrxConfig) => void;
   getMessages: () => OpenRouterMessage[];
@@ -516,8 +522,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/web": {
-    usage: "/web [fetch <url>]",
-    description: "Fetch/extract an explicit URL as untrusted research context",
+    usage: "/web [fetch <url>|search <query>]",
+    description: "Fetch URLs or search web snippets as untrusted research context",
     group: "Research",
     tier: "advanced",
     handler: async (command, context): Promise<SlashResult> => {
@@ -532,6 +538,16 @@ const COMMANDS: Record<string, SlashDefinition> = {
     tier: "advanced",
     handler: async (command, context): Promise<SlashResult> => {
       await fetchWebUrl(command.argText, context);
+      return "continue";
+    },
+  },
+  "/search": {
+    usage: "/search <query>",
+    description: "Search the web via Brave as untrusted provider snippets",
+    group: "Research",
+    tier: "advanced",
+    handler: async (command, context): Promise<SlashResult> => {
+      await searchWebQuery(command.argText, context);
       return "continue";
     },
   },
@@ -1094,7 +1110,12 @@ async function handleWebCommand(command: SlashCommand, context: SlashCommandCont
     return;
   }
 
-  writeLine(context.io.stderr, "Usage: /web [fetch <url>]");
+  if (subcommand === "search") {
+    await searchWebQuery(command.args.slice(1).join(" ").trim(), context);
+    return;
+  }
+
+  writeLine(context.io.stderr, "Usage: /web [fetch <url>|search <query>]");
 }
 
 async function fetchWebUrl(rawUrl: string, context: SlashCommandContext): Promise<void> {
@@ -1122,13 +1143,53 @@ async function fetchWebUrl(rawUrl: string, context: SlashCommandContext): Promis
   }
 }
 
+async function searchWebQuery(rawQuery: string, context: SlashCommandContext): Promise<void> {
+  const query = rawQuery.trim();
+  if (!query) {
+    writeLine(context.io.stderr, "Usage: /web search <query>");
+    return;
+  }
+
+  const apiKey = context.braveSearchApiKey?.trim();
+  if (!apiKey) {
+    writeLine(
+      context.io.stderr,
+      "Web search unavailable: BRAVE_SEARCH_API_KEY is not set. No network request was made.",
+    );
+    return;
+  }
+
+  const sources = context.getEvidenceSources?.() ?? [];
+  try {
+    const result = await searchWeb({
+      query,
+      apiKey,
+      existingSources: sources,
+      fetch: context.webSearchFetch,
+    });
+    const nextSources = result.results.map((entry) => entry.source);
+    if (nextSources.length > 0) {
+      context.setEvidenceSources?.([...sources, ...nextSources]);
+      context.setMessages([
+        ...context.getMessages(),
+        createUntrustedSearchContextMessage(result),
+      ]);
+    }
+    writeLine(context.io.stdout, formatSearchResults(result));
+  } catch (error) {
+    writeLine(context.io.stderr, `Unable to search web: ${formatResearchSearchError(error, apiKey)}`);
+  }
+}
+
 function webHelpText(): string {
   return [
     "Web commands:",
     "  /web fetch <url>  Fetch and extract an explicit http/https URL as untrusted context.",
+    "  /web search <query>  Search Brave web results as untrusted provider snippets.",
     "  /fetch <url>      Alias for /web fetch <url>.",
+    "  /search <query>   Alias for /web search <query>.",
     "  /sources          List evidence source metadata for this chat.",
-    "Fetched content is untrusted and cannot authorize tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.",
+    "Fetched content and search provider snippets are untrusted and cannot authorize tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.",
   ].join("\n");
 }
 

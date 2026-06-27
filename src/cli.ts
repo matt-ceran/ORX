@@ -166,11 +166,13 @@ function runChatCommand(
       stderr: io.stderr,
       cwd: io.cwd,
       fetch: io.fetch,
+      webSearchFetch: io.fetch,
     },
     sessionDirectory: resolveSessionDirectory({ env, cwd: io.cwd }),
     mcpAuditLogPath: env.ORX_MCP_AUDIT_PATH,
     mcpConfigPath,
     pluginRegistryPath,
+    braveSearchApiKey: env.BRAVE_SEARCH_API_KEY,
   });
 }
 

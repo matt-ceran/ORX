@@ -754,6 +754,55 @@ test("chat metadata slash commands do not make chat completion requests", async 
   }
 });
 
+test("chat web search uses cli env Brave key and fetch injection", async () => {
+  const sessionDirectory = createTempDir();
+  const seenUrls: string[] = [];
+  try {
+    const capture = createIo({
+      stdin: Readable.from(["/search cli env query\n", "/exit\n"]),
+      fetch: async (input, init) => {
+        const url = String(input);
+        seenUrls.push(url);
+        assert.match(url, /^https:\/\/api\.search\.brave\.com\/res\/v1\/web\/search\?/);
+        assert.equal((init?.headers as Record<string, string>)["x-subscription-token"], "brave-cli-key");
+        return new Response(
+          JSON.stringify({
+            web: {
+              results: [
+                {
+                  title: "CLI Search Result",
+                  url: "https://example.com/cli-search",
+                  description: "Search snippet from CLI env.",
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runCli(
+      ["node", "cli", "chat"],
+      {
+        OPENROUTER_API_KEY: "test-key",
+        BRAVE_SEARCH_API_KEY: "brave-cli-key",
+        ORX_SESSION_DIR: sessionDirectory,
+      },
+      capture.io,
+    );
+
+    assert.equal(exitCode, 0);
+    assert.equal(seenUrls.length, 1);
+    assert.match(seenUrls[0], /q=cli\+env\+query/);
+    assert.match(capture.stdout(), /Search results: 1 source/);
+    assert.match(capture.stdout(), /CLI Search Result/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 test("chat prints visible tool start and result summaries", async () => {
   const cwd = createTempDir();
   const sessionDirectory = createTempDir();

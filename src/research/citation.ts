@@ -1,4 +1,5 @@
 import { stripTerminalControlChars } from "./extract.js";
+import { isSearchProviderSnippetSource } from "./search.js";
 import type { EvidenceSource } from "./types.js";
 import { canonicalizeUrl } from "./url-guard.js";
 
@@ -150,12 +151,18 @@ function formatTextHashes(source: EvidenceSource): string {
 }
 
 function formatProvenance(source: EvidenceSource): string {
-  return [
+  const parts = [
     `kind=${safeInline(source.kind)}`,
     `provider=${safeInline(source.provider)}`,
     `fetched_at=${safeInline(source.fetchedAt)}`,
     `trust=${safeInline(source.trustTier)}`,
-  ].join(" ");
+  ];
+
+  if (isSearchProviderSnippetSource(source)) {
+    parts.push("source_note=provider_search_snippet_not_fetched_primary_page");
+  }
+
+  return parts.join(" ");
 }
 
 function joinSentenceParts(parts: Array<string | undefined>): string {
