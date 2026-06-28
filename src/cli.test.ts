@@ -1634,9 +1634,17 @@ test("cli plugins install supports pinned git catalog entries without fetch", as
     assert.match(capture.stdout(), /Catalog entry acme\.git-cli-plugin@1\.0\.0 resolved to git source/);
     assert.match(capture.stdout(), new RegExp(commit));
     assert.match(capture.stdout(), /Plugin acme\.git-cli-plugin@1\.0\.0 registered disabled/);
+    assert.match(readFileSync(registryPath, "utf8"), /"type": "git"/);
+    assert.match(readFileSync(registryPath, "utf8"), new RegExp(commit));
+
+    const enabled = createNoFetchIo();
+    assert.equal(
+      await runCli(["node", "cli", "plugins", "enable", "acme.git-cli-plugin@1.0.0"], env, enabled.io),
+      0,
+    );
+    assert.match(enabled.stdout(), /Plugin acme\.git-cli-plugin@1\.0\.0 enabled/);
     const registryText = readFileSync(registryPath, "utf8");
-    assert.match(registryText, /"type": "git"/);
-    assert.match(registryText, new RegExp(commit));
+    assert.match(registryText, /"enabled": true/);
 
     writeFileSync(join(repoPath, "README.md"), "new catalog pin\n");
     git(repoPath, "add", ".");
@@ -1680,11 +1688,47 @@ test("cli plugins install supports pinned git catalog entries without fetch", as
     assert.match(updates.stdout(), /network: none/);
     assert.match(updates.stdout(), /side_effects: none/);
     assert.match(updates.stdout(), /status=update_available/);
+    assert.match(updates.stdout(), /enabled=yes/);
     assert.match(updates.stdout(), new RegExp(`catalog_commit=${nextCommit.slice(0, 12)}`));
     assert.match(updates.stdout(), new RegExp(`installed_commit=${commit.slice(0, 12)}`));
-    assert.match(updates.stdout(), /command: orx plugins install acme\.git-cli-plugin@1\.0\.0/);
+    assert.match(updates.stdout(), /command: orx plugins catalog update acme\.git-cli-plugin@1\.0\.0/);
     assert.match(updates.stdout(), /fetch_install_enable_trust_grant_execute: separate_explicit_steps/);
     assert.equal(readFileSync(registryPath, "utf8"), registryText);
+
+    const applied = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "catalog", "update", "acme.git-cli-plugin@1.0.0"],
+        env,
+        applied.io,
+      ),
+      0,
+    );
+    assert.match(applied.stdout(), /Plugin Catalog Update Apply/);
+    assert.match(applied.stdout(), /applied: yes/);
+    assert.match(applied.stdout(), /status: updated/);
+    assert.match(applied.stdout(), new RegExp(`previous_commit: ${commit.slice(0, 12)}`));
+    assert.match(applied.stdout(), new RegExp(`catalog_commit: ${nextCommit.slice(0, 12)}`));
+    assert.match(applied.stdout(), /previous_enabled: yes/);
+    assert.match(applied.stdout(), /result_state: registered_disabled/);
+    assert.match(applied.stdout(), /enable_trust_grant_execute: separate_explicit_steps/);
+    const updatedRegistryText = readFileSync(registryPath, "utf8");
+    assert.match(updatedRegistryText, new RegExp(nextCommit));
+    assert.match(updatedRegistryText, /"enabled": false/);
+    assert.doesNotMatch(updatedRegistryText, new RegExp(commit));
+
+    const current = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "catalog", "update", "acme.git-cli-plugin@1.0.0"],
+        env,
+        current.io,
+      ),
+      1,
+    );
+    assert.match(current.stderr(), /applied: no/);
+    assert.match(current.stderr(), /status: current/);
+    assert.match(current.stderr(), /side_effects: none/);
     assert.equal(fetchCalls, 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });

@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Plugin Catalog Updates Register Disabled Snapshots
+
+Decision: ORX may provide `orx plugins catalog update <id>` and `/plugins catalog update <id>` to apply a local pinned git catalog update only when `plugins catalog updates` reports `update_available`. Apply reuses the existing pinned git install path and registers the updated cached snapshot disabled, even if the previous install was enabled. Current, not-installed, local-only, source-mismatch, and unknown entries must refuse without mutating registry/cache/catalog runtime state. Update apply must not fetch remote update discovery, preserve enabled state, trust hooks/bins, grant MCP tools, expose model MCP, or execute plugin surfaces.
+
+Reasoning: Updating an installed plugin crosses the same supply-chain boundary as a fresh pinned git install. The local catalog pin is enough to select the exact snapshot, but the operator still needs to re-enable and re-trust any executable or remote integration surfaces after reviewing the new cache/provenance state.
+
 ## 2026-06-28: MCP Auth Readiness Is Secretless And Env-Only
 
 Decision: ORX may provide `orx mcp auth <profile>` and `/mcp auth <profile>` as readiness inspection commands for MCP bearer credentials. These commands may report profile-specific env names, fallback env names, set/unset status, effective configured/missing state, auth-required tool counts, and profile hash state, but they must not fetch, start OAuth, persist tokens, print token values, or include bearer/credential values in audit logs. Managed OAuth remains a future explicit design.

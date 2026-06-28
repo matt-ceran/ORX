@@ -28,7 +28,7 @@ Urgent UX recovery additions from user testing:
 - Plugin manifest validation is implemented through `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>`. It parses/sanitizes manifests, renders manifest/component hashes, permission counts, missing component warnings, and explicitly leaves registry/cache/trust/runtime state unchanged.
 - Plugin install/register now snapshots sanitized manifests plus declared components and declared hook cwd directories into ORX-owned plugin cache storage before registry persistence; enabled skill/hook discovery resolves from the cached manifest path, not the original source checkout.
 - Plugin catalog support now handles both local manifest entries and pinned git source entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH`. `orx plugins install <catalog-id>` and `/plugins install <catalog-id>` clone git catalog sources into private temporary cache storage, checkout the exact pinned commit, normalize cached manifest provenance to that pin, and still register the plugin disabled/inert.
-- Local plugin catalog inspect/editor/update-check commands are implemented through `orx plugins catalog inspect|updates|add-local|add-git|remove` and `/plugins catalog inspect|updates|add-local|add-git|remove`. They review local declarations or compare installed registry provenance against local catalog pins only, preserving install/enable/trust/grant/fetch/execution as separate explicit steps.
+- Local plugin catalog inspect/editor/update-check/apply commands are implemented through `orx plugins catalog inspect|updates|update|add-local|add-git|remove` and `/plugins catalog inspect|updates|update|add-local|add-git|remove`. They review local declarations, compare installed registry provenance against local catalog pins, apply explicit pinned git catalog updates when available, or edit local catalog declarations while preserving enable/trust/grant/fetch/execution as separate explicit steps.
 - Local user MCP profile catalogs are implemented through `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. Declarations are namespaced as `user:<profile-id>`, currently support sanitized `remote-http` transports, appear in `/mcp`, `orx mcp`, `/status`, interactive chat, and `orx ask --mcp-tools`, and share the same enable/trusted-hash/schema-change/tool-grant/model-grant/auth/audit gates as built-in and plugin MCP profiles.
 - Local user MCP catalog management commands are implemented through `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands. They write private local catalog files, preserve existing array/object/legacy `servers` declarations during edits, and avoid manual JSON editing for common remote MCP setup.
 - Built-in MCP provider presets are implemented through `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, `/mcp presets`, `/mcp presets inspect <preset>`, and `/mcp add-preset <preset>`. Templates now include `context7`, `microsoft-learn`, `github-readonly`, `sentry-readonly`, `figma`, `browser`, `cloudflare-docs`, and `cloudflare-api`, and inspect/install flows leave enablement, trust, grants, calls, and model exposure as separate explicit steps.
@@ -80,6 +80,15 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented explicit plugin catalog update apply:
+
+- Added `orx plugins catalog update <id>` and `/plugins catalog update <id>`, with `upgrade` and `apply-update` aliases, to apply local pinned git catalog updates only after `plugins catalog updates` reports `update_available`.
+- Update apply reuses the existing pinned git install path, registers the updated cached snapshot disabled, and reports previous installed commit, catalog commit, previous enabled state, side-effect boundaries, and next authority steps.
+- Refusal cases for current, not-installed, local-only, source-mismatch, and unknown catalog entries do not mutate registry/cache/catalog runtime state and render no-side-effect guidance.
+- Update-check output now points to `orx plugins catalog update <id>` instead of reusing the broader install command.
+- Verification: `npm run typecheck`, `git diff --check`, focused plugin/CLI/slash/TUI source tests with 157 tests, full build-backed `npm test` with 426 tests, built-CLI temp pinned-git dogfood, and independent verifier pass.
+- Next likely plugin/MCP work: actual managed OAuth/provider auth setup beyond env-only bearer readiness, richer catalog provenance/signing or remote update discovery policy, broader provider/research integrations, or final install/dogfood hardening.
 
 Implemented MCP auth readiness inspection:
 

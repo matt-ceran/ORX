@@ -614,7 +614,7 @@ export function renderPluginCatalogUpdateReport(report: PluginCatalogUpdateRepor
           .join(" "),
       );
       if (entry.status === "update_available") {
-        lines.push(`      command: orx plugins install ${entry.id}`);
+        lines.push(`      command: orx plugins catalog update ${entry.id}`);
       }
     }
   }

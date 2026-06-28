@@ -13,8 +13,11 @@ import { redactSecrets } from "../mcp/audit.js";
 import { runProcess } from "../tools/process.js";
 import { resolvePluginCacheDirectory } from "./cache.js";
 import {
+  checkPluginCatalogUpdates,
+  formatPluginCatalogIdForMessage,
   resolvePluginInstallTarget,
   type PluginCatalogGitSource,
+  type PluginCatalogUpdateStatus,
   type PluginInstallTarget,
 } from "./catalog.js";
 import {
@@ -36,6 +39,16 @@ export interface PluginInstallOptions extends PluginRegistryIoOptions {
 }
 
 export interface PluginInstallResult extends PluginRegisterResult {
+  sourceMessage?: string;
+}
+
+export interface PluginCatalogUpdateApplyResult extends PluginRegisterResult {
+  id: string;
+  applied: boolean;
+  status: PluginCatalogUpdateStatus;
+  catalogCommit?: string;
+  installedCommit?: string;
+  previousEnabled?: boolean;
   sourceMessage?: string;
 }
 
@@ -87,6 +100,89 @@ export async function installPlugin(
   } finally {
     prepared.cleanup?.();
   }
+}
+
+export async function updatePluginFromCatalog(
+  id: string,
+  options: PluginInstallOptions = {},
+): Promise<PluginCatalogUpdateApplyResult> {
+  const safeId = formatPluginCatalogIdForMessage(id);
+  const report = checkPluginCatalogUpdates({
+    catalogPath: options.catalogPath,
+    registryPath: options.registryPath,
+    ids: [id],
+  });
+  const candidate = report.entries.find((entry) => entry.id === id);
+  if (!candidate) {
+    return {
+      id,
+      applied: false,
+      status: "not_installed",
+      ok: false,
+      message: `Unknown catalog entry: ${safeId}`,
+    };
+  }
+
+  if (candidate.status !== "update_available") {
+    return {
+      id,
+      applied: false,
+      status: candidate.status,
+      catalogCommit: candidate.catalogCommit,
+      installedCommit: candidate.installedCommit,
+      previousEnabled: candidate.enabled,
+      ok: false,
+      message: `Plugin catalog update not applied for ${formatPluginCatalogIdForMessage(candidate.id)}: ${candidate.message}.`,
+    };
+  }
+
+  const result = await installPlugin(id, options);
+  return {
+    ...result,
+    id,
+    applied: true,
+    status: candidate.status,
+    catalogCommit: candidate.catalogCommit,
+    installedCommit: candidate.installedCommit,
+    previousEnabled: candidate.enabled,
+  };
+}
+
+export function renderPluginCatalogUpdateApplyResult(
+  result: PluginCatalogUpdateApplyResult,
+): string {
+  const safeId = formatPluginCatalogIdForMessage(result.id);
+  const lines = [
+    "Plugin Catalog Update Apply",
+    `  id: ${safeId}`,
+    `  applied: ${result.applied ? "yes" : "no"}`,
+    `  status: ${result.applied ? "updated" : result.status}`,
+    result.installedCommit ? `  previous_commit: ${result.installedCommit.slice(0, 12)}` : undefined,
+    result.catalogCommit ? `  catalog_commit: ${result.catalogCommit.slice(0, 12)}` : undefined,
+    typeof result.previousEnabled === "boolean"
+      ? `  previous_enabled: ${result.previousEnabled ? "yes" : "no"}`
+      : undefined,
+  ];
+
+  if (result.applied) {
+    lines.push(
+      "  result_state: registered_disabled",
+      result.sourceMessage ? `  source: ${result.sourceMessage}` : undefined,
+      `  message: ${result.message}`,
+      "  authority:",
+      "    catalog_update: explicit_pinned_git_install",
+      "    enable_trust_grant_execute: separate_explicit_steps",
+    );
+  } else {
+    lines.push(
+      `  message: ${result.message}`,
+      "  side_effects: none",
+      "  authority:",
+      "    install_enable_trust_grant_execute: separate_explicit_steps",
+    );
+  }
+
+  return lines.filter((line): line is string => typeof line === "string").join("\n");
 }
 
 interface PreparedInstallTarget {

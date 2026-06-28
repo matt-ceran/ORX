@@ -512,7 +512,7 @@ test("plugin catalog update check compares local catalog pins without fetching",
     assert.match(rendered, /id=acme\.git-update@1\.0\.0 status=update_available/);
     assert.match(rendered, new RegExp(`catalog_commit=${catalogCommit.slice(0, 12)}`));
     assert.match(rendered, new RegExp(`installed_commit=${installedCommit.slice(0, 12)}`));
-    assert.match(rendered, /command: orx plugins install acme\.git-update@1\.0\.0/);
+    assert.match(rendered, /command: orx plugins catalog update acme\.git-update@1\.0\.0/);
     assert.match(rendered, /id=acme\.not-installed@1\.0\.0 status=not_installed/);
     assert.match(rendered, /id=acme\.git-current@1\.0\.0 status=current/);
     assert.match(rendered, /status=not_git_catalog/);

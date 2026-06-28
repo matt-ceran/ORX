@@ -54,6 +54,9 @@ export {
 } from "./catalog.js";
 export {
   installPlugin,
+  renderPluginCatalogUpdateApplyResult,
+  updatePluginFromCatalog,
+  type PluginCatalogUpdateApplyResult,
   type PluginInstallOptions,
   type PluginInstallResult,
 } from "./installer.js";

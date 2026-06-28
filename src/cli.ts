@@ -89,6 +89,7 @@ import {
   renderPluginBins,
   renderPluginCommandAliases,
   renderPluginCatalogInspect,
+  renderPluginCatalogUpdateApplyResult,
   renderPluginCatalogUpdateReport,
   renderPluginScaffoldResult,
   renderPluginValidation,
@@ -115,6 +116,7 @@ import {
   trustPluginHook,
   untrustPluginBin,
   untrustPluginHook,
+  updatePluginFromCatalog,
   upsertGitPluginCatalogEntry,
   upsertLocalPluginCatalogEntry,
   validatePluginManifestInput,
@@ -699,7 +701,13 @@ async function runPluginsCommand(
   }
 
   if (subcommand === "catalog") {
-    return runPluginCatalogCommand(args.slice(1), io, pluginCatalogPath, pluginRegistryPath);
+    return await runPluginCatalogCommand(
+      args.slice(1),
+      io,
+      pluginCatalogPath,
+      pluginRegistryPath,
+      pluginCacheDirectory,
+    );
   }
 
   if (subcommand === "commands" || subcommand === "aliases") {
@@ -810,17 +818,18 @@ async function runPluginsCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx plugins [catalog [list|inspect|updates|add-local|add-git|remove]|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
   return 1;
 }
 
-function runPluginCatalogCommand(
+async function runPluginCatalogCommand(
   args: string[],
   io: CliIo,
   pluginCatalogPath: string,
   pluginRegistryPath?: string,
-): number {
+  pluginCacheDirectory?: string,
+): Promise<number> {
   const subcommand = args[0]?.toLowerCase() ?? "list";
   if (subcommand === "list" || subcommand === "status" || subcommand === "search") {
     writeLine(io.stdout, renderPluginCatalog(loadPluginCatalog({ catalogPath: pluginCatalogPath })));
@@ -854,6 +863,37 @@ function runPluginCatalogCommand(
       ),
     );
     return 0;
+  }
+
+  if (subcommand === "update" || subcommand === "upgrade" || subcommand === "apply-update") {
+    const id = args[1];
+    if (!id || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx plugins catalog update <id>");
+      return 1;
+    }
+
+    if (!findPluginCatalogEntry(id, { catalogPath: pluginCatalogPath })) {
+      writeLine(io.stderr, `Unknown catalog entry: ${formatPluginCatalogIdForMessage(id)}`);
+      return 1;
+    }
+
+    try {
+      const result = await updatePluginFromCatalog(id, {
+        cwd: io.cwd,
+        catalogPath: pluginCatalogPath,
+        registryPath: pluginRegistryPath,
+        cacheDirectory: pluginCacheDirectory,
+      });
+      writeLine(
+        result.ok ? io.stdout : io.stderr,
+        renderPluginCatalogUpdateApplyResult(result),
+      );
+      return result.ok ? 0 : 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeLine(io.stderr, message);
+      return 1;
+    }
   }
 
   if (subcommand === "inspect" || subcommand === "show" || subcommand === "info") {
@@ -921,7 +961,7 @@ function runPluginCatalogCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx plugins catalog [list|inspect <id>|updates [id]|add-local <manifest-path-or-directory>|add-git <id> <repository> <resolved-commit>|remove <id>]",
+    "Usage: orx plugins catalog [list|inspect <id>|updates [id]|update <id>|add-local <manifest-path-or-directory>|add-git <id> <repository> <resolved-commit>|remove <id>]",
   );
   return 1;
 }
