@@ -13,10 +13,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   OPENROUTER_MCP_PROFILE,
+  allowMcpToolGrant,
   discoverMcpProfile,
   evaluateMcpToolPolicy,
   formatMcpDiscoveryResult,
   formatMcpRemoteToolsResult,
+  getMcpToolGrantRecord,
   getMcpStatusSummary,
   getMcpProfileToolPolicyReport,
   hashMcpProfile,
@@ -24,6 +26,7 @@ import {
   loadMcpProfilesConfig,
   renderMcpProfileTools,
   redactSecrets,
+  revokeMcpToolGrant,
   saveMcpProfilesConfig,
   setMcpProfilePersistentState,
   writeMcpAuditEvent,
@@ -165,7 +168,7 @@ test("plugin MCP profiles use persisted trust state and policy gates", () => {
 
     assert.equal(readTool.decision, "allowed");
     assert.equal(writeTool.decision, "denied");
-    assert.match(writeTool.reason, /write MCP tools require an explicit future allowlist/);
+    assert.match(writeTool.reason, /write MCP tools require an explicit MCP tool grant/);
     assert.deepEqual(summary.activeProfileIds, [profileId]);
     assert.equal(summary.policyAllowedToolCount, 1);
     assert.equal(summary.policyDeniedToolCount, 1);
@@ -694,7 +697,7 @@ test("mcp persistent profile config stores only state and trusted hash baseline"
     assert.equal(result.trustedProfileHash, hashMcpProfile(OPENROUTER_MCP_PROFILE));
 
     const raw = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(raw).sort(), ["profiles", "version"]);
+    assert.deepEqual(Object.keys(raw).sort(), ["profiles", "toolGrants", "version"]);
     const profiles = raw.profiles as Record<string, Record<string, unknown>>;
     assert.deepEqual(Object.keys(profiles.openrouter).sort(), [
       "id",
@@ -826,7 +829,7 @@ test("mcp tool policy allows enabled trusted read tools and denies billable chat
     assert.equal(readTool.decision, "allowed");
     assert.equal(readTool.reason, "read-only declared tool on enabled trusted profile");
     assert.equal(chatSend.decision, "denied");
-    assert.match(chatSend.reason, /billable MCP tools require an explicit future allowlist/);
+    assert.match(chatSend.reason, /billable MCP tools require an explicit MCP tool grant/);
     assert.equal(chatSend.tool?.billable, true);
     assert.equal(explicitlyAllowedChatSend.decision, "allowed");
     assert.equal(
@@ -837,6 +840,164 @@ test("mcp tool policy allows enabled trusted read tools and denies billable chat
     assert.equal(summary.policyDeniedToolCount, 1);
     assert.equal(summary.configuredDeniedToolCount, 1);
     assert.equal(summary.configuredRiskyToolCount, 1);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp tool grants persist and allow risky tools for the current trusted profile hash", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-policy-grant-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const result = allowMcpToolGrant("openrouter", "chat-send", {
+      configPath,
+      now: () => new Date("2026-06-28T12:00:00.000Z"),
+    });
+    const loaded = loadMcpProfilesConfig({ configPath });
+    const grant = getMcpToolGrantRecord(loaded, "openrouter", "chat-send");
+    const chatSend = evaluateMcpToolPolicy("openrouter", "chat-send", { configPath });
+    const summary = getMcpStatusSummary({ configPath });
+    const report = getMcpProfileToolPolicyReport("openrouter", { configPath });
+    assert.ok(report);
+    const rendered = renderMcpProfileTools(report);
+
+    assert.equal(result.ok, true);
+    assert.match(result.message, /Remote tool execution remains unimplemented/);
+    assert.equal(grant?.toolName, "chat-send");
+    assert.equal(grant?.profileHash, hashMcpProfile(OPENROUTER_MCP_PROFILE));
+    assert.equal(grant?.risk, "billable");
+    assert.equal(grant?.billable, true);
+    assert.equal(grant?.grantedAt, "2026-06-28T12:00:00.000Z");
+    assert.equal(chatSend.decision, "allowed");
+    assert.equal(chatSend.grantStatus, "active");
+    assert.match(chatSend.reason, /explicit MCP tool grant permits/);
+    assert.equal(summary.policyAllowedToolCount, 13);
+    assert.equal(summary.policyDeniedToolCount, 0);
+    assert.equal(summary.toolGrantCount, 1);
+    assert.equal(summary.staleToolGrantCount, 0);
+    assert.equal(report.toolGrantCount, 1);
+    assert.equal(report.staleToolGrantCount, 0);
+    assert.match(rendered, /tool_grants: 1/);
+    assert.match(rendered, /chat-send risk=billable auth=yes billable=yes grant=active policy=allowed/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp tool grants do not bypass disabled untrusted or changed profiles", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-policy-grant-blocks-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    const disabled = allowMcpToolGrant("openrouter", "chat-send", { configPath });
+    assert.equal(disabled.ok, false);
+    assert.match(disabled.message, /profile is disabled/);
+    assert.equal(loadMcpProfilesConfig({ configPath }).toolGrants["openrouter/chat-send"], undefined);
+
+    saveMcpProfilesConfig(
+      {
+        version: 1,
+        profiles: {
+          openrouter: {
+            id: "openrouter",
+            state: "enabled",
+            updatedAt: "2026-06-28T12:00:00.000Z",
+          },
+        },
+      },
+      { configPath },
+    );
+    const untrusted = allowMcpToolGrant("openrouter", "chat-send", { configPath });
+    assert.equal(untrusted.ok, false);
+    assert.match(untrusted.message, /no trusted schema hash baseline/);
+
+    saveMcpProfilesConfig(
+      {
+        version: 1,
+        profiles: {
+          openrouter: {
+            id: "openrouter",
+            state: "enabled",
+            trustedProfileHash: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            updatedAt: "2026-06-28T12:00:00.000Z",
+          },
+        },
+      },
+      { configPath },
+    );
+    const changed = allowMcpToolGrant("openrouter", "chat-send", { configPath });
+    assert.equal(changed.ok, false);
+    assert.match(changed.message, /schema changed/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp stale tool grants are denied and visible", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-policy-stale-grant-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    saveMcpProfilesConfig(
+      {
+        version: 1,
+        profiles: {
+          openrouter: {
+            id: "openrouter",
+            state: "enabled",
+            trustedProfileHash: hashMcpProfile(OPENROUTER_MCP_PROFILE),
+            updatedAt: "2026-06-28T12:00:00.000Z",
+          },
+        },
+        toolGrants: {
+          "openrouter/chat-send": {
+            profileId: "openrouter",
+            toolName: "chat-send",
+            profileHash: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            risk: "billable",
+            billable: true,
+            grantedAt: "2026-06-28T12:01:00.000Z",
+          },
+        },
+      },
+      { configPath },
+    );
+
+    const chatSend = evaluateMcpToolPolicy("openrouter", "chat-send", { configPath });
+    const summary = getMcpStatusSummary({ configPath });
+    const report = getMcpProfileToolPolicyReport("openrouter", { configPath });
+    assert.ok(report);
+
+    assert.equal(chatSend.decision, "denied");
+    assert.equal(chatSend.grantStatus, "stale");
+    assert.match(chatSend.reason, /stale for the current profile hash/);
+    assert.equal(summary.toolGrantCount, 1);
+    assert.equal(summary.staleToolGrantCount, 1);
+    assert.equal(report.toolGrantCount, 1);
+    assert.equal(report.staleToolGrantCount, 1);
+    assert.match(renderMcpProfileTools(report), /chat-send risk=billable auth=yes billable=yes grant=stale policy=denied/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp tool grant revoke removes stored grant", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-policy-revoke-grant-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+    allowMcpToolGrant("openrouter", "chat-send", { configPath });
+
+    const revoked = revokeMcpToolGrant("openrouter", "chat-send", { configPath });
+    const missing = revokeMcpToolGrant("openrouter", "chat-send", { configPath });
+    const chatSend = evaluateMcpToolPolicy("openrouter", "chat-send", { configPath });
+
+    assert.equal(revoked.ok, true);
+    assert.match(revoked.message, /revoked/);
+    assert.equal(missing.ok, false);
+    assert.match(missing.message, /No MCP tool grant stored/);
+    assert.equal(getMcpToolGrantRecord(loadMcpProfilesConfig({ configPath }), "openrouter", "chat-send"), undefined);
+    assert.equal(chatSend.decision, "denied");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -963,6 +1124,17 @@ test("mcp config loader drops unrelated fields instead of preserving secrets", (
             token: "secret",
           },
         },
+        toolGrants: {
+          bad: {
+            profileId: "openrouter",
+            toolName: "chat-send\nforged",
+            profileHash: "not-a-hash",
+            risk: "billable",
+            billable: true,
+            grantedAt: "2026-06-28T12:00:00.000Z",
+            token: "secret",
+          },
+        },
       }),
     );
 
@@ -973,6 +1145,7 @@ test("mcp config loader drops unrelated fields instead of preserving secrets", (
       "trustedProfileHash",
       "updatedAt",
     ]);
+    assert.deepEqual(loaded.toolGrants, {});
     assert.doesNotMatch(JSON.stringify(loaded), /sk-or-v1-secret|token|secret/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -1003,6 +1176,7 @@ test("mcp audit JSONL writes redacted event shape", () => {
         ok: true,
         details: {
           authorization: "Bearer sk-or-v1-secret",
+          message: "access_token=abcd1234 secret: abcdef",
           url: "https://example.test/?token=plain-token&safe=ok&api_key=abc123",
           nested: {
             apiKey: "sk-or-v1-nested",
@@ -1029,11 +1203,12 @@ test("mcp audit JSONL writes redacted event shape", () => {
     assert.equal(event.profileId, "openrouter");
     assert.equal(event.ok, true);
     assert.equal(event.details.authorization, "[redacted]");
+    assert.equal(event.details.message, "access_token=[redacted] secret: [redacted]");
     assert.equal(event.details.url, "https://example.test/?token=[redacted]&safe=ok&api_key=[redacted]");
     assert.deepEqual(event.details.nested, { apiKey: "[redacted]" });
     assert.doesNotMatch(
       JSON.stringify(event),
-      /sk-or-v1-secret|plain-token|abc123|sk-or-v1-nested/,
+      /sk-or-v1-secret|plain-token|abc123|abcd1234|abcdef|sk-or-v1-nested/,
     );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -1044,11 +1219,13 @@ test("mcp redaction handles bearer strings and sensitive object keys", () => {
   assert.deepEqual(
     redactSecrets({
       message: "Authorization: Bearer sk-or-v1-test",
+      assignment: "access_token=abcd1234 secret: abcdef token=toktok",
       password: "plain",
       nested: [{ token: "abc" }],
     }),
     {
       message: "Authorization: Bearer [redacted]",
+      assignment: "access_token=[redacted] secret: [redacted] token=[redacted]",
       password: "[redacted]",
       nested: [{ token: "[redacted]" }],
     },

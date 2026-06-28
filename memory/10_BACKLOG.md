@@ -96,7 +96,7 @@ Completed:
 Next:
 
 - Add authenticated OpenRouter MCP schema/tool listing after OAuth or dedicated expiring MCP key handling is designed.
-- Design explicit future allowlist storage for billable/write/destructive MCP tools before any remote tool execution.
+- Add guarded MCP `tools/call` runtime only after per-tool grants are paired with auth/secret-forwarding, output redaction/truncation, audit logging, and model-loop exposure controls.
 - Add OpenRouter delegate adapter and ORX-owned `delegate_task` tool only after budget, timeout, credential, and result-truncation policy is designed.
 - Add MCP policy engine outside the model loop.
 - Add secret redaction and minimal env forwarding for MCP child processes.
@@ -122,6 +122,7 @@ Next:
   - Add automatic trusted plugin lifecycle hook dispatch: trusted current hook hashes run on `session_start`, `user_prompt_submit`, `pre_tool_use`, `post_tool_use`, `pre_compact`, `post_compact`, and `stop`, while untrusted/pending hooks are skipped and failures are visible/audited.
   - Add trusted plugin MCP endpoint discovery: enabled/trusted/unchanged plugin `remote-http` profiles can run a guarded DNS-vetted `/mcp discover` initialize handshake without listing/executing tools or exposing them to the model loop.
   - Add read-only remote MCP tool listing: `/mcp remote-tools <profile>` calls guarded `tools/list` for enabled/trusted/unchanged profiles, renders bounded untrusted metadata plus schema hashes, audits results, and does not call `tools/call`.
+  - Add MCP per-tool grant policy storage: `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` persist profile-hash-bound grants for billable/write/destructive declared tools, render active/stale grant state, audit mutations, and still do not execute MCP tools.
 
 - Extend browser automation beyond static DNS-bound document snapshots when a safe browser-network/proxy design can preserve SSRF protections.
 - Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
@@ -129,7 +130,7 @@ Next:
 - Add MCP presets: `openrouter`, `context7`, `github-readonly`, `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
 - Extend the plugin system beyond the local registry/CLI/cache/catalog substrate with remote source fetching, lockfile pins for remote sources, richer metadata, and namespacing.
 - Add executable slash command design after the prompt/rule metadata, explicit activation surfaces, and trusted lifecycle hook runtime.
-- Add plugin MCP tool execution only after explicit runtime trust, network, secret-forwarding, and audit policy is designed.
+- Add plugin MCP tool execution only after the grant policy is paired with a guarded `tools/call` runtime, secret-forwarding rules, result redaction/truncation, audit logging, and model-loop exposure controls.
 - Extend plugin metadata further only where needed for remote source UX, marketplace/catalog trust, or executable surface policy decisions.
 - Add `/plugins` command for list/install/enable/disable/inspect.
 - Add tree-sitter and ast-grep code intelligence for repo maps, symbol slices, syntax-aware search, and codemod previews.

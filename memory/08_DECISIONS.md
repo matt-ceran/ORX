@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: MCP Tool Grants Bind To Trusted Profile Hashes
+
+Decision: ORX may persist explicit MCP tool grants for billable, write, or destructive declared tools only after the profile is enabled, has a trusted current profile hash, and has no pending schema change. Grants are stored in the private MCP profile config as profile id, tool name, profile hash, risk, billable flag, and granted timestamp. A grant whose stored profile hash differs from the current configured profile hash is stale, visible in status/tool output, and denied. `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` mutate only this local policy state; MCP `tools/call` and model-loop exposure remain unimplemented.
+
+Reasoning: MCP tool execution needs an operator-owned allow boundary before remote tools can run. Binding grants to the trusted profile hash prevents a changed plugin/server declaration from inheriting approval, and keeping grant records minimal avoids persisting schemas, secrets, or remote-controlled metadata as authority.
+
 ## 2026-06-28: Remote MCP Tool Listing Is Metadata Only
 
 Decision: ORX may expose `/mcp remote-tools <profile>` to call `tools/list` for enabled, trusted, unchanged `remote-http` MCP profiles through the guarded DNS-vetted MCP transport. The command renders only bounded untrusted tool metadata, annotation keys, and SHA-256 hashes of tool/input/output schemas; it does not render raw schemas, call `tools/call`, persist remote schemas as trusted state, or expose remote MCP tools to the model loop. Results are audited with tool/schema hashes and redacted errors.

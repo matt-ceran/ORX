@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { McpProfileState } from "./registry.js";
+import type { McpProfileState, McpToolRisk } from "./registry.js";
 
 export interface McpProfileConfigRecord {
   id: string;
@@ -10,9 +10,25 @@ export interface McpProfileConfigRecord {
   updatedAt: string;
 }
 
+export interface McpToolGrantRecord {
+  profileId: string;
+  toolName: string;
+  profileHash: string;
+  risk: McpToolRisk;
+  billable: boolean;
+  grantedAt: string;
+}
+
 export interface McpProfilesConfig {
   version: 1;
   profiles: Record<string, McpProfileConfigRecord>;
+  toolGrants: Record<string, McpToolGrantRecord>;
+}
+
+export interface McpProfilesConfigInput {
+  version: 1;
+  profiles: Record<string, McpProfileConfigRecord>;
+  toolGrants?: Record<string, McpToolGrantRecord>;
 }
 
 export interface McpConfigPathOptions {
@@ -44,6 +60,7 @@ export function emptyMcpProfilesConfig(): McpProfilesConfig {
   return {
     version: CONFIG_VERSION,
     profiles: {},
+    toolGrants: {},
   };
 }
 
@@ -63,7 +80,7 @@ export function loadMcpProfilesConfig(options: McpConfigIoOptions = {}): McpProf
 }
 
 export function saveMcpProfilesConfig(
-  config: McpProfilesConfig,
+  config: McpProfilesConfigInput,
   options: McpConfigIoOptions = {},
 ): void {
   const path = options.configPath ?? defaultMcpConfigPath();
@@ -87,6 +104,18 @@ export function getMcpProfileConfigRecord(
   return config.profiles[profileId];
 }
 
+export function mcpToolGrantKey(profileId: string, toolName: string): string {
+  return `${encodeURIComponent(profileId)}/${encodeURIComponent(toolName)}`;
+}
+
+export function getMcpToolGrantRecord(
+  config: McpProfilesConfig,
+  profileId: string,
+  toolName: string,
+): McpToolGrantRecord | undefined {
+  return config.toolGrants[mcpToolGrantKey(profileId, toolName)];
+}
+
 function sanitizeMcpProfilesConfig(value: unknown): McpProfilesConfig {
   if (!value || typeof value !== "object") {
     return emptyMcpProfilesConfig();
@@ -94,7 +123,9 @@ function sanitizeMcpProfilesConfig(value: unknown): McpProfilesConfig {
 
   const input = value as Record<string, unknown>;
   const rawProfiles = input.profiles;
+  const rawToolGrants = input.toolGrants;
   const profiles: Record<string, McpProfileConfigRecord> = {};
+  const toolGrants: Record<string, McpToolGrantRecord> = {};
 
   if (rawProfiles && typeof rawProfiles === "object" && !Array.isArray(rawProfiles)) {
     for (const [key, rawRecord] of Object.entries(rawProfiles as Record<string, unknown>)) {
@@ -105,9 +136,19 @@ function sanitizeMcpProfilesConfig(value: unknown): McpProfilesConfig {
     }
   }
 
+  if (rawToolGrants && typeof rawToolGrants === "object" && !Array.isArray(rawToolGrants)) {
+    for (const rawRecord of Object.values(rawToolGrants as Record<string, unknown>)) {
+      const record = sanitizeMcpToolGrantRecord(rawRecord);
+      if (record) {
+        toolGrants[mcpToolGrantKey(record.profileId, record.toolName)] = record;
+      }
+    }
+  }
+
   return {
     version: CONFIG_VERSION,
     profiles,
+    toolGrants,
   };
 }
 
@@ -138,6 +179,55 @@ function sanitizeMcpProfileConfigRecord(
     trustedProfileHash,
     updatedAt,
   };
+}
+
+function sanitizeMcpToolGrantRecord(value: unknown): McpToolGrantRecord | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const input = value as Record<string, unknown>;
+  const profileId = sanitizeMcpConfigText(input.profileId, 240);
+  const toolName = sanitizeMcpConfigText(input.toolName, 240);
+  const profileHash =
+    typeof input.profileHash === "string" && /^sha256:[a-f0-9]{64}$/.test(input.profileHash)
+      ? input.profileHash
+      : undefined;
+  const risk = sanitizeMcpToolRisk(input.risk);
+  const billable = typeof input.billable === "boolean" ? input.billable : undefined;
+  const grantedAt = sanitizeMcpConfigText(input.grantedAt, 80);
+
+  if (!profileId || !toolName || !profileHash || !risk || billable === undefined || !grantedAt) {
+    return undefined;
+  }
+
+  return {
+    profileId,
+    toolName,
+    profileHash,
+    risk,
+    billable,
+    grantedAt,
+  };
+}
+
+function sanitizeMcpToolRisk(value: unknown): McpToolRisk | undefined {
+  return value === "read" || value === "write" || value === "destructive" || value === "billable"
+    ? value
+    : undefined;
+}
+
+function sanitizeMcpConfigText(value: unknown, maxChars: number): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const stripped = value.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim();
+  if (!stripped || stripped.length > maxChars) {
+    return undefined;
+  }
+
+  return stripped;
 }
 
 function tightenMcpConfigPermissions(path: string): void {

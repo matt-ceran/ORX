@@ -106,7 +106,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/orchestrator \[openrouter <model>\|clear\]/);
   assert.match(output, /\/delegate <add\|remove\|clear>/);
   assert.match(output, /\/delegates/);
-  assert.match(output, /\/mcp \[list\|inspect\|tools\|remote-tools\|discover\|enable\|disable\]/);
+  assert.match(output, /\/mcp \[list\|inspect\|tools\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
   assert.match(output, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/skills \[list\|status\|activate <id>\]/);
   assert.match(output, /\/prompts \[list\|status\|activate <id>\]/);
@@ -118,7 +118,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|inspect\|tools\|remote-tools\|discover\|enable\|disable\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|inspect\|tools\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -224,7 +224,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-  assert.match(alias.stdout(), /\/mcp \[list\|inspect\|tools\|remote-tools\|discover\|enable\|disable\]/);
+  assert.match(alias.stdout(), /\/mcp \[list\|inspect\|tools\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -1305,6 +1305,83 @@ test("mcp enable and disable persist profile state without network", async () =>
     assert.equal(events[0].details.previousState, "disabled");
     assert.equal(events[0].details.nextState, "enabled");
     assert.match(String(events[0].details.profileHash), /^sha256:[a-f0-9]{64}$/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp allow-tool and revoke-tool persist tool grants without network", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-tool-grant-slash-"));
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const harness = createSlashHarness({
+    mcpAuditLogPath: auditLogPath,
+    mcpConfigPath: configPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand("/mcp allow-tool openrouter chat-send", harness.context), "continue");
+    assert.match(harness.stderr(), /Cannot grant MCP tool openrouter\/chat-send: profile is disabled/);
+
+    assert.equal(await handleSlashCommand("/mcp enable openrouter", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/mcp allow-tool openrouter chat-send", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP tool grant stored for openrouter\/chat-send/);
+    assert.match(harness.stdout(), /Remote tool execution remains unimplemented/);
+    assert.match(readFileSync(configPath, "utf8"), /"toolGrants"/);
+    assert.match(readFileSync(configPath, "utf8"), /"toolName": "chat-send"/);
+
+    assert.equal(await handleSlashCommand("/mcp inspect openrouter", harness.context), "continue");
+    assert.match(harness.stdout(), /tool_grants: 1/);
+    assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes grant=active policy=allowed/);
+
+    assert.equal(await handleSlashCommand("/mcp tools openrouter", harness.context), "continue");
+    assert.match(harness.stdout(), /tool_grants: 1/);
+    assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes grant=active policy=allowed/);
+
+    const stored = JSON.parse(readFileSync(configPath, "utf8")) as {
+      toolGrants: Record<string, { profileHash: string }>;
+    };
+    stored.toolGrants["openrouter/chat-send"].profileHash =
+      "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    writeFileSync(configPath, `${JSON.stringify(stored, null, 2)}\n`);
+
+    assert.equal(await handleSlashCommand("/mcp inspect openrouter", harness.context), "continue");
+    assert.match(harness.stdout(), /stale_tool_grants: 1/);
+    assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes grant=stale policy=denied/);
+
+    assert.equal(await handleSlashCommand("/mcp revoke-tool openrouter chat-send", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP tool grant revoked for openrouter\/chat-send/);
+
+    assert.equal(await handleSlashCommand("/mcp tools openrouter", harness.context), "continue");
+    assert.match(harness.stdout(), /tool_grants: 0/);
+    assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes policy=denied/);
+    assert.equal(fetchCalls, 0);
+
+    const events = readAuditEvents(auditLogPath);
+    assert.deepEqual(
+      events.map((event) => event.type),
+      [
+        "mcp.tool.allow_attempt",
+        "mcp.profile.enable_attempt",
+        "mcp.tool.allow_attempt",
+        "mcp.profile.inspect",
+        "mcp.profile.tools",
+        "mcp.profile.inspect",
+        "mcp.tool.revoke_attempt",
+        "mcp.profile.tools",
+      ],
+    );
+    assert.equal(events[0].ok, false);
+    assert.equal(events[2].ok, true);
+    assert.equal(events[2].details.toolName, "chat-send");
+    assert.match(String(events[2].details.grantProfileHash), /^sha256:[a-f0-9]{64}$/);
+    assert.equal(events[6].ok, true);
+    assert.match(String(events[6].details.previousGrantProfileHash), /^sha256:[a-f0-9]{64}$/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

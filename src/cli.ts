@@ -18,7 +18,20 @@ import {
   getOpenRouterGeneration,
   listOpenRouterModels,
 } from "./openrouter/live.js";
-import { resolveMcpConfigPath } from "./mcp/index.js";
+import {
+  allowMcpToolGrant,
+  getMcpProfileToolPolicyReport,
+  getMcpStatusSummary,
+  hashMcpProfile,
+  renderMcpProfileInspect,
+  renderMcpProfileTools,
+  renderMcpStatus,
+  resolveMcpConfigPath,
+  revokeMcpToolGrant,
+  setMcpProfilePersistentState,
+  writeMcpAuditEvent,
+  type McpAuditEvent,
+} from "./mcp/index.js";
 import {
   createEnabledPluginPromptsSystemMessage,
   createEnabledPluginRulesSystemMessage,
@@ -189,6 +202,16 @@ export async function runCli(
     );
   }
 
+  if (first === "mcp") {
+    return runMcpCommand(
+      args.slice(1),
+      io,
+      mcpConfigPath,
+      pluginRegistryPath,
+      env.ORX_MCP_AUDIT_PATH,
+    );
+  }
+
   const apiKeyError = validateApiKey(loadedConfig);
   if (apiKeyError) {
     writeLine(io.stderr, apiKeyError);
@@ -250,6 +273,7 @@ function helpText(): string {
     "  credits       Show live OpenRouter credits",
     "  generation <id>  Show OpenRouter generation metadata",
     "  profile       List, inspect, save, or delete local ORX profiles",
+    "  mcp           List, inspect, enable, disable, and grant MCP tool policy",
     "  plugins       List catalog entries, inspect, register/install, enable, or disable plugins",
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  status        Show runtime status and config defaults",
@@ -561,6 +585,275 @@ function runPluginsCommand(
   writeLine(
     io.stderr,
     "Usage: orx plugins [catalog|list|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+  );
+  return 1;
+}
+
+function runMcpCommand(
+  args: string[],
+  io: CliIo,
+  mcpConfigPath: string,
+  pluginRegistryPath: string,
+  mcpAuditLogPath?: string,
+): number {
+  const subcommand = args[0]?.toLowerCase() ?? "list";
+  const profileId = args[1];
+  const toolName = args[2];
+
+  if (subcommand === "list" || subcommand === "status") {
+    const summary = getMcpStatusSummary({
+      configPath: mcpConfigPath,
+      pluginRegistryPath,
+    });
+    tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+      type: "mcp.profile.status",
+      ok: true,
+      details: {
+        activeProfileIds: summary.activeProfileIds,
+        profileCount: summary.profiles.length,
+        policyAllowedToolCount: summary.policyAllowedToolCount,
+        policyDeniedToolCount: summary.policyDeniedToolCount,
+        toolGrantCount: summary.toolGrantCount,
+        staleToolGrantCount: summary.staleToolGrantCount,
+        pendingSchemaChangeCount: summary.pendingSchemaChangeCount,
+      },
+    });
+    writeLine(io.stdout, renderMcpStatus(summary));
+    return 0;
+  }
+
+  if (subcommand === "inspect") {
+    if (!profileId || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx mcp inspect <profile>");
+      return 1;
+    }
+
+    const report = getMcpProfileToolPolicyReport(profileId, {
+      configPath: mcpConfigPath,
+      pluginRegistryPath,
+    });
+    tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+      type: "mcp.profile.inspect",
+      profileId,
+      ok: Boolean(report),
+      details: report
+        ? {
+            state: report.profile.state,
+            transport: report.profile.transport.kind,
+            source: report.profile.source?.kind ?? "builtin",
+            riskLevel: report.profile.riskLevel,
+            authRequired: report.profile.authRequired,
+            writeCapable: report.profile.writeCapable,
+            toolCount: report.evaluations.length,
+            profileHash: report.profileHash,
+            trustedProfileHash: report.trustedProfileHash,
+            schemaChangePending: report.schemaChangePending,
+            toolGrantCount: report.toolGrantCount,
+            staleToolGrantCount: report.staleToolGrantCount,
+          }
+        : undefined,
+    });
+
+    if (!report) {
+      writeLine(io.stderr, `Unknown MCP profile: ${profileId}`);
+      return 1;
+    }
+
+    writeLine(
+      io.stdout,
+      renderMcpProfileInspect(report.profile, {
+        trustedProfileHash: report.trustedProfileHash,
+        updatedAt: report.updatedAt,
+        schemaChangePending: report.schemaChangePending,
+        toolEvaluations: report.evaluations,
+        toolGrantCount: report.toolGrantCount,
+        staleToolGrantCount: report.staleToolGrantCount,
+      }),
+    );
+    return 0;
+  }
+
+  if (subcommand === "tools") {
+    if (!profileId || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx mcp tools <profile>");
+      return 1;
+    }
+
+    const report = getMcpProfileToolPolicyReport(profileId, {
+      configPath: mcpConfigPath,
+      pluginRegistryPath,
+    });
+    tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+      type: "mcp.profile.tools",
+      profileId,
+      ok: Boolean(report),
+      details: report
+        ? {
+            state: report.profile.state,
+            profileHash: report.profileHash,
+            trustedProfileHash: report.trustedProfileHash,
+            schemaChangePending: report.schemaChangePending,
+            toolCount: report.evaluations.length,
+            allowedCount: report.evaluations.filter((evaluation) => evaluation.decision === "allowed")
+              .length,
+            deniedCount: report.evaluations.filter((evaluation) => evaluation.decision === "denied")
+              .length,
+            toolGrantCount: report.toolGrantCount,
+            staleToolGrantCount: report.staleToolGrantCount,
+          }
+        : undefined,
+    });
+
+    if (!report) {
+      writeLine(io.stderr, `Unknown MCP profile: ${profileId}`);
+      return 1;
+    }
+
+    writeLine(io.stdout, renderMcpProfileTools(report));
+    return 0;
+  }
+
+  if (subcommand === "enable" || subcommand === "disable") {
+    if (!profileId || args.length !== 2) {
+      writeLine(io.stderr, `Usage: orx mcp ${subcommand} <profile>`);
+      return 1;
+    }
+
+    try {
+      const result = setMcpProfilePersistentState(
+        profileId,
+        subcommand === "enable" ? "enabled" : "disabled",
+        {
+          configPath: mcpConfigPath,
+          pluginRegistryPath,
+        },
+      );
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type:
+          subcommand === "enable"
+            ? "mcp.profile.enable_attempt"
+            : "mcp.profile.disable_attempt",
+        profileId,
+        ok: result.ok,
+        details: {
+          previousState: result.previousState,
+          nextState: result.nextState,
+          message: result.message,
+          profileHash: result.profile ? hashMcpProfile(result.profile) : undefined,
+          trustedProfileHash: result.trustedProfileHash,
+          updatedAt: result.updatedAt,
+        },
+      });
+      if (!result.ok) {
+        writeLine(io.stderr, result.message);
+        return 1;
+      }
+
+      writeLine(io.stdout, result.message);
+      return 0;
+    } catch (error) {
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type:
+          subcommand === "enable"
+            ? "mcp.profile.enable_attempt"
+            : "mcp.profile.disable_attempt",
+        profileId,
+        ok: false,
+        details: {
+          message: "Unable to persist MCP profile state.",
+          error: formatErrorForMcpAudit(error),
+        },
+      });
+      writeLine(io.stderr, `Unable to persist MCP profile state${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
+  if (subcommand === "allow-tool") {
+    if (!profileId || !toolName || args.length !== 3) {
+      writeLine(io.stderr, "Usage: orx mcp allow-tool <profile> <tool>");
+      return 1;
+    }
+
+    try {
+      const result = allowMcpToolGrant(profileId, toolName, {
+        configPath: mcpConfigPath,
+        pluginRegistryPath,
+      });
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: "mcp.tool.allow_attempt",
+        profileId,
+        ok: result.ok,
+        details: {
+          toolName,
+          profileHash: result.profileHash,
+          risk: result.tool?.risk,
+          billable: result.tool?.billable,
+          grantProfileHash: result.grant?.profileHash,
+          previousGrantProfileHash: result.previousGrant?.profileHash,
+          message: result.message,
+        },
+      });
+      writeLine(result.ok ? io.stdout : io.stderr, result.message);
+      return result.ok ? 0 : 1;
+    } catch (error) {
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: "mcp.tool.allow_attempt",
+        profileId,
+        ok: false,
+        details: {
+          toolName,
+          message: "Unable to persist MCP tool grant.",
+          error: formatErrorForMcpAudit(error),
+        },
+      });
+      writeLine(io.stderr, `Unable to persist MCP tool grant${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
+  if (subcommand === "revoke-tool") {
+    if (!profileId || !toolName || args.length !== 3) {
+      writeLine(io.stderr, "Usage: orx mcp revoke-tool <profile> <tool>");
+      return 1;
+    }
+
+    try {
+      const result = revokeMcpToolGrant(profileId, toolName, {
+        configPath: mcpConfigPath,
+        pluginRegistryPath,
+      });
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: "mcp.tool.revoke_attempt",
+        profileId,
+        ok: result.ok,
+        details: {
+          toolName,
+          previousGrantProfileHash: result.previousGrant?.profileHash,
+          message: result.message,
+        },
+      });
+      writeLine(result.ok ? io.stdout : io.stderr, result.message);
+      return result.ok ? 0 : 1;
+    } catch (error) {
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: "mcp.tool.revoke_attempt",
+        profileId,
+        ok: false,
+        details: {
+          toolName,
+          message: "Unable to persist MCP tool grant.",
+          error: formatErrorForMcpAudit(error),
+        },
+      });
+      writeLine(io.stderr, `Unable to persist MCP tool grant${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
+  writeLine(
+    io.stderr,
+    "Usage: orx mcp [list|inspect <profile>|tools <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>]",
   );
   return 1;
 }
@@ -909,6 +1202,27 @@ function parseAskArgs(args: string[]): AskCommand | string {
 
 function formatProfileIdForMessage(profileId: string): string {
   return profileId.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim().toLowerCase().slice(0, 80);
+}
+
+function tryWriteCliMcpAuditEvent(
+  io: CliIo,
+  auditLogPath: string | undefined,
+  event: McpAuditEvent,
+): void {
+  try {
+    writeMcpAuditEvent(event, { auditLogPath });
+  } catch {
+    writeLine(io.stderr, "Warning: unable to write MCP audit log.");
+  }
+}
+
+function formatErrorForMcpAudit(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  const code = typeof error === "object" && "code" in error ? String(error.code) : undefined;
+  return code ? `${error.name}: ${code}` : error.name;
 }
 
 function formatErrorCode(error: unknown): string {

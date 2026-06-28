@@ -29,6 +29,7 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
 - Enabled plugin `components.mcpServers` JSON can contribute MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`; trusted unchanged `remote-http` plugin profiles can be discovered and can list remote tool metadata through guarded DNS-vetted handshakes, but no plugin MCP tools execute.
+- MCP tool grants are implemented for policy state only: `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` persist per-tool grants for billable/write/destructive declared tools only on enabled/trusted/unchanged profiles. Grants bind to the current trusted profile hash; stale grants are visible and denied. `tools/call` and model-loop MCP tool exposure remain unimplemented.
 - Enabled plugin `components.hooks` JSON can contribute hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run manually through `hooks run` / `/hooks run` or automatically on matching lifecycle events with minimal env/cwd and JSONL audit logging.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
@@ -65,6 +66,16 @@ Current files:
 
 ## Latest Work
 
+Implemented MCP per-tool grant policy storage:
+
+- Added private MCP config `toolGrants` records for profile id, tool name, current profile hash, risk, billable flag, and granted timestamp.
+- Added policy evaluation support for active versus stale grants. Read-only declared tools remain allowed on enabled/trusted/unchanged profiles, while billable/write/destructive tools require an active grant; stale grants render visibly and are denied.
+- Added `/mcp allow-tool <profile> <tool>` and `/mcp revoke-tool <profile> <tool>` plus matching `orx mcp allow-tool|revoke-tool` noninteractive commands. `orx mcp list|inspect|tools|enable|disable` now gives local no-key access to MCP policy/profile state.
+- Added grant counts to `/status`, `orx status`, and `/mcp tools`, plus redacted audit events for grant allow/revoke attempts.
+- No MCP `tools/call`, remote execution, or model-loop exposure was added.
+- Verification: verifier found and rechecked fixes for audit assignment redaction and grant-aware inspect output with no remaining findings; `npm run typecheck`, `git diff --check`, focused MCP/slash/CLI tests with 139 tests, full `npm test` with 337 tests, and `npm run dev -- status` pass.
+- Next likely MCP work: implement a guarded, audit-first `tools/call` runtime for explicitly granted read/billable tools, or design executable plugin slash commands/bins.
+
 Implemented read-only remote MCP `tools/list` metadata:
 
 - Added shared `src/mcp/transport.ts` for guarded MCP JSON-RPC POSTs so initialize discovery and tools/list share URL guarding, DNS vetting, address binding, timeout coverage, bounded response reads, and test-only injected fetches.
@@ -73,7 +84,7 @@ Implemented read-only remote MCP `tools/list` metadata:
 - Slash wiring uses `mcpRemoteToolsFetch` for tests only; live ORX does not use the general OpenRouter fetch hook for MCP remote tools.
 - Added redacted `mcp.profile.remote_tools_attempt` audit events with tool/schema hashes.
 - Verification: verifier recheck found no remaining findings, focused MCP/slash/CLI tests pass, `npm run typecheck`, `git diff --check`, full `npm test` with 331 tests, and `npm run dev -- status` pass.
-- Next likely MCP work: explicit MCP tool execution policy/storage or executable plugin slash-command design.
+- That slice's next likely policy/storage work is now complete; next likely MCP work is a guarded, audit-first `tools/call` runtime or executable plugin slash-command design.
 
 Implemented trusted plugin MCP endpoint discovery:
 
@@ -83,7 +94,7 @@ Implemented trusted plugin MCP endpoint discovery:
 - Discovery performs only a minimal JSON-RPC `initialize` handshake. It reports server/protocol/capability summary, auth-required, blocked URL, DNS/network, and schema states, and it still renders `tool_execution: not implemented`.
 - Slash command wiring now separates MCP discovery test hooks from the general OpenRouter fetch hook, so live `/mcp discover` does not accidentally use generic `globalThis.fetch`.
 - Focused verification: `npm run typecheck` and `npm run build && node --test dist/mcp/mcp.test.js dist/slash/index.test.js` pass with 99 tests.
-- That slice's next likely remote-tool-listing work is now complete; next likely MCP work is explicit MCP tool execution policy/storage or executable plugin slash-command design.
+- That slice's next likely remote-tool-listing and policy-storage work is now complete; next likely MCP work is a guarded, audit-first `tools/call` runtime or executable plugin slash-command design.
 
 Implemented automatic trusted plugin lifecycle hook dispatch:
 
@@ -391,7 +402,7 @@ Implemented and verified the Phase 8 MCP declared-tool policy evaluation scaffol
 
 - Added pure MCP tool policy evaluation for configured declared tools without live discovery or remote execution.
 - Default policy now allows only read-only declared tools on enabled, trusted profiles with no pending schema change.
-- Billable/write/destructive declared tools are denied unless a future explicit allowlist is provided; OpenRouter `chat-send` is denied by default and remains visibly billable.
+- At that checkpoint, billable/write/destructive declared tools were denied unless a future explicit allowlist was provided; later work added profile-hash-bound grant policy storage while keeping OpenRouter `chat-send` and other risky tools non-executable.
 - Added `/mcp tools <profile>` to render each declared tool with risk, auth, billable flag, and policy decision. The command is render-only and does not fetch, discover, or execute tools.
 - Extended `/mcp inspect`, `/mcp list`, and `/status` with concise policy/default-denied/risky tool visibility.
 - Added redacted audit events for `/mcp tools`.

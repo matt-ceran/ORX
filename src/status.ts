@@ -85,6 +85,8 @@ export function formatStatus({
     `mcp_configured_denied_tools: ${mcpStatus.configuredDeniedToolCount}`,
     `mcp_configured_billable_tools: ${mcpStatus.configuredBillableToolCount}`,
     `mcp_configured_risky_tools: ${mcpStatus.configuredRiskyToolCount}`,
+    `mcp_tool_grants: ${mcpStatus.toolGrantCount}`,
+    `mcp_stale_tool_grants: ${mcpStatus.staleToolGrantCount}`,
     `mcp_risky_transports: ${mcpStatus.riskyTransportCount}`,
     `mcp_registry_hash: ${mcpStatus.registryHash}`,
     `mcp_pending_schema_changes: ${

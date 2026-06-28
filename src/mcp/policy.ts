@@ -7,7 +7,14 @@ import {
   type McpRegistryOptions,
 } from "./registry.js";
 import { hashMcpProfile, hashMcpProfiles } from "./schema.js";
-import { getMcpProfileConfigRecord, loadMcpProfilesConfig } from "./config.js";
+import {
+  getMcpProfileConfigRecord,
+  getMcpToolGrantRecord,
+  loadMcpProfilesConfig,
+  mcpToolGrantKey,
+  saveMcpProfilesConfig,
+  type McpToolGrantRecord,
+} from "./config.js";
 
 export interface McpStatusSummary {
   activeProfileIds: string[];
@@ -28,6 +35,8 @@ export interface McpStatusSummary {
   configuredRiskyToolCount: number;
   riskyTransportCount: number;
   pendingSchemaChangeCount: number;
+  toolGrantCount: number;
+  staleToolGrantCount: number;
 }
 
 export type McpToolPolicyDecision =
@@ -45,11 +54,15 @@ export interface McpToolPolicyEvaluation {
   tool?: McpDeclaredTool;
   decision: McpToolPolicyDecision;
   reason: string;
+  grantStatus?: "active" | "stale";
+  toolGrant?: McpToolGrantRecord;
 }
 
 export interface McpToolPolicyContext {
+  profileHash?: string;
   trustedProfileHash?: string;
   schemaChangePending?: boolean;
+  toolGrant?: McpToolGrantRecord;
   futureAllowedToolIds?: string[];
 }
 
@@ -59,7 +72,21 @@ export interface McpProfileToolPolicyReport {
   trustedProfileHash?: string;
   updatedAt?: string;
   schemaChangePending: boolean;
+  toolGrantCount: number;
+  staleToolGrantCount: number;
   evaluations: McpToolPolicyEvaluation[];
+}
+
+export interface McpToolGrantChange {
+  ok: boolean;
+  profileId: string;
+  toolName: string;
+  profile?: McpProfile;
+  tool?: McpDeclaredTool;
+  profileHash?: string;
+  previousGrant?: McpToolGrantRecord;
+  grant?: McpToolGrantRecord;
+  message: string;
 }
 
 export function getMcpStatusSummary(options: McpRegistryOptions = {}): McpStatusSummary {
@@ -88,14 +115,32 @@ export function getMcpStatusSummary(options: McpRegistryOptions = {}): McpStatus
       return Boolean(trustedHash && trustedHash !== profileHashes[profile.id]);
     })
     .map((profile) => profile.id);
+  const activeGrantKeys = new Set<string>();
   const toolEvaluations = profiles.flatMap((profile) =>
-    profile.tools.map((tool) =>
-      evaluateDeclaredMcpToolPolicy(profile, tool, {
+    profile.tools.map((tool) => {
+      const toolGrant = getMcpToolGrantRecord(config, profile.id, tool.name);
+      if (toolGrant && toolGrant.profileHash === profileHashes[profile.id]) {
+        activeGrantKeys.add(mcpToolGrantKey(profile.id, tool.name));
+      }
+
+      return evaluateDeclaredMcpToolPolicy(profile, tool, {
+        profileHash: profileHashes[profile.id],
         trustedProfileHash: trustedProfileHashes[profile.id],
         schemaChangePending: pendingSchemaChangeProfileIds.includes(profile.id),
-      }),
-    ),
+        toolGrant,
+      });
+    }),
   );
+  const staleToolGrantCount = Object.entries(config.toolGrants).filter(([key, record]) => {
+    if (activeGrantKeys.has(key)) {
+      return false;
+    }
+
+    const profileHash = profileHashes[record.profileId];
+    const profile = profiles.find((candidate) => candidate.id === record.profileId);
+    const tool = profile?.tools.find((candidate) => candidate.name === record.toolName);
+    return !profileHash || !tool || record.profileHash !== profileHash;
+  }).length;
 
   return {
     activeProfileIds: activeProfiles.map((profile) => profile.id),
@@ -136,6 +181,8 @@ export function getMcpStatusSummary(options: McpRegistryOptions = {}): McpStatus
     ),
     riskyTransportCount: activeProfiles.filter((profile) => profile.transport.kind !== "stdio").length,
     pendingSchemaChangeCount: pendingSchemaChangeProfileIds.length,
+    toolGrantCount: Object.keys(config.toolGrants).length,
+    staleToolGrantCount,
   };
 }
 
@@ -166,8 +213,14 @@ export function evaluateMcpToolPolicy(
   }
 
   return evaluateDeclaredMcpToolPolicy(profile, tool, {
+    profileHash: summary.profileHashes[profile.id],
     trustedProfileHash: summary.trustedProfileHashes[profile.id],
     schemaChangePending: summary.pendingSchemaChangeProfileIds.includes(profile.id),
+    toolGrant: getMcpToolGrantRecord(
+      options.config ?? loadMcpProfilesConfig({ configPath: options.configPath }),
+      profile.id,
+      tool.name,
+    ),
     futureAllowedToolIds: options.futureAllowedToolIds,
   });
 }
@@ -177,6 +230,7 @@ export function evaluateDeclaredMcpToolPolicy(
   tool: McpDeclaredTool,
   context: McpToolPolicyContext = {},
 ): McpToolPolicyEvaluation {
+  const grantStatus = getToolGrantStatus(profile, tool, context);
   if (profile.state !== "enabled") {
     return {
       profileId: profile.id,
@@ -184,6 +238,7 @@ export function evaluateDeclaredMcpToolPolicy(
       tool,
       decision: "blocked_by_profile",
       reason: "profile is disabled",
+      ...formatGrantForEvaluation(context.toolGrant, grantStatus),
     };
   }
 
@@ -194,6 +249,7 @@ export function evaluateDeclaredMcpToolPolicy(
       tool,
       decision: "blocked_by_trust",
       reason: "profile has no trusted schema hash baseline",
+      ...formatGrantForEvaluation(context.toolGrant, grantStatus),
     };
   }
 
@@ -204,10 +260,22 @@ export function evaluateDeclaredMcpToolPolicy(
       tool,
       decision: "blocked_by_schema_change",
       reason: "profile schema changed since the trusted baseline",
+      ...formatGrantForEvaluation(context.toolGrant, grantStatus),
     };
   }
 
   if (isDefaultDeniedTool(tool)) {
+    if (grantStatus === "active") {
+      return {
+        profileId: profile.id,
+        toolName: tool.name,
+        tool,
+        decision: "allowed",
+        reason: "explicit MCP tool grant permits this tool for the trusted profile hash",
+        ...formatGrantForEvaluation(context.toolGrant, grantStatus),
+      };
+    }
+
     if (isFutureAllowedTool(profile.id, tool.name, context)) {
       return {
         profileId: profile.id,
@@ -223,9 +291,13 @@ export function evaluateDeclaredMcpToolPolicy(
       toolName: tool.name,
       tool,
       decision: "denied",
-      reason: tool.billable
-        ? "billable MCP tools require an explicit future allowlist"
-        : `${tool.risk} MCP tools require an explicit future allowlist`,
+      reason:
+        grantStatus === "stale"
+          ? "explicit MCP tool grant is stale for the current profile hash"
+          : tool.billable
+            ? "billable MCP tools require an explicit MCP tool grant"
+            : `${tool.risk} MCP tools require an explicit MCP tool grant`,
+      ...formatGrantForEvaluation(context.toolGrant, grantStatus),
     };
   }
 
@@ -235,6 +307,7 @@ export function evaluateDeclaredMcpToolPolicy(
     tool,
     decision: "allowed",
     reason: "read-only declared tool on enabled trusted profile",
+    ...formatGrantForEvaluation(context.toolGrant, grantStatus),
   };
 }
 
@@ -242,6 +315,7 @@ export function getMcpProfileToolPolicyReport(
   profileId: string,
   options: McpRegistryOptions & Pick<McpToolPolicyContext, "futureAllowedToolIds"> = {},
 ): McpProfileToolPolicyReport | undefined {
+  const config = options.config ?? loadMcpProfilesConfig({ configPath: options.configPath });
   const summary = getMcpStatusSummary(options);
   const profile = summary.profiles.find((candidate) => candidate.id === profileId);
   if (!profile) {
@@ -254,13 +328,140 @@ export function getMcpProfileToolPolicyReport(
     trustedProfileHash: summary.trustedProfileHashes[profile.id],
     updatedAt: summary.profileUpdatedAt[profile.id],
     schemaChangePending: summary.pendingSchemaChangeProfileIds.includes(profile.id),
-    evaluations: profile.tools.map((tool) =>
-      evaluateDeclaredMcpToolPolicy(profile, tool, {
+    toolGrantCount: profile.tools.filter((tool) =>
+      Boolean(getMcpToolGrantRecord(config, profile.id, tool.name)),
+    ).length,
+    staleToolGrantCount: profile.tools.filter((tool) => {
+      const grant = getMcpToolGrantRecord(config, profile.id, tool.name);
+      return Boolean(grant && grant.profileHash !== summary.profileHashes[profile.id]);
+    }).length,
+    evaluations: profile.tools.map((tool) => {
+      return evaluateDeclaredMcpToolPolicy(profile, tool, {
+        profileHash: summary.profileHashes[profile.id],
         trustedProfileHash: summary.trustedProfileHashes[profile.id],
         schemaChangePending: summary.pendingSchemaChangeProfileIds.includes(profile.id),
+        toolGrant: getMcpToolGrantRecord(config, profile.id, tool.name),
         futureAllowedToolIds: options.futureAllowedToolIds,
-      }),
-    ),
+      });
+    }),
+  };
+}
+
+export function allowMcpToolGrant(
+  profileId: string,
+  toolName: string,
+  options: McpRegistryOptions & { now?: () => Date } = {},
+): McpToolGrantChange {
+  const config = options.config ?? loadMcpProfilesConfig({ configPath: options.configPath });
+  const summary = getMcpStatusSummary({ ...options, config });
+  const profile = summary.profiles.find((candidate) => candidate.id === profileId);
+  if (!profile) {
+    return {
+      ok: false,
+      profileId,
+      toolName,
+      message: `Unknown MCP profile: ${profileId}`,
+    };
+  }
+
+  const tool = profile.tools.find((candidate) => candidate.name === toolName);
+  if (!tool) {
+    return {
+      ok: false,
+      profileId,
+      toolName,
+      profile,
+      message: `Unknown MCP tool for profile ${profileId}: ${toolName}`,
+    };
+  }
+
+  const profileHash = summary.profileHashes[profile.id];
+  const trustedProfileHash = summary.trustedProfileHashes[profile.id];
+  const schemaChangePending = summary.pendingSchemaChangeProfileIds.includes(profile.id);
+  if (profile.state !== "enabled" || !trustedProfileHash || schemaChangePending) {
+    const evaluation = evaluateDeclaredMcpToolPolicy(profile, tool, {
+      profileHash,
+      trustedProfileHash,
+      schemaChangePending,
+      toolGrant: getMcpToolGrantRecord(config, profile.id, tool.name),
+    });
+    return {
+      ok: false,
+      profileId,
+      toolName,
+      profile,
+      tool,
+      profileHash,
+      message: `Cannot grant MCP tool ${profileId}/${toolName}: ${evaluation.reason}.`,
+    };
+  }
+
+  if (!isDefaultDeniedTool(tool)) {
+    return {
+      ok: true,
+      profileId,
+      toolName,
+      profile,
+      tool,
+      profileHash,
+      message: `MCP tool ${profileId}/${toolName} is already allowed by read-only policy; no explicit grant stored.`,
+    };
+  }
+
+  const key = mcpToolGrantKey(profile.id, tool.name);
+  const previousGrant = config.toolGrants[key];
+  const grant: McpToolGrantRecord = {
+    profileId: profile.id,
+    toolName: tool.name,
+    profileHash,
+    risk: tool.risk,
+    billable: tool.billable,
+    grantedAt: (options.now?.() ?? new Date()).toISOString(),
+  };
+  config.toolGrants[key] = grant;
+  saveMcpProfilesConfig(config, { configPath: options.configPath });
+
+  return {
+    ok: true,
+    profileId,
+    toolName,
+    profile,
+    tool,
+    profileHash,
+    previousGrant,
+    grant,
+    message: previousGrant
+      ? `MCP tool grant updated for ${profile.id}/${tool.name}. Remote tool execution remains unimplemented.`
+      : `MCP tool grant stored for ${profile.id}/${tool.name}. Remote tool execution remains unimplemented.`,
+  };
+}
+
+export function revokeMcpToolGrant(
+  profileId: string,
+  toolName: string,
+  options: McpRegistryOptions = {},
+): McpToolGrantChange {
+  const config = options.config ?? loadMcpProfilesConfig({ configPath: options.configPath });
+  const key = mcpToolGrantKey(profileId, toolName);
+  const previousGrant = config.toolGrants[key];
+  if (!previousGrant) {
+    return {
+      ok: false,
+      profileId,
+      toolName,
+      message: `No MCP tool grant stored for ${profileId}/${toolName}.`,
+    };
+  }
+
+  delete config.toolGrants[key];
+  saveMcpProfilesConfig(config, { configPath: options.configPath });
+
+  return {
+    ok: true,
+    profileId,
+    toolName,
+    previousGrant,
+    message: `MCP tool grant revoked for ${profileId}/${toolName}.`,
   };
 }
 
@@ -279,6 +480,8 @@ export function renderMcpStatus(summary: McpStatusSummary = getMcpStatusSummary(
     `  configured_billable_tools: ${summary.configuredBillableToolCount}`,
     `  configured_risky_tools: ${summary.configuredRiskyToolCount}`,
     `  risky_transports: ${summary.riskyTransportCount}`,
+    `  tool_grants: ${summary.toolGrantCount}`,
+    `  stale_tool_grants: ${summary.staleToolGrantCount}`,
     `  registry_hash: ${summary.registryHash}`,
     `  pending_schema_changes: ${formatSchemaChanges(summary.pendingSchemaChangeCount)}`,
   ];
@@ -300,6 +503,9 @@ export interface FormatMcpProfileOptions {
   trustedProfileHash?: string;
   updatedAt?: string;
   schemaChangePending?: boolean;
+  toolEvaluations?: McpToolPolicyEvaluation[];
+  toolGrantCount?: number;
+  staleToolGrantCount?: number;
 }
 
 export function formatMcpProfile(
@@ -336,13 +542,15 @@ export function renderMcpProfileInspect(
 ): string {
   const currentHash = hashMcpProfile(profile);
   const evaluationsByTool = new Map(
-    profile.tools.map((tool) => [
-      tool.name,
-      evaluateDeclaredMcpToolPolicy(profile, tool, {
-        trustedProfileHash: options.trustedProfileHash,
-        schemaChangePending: options.schemaChangePending,
-      }),
-    ]),
+    options.toolEvaluations
+      ? options.toolEvaluations.map((evaluation) => [evaluation.toolName, evaluation])
+      : profile.tools.map((tool) => [
+          tool.name,
+          evaluateDeclaredMcpToolPolicy(profile, tool, {
+            trustedProfileHash: options.trustedProfileHash,
+            schemaChangePending: options.schemaChangePending,
+          }),
+        ]),
   );
   const lines = [
     `MCP profile: ${profile.id}`,
@@ -365,6 +573,10 @@ export function renderMcpProfileInspect(
     options.schemaChangePending
       ? "  schema_change: pending trusted baseline differs from configured profile hash"
       : undefined,
+    typeof options.toolGrantCount === "number" ? `  tool_grants: ${options.toolGrantCount}` : undefined,
+    typeof options.staleToolGrantCount === "number"
+      ? `  stale_tool_grants: ${options.staleToolGrantCount}`
+      : undefined,
     `  notes: ${profile.notes}`,
     "  tools:",
     ...profile.tools.map(
@@ -384,6 +596,8 @@ export function renderMcpProfileTools(report: McpProfileToolPolicyReport): strin
     report.trustedProfileHash ? `  trusted_hash: ${report.trustedProfileHash}` : undefined,
     report.updatedAt ? `  updated_at: ${report.updatedAt}` : undefined,
     report.schemaChangePending ? "  schema_change: pending" : undefined,
+    `  tool_grants: ${report.toolGrantCount}`,
+    `  stale_tool_grants: ${report.staleToolGrantCount}`,
     `  decisions: allowed=${counts.allowed} denied=${counts.denied} blocked_by_profile=${counts.blocked_by_profile} blocked_by_trust=${counts.blocked_by_trust} blocked_by_schema_change=${counts.blocked_by_schema_change}`,
     "  remote_tool_execution: not implemented; this is a future-use policy evaluation only",
     "  tools:",
@@ -400,6 +614,7 @@ export function formatMcpToolPolicyEvaluation(evaluation: McpToolPolicyEvaluatio
     tool ? `risk=${tool.risk}` : undefined,
     tool ? `auth=${tool.authRequired ? "yes" : "no"}` : undefined,
     tool ? `billable=${tool.billable ? "yes" : "no"}` : undefined,
+    evaluation.grantStatus ? `grant=${evaluation.grantStatus}` : undefined,
     `policy=${evaluation.decision}`,
     `reason=${quotePolicyReason(evaluation.reason)}`,
   ]
@@ -429,6 +644,40 @@ function isFutureAllowedTool(
   context: McpToolPolicyContext,
 ): boolean {
   return Boolean(context.futureAllowedToolIds?.includes(`${profileId}/${toolName}`));
+}
+
+function getToolGrantStatus(
+  profile: McpProfile,
+  tool: McpDeclaredTool,
+  context: McpToolPolicyContext,
+): "active" | "stale" | undefined {
+  const grant = context.toolGrant;
+  if (!grant) {
+    return undefined;
+  }
+
+  if (
+    grant.profileId === profile.id &&
+    grant.toolName === tool.name &&
+    context.profileHash &&
+    grant.profileHash === context.profileHash
+  ) {
+    return "active";
+  }
+
+  return "stale";
+}
+
+function formatGrantForEvaluation(
+  toolGrant: McpToolGrantRecord | undefined,
+  grantStatus: "active" | "stale" | undefined,
+): Pick<McpToolPolicyEvaluation, "toolGrant" | "grantStatus"> {
+  return toolGrant && grantStatus
+    ? {
+        toolGrant,
+        grantStatus,
+      }
+    : {};
 }
 
 function countToolPolicyDecisions(

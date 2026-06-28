@@ -25,8 +25,8 @@ import {
   type DelegationState,
 } from "../delegation/index.js";
 import {
+  allowMcpToolGrant,
   discoverMcpProfile,
-  findMcpProfile,
   formatMcpDiscoveryResult,
   formatMcpRemoteToolsResult,
   getMcpProfileToolPolicyReport,
@@ -36,6 +36,7 @@ import {
   renderMcpProfileInspect,
   renderMcpProfileTools,
   renderMcpStatus,
+  revokeMcpToolGrant,
   setMcpProfilePersistentState,
   writeMcpAuditEvent,
   type McpAuditEvent,
@@ -297,6 +298,8 @@ const MCP_SUBCOMMAND_COMPLETIONS = [
   "discover",
   "enable",
   "disable",
+  "allow-tool",
+  "revoke-tool",
 ] as const;
 const MCP_PROFILE_COMPLETIONS = ["openrouter"] as const;
 const PLUGIN_SUBCOMMAND_COMPLETIONS = [
@@ -789,8 +792,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|inspect|tools|remote-tools|discover|enable|disable]",
-    description: "Show MCP profile policy state, gated discovery, and remote tool metadata",
+    usage: "/mcp [list|inspect|tools|remote-tools|discover|enable|disable|allow-tool|revoke-tool]",
+    description: "Show MCP profile policy state, gated discovery, remote metadata, and tool grants",
     group: "Integrations",
     tier: "advanced",
     handler: async (command, context): Promise<SlashResult> => {
@@ -1307,7 +1310,9 @@ function isMcpProfileSubcommand(subcommand: string | undefined): boolean {
     subcommand === "remote-tools" ||
     subcommand === "discover" ||
     subcommand === "enable" ||
-    subcommand === "disable"
+    subcommand === "disable" ||
+    subcommand === "allow-tool" ||
+    subcommand === "revoke-tool"
   );
 }
 
@@ -2162,42 +2167,43 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
       return;
     }
 
-    const summary = getMcpStatusSummary({
-      configPath: context.mcpConfigPath,
-      pluginRegistryPath: context.pluginRegistryPath,
-    });
-    const profile = findMcpProfile(profileId, {
+    const report = getMcpProfileToolPolicyReport(profileId, {
       configPath: context.mcpConfigPath,
       pluginRegistryPath: context.pluginRegistryPath,
     });
     tryWriteMcpAuditEvent(context, {
       type: "mcp.profile.inspect",
       profileId,
-      ok: Boolean(profile),
-      details: profile
+      ok: Boolean(report),
+      details: report
         ? {
-            state: profile.state,
-            transport: profile.transport.kind,
-            authRequired: profile.authRequired,
-            writeCapable: profile.writeCapable,
-            profileHash: hashMcpProfile(profile),
-            trustedProfileHash: summary.trustedProfileHashes[profile.id],
-            schemaChangePending: summary.pendingSchemaChangeProfileIds.includes(profile.id),
+            state: report.profile.state,
+            transport: report.profile.transport.kind,
+            authRequired: report.profile.authRequired,
+            writeCapable: report.profile.writeCapable,
+            profileHash: report.profileHash,
+            trustedProfileHash: report.trustedProfileHash,
+            schemaChangePending: report.schemaChangePending,
+            toolGrantCount: report.toolGrantCount,
+            staleToolGrantCount: report.staleToolGrantCount,
           }
         : undefined,
     });
 
-    if (!profile) {
+    if (!report) {
       writeLine(context.io.stderr, `Unknown MCP profile: ${profileId}`);
       return;
     }
 
     writeLine(
       context.io.stdout,
-      renderMcpProfileInspect(profile, {
-        trustedProfileHash: summary.trustedProfileHashes[profile.id],
-        updatedAt: summary.profileUpdatedAt[profile.id],
-        schemaChangePending: summary.pendingSchemaChangeProfileIds.includes(profile.id),
+      renderMcpProfileInspect(report.profile, {
+        trustedProfileHash: report.trustedProfileHash,
+        updatedAt: report.updatedAt,
+        schemaChangePending: report.schemaChangePending,
+        toolEvaluations: report.evaluations,
+        toolGrantCount: report.toolGrantCount,
+        staleToolGrantCount: report.staleToolGrantCount,
       }),
     );
     return;
@@ -2346,6 +2352,94 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
     return;
   }
 
+  if (subcommand === "allow-tool") {
+    const toolName = command.args[2];
+    if (!profileId || !toolName || command.args.length !== 3) {
+      writeLine(context.io.stderr, "Usage: /mcp allow-tool <profile> <tool>");
+      return;
+    }
+
+    let result: ReturnType<typeof allowMcpToolGrant>;
+    try {
+      result = allowMcpToolGrant(profileId, toolName, {
+        configPath: context.mcpConfigPath,
+        pluginRegistryPath: context.pluginRegistryPath,
+      });
+    } catch (error) {
+      tryWriteMcpAuditEvent(context, {
+        type: "mcp.tool.allow_attempt",
+        profileId,
+        ok: false,
+        details: {
+          toolName,
+          message: "Unable to persist MCP tool grant.",
+          error: formatErrorForMcpAudit(error),
+        },
+      });
+      writeLine(context.io.stderr, `Unable to persist MCP tool grant${formatErrorCode(error)}.`);
+      return;
+    }
+
+    tryWriteMcpAuditEvent(context, {
+      type: "mcp.tool.allow_attempt",
+      profileId,
+      ok: result.ok,
+      details: {
+        toolName,
+        profileHash: result.profileHash,
+        risk: result.tool?.risk,
+        billable: result.tool?.billable,
+        grantProfileHash: result.grant?.profileHash,
+        previousGrantProfileHash: result.previousGrant?.profileHash,
+        message: result.message,
+      },
+    });
+    writeLine(result.ok ? context.io.stdout : context.io.stderr, result.message);
+    return;
+  }
+
+  if (subcommand === "revoke-tool") {
+    const toolName = command.args[2];
+    if (!profileId || !toolName || command.args.length !== 3) {
+      writeLine(context.io.stderr, "Usage: /mcp revoke-tool <profile> <tool>");
+      return;
+    }
+
+    let result: ReturnType<typeof revokeMcpToolGrant>;
+    try {
+      result = revokeMcpToolGrant(profileId, toolName, {
+        configPath: context.mcpConfigPath,
+        pluginRegistryPath: context.pluginRegistryPath,
+      });
+    } catch (error) {
+      tryWriteMcpAuditEvent(context, {
+        type: "mcp.tool.revoke_attempt",
+        profileId,
+        ok: false,
+        details: {
+          toolName,
+          message: "Unable to persist MCP tool grant.",
+          error: formatErrorForMcpAudit(error),
+        },
+      });
+      writeLine(context.io.stderr, `Unable to persist MCP tool grant${formatErrorCode(error)}.`);
+      return;
+    }
+
+    tryWriteMcpAuditEvent(context, {
+      type: "mcp.tool.revoke_attempt",
+      profileId,
+      ok: result.ok,
+      details: {
+        toolName,
+        previousGrantProfileHash: result.previousGrant?.profileHash,
+        message: result.message,
+      },
+    });
+    writeLine(result.ok ? context.io.stdout : context.io.stderr, result.message);
+    return;
+  }
+
   if (subcommand === "enable" || subcommand === "disable") {
     if (!profileId || command.args.length !== 2) {
       writeLine(context.io.stderr, `Usage: /mcp ${subcommand} <profile>`);
@@ -2405,7 +2499,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /mcp [list|inspect <profile>|tools <profile>|remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>]",
+    "Usage: /mcp [list|inspect <profile>|tools <profile>|remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>]",
   );
 }
 

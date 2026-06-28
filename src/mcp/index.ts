@@ -37,6 +37,7 @@ export {
   type McpTransportKind,
 } from "./registry.js";
 export {
+  allowMcpToolGrant,
   evaluateDeclaredMcpToolPolicy,
   evaluateMcpToolPolicy,
   formatMcpToolPolicyEvaluation,
@@ -47,8 +48,10 @@ export {
   renderMcpProfileInspect,
   renderMcpProfileTools,
   renderMcpStatus,
+  revokeMcpToolGrant,
   type McpProfileToolPolicyReport,
   type McpStatusSummary,
+  type McpToolGrantChange,
   type McpToolPolicyContext,
   type McpToolPolicyDecision,
   type McpToolPolicyEvaluation,
@@ -57,13 +60,17 @@ export {
   defaultMcpConfigPath,
   emptyMcpProfilesConfig,
   getMcpProfileConfigRecord,
+  getMcpToolGrantRecord,
   loadMcpProfilesConfig,
+  mcpToolGrantKey,
   resolveMcpConfigPath,
   saveMcpProfilesConfig,
   type McpConfigIoOptions,
   type McpConfigPathOptions,
   type McpProfileConfigRecord,
   type McpProfilesConfig,
+  type McpProfilesConfigInput,
+  type McpToolGrantRecord,
 } from "./config.js";
 export {
   defaultMcpAuditLogPath,

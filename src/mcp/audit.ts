@@ -9,7 +9,9 @@ export type McpAuditEventType =
   | "mcp.profile.remote_tools_attempt"
   | "mcp.profile.discovery_attempt"
   | "mcp.profile.enable_attempt"
-  | "mcp.profile.disable_attempt";
+  | "mcp.profile.disable_attempt"
+  | "mcp.tool.allow_attempt"
+  | "mcp.tool.revoke_attempt";
 
 export interface McpAuditEvent {
   type: McpAuditEventType;
@@ -29,6 +31,8 @@ const BEARER_PATTERN = /bearer\s+[a-z0-9._~+/=-]+/gi;
 const API_KEY_LIKE_PATTERN = /(sk-or-v1-[a-z0-9._-]+)/gi;
 const SENSITIVE_QUERY_PATTERN =
   /([?&](?:api[_-]?key|authorization|bearer|token|secret|password|credential)=)([^&#\s]+)/gi;
+const SENSITIVE_ASSIGNMENT_PATTERN =
+  /\b(api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password|passwd|key)(\s*[:=]\s*)([a-z0-9._~+/=-]{4,})/gi;
 
 export function defaultMcpAuditLogPath(): string {
   return join(homedir(), ".orx", "audit", "mcp.jsonl");
@@ -71,6 +75,7 @@ export function redactSecrets(value: unknown): unknown {
   if (typeof value === "string") {
     return value
       .replace(SENSITIVE_QUERY_PATTERN, "$1[redacted]")
+      .replace(SENSITIVE_ASSIGNMENT_PATTERN, "$1$2[redacted]")
       .replace(BEARER_PATTERN, "Bearer [redacted]")
       .replace(API_KEY_LIKE_PATTERN, "[redacted]");
   }

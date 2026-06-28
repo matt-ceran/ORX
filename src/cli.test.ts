@@ -23,6 +23,7 @@ test("help, version, and status work without an API key", async () => {
     assert.equal(await runCli(["node", "cli", helpArg], {}, help.io), 0);
     assert.match(help.stdout(), /Commands:/);
     assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
+    assert.match(help.stdout(), /mcp\s+List, inspect, enable, disable, and grant MCP tool policy/);
     assert.match(help.stdout(), /plugins\s+List catalog entries, inspect, register\/install, enable, or disable plugins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
@@ -56,6 +57,8 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /mcp_configured_denied_tools: 1/);
     assert.match(status.stdout(), /mcp_configured_billable_tools: 1/);
     assert.match(status.stdout(), /mcp_configured_risky_tools: 1/);
+    assert.match(status.stdout(), /mcp_tool_grants: 0/);
+    assert.match(status.stdout(), /mcp_stale_tool_grants: 0/);
     assert.match(status.stdout(), /mcp_registry_hash: sha256:[a-f0-9]{64}/);
     assert.match(status.stdout(), /mcp_pending_schema_changes: none/);
     assert.match(status.stdout(), /mcp_profile: profile=openrouter state=disabled/);
@@ -211,8 +214,90 @@ test("cli status reflects persisted MCP profile config", async () => {
     assert.match(status.stdout(), /mcp_billable_tools: 1/);
     assert.match(status.stdout(), /mcp_policy_allowed_tools: 12/);
     assert.match(status.stdout(), /mcp_policy_denied_tools: 1/);
+    assert.match(status.stdout(), /mcp_tool_grants: 0/);
     assert.match(status.stdout(), /mcp_profile: profile=openrouter state=enabled/);
     assert.match(status.stdout(), /trusted_hash=sha256:[a-f0-9]{64}/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli mcp commands manage local profile and tool grant policy without an API key", async () => {
+  const cwd = createTempDir();
+  const mcpConfigPath = join(cwd, "mcp", "profiles.json");
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const env = {
+    ORX_MCP_CONFIG_PATH: mcpConfigPath,
+    ORX_MCP_AUDIT_PATH: auditLogPath,
+  };
+
+  try {
+    const list = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp"], env, list.io), 0);
+    assert.match(list.stdout(), /active_profiles: none/);
+    assert.match(list.stdout(), /tool_grants: 0/);
+
+    const blocked = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "allow-tool", "openrouter", "chat-send"], env, blocked.io),
+      1,
+    );
+    assert.match(blocked.stderr(), /Cannot grant MCP tool openrouter\/chat-send: profile is disabled/);
+
+    const enabled = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "enable", "openrouter"], env, enabled.io), 0);
+    assert.match(enabled.stdout(), /MCP profile openrouter enabled/);
+
+    const allowed = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "allow-tool", "openrouter", "chat-send"], env, allowed.io),
+      0,
+    );
+    assert.match(allowed.stdout(), /MCP tool grant stored for openrouter\/chat-send/);
+    assert.match(readFileSync(mcpConfigPath, "utf8"), /"toolName": "chat-send"/);
+
+    const inspected = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "inspect", "openrouter"], env, inspected.io), 0);
+    assert.match(inspected.stdout(), /tool_grants: 1/);
+    assert.match(inspected.stdout(), /chat-send risk=billable auth=yes billable=yes grant=active policy=allowed/);
+
+    const tools = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "tools", "openrouter"], env, tools.io), 0);
+    assert.match(tools.stdout(), /tool_grants: 1/);
+    assert.match(tools.stdout(), /chat-send risk=billable auth=yes billable=yes grant=active policy=allowed/);
+
+    const stored = JSON.parse(readFileSync(mcpConfigPath, "utf8")) as {
+      toolGrants: Record<string, { profileHash: string }>;
+    };
+    stored.toolGrants["openrouter/chat-send"].profileHash =
+      "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    writeFileSync(mcpConfigPath, `${JSON.stringify(stored, null, 2)}\n`);
+
+    const staleInspect = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "inspect", "openrouter"], env, staleInspect.io),
+      0,
+    );
+    assert.match(staleInspect.stdout(), /stale_tool_grants: 1/);
+    assert.match(staleInspect.stdout(), /chat-send risk=billable auth=yes billable=yes grant=stale policy=denied/);
+
+    const revoked = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "revoke-tool", "openrouter", "chat-send"], env, revoked.io),
+      0,
+    );
+    assert.match(revoked.stdout(), /MCP tool grant revoked for openrouter\/chat-send/);
+
+    const status = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "status"], env, status.io), 0);
+    assert.match(status.stdout(), /mcp_policy_allowed_tools: 12/);
+    assert.match(status.stdout(), /mcp_policy_denied_tools: 1/);
+    assert.match(status.stdout(), /mcp_tool_grants: 0/);
+
+    const audit = readFileSync(auditLogPath, "utf8");
+    assert.match(audit, /"type":"mcp.tool.allow_attempt"/);
+    assert.match(audit, /"type":"mcp.tool.revoke_attempt"/);
+    assert.doesNotMatch(audit, /sk-or-v1/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
