@@ -113,7 +113,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
-  assert.match(output, /\/plugins \[catalog\|list\|commands\|scaffold\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(output, /\/plugins \[catalog\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(output, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
@@ -147,7 +147,7 @@ test("command palette renderer is a pure grouped listing surface", () => {
 
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
-  assert.match(palette, /\/plugins \[catalog\|list\|commands\|scaffold\|inspect\|register\|ins/);
+  assert.match(palette, /\/plugins \[catalog\|list\|commands\|scaffold\|validate\|inspect\|reg/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -165,7 +165,7 @@ test("compact command palette renderer bounds TTY-oriented command discovery", (
   });
 
   assert.match(palette, /^Command palette matching "plugin" \(7\)/);
-  assert.match(palette, /\/plugins \[catalog\|list\|commands\|scaffold\|inspect\|register\|ins/);
+  assert.match(palette, /\/plugins \[catalog\|list\|commands\|scaffold\|validate\|inspect\|reg/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -203,6 +203,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/plugins en"), [["enable "], "en"]);
   assert.deepEqual(completeSlashCommandLine("/plugins i"), [["inspect ", "install "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/plugins s"), [["status ", "scaffold "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins v"), [["validate "], "v"]);
   assert.deepEqual(completeSlashCommandLine("/plugin s"), [["status "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/bins t"), [["trust "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/bins r"), [["run "], "r"]);
@@ -316,7 +317,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.equal(handleSlashCommand("/commands plugin", harness.context), "continue");
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
-  assert.match(harness.stdout(), /\/plugins \[catalog\|list\|commands\|scaffold\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(harness.stdout(), /\/plugins \[catalog\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(harness.stdout(), /\/plugin \[list\|status\]/);
   assert.match(harness.stdout(), /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(harness.stdout(), /\/skills \[list\|status\|activate <id>\]/);
@@ -2195,6 +2196,15 @@ test("plugins scaffold creates an installable bundle without registry changes", 
     assert.match(harness.stdout(), /components: none/);
     assert.match(harness.stdout(), /registry_state: unchanged/);
     assert.equal(fetchCalls, 0);
+    assert.equal(existsSync(registryPath), false);
+
+    assert.equal(
+      await handleSlashCommand(`/plugins validate ${targetDirectory}`, harness.context),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Plugin validation: acme\.slash-plugin@0\.1\.0/);
+    assert.match(harness.stdout(), /components:\n    - none/);
+    assert.match(harness.stdout(), /registry_state: unchanged/);
     assert.equal(existsSync(registryPath), false);
 
     assert.equal(

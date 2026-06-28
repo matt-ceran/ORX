@@ -25,6 +25,7 @@ Urgent UX recovery additions from user testing:
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
 - Plugin authoring scaffold is implemented through `orx plugins scaffold <directory>` and `/plugins scaffold <directory>`. It creates a valid local `orx-plugin.json` authoring bundle without registry writes; defaults are inert skills/prompt-commands/rules markdown, `--minimal` writes only the manifest, and `--with` adds opt-in empty placeholders for hooks, bins, MCP, command schemas, assets, and docs behind the existing review gates.
+- Plugin manifest validation is implemented through `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>`. It parses/sanitizes manifests, renders manifest/component hashes, permission counts, missing component warnings, and explicitly leaves registry/cache/trust/runtime state unchanged.
 - Plugin install/register now snapshots sanitized manifests plus declared components and declared hook cwd directories into ORX-owned plugin cache storage before registry persistence; enabled skill/hook discovery resolves from the cached manifest path, not the original source checkout.
 - Plugin catalog support now handles both local manifest entries and pinned git source entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH`. `orx plugins install <catalog-id>` and `/plugins install <catalog-id>` clone git catalog sources into private temporary cache storage, checkout the exact pinned commit, normalize cached manifest provenance to that pin, and still register the plugin disabled/inert.
 - Local user MCP profile catalogs are implemented through `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. Declarations are namespaced as `user:<profile-id>`, currently support sanitized `remote-http` transports, appear in `/mcp`, `orx mcp`, `/status`, interactive chat, and `orx ask --mcp-tools`, and share the same enable/trusted-hash/schema-change/tool-grant/model-grant/auth/audit gates as built-in and plugin MCP profiles.
@@ -77,6 +78,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented no-side-effect plugin manifest validation:
+
+- Added `src/plugins/validate.ts` to resolve a manifest path or plugin directory, parse the sanitized manifest, compute the manifest hash, preview existing declared component hashes, and warn about missing declared component paths.
+- Added `orx plugins validate <manifest-path-or-directory>` / `orx plugins check ...` and matching slash commands. The output includes plugin id, manifest path/hash, source metadata, component status, permission counts, warnings, and explicit `registry_state: unchanged` / no-execution messaging.
+- Validation is read-only authoring feedback: it does not register, install, enable, trust, grant, fetch, execute, or write plugin cache/registry state.
+- Verification: `npm run typecheck`, `npm run build`, `git diff --check`, focused source and build-backed validation/scaffold/CLI/slash/TUI tests with 150 tests, built CLI dogfood for scaffold/validate/list showing installed count remains zero, full build-backed `npm test` with 416 tests, and independent verifier recheck pass.
+- Next likely plugin/MCP work: richer plugin marketplace/catalog UX and authoring docs/templates, broader prompt-injection wrapping for research/browser/search context, or broader provider preset packs.
 
 Implemented local plugin authoring scaffold:
 

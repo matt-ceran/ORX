@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Plugin Validation Is Read-Only Authoring Feedback
+
+Decision: ORX may provide `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>` as a manifest preview/check command, but validation must not register, install, enable, trust, grant, fetch, execute, or write plugin cache/registry state. It may parse and sanitize manifests, compute local manifest/component hashes, and warn about missing component paths using the same bounded local hashing logic used for plugin lock records.
+
+Reasoning: Plugin authors need fast feedback before install, especially after scaffold generation, but validation should not become another authority boundary. Keeping it read-only lets operators inspect exactly what ORX would recognize while preserving the existing disabled-by-default install, enable, hash-trust, MCP grant, hook, and bin execution gates.
+
 ## 2026-06-28: Plugin Scaffolds Are Local Authoring Artifacts
 
 Decision: ORX may provide `orx plugins scaffold <directory>` and `/plugins scaffold <directory>` to create valid local plugin authoring bundles, but scaffolding must not register, install, enable, trust, grant, fetch, or execute anything. Default generated surfaces should be inert markdown (`skills`, prompt `commands`, and advisory `rules`), while hooks, bins, MCP servers, command schemas, assets, and docs should be explicit opt-in placeholders. Executable/integration placeholders should be empty/no-op declarations until the author writes content and passes the existing install/enable/trust/grant gates.

@@ -78,6 +78,7 @@ import {
   renderPluginBins,
   renderPluginCommandAliases,
   renderPluginScaffoldResult,
+  renderPluginValidation,
   renderPluginHookInspect,
   renderPluginHookLifecycleResult,
   renderPluginHookRunResult,
@@ -101,6 +102,7 @@ import {
   trustPluginHook,
   untrustPluginBin,
   untrustPluginHook,
+  validatePluginManifestInput,
   type PluginHookEvent,
 } from "./plugins/index.js";
 import {
@@ -364,7 +366,7 @@ function helpText(): string {
     "  generation <id>  Show OpenRouter generation metadata",
     "  profile       List, inspect, save, or delete local ORX profiles",
     "  mcp           List, edit, inspect, enable, disable, and grant MCP tool policy",
-    "  plugins       List catalog entries, scaffold, inspect, install, enable, or disable plugins",
+    "  plugins       List catalog entries, scaffold, validate, install, enable, or disable plugins",
     "  bins          List, inspect, trust, untrust, or run plugin bins",
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  tests         Discover or run native test targets",
@@ -706,6 +708,24 @@ async function runPluginsCommand(
     }
   }
 
+  if (subcommand === "validate" || subcommand === "check") {
+    const manifestPathText = args.slice(1).join(" ").trim();
+    if (!manifestPathText) {
+      writeLine(io.stderr, `Usage: orx plugins ${subcommand} <manifest-path-or-directory>`);
+      return 1;
+    }
+
+    try {
+      const result = validatePluginManifestInput(manifestPathText, { cwd: io.cwd });
+      writeLine(io.stdout, renderPluginValidation(result));
+      return 0;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeLine(io.stderr, message);
+      return 1;
+    }
+  }
+
   if (subcommand === "inspect") {
     if (!pluginId || args.length !== 2) {
       writeLine(io.stderr, "Usage: orx plugins inspect <id>");
@@ -771,7 +791,7 @@ async function runPluginsCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx plugins [catalog|list|commands|scaffold <directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: orx plugins [catalog|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
   return 1;
 }

@@ -114,6 +114,7 @@ import {
   renderPluginRuleList,
   renderPluginScaffoldResult,
   renderPluginSkillList,
+  renderPluginValidation,
   renderPromptActivation,
   renderRuleActivation,
   renderSkillActivation,
@@ -125,6 +126,7 @@ import {
   trustPluginHook,
   untrustPluginBin,
   untrustPluginHook,
+  validatePluginManifestInput,
   type PluginPromptActivationProvenance,
   type PluginRuleActivationProvenance,
   type PluginSkillActivationProvenance,
@@ -370,6 +372,7 @@ const PLUGIN_SUBCOMMAND_COMPLETIONS = [
   "status",
   "commands",
   "scaffold",
+  "validate",
   "inspect",
   "register",
   "install",
@@ -942,7 +945,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/plugins": {
-    usage: "/plugins [catalog|list|commands|scaffold|inspect|register|install|enable|disable]",
+    usage: "/plugins [catalog|list|commands|scaffold|validate|inspect|register|install|enable|disable]",
     description: "Show catalog entries and update inert plugin registry state",
     group: "Integrations",
     tier: "advanced",
@@ -2105,6 +2108,23 @@ async function handlePluginsCommand(
     return;
   }
 
+  if (subcommand === "validate" || subcommand === "check") {
+    const manifestPathText = command.args.slice(1).join(" ").trim();
+    if (!manifestPathText) {
+      writeLine(context.io.stderr, `Usage: /plugins ${subcommand} <manifest-path-or-directory>`);
+      return;
+    }
+
+    try {
+      const result = validatePluginManifestInput(manifestPathText, { cwd: context.io.cwd });
+      writeLine(context.io.stdout, renderPluginValidation(result));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeLine(context.io.stderr, message);
+    }
+    return;
+  }
+
   if (subcommand === "inspect") {
     if (!pluginId || command.args.length !== 2) {
       writeLine(context.io.stderr, "Usage: /plugins inspect <id>");
@@ -2171,7 +2191,7 @@ async function handlePluginsCommand(
 
   writeLine(
     context.io.stderr,
-    "Usage: /plugins [catalog|list|commands|scaffold <directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: /plugins [catalog|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
 }
 

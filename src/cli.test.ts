@@ -25,7 +25,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /Commands:/);
     assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
     assert.match(help.stdout(), /mcp\s+List, edit, inspect, enable, disable, and grant MCP tool policy/);
-    assert.match(help.stdout(), /plugins\s+List catalog entries, scaffold, inspect, install, enable, or disable plugins/);
+    assert.match(help.stdout(), /plugins\s+List catalog entries, scaffold, validate, install, enable, or disable plugins/);
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
@@ -974,6 +974,17 @@ test("cli plugins scaffold creates an installable disabled plugin bundle", async
     assert.match(scaffolded.stdout(), /Plugin scaffolded: acme\.new-plugin@0\.1\.0/);
     assert.match(scaffolded.stdout(), /registry_state: unchanged/);
     assert.equal(readFileSync(join(targetDirectory, "mcp.json"), "utf8"), '{\n  "servers": {}\n}\n');
+
+    const validated = createNoFetchIo();
+    assert.equal(
+      await runCli(["node", "cli", "plugins", "validate", targetDirectory], env, validated.io),
+      0,
+    );
+    assert.match(validated.stdout(), /Plugin validation: acme\.new-plugin@0\.1\.0/);
+    assert.match(validated.stdout(), /skills: present directory skills sha256:[a-f0-9]{64}/);
+    assert.match(validated.stdout(), /mcpServers: present file mcp\.json sha256:[a-f0-9]{64}/);
+    assert.match(validated.stdout(), /registry_state: unchanged/);
+    assert.match(validated.stdout(), /execution_state: no install, enable, trust, grant, fetch, or execution performed/);
 
     const listed = createNoFetchIo();
     assert.equal(await runCli(["node", "cli", "plugins", "list"], env, listed.io), 0);

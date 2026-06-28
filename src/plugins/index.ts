@@ -50,6 +50,12 @@ export {
   type PluginScaffoldResult,
 } from "./scaffold.js";
 export {
+  renderPluginValidation,
+  validatePluginManifestInput,
+  type PluginValidationComponent,
+  type PluginValidationResult,
+} from "./validate.js";
+export {
   createPluginLockRecord,
   type PluginComponentHash,
   type PluginLockOptions,
