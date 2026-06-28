@@ -10,6 +10,12 @@ Decision: ORX model-visible MCP calls require explicit, persisted model-tool gra
 
 Reasoning: Session-local model MCP opt-in prevents accidental exposure, but exposing every read-only tool from every enabled trusted profile is still broader than needed. A second, profile-hash-bound model allowlist lets the operator choose which remote tools the model can call while preserving the existing MCP trust model: profile/schema drift invalidates approval, remote output remains untrusted, and billable/write/destructive model autonomy stays out of scope.
 
+## 2026-06-28: Plugin Bins Require Hash Trust And Explicit Operator Runs
+
+Decision: Enabled plugin `components.bins` files are discoverable from the ORX-owned plugin cache but remain non-executable until the operator trusts the current bin hash. `orx bins run <id> [args...]` and `/bins run <id> [args...]` execute only trusted current hashes, from the cached plugin root, with manifest-declared env only, bounded redacted output, and JSONL audit events that omit raw argument lists.
+
+Reasoning: Bins are useful for comfortable plugin workflows but are executable plugin code. Keeping trust hash-bound and run-only-by-operator preserves the install/enable boundary, catches changed cached files, avoids making cache files globally executable, and keeps plugin text/model output unable to authorize execution.
+
 ## 2026-06-28: Model-Visible MCP Starts Session-Local And Read-Only
 
 Decision: ORX may expose one native model tool, `mcp_call`, only after the operator enables it in the current interactive chat with `/mcp model enable`. The tool is not present in normal model requests by default and `/mcp model disable`, `/new`, or `/resume` remove the session-local exposure. `mcp_call` reuses MCP profile state, trusted profile hashes, schema-change gates, declared-tool policy, env-only bearer auth, DNS-vetted transport, redaction/truncation, and MCP audit events. In this first model-loop slice, model-visible calls are limited to read-only non-billable declared tools, even if an operator has granted a billable/write/destructive tool for explicit operator calls.

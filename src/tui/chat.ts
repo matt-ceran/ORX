@@ -102,6 +102,8 @@ export interface ChatOptions {
   mcpConfigPath?: string;
   pluginCacheDirectory?: string;
   pluginCatalogPath?: string;
+  pluginBinsAuditLogPath?: string;
+  pluginBinsConfigPath?: string;
   pluginHooksAuditLogPath?: string;
   pluginHooksConfigPath?: string;
   pluginRegistryPath?: string;
@@ -127,6 +129,8 @@ export async function runChat({
   mcpConfigPath,
   pluginCacheDirectory,
   pluginCatalogPath,
+  pluginBinsAuditLogPath,
+  pluginBinsConfigPath,
   pluginHooksAuditLogPath,
   pluginHooksConfigPath,
   pluginRegistryPath,
@@ -257,6 +261,8 @@ export async function runChat({
           mcpAuthEnv: hookEnv,
           pluginCacheDirectory,
           pluginCatalogPath,
+          pluginBinsAuditLogPath,
+          pluginBinsConfigPath,
           pluginHooksAuditLogPath,
           pluginHooksConfigPath,
           pluginRegistryPath,

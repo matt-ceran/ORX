@@ -108,6 +108,8 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/delegates/);
   assert.match(output, /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
+  assert.match(output, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(output, /\/skills \[list\|status\|activate <id>\]/);
   assert.match(output, /\/prompts \[list\|status\|activate <id>\]/);
   assert.match(output, /\/rules \[list\|status\|activate <id>\]/);
@@ -139,6 +141,7 @@ test("command palette renderer is a pure grouped listing surface", () => {
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
   assert.match(palette, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disabl/);
+  assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
   assert.match(palette, /\/prompts \[list\|status\|activate <id>\]/);
   assert.match(palette, /\/rules \[list\|status\|activate <id>\]/);
@@ -153,12 +156,13 @@ test("compact command palette renderer bounds TTY-oriented command discovery", (
     renderOptions: { color: false },
   });
 
-  assert.match(palette, /^Command palette matching "plugin" \(5\)/);
+  assert.match(palette, /^Command palette matching "plugin" \(6\)/);
   assert.match(palette, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disabl/);
+  assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
   assert.match(palette, /\/prompts \[list\|status\|activate <id>\]/);
-  assert.match(palette, /\/rules \[list\|status\|activate <id>\]/);
   assert.match(palette, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
+  assert.match(palette, /\.\.\. 1 more; use \/help all/);
   assert.doesNotMatch(palette, /\/model <id-or-search>/);
   for (const line of palette.split("\n")) {
     assert.ok(line.length <= 64, `palette line exceeds width: ${line}`);
@@ -189,6 +193,8 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/plugins en"), [["enable "], "en"]);
   assert.deepEqual(completeSlashCommandLine("/plugins i"), [["inspect ", "install "], "i"]);
+  assert.deepEqual(completeSlashCommandLine("/bins t"), [["trust "], "t"]);
+  assert.deepEqual(completeSlashCommandLine("/bins r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/hooks t"), [["trust "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/hooks r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
@@ -219,6 +225,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
   assert.match(harness.stdout(), /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(harness.stdout(), /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(harness.stdout(), /\/skills \[list\|status\|activate <id>\]/);
   assert.match(harness.stdout(), /\/prompts \[list\|status\|activate <id>\]/);
   assert.match(harness.stdout(), /\/rules \[list\|status\|activate <id>\]/);
@@ -1977,15 +1984,15 @@ test("plugins register, list, inspect, enable, and disable without network or ex
     assert.match(harness.stdout(), /skills: directory skills sha256:[a-f0-9]{64}/);
     assert.match(harness.stdout(), /filesystem: read:\./);
     assert.match(harness.stdout(), /env: DEMO_TOKEN/);
-    assert.match(harness.stdout(), /executable_surfaces: hooks=hash_trust_required bins=inactive mcp=inactive/);
-    assert.match(harness.stdout(), /plugin_code_execution: trusted current hooks run manually and on matching lifecycle events/);
+    assert.match(harness.stdout(), /executable_surfaces: hooks=hash_trust_required bins=hash_trust_required mcp=gated commands=inactive/);
+    assert.match(harness.stdout(), /plugin_code_execution: trusted current hooks run manually\/on lifecycle; trusted bins run only by explicit operator command/);
 
     assert.equal(
       handleSlashCommand("/plugins enable acme.demo-plugin@1.0.0", harness.context),
       "continue",
     );
     assert.match(harness.stdout(), /Plugin acme\.demo-plugin@1\.0\.0 enabled/);
-    assert.match(harness.stdout(), /hooks require separate hash trust, and bins\/MCP\/commands remain inactive/);
+    assert.match(harness.stdout(), /hooks and bins require separate hash trust, and MCP\/commands remain gated/);
 
     assert.equal(handleSlashCommand("/status", harness.context), "continue");
     assert.match(harness.stdout(), /plugin_installed_count: 1/);
@@ -2072,6 +2079,63 @@ test("mcp slash commands discover trusted plugin-provided remote-http presets", 
       harness.stdout(),
       /tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only/,
     );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("bins slash command lists inspects trusts runs and untrusts bins", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-bins-slash-"));
+  const registryPath = join(cwd, "registry", "plugins.json");
+  const binsConfigPath = join(cwd, "bins", "trust.json");
+  const binsAuditLogPath = join(cwd, "audit", "bins.jsonl");
+  const manifestPath = writePluginBinFixture(cwd);
+  const binId = "plugin:acme.bin-slash-plugin@1.0.0:bin:hello";
+  const harness = createSlashHarness({
+    pluginBinsAuditLogPath: binsAuditLogPath,
+    pluginBinsConfigPath: binsConfigPath,
+    pluginRegistryPath: registryPath,
+  });
+
+  try {
+    assert.equal(await handleSlashCommand(`/plugins install ${manifestPath}`, harness.context), "continue");
+    assert.equal(handleSlashCommand("/plugins enable acme.bin-slash-plugin@1.0.0", harness.context), "continue");
+
+    assert.equal(await handleSlashCommand("/bins list", harness.context), "continue");
+    assert.match(harness.stdout(), /discovered_bins: 1/);
+    assert.match(harness.stdout(), /trusted=no/);
+    assert.match(harness.stdout(), /execution=trust-required/);
+
+    assert.equal(await handleSlashCommand(`/bins inspect ${binId}`, harness.context), "continue");
+    assert.match(harness.stdout(), /Bin: plugin:acme\.bin-slash-plugin@1\.0\.0:bin:hello/);
+    assert.match(harness.stdout(), /runner: sh/);
+    assert.match(harness.stdout(), /execution: explicit trusted operator run only/);
+
+    assert.equal(await handleSlashCommand(`/bins run ${binId} slash-arg`, harness.context), "continue");
+    assert.match(harness.stderr(), /status: untrusted/);
+    assert.doesNotMatch(harness.stderr(), /stdout: "slash-bin/);
+
+    assert.equal(await handleSlashCommand(`/bins trust ${binId}`, harness.context), "continue");
+    assert.match(harness.stdout(), /Bin plugin:acme\.bin-slash-plugin@1\.0\.0:bin:hello trusted/);
+
+    assert.equal(await handleSlashCommand(`/bins run ${binId} slash-arg`, harness.context), "continue");
+    assert.match(harness.stdout(), /Bin run: plugin:acme\.bin-slash-plugin@1\.0\.0:bin:hello/);
+    assert.match(harness.stdout(), /status: ok/);
+    assert.match(harness.stdout(), /arg_count: 1/);
+    assert.match(harness.stdout(), /stdout: "slash-bin=slash-arg\\n"/);
+    assert.match(readFileSync(binsAuditLogPath, "utf8"), /"type":"plugin.bin.run"/);
+
+    assert.equal(handleSlashCommand("/plugins list", harness.context), "continue");
+    assert.match(harness.stdout(), /enabled_bins: 1/);
+
+    assert.equal(handleSlashCommand("/status", harness.context), "continue");
+    assert.match(harness.stdout(), /plugin_bin_definitions: 1/);
+    assert.match(harness.stdout(), /plugin_trusted_bins: 1/);
+    assert.match(harness.stdout(), /plugin_bin_runtime: explicit_trusted_operator_run/);
+    assert.match(harness.stdout(), /plugin_enabled_bins: 1/);
+
+    assert.equal(await handleSlashCommand(`/bins untrust ${binId}`, harness.context), "continue");
+    assert.match(harness.stdout(), /trust removed/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -2941,6 +3005,8 @@ function createSlashHarness(
     cwd?: string;
     mcpAuditLogPath?: string;
     mcpConfigPath?: string;
+    pluginBinsAuditLogPath?: string;
+    pluginBinsConfigPath?: string;
     pluginHooksAuditLogPath?: string;
     pluginCatalogPath?: string;
     pluginHooksConfigPath?: string;
@@ -3054,6 +3120,8 @@ function createSlashHarness(
       mcpAuditLogPath: options.mcpAuditLogPath,
       mcpConfigPath: options.mcpConfigPath,
       pluginCatalogPath: options.pluginCatalogPath,
+      pluginBinsAuditLogPath: options.pluginBinsAuditLogPath,
+      pluginBinsConfigPath: options.pluginBinsConfigPath,
       pluginHooksAuditLogPath: options.pluginHooksAuditLogPath,
       pluginHooksConfigPath: options.pluginHooksConfigPath,
       pluginRegistryPath: options.pluginRegistryPath,
@@ -3216,6 +3284,38 @@ function writePluginHookFixture(cwd: string): string {
         filesystem: [],
         network: [],
         env: ["CI"],
+        mcp: [],
+      },
+    }),
+  );
+  return manifestPath;
+}
+
+function writePluginBinFixture(cwd: string): string {
+  const pluginDirectory = join(cwd, "bin-plugin");
+  const manifestPath = join(pluginDirectory, "orx-plugin.json");
+  const binDirectory = join(pluginDirectory, "bin");
+  mkdirSync(binDirectory, { recursive: true });
+  writeFileSync(join(binDirectory, "hello"), "printf 'slash-bin=%s\\n' \"$1\"\n");
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "bin-slash-plugin",
+      version: "1.0.0",
+      description: "Declares a slash-visible bin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        bins: "./bin",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
         mcp: [],
       },
     }),

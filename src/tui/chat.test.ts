@@ -1705,8 +1705,9 @@ test("tty chat renders compact command palette without a model request", async (
 
     const stdout = stripAnsi(capture.stdout());
     assert.equal(exitCode, 0);
-    assert.match(stdout, /Command palette matching "plugin" \(5\)/);
+    assert.match(stdout, /Command palette matching "plugin" \(6\)/);
     assert.match(stdout, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
+    assert.match(stdout, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
     assert.match(stdout, /\/skills \[list\|status\|activate <id>\]/);
     assert.match(stdout, /\/prompts \[list\|status\|activate <id>\]/);
     assert.match(stdout, /\/rules \[list\|status\|activate <id>\]/);

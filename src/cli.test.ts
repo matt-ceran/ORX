@@ -25,6 +25,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
     assert.match(help.stdout(), /mcp\s+List, inspect, enable, disable, and grant MCP tool policy/);
     assert.match(help.stdout(), /plugins\s+List catalog entries, inspect, register\/install, enable, or disable plugins/);
+    assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
@@ -42,6 +43,7 @@ test("help, version, and status work without an API key", async () => {
         ["node", "cli", "status"],
         {
           ORX_MCP_CONFIG_PATH: join(cwd, "mcp", "profiles.json"),
+          ORX_PLUGIN_BINS_CONFIG_PATH: join(cwd, "plugins", "bins.json"),
           ORX_PLUGIN_HOOKS_CONFIG_PATH: join(cwd, "plugins", "hooks.json"),
           ORX_PROFILE_CONFIG_PATH: join(cwd, "profiles.json"),
         },
@@ -66,6 +68,10 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /hash=sha256:[a-f0-9]{64}/);
     assert.match(status.stdout(), /plugin_installed_count: 0/);
     assert.match(status.stdout(), /plugin_enabled_count: 0/);
+    assert.match(status.stdout(), /plugin_bin_runtime: explicit_trusted_operator_run/);
+    assert.match(status.stdout(), /plugin_bin_definitions: 0/);
+    assert.match(status.stdout(), /plugin_trusted_bins: 0/);
+    assert.match(status.stdout(), /plugin_pending_bin_trust: 0/);
     assert.match(status.stdout(), /plugin_enabled_hooks: 0/);
     assert.match(status.stdout(), /plugin_hook_definitions: 0/);
     assert.match(status.stdout(), /plugin_trusted_hooks: 0/);
@@ -566,8 +572,8 @@ test("cli plugins install list inspect enable and disable without an API key", a
       0,
     );
     assert.match(inspected.stdout(), /Plugin: acme\.cli-plugin@1\.0\.0/);
-    assert.match(inspected.stdout(), /executable_surfaces: hooks=hash_trust_required bins=inactive mcp=inactive/);
-    assert.match(inspected.stdout(), /plugin_code_execution: trusted current hooks run manually and on matching lifecycle events/);
+    assert.match(inspected.stdout(), /executable_surfaces: hooks=hash_trust_required bins=hash_trust_required mcp=gated commands=inactive/);
+    assert.match(inspected.stdout(), /plugin_code_execution: trusted current hooks run manually\/on lifecycle; trusted bins run only by explicit operator command/);
 
     const enabled = createNoFetchIo();
     assert.equal(
@@ -579,7 +585,7 @@ test("cli plugins install list inspect enable and disable without an API key", a
       0,
     );
     assert.match(enabled.stdout(), /Plugin acme\.cli-plugin@1\.0\.0 enabled/);
-    assert.match(enabled.stdout(), /hooks require separate hash trust, and bins\/MCP\/commands remain inactive/);
+    assert.match(enabled.stdout(), /hooks and bins require separate hash trust, and MCP\/commands remain gated/);
 
     const disabled = createNoFetchIo();
     assert.equal(
@@ -733,6 +739,126 @@ test("cli hooks list inspect trust run and untrust without an API key or fetch",
 
     const untrusted = createNoFetchIo();
     assert.equal(await runCli(["node", "cli", "hooks", "untrust", hookId], env, untrusted.io), 0);
+    assert.match(untrusted.stdout(), /trust removed/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli bins list inspect trust run and untrust without an API key or fetch", async () => {
+  const cwd = createTempDir();
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const binsConfigPath = join(cwd, "bins", "trust.json");
+  const binsAuditLogPath = join(cwd, "audit", "bins.jsonl");
+  const manifestPath = join(cwd, "plugin", "orx-plugin.json");
+  let fetchCalls = 0;
+  mkdirSync(join(cwd, "plugin", "bin"), { recursive: true });
+  writeFileSync(
+    join(cwd, "plugin", "bin", "hello"),
+    "printf 'cli-bin=%s\\n' \"$1\"\nprintf 'secret=%s\\n' \"$PLUGIN_TOKEN\" >&2\n",
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "bin-cli-plugin",
+      version: "1.0.0",
+      description: "CLI bin plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        bins: "./bin",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: ["PLUGIN_TOKEN"],
+        mcp: [],
+      },
+    }),
+  );
+  const env = {
+    ORX_PLUGIN_BINS_AUDIT_PATH: binsAuditLogPath,
+    ORX_PLUGIN_BINS_CONFIG_PATH: binsConfigPath,
+    ORX_PLUGIN_REGISTRY_PATH: registryPath,
+    PLUGIN_TOKEN: "cli-bin-secret-12345",
+  };
+  const createNoFetchIo = () =>
+    createIo({
+      cwd,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("bin CLI commands should not call fetch");
+      },
+    });
+  const binId = "plugin:acme.bin-cli-plugin@1.0.0:bin:hello";
+
+  try {
+    const installed = createNoFetchIo();
+    assert.equal(
+      await runCli(["node", "cli", "plugins", "install", manifestPath], env, installed.io),
+      0,
+    );
+    const enabled = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "enable", "acme.bin-cli-plugin@1.0.0"],
+        env,
+        enabled.io,
+      ),
+      0,
+    );
+    assert.match(enabled.stdout(), /hooks and bins require separate hash trust/);
+
+    const listed = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "bins", "list"], env, listed.io), 0);
+    assert.match(listed.stdout(), /discovered_bins: 1/);
+    assert.match(listed.stdout(), /trusted=no/);
+    assert.match(listed.stdout(), /execution=trust-required/);
+
+    const inspected = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "bins", "inspect", binId], env, inspected.io), 0);
+    assert.match(inspected.stdout(), /Bin: plugin:acme\.bin-cli-plugin@1\.0\.0:bin:hello/);
+    assert.match(inspected.stdout(), /runner: sh/);
+    assert.match(inspected.stdout(), /execution: explicit trusted operator run only/);
+
+    const blocked = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "bins", "run", binId, "world"], env, blocked.io), 1);
+    assert.match(blocked.stderr(), /status: untrusted/);
+    assert.doesNotMatch(blocked.stderr(), /cli-bin=world/);
+
+    const trusted = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "bins", "trust", binId], env, trusted.io), 0);
+    assert.match(trusted.stdout(), /trusted at sha256:[a-f0-9]{64}/);
+    assert.match(readFileSync(binsConfigPath, "utf8"), /plugin:acme\.bin-cli-plugin@1\.0\.0:bin:hello/);
+
+    const ran = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "bins", "run", binId, "world"], env, ran.io), 0);
+    assert.match(ran.stdout(), /Bin run: plugin:acme\.bin-cli-plugin@1\.0\.0:bin:hello/);
+    assert.match(ran.stdout(), /status: ok/);
+    assert.match(ran.stdout(), /arg_count: 1/);
+    assert.match(ran.stdout(), /stdout: "cli-bin=world\\n"/);
+    assert.match(ran.stdout(), /stderr: "secret=\[redacted-env:PLUGIN_TOKEN\]\\n"/);
+    assert.match(readFileSync(binsAuditLogPath, "utf8"), /"type":"plugin.bin.run"/);
+    assert.doesNotMatch(readFileSync(binsAuditLogPath, "utf8"), /cli-bin-secret-12345/);
+
+    const pluginList = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "plugins", "list"], env, pluginList.io), 0);
+    assert.match(pluginList.stdout(), /enabled_bins: 1/);
+
+    const status = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "status"], env, status.io), 0);
+    assert.match(status.stdout(), /plugin_bin_definitions: 1/);
+    assert.match(status.stdout(), /plugin_trusted_bins: 1/);
+    assert.match(status.stdout(), /plugin_bin_runtime: explicit_trusted_operator_run/);
+    assert.match(status.stdout(), /plugin_enabled_bins: 1/);
+
+    const untrusted = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "bins", "untrust", binId], env, untrusted.io), 0);
     assert.match(untrusted.stdout(), /trust removed/);
     assert.equal(fetchCalls, 0);
   } finally {

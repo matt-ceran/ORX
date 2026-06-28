@@ -41,15 +41,22 @@ import {
   createEnabledPluginPromptsSystemMessage,
   createEnabledPluginRulesSystemMessage,
   createEnabledPluginSkillsSystemMessage,
+  discoverEnabledPluginBins,
   discoverEnabledPluginHooks,
+  findDiscoveredBin,
   findDiscoveredHook,
   findInstalledPlugin,
+  formatBinIdForMessage,
   formatHookIdForMessage,
   formatPluginIdForMessage,
+  getPluginBinTrustSummary,
   getPluginHookTrustSummary,
   getPluginStatusSummary,
   loadPluginCatalog,
   registerPluginManifest,
+  renderPluginBinInspect,
+  renderPluginBinRunResult,
+  renderPluginBins,
   renderPluginHookInspect,
   renderPluginHookLifecycleResult,
   renderPluginHookRunResult,
@@ -57,16 +64,21 @@ import {
   renderPluginCatalog,
   renderPluginInspect,
   renderPluginList,
+  resolvePluginBinsAuditLogPath,
+  resolvePluginBinsConfigPath,
   resolvePluginHooksAuditLogPath,
   resolvePluginCacheDirectory,
   resolvePluginCatalogPath,
   resolvePluginHooksConfigPath,
   resolvePluginInstallTarget,
   resolvePluginRegistryPath,
+  runPluginBin,
   runPluginHook,
   runTrustedPluginHooksForEvent,
   setPluginEnabledState,
+  trustPluginBin,
   trustPluginHook,
+  untrustPluginBin,
   untrustPluginHook,
   type PluginHookEvent,
 } from "./plugins/index.js";
@@ -149,6 +161,8 @@ export async function runCli(
     cwd: io.cwd,
     registryPath: pluginRegistryPath,
   });
+  const pluginBinsConfigPath = resolvePluginBinsConfigPath({ env, cwd: io.cwd });
+  const pluginBinsAuditLogPath = resolvePluginBinsAuditLogPath({ env, cwd: io.cwd });
   const pluginHooksConfigPath = resolvePluginHooksConfigPath({ env, cwd: io.cwd });
   const pluginHooksAuditLogPath = resolvePluginHooksAuditLogPath({ env, cwd: io.cwd });
   const pluginCatalogPath = resolvePluginCatalogPath({ env, cwd: io.cwd });
@@ -173,6 +187,8 @@ export async function runCli(
         loadedConfig,
         mcpConfigPath,
         pluginCacheDirectory,
+        pluginBinsAuditLogPath,
+        pluginBinsConfigPath,
         pluginHooksAuditLogPath,
         pluginHooksConfigPath,
         pluginRegistryPath,
@@ -194,7 +210,19 @@ export async function runCli(
       pluginRegistryPath,
       pluginCacheDirectory,
       pluginCatalogPath,
+      pluginBinsConfigPath,
       pluginHooksConfigPath,
+    );
+  }
+
+  if (first === "bins" || first === "bin") {
+    return runBinsCommand(
+      args.slice(1),
+      env,
+      io,
+      pluginRegistryPath,
+      pluginBinsConfigPath,
+      pluginBinsAuditLogPath,
     );
   }
 
@@ -254,6 +282,8 @@ export async function runCli(
       mcpConfigPath,
       pluginCacheDirectory,
       pluginCatalogPath,
+      pluginBinsAuditLogPath,
+      pluginBinsConfigPath,
       pluginHooksAuditLogPath,
       pluginHooksConfigPath,
       pluginRegistryPath,
@@ -285,6 +315,7 @@ function helpText(): string {
     "  profile       List, inspect, save, or delete local ORX profiles",
     "  mcp           List, inspect, enable, disable, and grant MCP tool policy",
     "  plugins       List catalog entries, inspect, register/install, enable, or disable plugins",
+    "  bins          List, inspect, trust, untrust, or run plugin bins",
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  status        Show runtime status and config defaults",
     "  help          Show this help message",
@@ -311,6 +342,8 @@ function runChatCommand(
     mcpConfigPath?: string;
     pluginCacheDirectory?: string;
     pluginCatalogPath?: string;
+    pluginBinsAuditLogPath?: string;
+    pluginBinsConfigPath?: string;
     pluginHooksAuditLogPath?: string;
     pluginHooksConfigPath?: string;
     pluginRegistryPath?: string;
@@ -334,6 +367,8 @@ function runChatCommand(
     mcpConfigPath: paths?.mcpConfigPath,
     pluginCacheDirectory: paths?.pluginCacheDirectory,
     pluginCatalogPath: paths?.pluginCatalogPath,
+    pluginBinsAuditLogPath: paths?.pluginBinsAuditLogPath,
+    pluginBinsConfigPath: paths?.pluginBinsConfigPath,
     pluginHooksAuditLogPath: paths?.pluginHooksAuditLogPath,
     pluginHooksConfigPath: paths?.pluginHooksConfigPath,
     pluginRegistryPath: paths?.pluginRegistryPath,
@@ -503,6 +538,7 @@ function runPluginsCommand(
   pluginRegistryPath: string,
   pluginCacheDirectory: string,
   pluginCatalogPath: string,
+  pluginBinsConfigPath: string,
   pluginHooksConfigPath: string,
 ): number {
   const subcommand = args[0]?.toLowerCase() ?? "list";
@@ -512,6 +548,10 @@ function runPluginsCommand(
     writeLine(
       io.stdout,
       renderPluginList(getPluginStatusSummary({ registryPath: pluginRegistryPath }), {
+        enabledBinCount: getPluginBinTrustSummary({
+          configPath: pluginBinsConfigPath,
+          registryPath: pluginRegistryPath,
+        }).trustedCount,
         enabledHookCount: getPluginHookTrustSummary({
           configPath: pluginHooksConfigPath,
           registryPath: pluginRegistryPath,
@@ -1014,6 +1054,106 @@ function runMcpCommand(
     io.stderr,
     "Usage: orx mcp [list|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
+  return 1;
+}
+
+async function runBinsCommand(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  io: CliIo,
+  pluginRegistryPath: string,
+  pluginBinsConfigPath: string,
+  pluginBinsAuditLogPath: string,
+): Promise<number> {
+  const subcommand = args[0]?.toLowerCase() ?? "list";
+  const binId = args[1];
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(
+      io.stdout,
+      renderPluginBins(discoverEnabledPluginBins({ registryPath: pluginRegistryPath }), {
+        configPath: pluginBinsConfigPath,
+      }),
+    );
+    return 0;
+  }
+
+  if (subcommand === "inspect") {
+    if (!binId || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx bins inspect <id>");
+      return 1;
+    }
+
+    const bin = findDiscoveredBin(binId, { registryPath: pluginRegistryPath });
+    if (!bin) {
+      writeLine(io.stderr, `Unknown enabled plugin bin: ${formatBinIdForMessage(binId)}`);
+      return 1;
+    }
+
+    writeLine(io.stdout, renderPluginBinInspect(bin, { configPath: pluginBinsConfigPath }));
+    return 0;
+  }
+
+  if (subcommand === "trust") {
+    if (!binId || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx bins trust <id>");
+      return 1;
+    }
+
+    try {
+      const result = trustPluginBin(binId, {
+        registryPath: pluginRegistryPath,
+        configPath: pluginBinsConfigPath,
+      });
+      if (!result.ok) {
+        writeLine(io.stderr, result.message);
+        return 1;
+      }
+      writeLine(io.stdout, result.message);
+      return 0;
+    } catch (error) {
+      writeLine(io.stderr, `Unable to persist bin trust state${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
+  if (subcommand === "run") {
+    if (!binId || args.length < 2) {
+      writeLine(io.stderr, "Usage: orx bins run <id> [args...]");
+      return 1;
+    }
+
+    const result = await runPluginBin(binId, args.slice(2), {
+      auditLogPath: pluginBinsAuditLogPath,
+      configPath: pluginBinsConfigPath,
+      env,
+      registryPath: pluginRegistryPath,
+    });
+    writeLine(result.ok ? io.stdout : io.stderr, renderPluginBinRunResult(result));
+    return result.ok ? 0 : 1;
+  }
+
+  if (subcommand === "untrust" || subcommand === "revoke") {
+    if (!binId || args.length !== 2) {
+      writeLine(io.stderr, `Usage: orx bins ${subcommand} <id>`);
+      return 1;
+    }
+
+    try {
+      const result = untrustPluginBin(binId, { configPath: pluginBinsConfigPath });
+      if (!result.ok) {
+        writeLine(io.stderr, result.message);
+        return 1;
+      }
+      writeLine(io.stdout, result.message);
+      return 0;
+    } catch (error) {
+      writeLine(io.stderr, `Unable to persist bin trust state${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
+  writeLine(io.stderr, "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]");
   return 1;
 }
 

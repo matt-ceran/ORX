@@ -67,18 +67,25 @@ import {
   activatePluginPrompt,
   activatePluginRule,
   activatePluginSkill,
+  discoverEnabledPluginBins,
   discoverEnabledPluginHooks,
   discoverEnabledPluginPrompts,
   discoverEnabledPluginRules,
   discoverEnabledPluginSkills,
+  findDiscoveredBin,
   findDiscoveredHook,
   findInstalledPlugin,
+  formatBinIdForMessage,
   formatHookIdForMessage,
   formatPluginIdForMessage,
+  getPluginBinTrustSummary,
   getPluginHookTrustSummary,
   getPluginStatusSummary,
   loadPluginCatalog,
   registerPluginManifest,
+  renderPluginBinInspect,
+  renderPluginBinRunResult,
+  renderPluginBins,
   renderPluginHookInspect,
   renderPluginHookRunResult,
   renderPluginHooks,
@@ -92,9 +99,12 @@ import {
   renderRuleActivation,
   renderSkillActivation,
   resolvePluginInstallTarget,
+  runPluginBin,
   runPluginHook,
   setPluginEnabledState,
+  trustPluginBin,
   trustPluginHook,
+  untrustPluginBin,
   untrustPluginHook,
   type PluginPromptActivationProvenance,
   type PluginRuleActivationProvenance,
@@ -235,6 +245,8 @@ export interface SlashCommandContext {
   mcpConfigPath?: string;
   pluginCacheDirectory?: string;
   pluginCatalogPath?: string;
+  pluginBinsAuditLogPath?: string;
+  pluginBinsConfigPath?: string;
   pluginHooksAuditLogPath?: string;
   pluginHooksConfigPath?: string;
   pluginRegistryPath?: string;
@@ -326,6 +338,7 @@ const PLUGIN_SUBCOMMAND_COMPLETIONS = [
   "enable",
   "disable",
 ] as const;
+const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -825,6 +838,16 @@ const COMMANDS: Record<string, SlashDefinition> = {
       return "continue";
     },
   },
+  "/bins": {
+    usage: "/bins [list|inspect|trust|untrust|run]",
+    description: "Review, trust, or manually run plugin bins",
+    group: "Integrations",
+    tier: "advanced",
+    handler: async (command, context): Promise<SlashResult> => {
+      await handleBinsCommand(command, context);
+      return "continue";
+    },
+  },
   "/hooks": {
     usage: "/hooks [list|inspect|trust|untrust|run]",
     description: "Review, trust, or manually run plugin hooks",
@@ -1283,6 +1306,8 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
         : [];
     case "/plugins":
       return argIndex === 0 ? [...PLUGIN_SUBCOMMAND_COMPLETIONS] : [];
+    case "/bins":
+      return argIndex === 0 ? [...BIN_SUBCOMMAND_COMPLETIONS] : [];
     case "/hooks":
       return argIndex === 0 ? [...HOOK_SUBCOMMAND_COMPLETIONS] : [];
     case "/skills":
@@ -1481,6 +1506,8 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       loadedConfig,
       mcpConfigPath: context.mcpConfigPath,
       pluginCacheDirectory: context.pluginCacheDirectory,
+      pluginBinsAuditLogPath: context.pluginBinsAuditLogPath,
+      pluginBinsConfigPath: context.pluginBinsConfigPath,
       pluginHooksAuditLogPath: context.pluginHooksAuditLogPath,
       pluginHooksConfigPath: context.pluginHooksConfigPath,
       pluginRegistryPath: context.pluginRegistryPath,
@@ -1851,6 +1878,10 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
     writeLine(
       context.io.stdout,
       renderPluginList(getPluginStatusSummary({ registryPath: context.pluginRegistryPath }), {
+        enabledBinCount: getPluginBinTrustSummary({
+          configPath: context.pluginBinsConfigPath,
+          registryPath: context.pluginRegistryPath,
+        }).trustedCount,
         enabledHookCount: getPluginHookTrustSummary({
           configPath: context.pluginHooksConfigPath,
           registryPath: context.pluginRegistryPath,
@@ -1940,6 +1971,99 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
     context.io.stderr,
     "Usage: /plugins [catalog|list|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
+}
+
+async function handleBinsCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
+  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+  const binId = command.args[1];
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(
+      context.io.stdout,
+      renderPluginBins(discoverEnabledPluginBins({ registryPath: context.pluginRegistryPath }), {
+        configPath: context.pluginBinsConfigPath,
+      }),
+    );
+    return;
+  }
+
+  if (subcommand === "inspect") {
+    if (!binId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /bins inspect <id>");
+      return;
+    }
+
+    const bin = findDiscoveredBin(binId, { registryPath: context.pluginRegistryPath });
+    if (!bin) {
+      writeLine(context.io.stderr, `Unknown enabled plugin bin: ${formatBinIdForMessage(binId)}`);
+      return;
+    }
+
+    writeLine(
+      context.io.stdout,
+      renderPluginBinInspect(bin, { configPath: context.pluginBinsConfigPath }),
+    );
+    return;
+  }
+
+  if (subcommand === "trust") {
+    if (!binId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /bins trust <id>");
+      return;
+    }
+
+    try {
+      const result = trustPluginBin(binId, {
+        registryPath: context.pluginRegistryPath,
+        configPath: context.pluginBinsConfigPath,
+      });
+      if (!result.ok) {
+        writeLine(context.io.stderr, result.message);
+        return;
+      }
+      writeLine(context.io.stdout, result.message);
+    } catch (error) {
+      writeLine(context.io.stderr, `Unable to persist bin trust state${formatErrorCode(error)}.`);
+    }
+    return;
+  }
+
+  if (subcommand === "run") {
+    if (!binId || command.args.length < 2) {
+      writeLine(context.io.stderr, "Usage: /bins run <id> [args...]");
+      return;
+    }
+
+    const result = await runPluginBin(binId, command.args.slice(2), {
+      auditLogPath: context.pluginBinsAuditLogPath,
+      configPath: context.pluginBinsConfigPath,
+      env: process.env,
+      registryPath: context.pluginRegistryPath,
+    });
+    writeLine(result.ok ? context.io.stdout : context.io.stderr, renderPluginBinRunResult(result));
+    return;
+  }
+
+  if (subcommand === "untrust" || subcommand === "revoke") {
+    if (!binId || command.args.length !== 2) {
+      writeLine(context.io.stderr, `Usage: /bins ${subcommand} <id>`);
+      return;
+    }
+
+    try {
+      const result = untrustPluginBin(binId, { configPath: context.pluginBinsConfigPath });
+      if (!result.ok) {
+        writeLine(context.io.stderr, result.message);
+        return;
+      }
+      writeLine(context.io.stdout, result.message);
+    } catch (error) {
+      writeLine(context.io.stderr, `Unable to persist bin trust state${formatErrorCode(error)}.`);
+    }
+    return;
+  }
+
+  writeLine(context.io.stderr, "Usage: /bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]");
 }
 
 async function handleHooksCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {

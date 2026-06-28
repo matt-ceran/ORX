@@ -2,14 +2,14 @@ import type { InstalledPluginRecord, PluginStatusSummary } from "./registry.js";
 
 export function renderPluginList(
   summary: PluginStatusSummary,
-  options: { enabledHookCount?: number } = {},
+  options: { enabledBinCount?: number; enabledHookCount?: number } = {},
 ): string {
   const lines = [
     "Plugins",
     `  installed: ${summary.installedCount}`,
     `  enabled: ${summary.enabledCount}`,
     `  enabled_hooks: ${options.enabledHookCount ?? summary.enabledHookCount}`,
-    `  enabled_bins: ${summary.enabledBinCount}`,
+    `  enabled_bins: ${options.enabledBinCount ?? summary.enabledBinCount}`,
     `  enabled_mcp: ${summary.enabledMcpCount}`,
   ];
 
@@ -75,8 +75,8 @@ export function renderPluginInspect(plugin: InstalledPluginRecord): string {
     plugin.manifest.components.mcpServers
       ? "  mcp_profiles: discoverable via /mcp list when plugin is enabled; execution inactive"
       : "  mcp_profiles: none declared",
-    "  executable_surfaces: hooks=hash_trust_required bins=inactive mcp=inactive commands=inactive",
-    "  plugin_code_execution: trusted current hooks run manually and on matching lifecycle events",
+    "  executable_surfaces: hooks=hash_trust_required bins=hash_trust_required mcp=gated commands=inactive",
+    "  plugin_code_execution: trusted current hooks run manually/on lifecycle; trusted bins run only by explicit operator command",
   ].join("\n");
 }
 

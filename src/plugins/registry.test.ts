@@ -121,7 +121,7 @@ test("plugin registry enable and disable only changes state markers", () => {
     assert.equal(enabled.ok, true);
     assert.equal(enabled.previousEnabled, false);
     assert.equal(enabled.nextEnabled, true);
-    assert.match(enabled.message, /hooks require separate hash trust, and bins\/MCP\/commands remain inactive/);
+    assert.match(enabled.message, /hooks and bins require separate hash trust, and MCP\/commands remain gated/);
 
     const summary = getPluginStatusSummary({ registryPath });
     assert.equal(summary.installedCount, 1);
@@ -361,7 +361,7 @@ test("plugin manifest metadata is sanitized and rendered as inert risk context",
     assert.match(rendered, /privacy_data_access: repo-files/);
     assert.match(rendered, /runtime_node: >=20/);
     assert.match(rendered, /runtime_tools: node/);
-    assert.match(rendered, /executable_surfaces: hooks=hash_trust_required bins=inactive mcp=inactive commands=inactive/);
+    assert.match(rendered, /executable_surfaces: hooks=hash_trust_required bins=hash_trust_required mcp=gated commands=inactive/);
     assert.match(formatPluginIdForMessage("acme.demo-plugin@1.0.0"), /acme\.demo-plugin@1\.0\.0/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });

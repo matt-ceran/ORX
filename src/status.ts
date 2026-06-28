@@ -8,6 +8,7 @@ import {
   getEnabledPluginRuleSummary,
   getEnabledPluginSkillSummary,
   getEnabledPluginMcpProfileSummary,
+  getPluginBinTrustSummary,
   getPluginHookTrustSummary,
   getPluginStatusSummary,
 } from "./plugins/index.js";
@@ -19,6 +20,8 @@ export interface StatusOptions {
   loadedConfig: LoadedConfig;
   mcpConfigPath?: string;
   pluginCacheDirectory?: string;
+  pluginBinsAuditLogPath?: string;
+  pluginBinsConfigPath?: string;
   pluginHooksAuditLogPath?: string;
   pluginHooksConfigPath?: string;
   pluginRegistryPath?: string;
@@ -32,6 +35,8 @@ export function formatStatus({
   loadedConfig,
   mcpConfigPath,
   pluginCacheDirectory,
+  pluginBinsAuditLogPath,
+  pluginBinsConfigPath,
   pluginHooksAuditLogPath,
   pluginHooksConfigPath,
   pluginRegistryPath,
@@ -50,6 +55,10 @@ export function formatStatus({
   const pluginPromptStatus = getEnabledPluginPromptSummary({ registryPath: pluginRegistryPath });
   const pluginRuleStatus = getEnabledPluginRuleSummary({ registryPath: pluginRegistryPath });
   const pluginMcpStatus = getEnabledPluginMcpProfileSummary({ registryPath: pluginRegistryPath });
+  const pluginBinTrustStatus = getPluginBinTrustSummary({
+    registryPath: pluginRegistryPath,
+    configPath: pluginBinsConfigPath,
+  });
   const pluginHookTrustStatus = getPluginHookTrustSummary({
     registryPath: pluginRegistryPath,
     configPath: pluginHooksConfigPath,
@@ -97,8 +106,17 @@ export function formatStatus({
     `plugin_installed_count: ${pluginStatus.installedCount}`,
     `plugin_enabled_count: ${pluginStatus.enabledCount}`,
     `plugin_cache_path: ${pluginCacheDirectory ?? "default"}`,
+    `plugin_bins_config_path: ${pluginBinsConfigPath ?? "default"}`,
+    `plugin_bins_audit_path: ${pluginBinsAuditLogPath ?? "default"}`,
     `plugin_hooks_config_path: ${pluginHooksConfigPath ?? "default"}`,
     `plugin_hooks_audit_path: ${pluginHooksAuditLogPath ?? "default"}`,
+    "plugin_bin_runtime: explicit_trusted_operator_run",
+    `plugin_enabled_bins: ${pluginBinTrustStatus.trustedCount}`,
+    `plugin_bin_definitions: ${pluginBinTrustStatus.binCount}${
+      pluginBinTrustStatus.truncated ? " (truncated)" : ""
+    }`,
+    `plugin_trusted_bins: ${pluginBinTrustStatus.trustedCount}`,
+    `plugin_pending_bin_trust: ${pluginBinTrustStatus.pendingTrustCount}`,
     "plugin_hook_runtime: manual_and_lifecycle",
     `plugin_enabled_hooks: ${pluginHookTrustStatus.trustedCount}`,
     `plugin_hook_definitions: ${pluginHookTrustStatus.hookCount}${
@@ -106,7 +124,6 @@ export function formatStatus({
     }`,
     `plugin_trusted_hooks: ${pluginHookTrustStatus.trustedCount}`,
     `plugin_pending_hook_trust: ${pluginHookTrustStatus.pendingTrustCount}`,
-    `plugin_enabled_bins: ${pluginStatus.enabledBinCount}`,
     `plugin_enabled_mcp: ${pluginStatus.enabledMcpCount}`,
     `plugin_mcp_presets: ${pluginMcpStatus.profileCount}${
       pluginMcpStatus.truncated ? " (truncated)" : ""
