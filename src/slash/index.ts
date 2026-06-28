@@ -101,6 +101,7 @@ import {
   getPluginBinTrustSummary,
   getPluginHookTrustSummary,
   getPluginStatusSummary,
+  checkPluginCatalogUpdates,
   installPlugin,
   isPluginCommandAliasName,
   loadPluginCatalog,
@@ -117,6 +118,7 @@ import {
   renderPluginHooks,
   renderPluginCatalog,
   renderPluginCatalogInspect,
+  renderPluginCatalogUpdateReport,
   renderPluginInspect,
   renderPluginList,
   renderPluginPromptList,
@@ -400,6 +402,10 @@ const PLUGIN_CATALOG_SUBCOMMAND_COMPLETIONS = [
   "list",
   "status",
   "inspect",
+  "updates",
+  "update-check",
+  "check-updates",
+  "outdated",
   "add-local",
   "add-git",
   "remove",
@@ -970,7 +976,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/plugins": {
-    usage: "/plugins [catalog [list|inspect|add-local|add-git|remove]|list|commands|scaffold|validate|inspect|register|install|enable|disable]",
+    usage: "/plugins [catalog [list|inspect|updates|add-local|add-git|remove]|list|commands|scaffold|validate|inspect|register|install|enable|disable]",
     description: "Show catalog entries and update inert plugin registry state",
     group: "Integrations",
     tier: "advanced",
@@ -2237,7 +2243,7 @@ async function handlePluginsCommand(
 
   writeLine(
     context.io.stderr,
-    "Usage: /plugins [catalog [list|inspect|add-local|add-git|remove]|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: /plugins [catalog [list|inspect|updates|add-local|add-git|remove]|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
 }
 
@@ -2250,6 +2256,37 @@ function handlePluginCatalogCommand(
     writeLine(
       context.io.stdout,
       renderPluginCatalog(loadPluginCatalog({ catalogPath: context.pluginCatalogPath })),
+    );
+    return;
+  }
+
+  if (
+    subcommand === "updates" ||
+    subcommand === "update-check" ||
+    subcommand === "check-updates" ||
+    subcommand === "outdated"
+  ) {
+    const ids = args.slice(1);
+    const missingIds = ids.filter(
+      (id) => !findPluginCatalogEntry(id, { catalogPath: context.pluginCatalogPath }),
+    );
+    if (missingIds.length > 0) {
+      writeLine(
+        context.io.stderr,
+        `Unknown catalog entry: ${formatPluginCatalogIdForMessage(missingIds[0] ?? "")}`,
+      );
+      return;
+    }
+
+    writeLine(
+      context.io.stdout,
+      renderPluginCatalogUpdateReport(
+        checkPluginCatalogUpdates({
+          catalogPath: context.pluginCatalogPath,
+          registryPath: context.pluginRegistryPath,
+          ids,
+        }),
+      ),
     );
     return;
   }
@@ -2322,7 +2359,7 @@ function handlePluginCatalogCommand(
 
   writeLine(
     context.io.stderr,
-    "Usage: /plugins catalog [list|inspect <id>|add-local <manifest-path-or-directory>|add-git <id> <repository> <resolved-commit>|remove <id>]",
+    "Usage: /plugins catalog [list|inspect <id>|updates [id]|add-local <manifest-path-or-directory>|add-git <id> <repository> <resolved-commit>|remove <id>]",
   );
 }
 

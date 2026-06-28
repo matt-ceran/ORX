@@ -1576,6 +1576,54 @@ test("cli plugins install supports pinned git catalog entries without fetch", as
     const registryText = readFileSync(registryPath, "utf8");
     assert.match(registryText, /"type": "git"/);
     assert.match(registryText, new RegExp(commit));
+
+    writeFileSync(join(repoPath, "README.md"), "new catalog pin\n");
+    git(repoPath, "add", ".");
+    git(repoPath, "commit", "-m", "next");
+    const nextCommit = git(repoPath, "rev-parse", "HEAD").trim();
+
+    const updatedPin = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        [
+          "node",
+          "cli",
+          "plugins",
+          "catalog",
+          "add-git",
+          "acme.git-cli-plugin@1.0.0",
+          pathToFileURL(repoPath).href,
+          nextCommit,
+          "--tag",
+          "git",
+        ],
+        env,
+        updatedPin.io,
+      ),
+      0,
+    );
+    assert.match(updatedPin.stdout(), /Catalog git entry acme\.git-cli-plugin@1\.0\.0 updated/);
+
+    const updates = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "catalog", "updates", "acme.git-cli-plugin@1.0.0"],
+        env,
+        updates.io,
+      ),
+      0,
+    );
+    assert.match(updates.stdout(), /Plugin Catalog Update Check/);
+    assert.match(updates.stdout(), /entries_checked: 1/);
+    assert.match(updates.stdout(), /updates_available: 1/);
+    assert.match(updates.stdout(), /network: none/);
+    assert.match(updates.stdout(), /side_effects: none/);
+    assert.match(updates.stdout(), /status=update_available/);
+    assert.match(updates.stdout(), new RegExp(`catalog_commit=${nextCommit.slice(0, 12)}`));
+    assert.match(updates.stdout(), new RegExp(`installed_commit=${commit.slice(0, 12)}`));
+    assert.match(updates.stdout(), /command: orx plugins install acme\.git-cli-plugin@1\.0\.0/);
+    assert.match(updates.stdout(), /fetch_install_enable_trust_grant_execute: separate_explicit_steps/);
+    assert.equal(readFileSync(registryPath, "utf8"), registryText);
     assert.equal(fetchCalls, 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });

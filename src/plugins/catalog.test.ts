@@ -1,14 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
+  checkPluginCatalogUpdates,
+  installPlugin,
   loadPluginCatalog,
   parsePluginCatalogAddGitArgs,
   removePluginCatalogEntry,
   renderPluginCatalog,
   renderPluginCatalogInspect,
+  renderPluginCatalogUpdateReport,
   resolvePluginCatalogPath,
   resolvePluginInstallTarget,
   upsertGitPluginCatalogEntry,
@@ -357,3 +370,205 @@ test("plugin catalog git editor adds pinned entries without fetching", () => {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test("plugin catalog update check compares local catalog pins without fetching", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-catalog-update-check-"));
+  const repoPath = join(cwd, "repo");
+  const currentRepoPath = join(cwd, "current-repo");
+  const localPath = join(cwd, "local");
+  const catalogPath = join(cwd, "catalog", "catalog.json");
+  const registryPath = join(cwd, "registry", "plugins.json");
+  const cacheDirectory = join(cwd, "cache");
+  mkdirSync(repoPath, { recursive: true });
+  mkdirSync(currentRepoPath, { recursive: true });
+  mkdirSync(localPath, { recursive: true });
+  writePluginManifest(repoPath, {
+    name: "git-update",
+    description: "Git update plugin.",
+    source: {
+      type: "local",
+      path: ".",
+    },
+  });
+  writePluginManifest(localPath, {
+    name: "local-update",
+    description: "Local update plugin.",
+    source: {
+      type: "local",
+      path: ".",
+    },
+  });
+  writePluginManifest(currentRepoPath, {
+    name: "git-current",
+    description: "Current git plugin.",
+    source: {
+      type: "local",
+      path: ".",
+    },
+  });
+  const installedCommit = commitRepo(repoPath, "initial");
+  const currentCommit = commitRepo(currentRepoPath, "initial");
+
+  try {
+    upsertGitPluginCatalogEntry(
+      {
+        id: "acme.git-update@1.0.0",
+        repository: pathToFileURL(repoPath).href,
+        resolvedCommit: installedCommit,
+      },
+      { catalogPath },
+    );
+    await installPlugin("acme.git-update@1.0.0", {
+      catalogPath,
+      registryPath,
+      cacheDirectory,
+    });
+    upsertGitPluginCatalogEntry(
+      {
+        id: "acme.git-current@1.0.0",
+        repository: pathToFileURL(currentRepoPath).href,
+        resolvedCommit: currentCommit,
+      },
+      { catalogPath },
+    );
+    await installPlugin("acme.git-current@1.0.0", {
+      catalogPath,
+      registryPath,
+      cacheDirectory,
+    });
+
+    writeFileSync(join(repoPath, "README.md"), "catalog pin changed\n");
+    const catalogCommit = commitRepo(repoPath, "next");
+    upsertGitPluginCatalogEntry(
+      {
+        id: "acme.git-update@1.0.0",
+        repository: pathToFileURL(repoPath).href,
+        resolvedCommit: catalogCommit,
+      },
+      { catalogPath },
+    );
+    upsertGitPluginCatalogEntry(
+      {
+        id: "acme.not-installed@1.0.0",
+        repository: pathToFileURL(repoPath).href,
+        resolvedCommit: catalogCommit,
+      },
+      { catalogPath },
+    );
+    upsertLocalPluginCatalogEntry(
+      {
+        manifestPath: localPath,
+      },
+      { catalogPath },
+    );
+    chmodSync(registryPath, 0o644);
+    const registryTextBefore = readFileSync(registryPath, "utf8");
+    const registryStatBefore = statSync(registryPath);
+
+    const report = checkPluginCatalogUpdates({ catalogPath, registryPath });
+    const registryStatAfter = statSync(registryPath);
+    assert.equal(registryStatAfter.mode & 0o777, registryStatBefore.mode & 0o777);
+    assert.equal(registryStatAfter.mtimeMs, registryStatBefore.mtimeMs);
+    assert.equal(readFileSync(registryPath, "utf8"), registryTextBefore);
+    assert.equal(report.entriesChecked, 4);
+    assert.equal(report.updateAvailableCount, 1);
+    assert.equal(report.currentCount, 1);
+    assert.equal(report.notInstalledCount, 1);
+    assert.equal(report.skippedCount, 1);
+    assert.equal(
+      report.entries.find((entry) => entry.id === "acme.git-update@1.0.0")?.status,
+      "update_available",
+    );
+    assert.equal(
+      report.entries.find((entry) => entry.id === "acme.not-installed@1.0.0")?.status,
+      "not_installed",
+    );
+    assert.equal(
+      report.entries.find((entry) => entry.id === "acme.git-current@1.0.0")?.status,
+      "current",
+    );
+    assert.equal(
+      report.entries.find((entry) => entry.id === "acme.git-update@1.0.0")?.catalogCommit,
+      catalogCommit,
+    );
+    assert.equal(
+      report.entries.find((entry) => entry.id === "acme.git-update@1.0.0")?.installedCommit,
+      installedCommit,
+    );
+
+    const scopedReport = checkPluginCatalogUpdates({
+      catalogPath,
+      registryPath,
+      ids: ["acme.git-update@1.0.0"],
+    });
+    assert.equal(scopedReport.entriesChecked, 1);
+    assert.equal(scopedReport.entries[0]?.status, "update_available");
+
+    const rendered = renderPluginCatalogUpdateReport(report);
+    assert.match(rendered, /Plugin Catalog Update Check/);
+    assert.match(rendered, /updates_available: 1/);
+    assert.match(rendered, /network: none/);
+    assert.match(rendered, /side_effects: none/);
+    assert.match(rendered, /id=acme\.git-update@1\.0\.0 status=update_available/);
+    assert.match(rendered, new RegExp(`catalog_commit=${catalogCommit.slice(0, 12)}`));
+    assert.match(rendered, new RegExp(`installed_commit=${installedCommit.slice(0, 12)}`));
+    assert.match(rendered, /command: orx plugins install acme\.git-update@1\.0\.0/);
+    assert.match(rendered, /id=acme\.not-installed@1\.0\.0 status=not_installed/);
+    assert.match(rendered, /id=acme\.git-current@1\.0\.0 status=current/);
+    assert.match(rendered, /status=not_git_catalog/);
+    assert.match(rendered, /fetch_install_enable_trust_grant_execute: separate_explicit_steps/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+function writePluginManifest(
+  root: string,
+  options: {
+    name: string;
+    description: string;
+    source: { type: "local"; path: string } | { type: "git"; repository: string; resolvedCommit: string };
+  },
+): void {
+  writeFileSync(
+    join(root, "orx-plugin.json"),
+    JSON.stringify({
+      schemaVersion: "1",
+      name: options.name,
+      version: "1.0.0",
+      description: options.description,
+      publisher: "acme",
+      source: options.source,
+      components: {},
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+}
+
+function commitRepo(cwd: string, message: string): string {
+  if (!statSync(join(cwd, ".git"), { throwIfNoEntry: false })) {
+    git(cwd, "init");
+    git(cwd, "config", "user.email", "orx@example.test");
+    git(cwd, "config", "user.name", "ORX Tests");
+  }
+  git(cwd, "add", ".");
+  git(cwd, "commit", "-m", message);
+  return git(cwd, "rev-parse", "HEAD").trim();
+}
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1",
+    },
+  });
+}

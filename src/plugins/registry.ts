@@ -125,6 +125,22 @@ export function loadPluginRegistry(options: PluginRegistryIoOptions = {}): Plugi
   }
 }
 
+export function loadPluginRegistryReadOnly(
+  options: PluginRegistryIoOptions = {},
+): PluginRegistryFile {
+  const path = options.registryPath ?? defaultPluginRegistryPath();
+  if (!existsSync(path)) {
+    return emptyPluginRegistry();
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+    return sanitizePluginRegistry(parsed);
+  } catch {
+    return emptyPluginRegistry();
+  }
+}
+
 export function savePluginRegistry(
   registry: PluginRegistryFile,
   options: PluginRegistryIoOptions = {},

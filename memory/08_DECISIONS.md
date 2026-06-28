@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Plugin Catalog Update Checks Are Local Pin Comparisons
+
+Decision: ORX may provide `orx plugins catalog updates [id]` and `/plugins catalog updates [id]` to compare installed plugin registry provenance against the local plugin catalog's pinned git entries. These checks must be read-only and local-only: they may load the catalog and registry, but must not fetch remotes, install plugins, enable plugins, trust hashes, grant tools, execute plugin surfaces, or mutate registry/cache/catalog state.
+
+Reasoning: Operators need to know when a locally managed catalog pin differs from what is installed, but remote update discovery is a separate network action with different trust and provenance implications. A local pin comparison gives useful maintenance visibility while preserving the catalog boundary: changing a catalog declaration is not installation, update checking is not fetching, and install/enable/trust remain explicit later steps.
+
 ## 2026-06-28: Plugin Catalog Editing Is Local Declaration Management
 
 Decision: ORX may provide `orx plugins catalog inspect|add-local|add-git|remove` and `/plugins catalog inspect|add-local|add-git|remove` to review and edit the private local plugin catalog, but these commands must only read or write operator-owned catalog declarations. They must not install, enable, trust, grant, fetch, execute, or write plugin registry/cache runtime state. Installing a catalog entry remains a separate explicit `plugins install <catalog-id>` step, and executable surfaces remain behind the existing enable plus hash-trust or MCP grant gates.

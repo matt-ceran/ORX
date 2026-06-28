@@ -9,6 +9,11 @@ import {
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, posix, resolve, sep } from "node:path";
 import { pluginManifestId, readPluginManifestFile } from "./manifest.js";
+import {
+  defaultPluginRegistryPath,
+  loadPluginRegistryReadOnly,
+  type InstalledPluginRecord,
+} from "./registry.js";
 
 export interface PluginCatalogPathOptions {
   env?: NodeJS.ProcessEnv;
@@ -74,6 +79,35 @@ export interface PluginInstallTarget {
   manifestPath: string;
   gitSource?: PluginCatalogGitSource;
   catalogEntry?: PluginCatalogEntry;
+}
+
+export type PluginCatalogUpdateStatus =
+  | "current"
+  | "update_available"
+  | "not_installed"
+  | "not_git_catalog"
+  | "source_mismatch";
+
+export interface PluginCatalogUpdateCheckEntry {
+  id: string;
+  status: PluginCatalogUpdateStatus;
+  catalogCommit?: string;
+  installedCommit?: string;
+  repository?: string;
+  installedRepository?: string;
+  enabled?: boolean;
+  message: string;
+}
+
+export interface PluginCatalogUpdateReport {
+  catalogPath: string;
+  registryPath: string;
+  entriesChecked: number;
+  updateAvailableCount: number;
+  currentCount: number;
+  notInstalledCount: number;
+  skippedCount: number;
+  entries: PluginCatalogUpdateCheckEntry[];
 }
 
 const CATALOG_VERSION = 1;
@@ -512,6 +546,88 @@ export function renderPluginCatalogInspect(
   return lines.join("\n");
 }
 
+export function checkPluginCatalogUpdates(
+  options: PluginCatalogLoadOptions & { registryPath?: string; ids?: string[] } = {},
+): PluginCatalogUpdateReport {
+  const catalogPath = options.catalogPath ?? defaultPluginCatalogPath();
+  const registryPath = options.registryPath ?? defaultPluginRegistryPath();
+  const catalog = loadPluginCatalog({ catalogPath });
+  const registry = loadPluginRegistryReadOnly({ registryPath });
+  const requestedIds = normalizeRequestedCatalogIds(options.ids);
+  const entries = requestedIds.length > 0
+    ? requestedIds
+        .map((id) => catalog.entries.find((entry) => entry.id === id))
+        .filter((entry): entry is PluginCatalogEntry => Boolean(entry))
+    : catalog.entries;
+
+  const checked = entries.map((entry) =>
+    checkPluginCatalogEntryUpdate(entry, registry.plugins[entry.id]),
+  );
+
+  return {
+    catalogPath,
+    registryPath,
+    entriesChecked: checked.length,
+    updateAvailableCount: checked.filter((entry) => entry.status === "update_available").length,
+    currentCount: checked.filter((entry) => entry.status === "current").length,
+    notInstalledCount: checked.filter((entry) => entry.status === "not_installed").length,
+    skippedCount: checked.filter(
+      (entry) => entry.status === "not_git_catalog" || entry.status === "source_mismatch",
+    ).length,
+    entries: checked,
+  };
+}
+
+export function renderPluginCatalogUpdateReport(report: PluginCatalogUpdateReport): string {
+  const lines = [
+    "Plugin Catalog Update Check",
+    `  catalog_path: ${formatCatalogDisplayPath(report.catalogPath)}`,
+    `  registry_path: ${formatCatalogDisplayPath(report.registryPath)}`,
+    `  entries_checked: ${report.entriesChecked}`,
+    `  updates_available: ${report.updateAvailableCount}`,
+    `  current: ${report.currentCount}`,
+    `  not_installed: ${report.notInstalledCount}`,
+    `  skipped: ${report.skippedCount}`,
+    "  network: none",
+    "  side_effects: none",
+  ];
+
+  if (report.entries.length === 0) {
+    lines.push("  plugins: none");
+  } else {
+    lines.push("  plugins:");
+    for (const entry of report.entries) {
+      lines.push(
+        [
+          `    - id=${entry.id}`,
+          `status=${entry.status}`,
+          entry.catalogCommit ? `catalog_commit=${entry.catalogCommit.slice(0, 12)}` : undefined,
+          entry.installedCommit
+            ? `installed_commit=${entry.installedCommit.slice(0, 12)}`
+            : undefined,
+          typeof entry.enabled === "boolean" ? `enabled=${entry.enabled ? "yes" : "no"}` : undefined,
+          entry.repository ? `repository=${entry.repository}` : undefined,
+          entry.installedRepository ? `installed_repository=${entry.installedRepository}` : undefined,
+          `message="${formatCatalogDisplayInline(entry.message)}"`,
+        ]
+          .filter((part): part is string => typeof part === "string")
+          .join(" "),
+      );
+      if (entry.status === "update_available") {
+        lines.push(`      command: orx plugins install ${entry.id}`);
+      }
+    }
+  }
+
+  lines.push(
+    "  authority:",
+    "    update_check: catalog_and_registry_compare_only",
+    "    fetch_install_enable_trust_grant_execute: separate_explicit_steps",
+  );
+
+  return lines.join("\n");
+}
+
 export function formatPluginCatalogIdForMessage(id: string): string {
   return formatCatalogIdForMessage(id);
 }
@@ -728,6 +844,80 @@ function formatCatalogDisplayPath(value: string): string {
     return "[redacted path]";
   }
   return withoutControls;
+}
+
+function formatCatalogDisplayInline(value: string): string {
+  return formatCatalogDisplayPath(value).replace(/"/g, "'");
+}
+
+function normalizeRequestedCatalogIds(values: string[] | undefined): string[] {
+  if (!values) {
+    return [];
+  }
+  const ids: string[] = [];
+  for (const value of values) {
+    const id = sanitizeCatalogId(value);
+    if (id && CATALOG_ID_PATTERN.test(id) && !ids.includes(id)) {
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
+function checkPluginCatalogEntryUpdate(
+  entry: PluginCatalogEntry,
+  plugin: InstalledPluginRecord | undefined,
+): PluginCatalogUpdateCheckEntry {
+  if (!entry.source) {
+    return {
+      id: entry.id,
+      status: "not_git_catalog",
+      message: "local catalog entry has no pinned git update state",
+    };
+  }
+
+  if (!plugin) {
+    return {
+      id: entry.id,
+      status: "not_installed",
+      catalogCommit: entry.source.resolvedCommit,
+      repository: entry.source.repository,
+      message: "catalog entry is not installed",
+    };
+  }
+
+  const installedSource = plugin.manifest.source;
+  if (
+    installedSource.type !== "git" ||
+    installedSource.repository !== entry.source.repository ||
+    !installedSource.resolvedCommit
+  ) {
+    return {
+      id: entry.id,
+      status: "source_mismatch",
+      catalogCommit: entry.source.resolvedCommit,
+      installedCommit: installedSource.resolvedCommit,
+      repository: entry.source.repository,
+      installedRepository: installedSource.repository,
+      enabled: plugin.enabled,
+      message: "installed plugin source does not match the catalog git source",
+    };
+  }
+
+  const current =
+    installedSource.resolvedCommit.toLowerCase() === entry.source.resolvedCommit.toLowerCase();
+
+  return {
+    id: entry.id,
+    status: current ? "current" : "update_available",
+    catalogCommit: entry.source.resolvedCommit,
+    installedCommit: installedSource.resolvedCommit,
+    repository: entry.source.repository,
+    enabled: plugin.enabled,
+    message: current
+      ? "installed commit matches the catalog pin"
+      : "catalog pin differs from the installed commit",
+  };
 }
 
 function resolveCatalogManifestPath(entry: PluginCatalogEntry, catalogPath: string): string {

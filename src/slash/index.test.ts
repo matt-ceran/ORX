@@ -113,7 +113,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
-  assert.match(output, /\/plugins \[catalog \[list\|inspect\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(output, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
@@ -147,7 +147,7 @@ test("command palette renderer is a pure grouped listing surface", () => {
 
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
-  assert.match(palette, /\/plugins \[catalog \[list\|inspect\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|reg/);
+  assert.match(palette, /\/plugins \[catalog \[list\|inspect\|updates\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|reg/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -165,7 +165,7 @@ test("compact command palette renderer bounds TTY-oriented command discovery", (
   });
 
   assert.match(palette, /^Command palette matching "plugin" \(7\)/);
-  assert.match(palette, /\/plugins \[catalog \[list\|inspect\|add-local\|add-git\|remove\]\|lis/);
+  assert.match(palette, /\/plugins \[catalog \[list\|inspect\|updates\|add-local\|add-git\|rem/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -203,6 +203,8 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mcp allow-m"), [["allow-model-tool "], "allow-m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp inspect o"), [["openrouter "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog ", "commands "], "c"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins catalog check-"), [["check-updates "], "check-"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins catalog u"), [["updates ", "update-check "], "u"]);
   assert.deepEqual(completeSlashCommandLine("/plugins en"), [["enable "], "en"]);
   assert.deepEqual(completeSlashCommandLine("/plugins i"), [["inspect ", "install "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/plugins s"), [["status ", "scaffold "], "s"]);
@@ -320,7 +322,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.equal(handleSlashCommand("/commands plugin", harness.context), "continue");
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
-  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|inspect\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|inspect\|updates\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(harness.stdout(), /\/plugin \[list\|status\]/);
   assert.match(harness.stdout(), /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(harness.stdout(), /\/skills \[list\|status\|activate <id>\]/);
@@ -2821,7 +2823,39 @@ test("plugins install supports pinned git catalog entries without fetch", async 
     assert.match(harness.stdout(), /Catalog entry acme\.git-slash-plugin@1\.0\.0 resolved to git source/);
     assert.match(harness.stdout(), new RegExp(commit));
     assert.match(harness.stdout(), /Plugin acme\.git-slash-plugin@1\.0\.0 registered disabled/);
-    assert.match(readFileSync(registryPath, "utf8"), /acme\.git-slash-plugin@1\.0\.0/);
+    const registryText = readFileSync(registryPath, "utf8");
+    assert.match(registryText, /acme\.git-slash-plugin@1\.0\.0/);
+
+    writeFileSync(join(repoPath, "README.md"), "new slash catalog pin\n");
+    git(repoPath, "add", ".");
+    git(repoPath, "commit", "-m", "next");
+    const nextCommit = git(repoPath, "rev-parse", "HEAD").trim();
+    assert.equal(
+      await handleSlashCommand(
+        `/plugins catalog add-git acme.git-slash-plugin@1.0.0 ${pathToFileURL(repoPath).href} ${nextCommit} --tag git`,
+        harness.context,
+      ),
+      "continue",
+    );
+
+    assert.equal(
+      await handleSlashCommand(
+        "/plugins catalog updates acme.git-slash-plugin@1.0.0",
+        harness.context,
+      ),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Plugin Catalog Update Check/);
+    assert.match(harness.stdout(), /entries_checked: 1/);
+    assert.match(harness.stdout(), /updates_available: 1/);
+    assert.match(harness.stdout(), /network: none/);
+    assert.match(harness.stdout(), /side_effects: none/);
+    assert.match(harness.stdout(), /status=update_available/);
+    assert.match(harness.stdout(), new RegExp(`catalog_commit=${nextCommit.slice(0, 12)}`));
+    assert.match(harness.stdout(), new RegExp(`installed_commit=${commit.slice(0, 12)}`));
+    assert.match(harness.stdout(), /command: orx plugins install acme\.git-slash-plugin@1\.0\.0/);
+    assert.match(harness.stdout(), /fetch_install_enable_trust_grant_execute: separate_explicit_steps/);
+    assert.equal(readFileSync(registryPath, "utf8"), registryText);
     assert.equal(fetchCalls, 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
