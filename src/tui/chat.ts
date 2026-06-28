@@ -20,8 +20,10 @@ import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import {
   createEnabledPluginPromptsSystemMessage,
+  createEnabledPluginRulesSystemMessage,
   createEnabledPluginSkillsSystemMessage,
   discoverEnabledPluginPrompts,
+  discoverEnabledPluginRules,
   discoverEnabledPluginSkills,
 } from "../plugins/index.js";
 import type {
@@ -39,6 +41,7 @@ import {
   type ListedSessionRecord,
   type OrxSessionRecord,
   type SessionActivatedPrompt,
+  type SessionActivatedRule,
   type SessionActivatedSkill,
 } from "../sessions/index.js";
 import {
@@ -137,6 +140,7 @@ export async function runChat({
   let session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
   let activatedSkills: SessionActivatedSkill[] = session.record.activatedSkills ?? [];
   let activatedPrompts: SessionActivatedPrompt[] = session.record.activatedPrompts ?? [];
+  let activatedRules: SessionActivatedRule[] = session.record.activatedRules ?? [];
   let evidenceSources: EvidenceSource[] = session.record.evidenceSources ?? [];
   let delegationState: DelegationState = normalizeDelegationState(session.record.delegation);
   const { useReadlineTerminal, useTtyScreen } = resolveChatTerminalModes(io.stdin, io.stdout);
@@ -214,6 +218,7 @@ export async function runChat({
             costMeterState = emptySessionCostMeterState();
             activatedSkills = [];
             activatedPrompts = [];
+            activatedRules = [];
             evidenceSources = [];
           },
           getEvidenceSources: () => evidenceSources,
@@ -244,10 +249,14 @@ export async function runChat({
           recordActivatedPrompt: (prompt) => {
             activatedPrompts = upsertActivatedPrompt(activatedPrompts, prompt);
           },
+          recordActivatedRule: (rule) => {
+            activatedRules = upsertActivatedRule(activatedRules, rule);
+          },
           startNewSession: async () => {
             session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
             activatedSkills = [];
             activatedPrompts = [];
+            activatedRules = [];
             evidenceSources = [];
             delegationState = createEmptyDelegationState();
           },
@@ -273,6 +282,7 @@ export async function runChat({
             costMeterState = createSessionCostMeterState(latestMetadata);
             activatedSkills = cloneJson(record.activatedSkills ?? []);
             activatedPrompts = cloneJson(record.activatedPrompts ?? []);
+            activatedRules = cloneJson(record.activatedRules ?? []);
             evidenceSources = cloneJson(record.evidenceSources ?? []);
             delegationState = normalizeDelegationState(record.delegation);
             resetSessionDiffState(diffState);
@@ -288,10 +298,11 @@ export async function runChat({
             };
           },
         });
-        ({ messages, activatedSkills, activatedPrompts } = pruneInactivePluginActivationState(
+        ({ messages, activatedSkills, activatedPrompts, activatedRules } = pruneInactivePluginActivationState(
           messages,
           activatedSkills,
           activatedPrompts,
+          activatedRules,
           pluginRegistryPath,
         ));
         await persistSession(
@@ -302,6 +313,7 @@ export async function runChat({
           latestMetadata,
           activatedSkills,
           activatedPrompts,
+          activatedRules,
           evidenceSources,
           delegationState,
           io.stderr,
@@ -316,10 +328,11 @@ export async function runChat({
         continue;
       }
 
-      ({ messages, activatedSkills, activatedPrompts } = pruneInactivePluginActivationState(
+      ({ messages, activatedSkills, activatedPrompts, activatedRules } = pruneInactivePluginActivationState(
         messages,
         activatedSkills,
         activatedPrompts,
+        activatedRules,
         pluginRegistryPath,
       ));
       const userMessage: OpenRouterMessage = { role: "user", content: line };
@@ -389,6 +402,7 @@ export async function runChat({
           latestMetadata,
           activatedSkills,
           activatedPrompts,
+          activatedRules,
           evidenceSources,
           delegationState,
           io.stderr,
@@ -632,6 +646,7 @@ async function persistSession(
   latestMetadata: OpenRouterStreamMetadata | undefined,
   activatedSkills: SessionActivatedSkill[],
   activatedPrompts: SessionActivatedPrompt[],
+  activatedRules: SessionActivatedRule[],
   evidenceSources: EvidenceSource[],
   delegationState: DelegationState,
   stderr: WritableLike,
@@ -643,6 +658,7 @@ async function persistSession(
       latestMetadata,
       activatedSkills,
       activatedPrompts,
+      activatedRules,
       evidenceSources,
       delegation: delegationState,
       cwd,
@@ -662,6 +678,7 @@ function compactPluginContextMessages(pluginRegistryPath: string | undefined): O
   const messages = [
     createEnabledPluginSkillsSystemMessage({ registryPath: pluginRegistryPath }),
     createEnabledPluginPromptsSystemMessage({ registryPath: pluginRegistryPath }),
+    createEnabledPluginRulesSystemMessage({ registryPath: pluginRegistryPath }),
   ];
   return messages.filter((message): message is OpenRouterMessage => typeof message !== "undefined");
 }
@@ -680,21 +697,31 @@ function upsertActivatedPrompt(
   return [...prompts.filter((prompt) => prompt.id !== nextPrompt.id), nextPrompt];
 }
 
+function upsertActivatedRule(
+  rules: SessionActivatedRule[],
+  nextRule: SessionActivatedRule,
+): SessionActivatedRule[] {
+  return [...rules.filter((rule) => rule.id !== nextRule.id), nextRule];
+}
+
 function pruneInactivePluginActivationState(
   messages: OpenRouterMessage[],
   activatedSkills: SessionActivatedSkill[],
   activatedPrompts: SessionActivatedPrompt[],
+  activatedRules: SessionActivatedRule[],
   pluginRegistryPath: string | undefined,
 ): {
   messages: OpenRouterMessage[];
   activatedSkills: SessionActivatedSkill[];
   activatedPrompts: SessionActivatedPrompt[];
+  activatedRules: SessionActivatedRule[];
 } {
-  if (activatedSkills.length === 0 && activatedPrompts.length === 0) {
+  if (activatedSkills.length === 0 && activatedPrompts.length === 0 && activatedRules.length === 0) {
     return {
       messages,
       activatedSkills,
       activatedPrompts,
+      activatedRules,
     };
   }
 
@@ -706,18 +733,24 @@ function pruneInactivePluginActivationState(
       (prompt) => prompt.id,
     ),
   );
+  const activeRuleIds = new Set(
+    discoverEnabledPluginRules({ registryPath: pluginRegistryPath }).rules.map((rule) => rule.id),
+  );
   const nextActivatedSkills = activatedSkills.filter((skill) => activeSkillIds.has(skill.id));
   const nextActivatedPrompts = activatedPrompts.filter((prompt) =>
     activePromptIds.has(prompt.id),
   );
+  const nextActivatedRules = activatedRules.filter((rule) => activeRuleIds.has(rule.id));
   if (
     nextActivatedSkills.length === activatedSkills.length &&
-    nextActivatedPrompts.length === activatedPrompts.length
+    nextActivatedPrompts.length === activatedPrompts.length &&
+    nextActivatedRules.length === activatedRules.length
   ) {
     return {
       messages,
       activatedSkills,
       activatedPrompts,
+      activatedRules,
     };
   }
 
@@ -729,10 +762,16 @@ function pruneInactivePluginActivationState(
       }
 
       const promptId = activatedPromptMessageId(message);
-      return !promptId || activePromptIds.has(promptId);
+      if (promptId) {
+        return activePromptIds.has(promptId);
+      }
+
+      const ruleId = activatedRuleMessageId(message);
+      return !ruleId || activeRuleIds.has(ruleId);
     }),
     activatedSkills: nextActivatedSkills,
     activatedPrompts: nextActivatedPrompts,
+    activatedRules: nextActivatedRules,
   };
 }
 
@@ -758,6 +797,18 @@ function activatedPromptMessageId(message: OpenRouterMessage): string | undefine
   }
 
   return /^- prompt_id: (plugin:[^\n]+)$/m.exec(message.content)?.[1];
+}
+
+function activatedRuleMessageId(message: OpenRouterMessage): string | undefined {
+  if (message.role !== "system" || typeof message.content !== "string") {
+    return undefined;
+  }
+
+  if (!message.content.startsWith("ORX plugin rule activation.\n")) {
+    return undefined;
+  }
+
+  return /^- rule_id: (plugin:[^\n]+)$/m.exec(message.content)?.[1];
 }
 
 function sessionInfo(session: ChatSessionHandle): { id: string; path: string } {

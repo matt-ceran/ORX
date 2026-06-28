@@ -26,6 +26,7 @@ Urgent UX recovery additions from user testing:
 - Plugin install/register now snapshots sanitized manifests plus declared components into ORX-owned plugin cache storage before registry persistence; enabled skill discovery resolves from the cached manifest path, not the original source checkout.
 - Plugin catalog support is local-only: `orx plugins catalog`, `/plugins catalog`, and `plugins install <catalog-id>` read sanitized entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH` and do not fetch remote sources.
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` as untrusted context; executable plugin commands remain inactive.
+- Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -70,6 +71,15 @@ Implemented plugin markdown prompt-command activation:
 - `/status`, help, command palette, Tab completion, README, session tests, CLI tests, slash tests, and TTY tests were updated for prompt-command visibility.
 - Focused verification: `npm run typecheck` and `npm run build && node --test dist/plugins/prompts.test.js dist/cli.test.js dist/slash/index.test.js dist/tui/chat.test.js dist/sessions/store.test.js` pass with 116 tests.
 - Next likely plugin work: plugin rules or richer remote/plugin metadata, then MCP preset wiring while executable hooks/bins/MCP/plugin commands remain gated.
+
+Implemented plugin markdown rule activation:
+
+- Added `src/plugins/rules.ts` for bounded discovery of enabled plugin `components.rules` markdown files from the ORX-owned cached manifest path only.
+- `/rules list` and `/rules status` expose sanitized metadata without loading full rule content. Rule names/descriptions come only from frontmatter or filenames, never markdown body text.
+- `orx ask` and chat requests receive compact enabled-rule metadata as ephemeral system context; full markdown loads only through explicit `/rules activate <id>`.
+- Activated rules append untrusted system messages, record provenance in session metadata, and are pruned from chat/session state when the backing plugin rule is disabled or removed.
+- `/status`, help, command palette, Tab completion, README, session tests, CLI tests, slash tests, and TTY tests were updated for rule visibility.
+- Next likely plugin work: richer plugin metadata/namespacing or plugin-provided MCP preset wiring while executable hooks/bins/MCP/plugin commands remain gated.
 
 Implemented and focused-verified ORX-owned local plugin install cache:
 

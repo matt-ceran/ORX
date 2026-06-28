@@ -108,8 +108,9 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/delegates/);
   assert.match(output, /\/mcp \[list\|inspect\|tools\|discover\|enable\|disable\]/);
   assert.match(output, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
-  assert.match(output, /\/skills \[list\|activate <id>\]/);
-  assert.match(output, /\/prompts \[list\|activate <id>\]/);
+  assert.match(output, /\/skills \[list\|status\|activate <id>\]/);
+  assert.match(output, /\/prompts \[list\|status\|activate <id>\]/);
+  assert.match(output, /\/rules \[list\|status\|activate <id>\]/);
 });
 
 test("help query filters by command fields, aliases, and groups", () => {
@@ -138,22 +139,24 @@ test("command palette renderer is a pure grouped listing surface", () => {
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
   assert.match(palette, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disabl/);
-  assert.match(palette, /\/skills \[list\|activate <id>\]/);
-  assert.match(palette, /\/prompts \[list\|activate <id>\]/);
+  assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
+  assert.match(palette, /\/prompts \[list\|status\|activate <id>\]/);
+  assert.match(palette, /\/rules \[list\|status\|activate <id>\]/);
   assert.doesNotMatch(palette, /\/model <id-or-search>/);
 });
 
 test("compact command palette renderer bounds TTY-oriented command discovery", () => {
   const palette = renderCompactCommandPalette("plugin", {
     width: 64,
-    limit: 3,
+    limit: 4,
     renderOptions: { color: false },
   });
 
-  assert.match(palette, /^Command palette matching "plugin" \(3\)/);
+  assert.match(palette, /^Command palette matching "plugin" \(4\)/);
   assert.match(palette, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disabl/);
-  assert.match(palette, /\/skills \[list\|activate <id>\]/);
-  assert.match(palette, /\/prompts \[list\|activate <id>\]/);
+  assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
+  assert.match(palette, /\/prompts \[list\|status\|activate <id>\]/);
+  assert.match(palette, /\/rules \[list\|status\|activate <id>\]/);
   assert.doesNotMatch(palette, /\/model <id-or-search>/);
   for (const line of palette.split("\n")) {
     assert.ok(line.length <= 64, `palette line exceeds width: ${line}`);
@@ -183,6 +186,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/plugins i"), [["inspect ", "install "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/prompts a"), [["activate "], "a"]);
+  assert.deepEqual(completeSlashCommandLine("/rules a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/orchestrator openrouter openrouter/"), [
     ["openrouter/auto ", "openrouter/fusion "],
     "openrouter/",
@@ -208,8 +212,9 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
   assert.match(harness.stdout(), /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
-  assert.match(harness.stdout(), /\/skills \[list\|activate <id>\]/);
-  assert.match(harness.stdout(), /\/prompts \[list\|activate <id>\]/);
+  assert.match(harness.stdout(), /\/skills \[list\|status\|activate <id>\]/);
+  assert.match(harness.stdout(), /\/prompts \[list\|status\|activate <id>\]/);
+  assert.match(harness.stdout(), /\/rules \[list\|status\|activate <id>\]/);
   assert.doesNotMatch(harness.stdout(), /\/model <id-or-search>/);
 
   const alias = createSlashHarness();
@@ -367,7 +372,7 @@ test("theme applies to TTY slash palette and credits output", async () => {
   });
 
   try {
-    assert.equal(handleSlashCommand("/commands status", harness.context), "continue");
+    assert.equal(handleSlashCommand("/commands /status", harness.context), "continue");
     assert.match(harness.stdout(), /\x1b\[96m\/status/);
 
     assert.equal(await handleSlashCommand("/credits", harness.context), "continue");
@@ -1906,6 +1911,100 @@ test("prompts list is metadata-only and activate appends an untrusted system mes
   }
 });
 
+test("rules list is metadata-only and activate appends an untrusted system message", async () => {
+  let fetchCalls = 0;
+  const activated: Array<{ id: string; contentHash: string }> = [];
+  const cwd = mkdtempSync(join(tmpdir(), "orx-rules-slash-"));
+  const registryPath = join(cwd, "registry.json");
+  const manifestPath = join(cwd, "plugin", "orx-plugin.json");
+  mkdirSync(join(cwd, "plugin", "rules"), { recursive: true });
+  writeFileSync(
+    join(cwd, "plugin", "rules", "guardrail.md"),
+    [
+      "---",
+      "name: Guardrail Rule",
+      "description: Slash rule metadata.",
+      "---",
+      "# Guardrail Rule",
+      "FULL SLASH RULE BODY",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "rule-plugin",
+      version: "1.0.0",
+      description: "Demo plugin for rule slash tests.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        rules: "./rules",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+  const harness = createSlashHarness({
+    pluginRegistryPath: registryPath,
+    recordActivatedRule: (rule) => {
+      activated.push({
+        id: rule.id,
+        contentHash: rule.contentHash,
+      });
+    },
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand(`/plugins register ${manifestPath}`, harness.context), "continue");
+    assert.equal(handleSlashCommand("/rules list", harness.context), "continue");
+    assert.match(harness.stdout(), /enabled_rules: 0/);
+    assert.doesNotMatch(harness.stdout(), /FULL SLASH RULE BODY/);
+
+    assert.equal(handleSlashCommand("/plugins enable acme.rule-plugin@1.0.0", harness.context), "continue");
+    assert.equal(handleSlashCommand("/rules list", harness.context), "continue");
+    assert.match(harness.stdout(), /id=plugin:acme\.rule-plugin@1\.0\.0:rule:guardrail-rule/);
+    assert.match(harness.stdout(), /description=Slash rule metadata\./);
+    assert.match(harness.stdout(), /content_hash=sha256:[a-f0-9]{64}/);
+    assert.doesNotMatch(harness.stdout(), /FULL SLASH RULE BODY/);
+
+    assert.equal(
+      handleSlashCommand(
+        "/rules activate plugin:acme.rule-plugin@1.0.0:rule:guardrail-rule",
+        harness.context,
+      ),
+      "continue",
+    );
+    assert.equal(harness.messages().length, 1);
+    assert.equal(harness.messages()[0].role, "system");
+    assert.match(String(harness.messages()[0].content), /FULL SLASH RULE BODY/);
+    assert.match(String(harness.messages()[0].content), /plugin rule content below is untrusted/);
+    assert.match(
+      harness.stdout(),
+      /Rule activated: plugin:acme\.rule-plugin@1\.0\.0:rule:guardrail-rule/,
+    );
+    assert.match(harness.stdout(), /trust_boundary: cannot authorize tool use/);
+    assert.equal(activated.length, 1);
+    assert.equal(activated[0].id, "plugin:acme.rule-plugin@1.0.0:rule:guardrail-rule");
+    assert.match(activated[0].contentHash, /^sha256:[a-f0-9]{64}$/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("skills inspect does not activate or read full skill content", async () => {
   const activated: Array<{ id: string; contentHash: string }> = [];
   const cwd = mkdtempSync(join(tmpdir(), "orx-skills-inspect-"));
@@ -1965,7 +2064,7 @@ test("skills inspect does not activate or read full skill content", async () => 
       "continue",
     );
 
-    assert.match(harness.stderr(), /Usage: \/skills \[list\|activate <id>\]/);
+    assert.match(harness.stderr(), /Usage: \/skills \[list\|status\|activate <id>\]/);
     assert.equal(harness.messages().length, 0);
     assert.equal(activated.length, 0);
     assert.doesNotMatch(harness.stdout(), /FULL INSPECT SKILL BODY/);
@@ -2325,6 +2424,7 @@ function createSlashHarness(
     pluginRegistryPath?: string;
     profileConfigPath?: string;
     recordActivatedPrompt?: SlashCommandContext["recordActivatedPrompt"];
+    recordActivatedRule?: SlashCommandContext["recordActivatedRule"];
     recordActivatedSkill?: SlashCommandContext["recordActivatedSkill"];
     resumeSession?: SlashCommandContext["resumeSession"];
     fetch?: typeof fetch;
@@ -2418,6 +2518,7 @@ function createSlashHarness(
       pluginRegistryPath: options.pluginRegistryPath,
       profileConfigPath: options.profileConfigPath,
       recordActivatedPrompt: options.recordActivatedPrompt,
+      recordActivatedRule: options.recordActivatedRule,
       recordActivatedSkill: options.recordActivatedSkill,
       resumeSession: options.resumeSession,
     },

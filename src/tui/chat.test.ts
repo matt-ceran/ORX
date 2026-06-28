@@ -648,6 +648,114 @@ test("chat prompt activation persists provenance and full prompt system message"
   }
 });
 
+test("chat rule activation persists provenance and full rule system message", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const registryPath = join(sessionDirectory, "plugins", "registry.json");
+  const manifestPath = join(sessionDirectory, "plugin", "orx-plugin.json");
+  const requests: Array<{
+    messages: Array<{ role: string; content: string | null }>;
+  }> = [];
+  mkdirSync(join(sessionDirectory, "plugin", "rules"), { recursive: true });
+  writeFileSync(
+    join(sessionDirectory, "plugin", "rules", "chat-guardrail.md"),
+    [
+      "---",
+      "name: Chat Guardrail Rule",
+      "description: Chat rule metadata.",
+      "---",
+      "# Chat Guardrail Rule",
+      "FULL CHAT RULE BODY",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "rule-plugin",
+      version: "1.0.0",
+      description: "Rule plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        rules: "./rules",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.rule-plugin@1.0.0", true, { registryPath });
+    const capture = createIo({
+      stdin: Readable.from([
+        "/rules activate plugin:acme.rule-plugin@1.0.0:rule:chat-guardrail-rule\n",
+        "Use the chat rule\n",
+        "/exit\n",
+      ]),
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+
+        return new Response(
+          streamFrom([
+            'data: {"choices":[{"delta":{"content":"Chat rule used."}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      pluginRegistryPath: registryPath,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].messages[0].role, "system");
+    assert.match(String(requests[0].messages[0].content), /enabled plugin rules/);
+    assert.doesNotMatch(String(requests[0].messages[0].content), /FULL CHAT RULE BODY/);
+    assert.equal(requests[0].messages[1].role, "system");
+    assert.match(String(requests[0].messages[1].content), /FULL CHAT RULE BODY/);
+    assert.deepEqual(requests[0].messages[2], { role: "user", content: "Use the chat rule" });
+    assert.match(
+      capture.stdout(),
+      /Rule activated: plugin:acme\.rule-plugin@1\.0\.0:rule:chat-guardrail-rule/,
+    );
+    assert.match(capture.stdout(), /assistant: Chat rule used\./);
+
+    const sessionFiles = readdirSync(sessionDirectory).filter((file) => file.endsWith(".json"));
+    assert.equal(sessionFiles.length, 1);
+    const saved = JSON.parse(
+      readFileSync(join(sessionDirectory, sessionFiles[0]), "utf8"),
+    ) as {
+      activatedRules?: Array<{ id: string; contentHash: string }>;
+      messages: Array<{ role: string; content: string | null }>;
+    };
+    assert.equal(
+      saved.activatedRules?.[0].id,
+      "plugin:acme.rule-plugin@1.0.0:rule:chat-guardrail-rule",
+    );
+    assert.match(saved.activatedRules?.[0].contentHash ?? "", /^sha256:[a-f0-9]{64}$/);
+    assert.match(String(saved.messages[0].content), /FULL CHAT RULE BODY/);
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 test("chat web fetch persists evidence sources and untrusted context", async () => {
   const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
   let fetchCalls = 0;
@@ -1231,6 +1339,99 @@ test("chat prunes activated prompt context after plugin disable", async () => {
   }
 });
 
+test("chat prunes activated rule context after plugin disable", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const registryPath = join(sessionDirectory, "plugins", "registry.json");
+  const manifestPath = join(sessionDirectory, "plugin", "orx-plugin.json");
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+  mkdirSync(join(sessionDirectory, "plugin", "rules"), { recursive: true });
+  writeFileSync(
+    join(sessionDirectory, "plugin", "rules", "disabled.md"),
+    [
+      "---",
+      "name: Disabled Rule",
+      "description: Disabled rule metadata.",
+      "---",
+      "# Disabled Rule",
+      "FULL DISABLED RULE BODY",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "disable-rule-plugin",
+      version: "1.0.0",
+      description: "Disable rule plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        rules: "./rules",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.disable-rule-plugin@1.0.0", true, { registryPath });
+    const capture = createIo({
+      stdin: Readable.from([
+        "/rules activate plugin:acme.disable-rule-plugin@1.0.0:rule:disabled-rule\n",
+        "/plugins disable acme.disable-rule-plugin@1.0.0\n",
+        "Use any remaining rule\n",
+        "/exit\n",
+      ]),
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+
+        return new Response(
+          streamFrom([
+            'data: {"choices":[{"delta":{"content":"No disabled rule."}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      pluginRegistryPath: registryPath,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requests.length, 1);
+    assert.deepEqual(requests[0].messages, [{ role: "user", content: "Use any remaining rule" }]);
+
+    const sessionFiles = readdirSync(sessionDirectory).filter((file) => file.endsWith(".json"));
+    assert.equal(sessionFiles.length, 1);
+    const saved = JSON.parse(
+      readFileSync(join(sessionDirectory, sessionFiles[0]), "utf8"),
+    ) as {
+      activatedRules?: Array<{ id: string }>;
+      messages: Array<{ role: string; content: string | null }>;
+    };
+    assert.deepEqual(saved.activatedRules, []);
+    assert.doesNotMatch(JSON.stringify(saved.messages), /FULL DISABLED RULE BODY/);
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 test("chat resumes an exact session id outside the recent display window", async () => {
   const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
   const savedCwd = mkdtempSync(join(tmpdir(), "orx-chat-resume-old-cwd-"));
@@ -1464,10 +1665,11 @@ test("tty chat renders compact command palette without a model request", async (
 
     const stdout = stripAnsi(capture.stdout());
     assert.equal(exitCode, 0);
-    assert.match(stdout, /Command palette matching "plugin" \(3\)/);
+    assert.match(stdout, /Command palette matching "plugin" \(4\)/);
     assert.match(stdout, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
-    assert.match(stdout, /\/skills \[list\|activate <id>\]/);
-    assert.match(stdout, /\/prompts \[list\|activate <id>\]/);
+    assert.match(stdout, /\/skills \[list\|status\|activate <id>\]/);
+    assert.match(stdout, /\/prompts \[list\|status\|activate <id>\]/);
+    assert.match(stdout, /\/rules \[list\|status\|activate <id>\]/);
     assert.doesNotMatch(stdout, /Integrations:/);
     assert.doesNotMatch(stdout, /\/model <id-or-search>/);
     assert.equal(capture.stderr(), "");

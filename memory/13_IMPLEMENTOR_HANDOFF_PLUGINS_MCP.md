@@ -164,6 +164,8 @@ Acceptance:
 
 Goal: add deterministic reusable workflows and guardrails.
 
+Current status as of 2026-06-27: markdown prompt commands and markdown rules have explicit progressive loaders. ORX discovers enabled plugin `components.commands` and `components.rules` markdown from cached manifests, surfaces compact metadata through `/prompts list`, `/rules list`, `/status`, and ephemeral model context, and loads full content only through `/prompts activate <id>` or `/rules activate <id>` as untrusted session context with provenance. Executable plugin slash commands, hooks, bins, plugin MCP, and plugin code execution remain inactive.
+
 Implement:
 
 - Plugin slash command/prompts with namespacing.

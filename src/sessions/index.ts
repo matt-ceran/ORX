@@ -14,6 +14,7 @@ export {
 export type {
   GitRepositoryMetadata,
   SessionActivatedPrompt,
+  SessionActivatedRule,
   SessionActivatedSkill,
   ListedSessionRecord,
   OrxSessionRecord,

@@ -5,6 +5,7 @@ import { getDelegationStatusSummary, type DelegationState } from "./delegation/i
 import { getMcpStatusSummary, formatMcpProfile } from "./mcp/index.js";
 import {
   getEnabledPluginPromptSummary,
+  getEnabledPluginRuleSummary,
   getEnabledPluginSkillSummary,
   getPluginStatusSummary,
 } from "./plugins/index.js";
@@ -38,6 +39,7 @@ export function formatStatus({
   const pluginStatus = getPluginStatusSummary({ registryPath: pluginRegistryPath });
   const pluginSkillStatus = getEnabledPluginSkillSummary({ registryPath: pluginRegistryPath });
   const pluginPromptStatus = getEnabledPluginPromptSummary({ registryPath: pluginRegistryPath });
+  const pluginRuleStatus = getEnabledPluginRuleSummary({ registryPath: pluginRegistryPath });
   const profileStatus = getProfileStatusSummary({ configPath: profileConfigPath });
   const delegationStatus =
     delegationState === undefined ? undefined : getDelegationStatusSummary(delegationState);
@@ -85,6 +87,9 @@ export function formatStatus({
     }`,
     `plugin_enabled_prompts: ${pluginPromptStatus.promptCount}${
       pluginPromptStatus.truncated ? " (truncated)" : ""
+    }`,
+    `plugin_enabled_rules: ${pluginRuleStatus.ruleCount}${
+      pluginRuleStatus.truncated ? " (truncated)" : ""
     }`,
     `profile_count: ${profileStatus.count}`,
     delegationStatus ? `orchestration_controller: ${delegationStatus.controller}` : undefined,

@@ -112,6 +112,18 @@ test("saves and loads session JSON without persisting API keys", async () => {
           activatedAt: "2026-06-26T12:00:30.000Z",
         },
       ],
+      activatedRules: [
+        {
+          id: "plugin:acme.demo-plugin@1.0.0:rule:review",
+          pluginId: "acme.demo-plugin@1.0.0",
+          name: "Review Rule",
+          filePath: "/tmp/project/rules/review.md",
+          contentHash: "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          sourceManifestHash:
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          activatedAt: "2026-06-26T12:00:45.000Z",
+        },
+      ],
       evidenceSources: [exampleEvidenceSource()],
       delegation: {
         controller: {
@@ -159,6 +171,8 @@ test("saves and loads session JSON without persisting API keys", async () => {
       "plugin:acme.demo-plugin@1.0.0:command:review",
     );
     assert.equal(loaded.activatedPrompts?.[0].activatedAt, "2026-06-26T12:00:30.000Z");
+    assert.equal(loaded.activatedRules?.[0].id, "plugin:acme.demo-plugin@1.0.0:rule:review");
+    assert.equal(loaded.activatedRules?.[0].activatedAt, "2026-06-26T12:00:45.000Z");
     assert.equal(loaded.evidenceSources?.[0].id, "src-1");
     assert.equal(loaded.evidenceSources?.[0].canonicalUrl, "https://example.com/source");
     assert.equal(loaded.delegation?.controller?.model, "openrouter/fusion");
@@ -269,6 +283,18 @@ test("updates session records with active config, messages, and latest metadata"
         activatedAt: "2026-06-26T12:01:30.000Z",
       },
     ],
+    activatedRules: [
+      {
+        id: "plugin:acme.demo-plugin@1.0.0:rule:update",
+        pluginId: "acme.demo-plugin@1.0.0",
+        name: "Update Rule",
+        filePath: "/tmp/project/rules/update.md",
+        contentHash: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        sourceManifestHash:
+          "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        activatedAt: "2026-06-26T12:01:45.000Z",
+      },
+    ],
     evidenceSources: [
       {
         ...exampleEvidenceSource(),
@@ -305,6 +331,7 @@ test("updates session records with active config, messages, and latest metadata"
     record.activatedPrompts?.[0].id,
     "plugin:acme.demo-plugin@1.0.0:command:update",
   );
+  assert.equal(record.activatedRules?.[0].id, "plugin:acme.demo-plugin@1.0.0:rule:update");
   assert.equal(record.evidenceSources?.[0].id, "src-2");
   assert.equal(record.evidenceSources?.[0].canonicalUrl, "https://example.com/updated");
   assert.equal(record.delegation?.controller?.model, "openrouter/auto");

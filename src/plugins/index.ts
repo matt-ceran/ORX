@@ -89,3 +89,17 @@ export {
   type PluginPromptOmission,
   type PluginPromptsDiscovery,
 } from "./prompts.js";
+export {
+  activatePluginRule,
+  createEnabledPluginRulesSystemMessage,
+  discoverEnabledPluginRules,
+  getEnabledPluginRuleSummary,
+  renderEnabledPluginRulesForModel,
+  renderPluginRuleList,
+  renderRuleActivation,
+  type PluginRuleActivation,
+  type PluginRuleActivationProvenance,
+  type PluginRuleMetadata,
+  type PluginRuleOmission,
+  type PluginRulesDiscovery,
+} from "./rules.js";

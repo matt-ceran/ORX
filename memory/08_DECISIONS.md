@@ -34,6 +34,12 @@ Decision: ORX should discover plugin prompt commands only from enabled plugins a
 
 Reasoning: Plugin prompt commands are useful operator-selectable workflow context, but they are plugin-controlled text, not authority. Progressive disclosure keeps token load small, prevents disabled plugins from affecting the model, and preserves the plugin trust boundary: prompt text cannot authorize tool use, permission changes, MCP enablement, hooks, bins, executable plugin commands, or command execution.
 
+## 2026-06-27: Plugin Rules Are Advisory Until Explicitly Activated
+
+Decision: ORX should discover plugin rules only from enabled plugins and expose compact, sanitized metadata automatically. Full rule markdown under `components.rules` is loaded only after an explicit `/rules activate <id>` action, rejected if it contains secret-like values or terminal control characters, appended as an untrusted system message with provenance, and recorded in session metadata. Rule names/descriptions come only from explicit frontmatter or filenames, never markdown body text.
+
+Reasoning: Plugin rules sound policy-like, but they are plugin-controlled text and cannot outrank ORX/operator instructions. Treating rules as advisory progressive-disclosure context prevents installed or fetched plugin content from changing permissions, enabling MCP/hooks/bins/executable commands, or silently altering instruction priority.
+
 ## 2026-06-26: Keep Initial Web Fetch Slash-Only And Untrusted
 
 Decision: ORX's first web/research implementation should expose direct URL fetch/extract only through explicit operator slash commands (`/web fetch <url>` and `/fetch <url>`), not as a model-autonomous browsing tool. Fetched pages are stored as evidence source metadata plus a bounded user-role untrusted context message. A testable URL guard blocks localhost, loopback, private/link-local/shared/reserved/documentation/multicast IP ranges, IPv6 local ranges, obvious cloud metadata hosts/IPs, and embedded credentials before network. Production fetch must use ORX's DNS-vetted Node transport rather than the generic OpenRouter fetch hook: resolve every hostname, reject any blocked resolved address, and bind the request to a vetted address while preserving the original hostname for host/SNI/certificate validation. Redirects are followed only after each `Location` is rechecked by the same guard, canonical source URLs redact secret-like path/query data, fetch timeouts cover body reads, and terminal control characters are stripped before rendering or context insertion.

@@ -21,6 +21,7 @@ import {
 import { resolveMcpConfigPath } from "./mcp/index.js";
 import {
   createEnabledPluginPromptsSystemMessage,
+  createEnabledPluginRulesSystemMessage,
   createEnabledPluginSkillsSystemMessage,
   findInstalledPlugin,
   formatPluginIdForMessage,
@@ -578,6 +579,7 @@ function compactPluginContextMessages(pluginRegistryPath: string | undefined): O
   const messages = [
     createEnabledPluginSkillsSystemMessage({ registryPath: pluginRegistryPath }),
     createEnabledPluginPromptsSystemMessage({ registryPath: pluginRegistryPath }),
+    createEnabledPluginRulesSystemMessage({ registryPath: pluginRegistryPath }),
   ];
   return messages.filter((message): message is OpenRouterMessage => typeof message !== "undefined");
 }

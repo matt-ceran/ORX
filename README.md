@@ -73,7 +73,7 @@ orx plugins enable acme.example@1.0.0
 orx plugins disable acme.example@1.0.0
 ```
 
-Plugin install/register stores an inert local registry record plus an ORX-owned cache snapshot of the sanitized manifest and declared components. By default the registry lives at `~/.orx/plugins/registry.json`, the cache at `~/.orx/plugins/cache`, and the optional local catalog at `~/.orx/plugins/catalog.json`; use `ORX_PLUGIN_REGISTRY_PATH`, `ORX_PLUGIN_CACHE_DIR`, and `ORX_PLUGIN_CATALOG_PATH` to isolate them. Enabling a plugin only enables its metadata, skills, and prompt-command surfaces where supported; hooks, bins, plugin MCP servers, executable plugin commands, and plugin code execution remain inactive in the current scaffold.
+Plugin install/register stores an inert local registry record plus an ORX-owned cache snapshot of the sanitized manifest and declared components. By default the registry lives at `~/.orx/plugins/registry.json`, the cache at `~/.orx/plugins/cache`, and the optional local catalog at `~/.orx/plugins/catalog.json`; use `ORX_PLUGIN_REGISTRY_PATH`, `ORX_PLUGIN_CACHE_DIR`, and `ORX_PLUGIN_CATALOG_PATH` to isolate them. Enabling a plugin only enables its metadata, skills, prompt-command, and rules surfaces where supported; hooks, bins, plugin MCP servers, executable plugin commands, and plugin code execution remain inactive in the current scaffold.
 
 Catalog files are local JSON:
 
@@ -127,6 +127,7 @@ The chat UI keeps in-session message history for the current process, streams as
 /plugins [catalog|list|inspect|register|install|enable|disable]
 /skills [list|status|activate]
 /prompts [list|status|activate]
+/rules [list|status|activate]
 /models
 /clear
 /new

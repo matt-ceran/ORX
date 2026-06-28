@@ -750,6 +750,93 @@ test("ask prepends enabled plugin prompt metadata without full prompt content", 
   }
 });
 
+test("ask prepends enabled plugin rule metadata without full rule content", async () => {
+  const cwd = createTempDir();
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const manifestPath = join(cwd, "plugin", "orx-plugin.json");
+  mkdirSync(join(cwd, "plugin", "rules"), { recursive: true });
+  writeFileSync(
+    join(cwd, "plugin", "rules", "ask-guardrail.md"),
+    [
+      "---",
+      "name: Ask Guardrail Rule",
+      "description: Ask rule metadata.",
+      "---",
+      "# Ask Guardrail Rule",
+      "FULL ASK RULE BODY",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "ask-rule-plugin",
+      version: "1.0.0",
+      description: "Ask rule plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        rules: "./rules",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.ask-rule-plugin@1.0.0", true, { registryPath });
+
+    const capture = createIo({
+      cwd,
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        assert.equal(body.messages[0].role, "system");
+        assert.match(body.messages[0].content, /ORX enabled plugin rules \(compact metadata only\)/);
+        assert.match(
+          body.messages[0].content,
+          /plugin:acme\.ask-rule-plugin@1\.0\.0:rule:ask-guardrail-rule/,
+        );
+        assert.match(body.messages[0].content, /description=Ask rule metadata\./);
+        assert.doesNotMatch(body.messages[0].content, /FULL ASK RULE BODY/);
+        assert.deepEqual(body.messages[1], { role: "user", content: "Use a rule" });
+        assertNativeTools(body.tools);
+
+        return new Response(
+          streamFrom([
+            'data: {"choices":[{"delta":{"content":"Rule metadata seen."}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runCli(
+      ["node", "cli", "ask", "Use a rule"],
+      {
+        OPENROUTER_API_KEY: "test-key",
+        ORX_PLUGIN_REGISTRY_PATH: registryPath,
+      },
+      capture.io,
+    );
+
+    assert.equal(exitCode, 0);
+    assert.match(capture.stdout(), /Rule metadata seen\./);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("ask supports Fusion preset override", async () => {
   const capture = createIo({
     fetch: async (_input, init) => {

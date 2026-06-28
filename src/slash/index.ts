@@ -56,8 +56,10 @@ import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import {
   activatePluginPrompt,
+  activatePluginRule,
   activatePluginSkill,
   discoverEnabledPluginPrompts,
+  discoverEnabledPluginRules,
   discoverEnabledPluginSkills,
   findInstalledPlugin,
   formatPluginIdForMessage,
@@ -68,12 +70,15 @@ import {
   renderPluginInspect,
   renderPluginList,
   renderPluginPromptList,
+  renderPluginRuleList,
   renderPluginSkillList,
   renderPromptActivation,
+  renderRuleActivation,
   renderSkillActivation,
   resolvePluginInstallTarget,
   setPluginEnabledState,
   type PluginPromptActivationProvenance,
+  type PluginRuleActivationProvenance,
   type PluginSkillActivationProvenance,
 } from "../plugins/index.js";
 import {
@@ -206,6 +211,7 @@ export interface SlashCommandContext {
   pluginRegistryPath?: string;
   profileConfigPath?: string;
   recordActivatedPrompt?: (prompt: PluginPromptActivationProvenance) => void;
+  recordActivatedRule?: (rule: PluginRuleActivationProvenance) => void;
   recordActivatedSkill?: (skill: PluginSkillActivationProvenance) => void;
   startNewSession?: () => Promise<void> | void;
   resumeSession?: (selector?: string) => Promise<ResumeSessionResult>;
@@ -284,6 +290,7 @@ const PLUGIN_SUBCOMMAND_COMPLETIONS = [
 ] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
+const RULE_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROFILE_SUBCOMMAND_COMPLETIONS = [
   "list",
   "status",
@@ -777,7 +784,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/skills": {
-    usage: "/skills [list|activate <id>]",
+    usage: "/skills [list|status|activate <id>]",
     description: "List enabled plugin skills or activate one for this chat",
     group: "Integrations",
     tier: "advanced",
@@ -787,12 +794,22 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/prompts": {
-    usage: "/prompts [list|activate <id>]",
+    usage: "/prompts [list|status|activate <id>]",
     description: "List enabled plugin prompts or activate one for this chat",
     group: "Integrations",
     tier: "advanced",
     handler: (command, context): SlashResult => {
       handlePromptsCommand(command, context);
+      return "continue";
+    },
+  },
+  "/rules": {
+    usage: "/rules [list|status|activate <id>]",
+    description: "List enabled plugin rules or activate one for this chat",
+    group: "Integrations",
+    tier: "advanced",
+    handler: (command, context): SlashResult => {
+      handleRulesCommand(command, context);
       return "continue";
     },
   },
@@ -1215,6 +1232,8 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       return argIndex === 0 ? [...SKILL_SUBCOMMAND_COMPLETIONS] : [];
     case "/prompts":
       return argIndex === 0 ? [...PROMPT_SUBCOMMAND_COMPLETIONS] : [];
+    case "/rules":
+      return argIndex === 0 ? [...RULE_SUBCOMMAND_COMPLETIONS] : [];
     case "/orchestrator":
       if (argIndex === 0) {
         return [...ORCHESTRATOR_SUBCOMMAND_COMPLETIONS];
@@ -1681,7 +1700,7 @@ function handleSkillsCommand(command: SlashCommand, context: SlashCommandContext
     return;
   }
 
-  writeLine(context.io.stderr, "Usage: /skills [list|activate <id>]");
+  writeLine(context.io.stderr, "Usage: /skills [list|status|activate <id>]");
 }
 
 function handlePromptsCommand(command: SlashCommand, context: SlashCommandContext): void {
@@ -1718,7 +1737,44 @@ function handlePromptsCommand(command: SlashCommand, context: SlashCommandContex
     return;
   }
 
-  writeLine(context.io.stderr, "Usage: /prompts [list|activate <id>]");
+  writeLine(context.io.stderr, "Usage: /prompts [list|status|activate <id>]");
+}
+
+function handleRulesCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(
+      context.io.stdout,
+      renderPluginRuleList(
+        discoverEnabledPluginRules({ registryPath: context.pluginRegistryPath }),
+      ),
+    );
+    return;
+  }
+
+  if (subcommand === "activate") {
+    const ruleId = command.args[1];
+    if (!ruleId || command.args.length !== 2) {
+      writeLine(context.io.stderr, `Usage: /rules ${subcommand} <id>`);
+      return;
+    }
+
+    try {
+      const activation = activatePluginRule(ruleId, {
+        registryPath: context.pluginRegistryPath,
+      });
+      context.setMessages([...context.getMessages(), activation.systemMessage]);
+      context.recordActivatedRule?.(activation.provenance);
+      writeLine(context.io.stdout, renderRuleActivation(activation));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeLine(context.io.stderr, message);
+    }
+    return;
+  }
+
+  writeLine(context.io.stderr, "Usage: /rules [list|status|activate <id>]");
 }
 
 function handlePluginsCommand(command: SlashCommand, context: SlashCommandContext): void {

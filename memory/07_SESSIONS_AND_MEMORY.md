@@ -28,10 +28,11 @@ Current Phase 7 foundation stores:
 - message count
 - activated plugin skill provenance when `/skills activate <id>` has been used
 - activated plugin prompt provenance when `/prompts activate <id>` has been used
+- activated plugin rule provenance when `/rules activate <id>` has been used
 
 Session config snapshots do not persist API keys. Git remote URLs redact credential userinfo before persistence.
 
-Activated skill and prompt provenance stores ids, plugin ids, names, file paths, content hashes, source manifest hashes, and activation timestamps. Full activated `SKILL.md` or prompt markdown text lives in the explicit untrusted system message that was added to the transcript during activation.
+Activated skill, prompt, and rule provenance stores ids, plugin ids, names, file paths, content hashes, source manifest hashes, and activation timestamps. Full activated `SKILL.md`, prompt markdown, or rule markdown text lives in the explicit untrusted system message that was added to the transcript during activation.
 
 Future session fields should add:
 
