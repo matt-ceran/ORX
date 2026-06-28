@@ -2385,6 +2385,7 @@ function assertNativeTools(tools: unknown) {
     "git_diff",
     "list_files",
     "read_file",
+    "run_tests",
     "search_files",
     "shell",
   ]);

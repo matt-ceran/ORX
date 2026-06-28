@@ -62,6 +62,7 @@ Completed:
 - Add context message/byte state to interactive `/status`.
 - Add richer session-level diff state and `/diff` behavior after file edits.
 - Add native test-runner adapters: package `test*` script discovery/run, direct Node test fallback, `orx tests list|run`, `/tests list|run`, and status visibility.
+- Add model-visible native `run_tests` tool that reuses the test adapter with shell disabled, bounded output, timeout coverage, sanitized extra arguments, and compact tool summaries.
 - Add dependency-free local code maps: bounded tree scan, language/key-file/entrypoint summaries, JavaScript/TypeScript import/export extraction, `orx code map`, `orx map`, `orx code-map`, `/map`, and `/code map`.
 - Add dependency-free local symbol indexes: exported JavaScript/TypeScript symbol names with file paths and line numbers through `orx code symbols`, `orx symbols`, `/code symbols`, and `/symbols`.
 
@@ -143,6 +144,7 @@ Next:
 - Extend plugin metadata further only where needed for remote source UX, marketplace/catalog trust, or executable surface policy decisions.
 - Add `/plugins` command for list/install/enable/disable/inspect.
 - Add tree-sitter and ast-grep code intelligence for richer call/reference slices, syntax-aware search, and codemod previews beyond the dependency-free code map and exported-symbol index.
+- Add framework-specific Vitest/Jest/Playwright adapters and richer reports beyond the current package-script/Node `run_tests` foundation.
 - Add LSP/SCIP bridge research spike for diagnostics, references, hover, and go-to-definition.
 - Add Sourcegraph read-only profile for multi-repo search/navigation/history.
 - Add docs/retrieval providers: Context7, DeepWiki, OpenAI Docs, Microsoft Learn, AWS docs, Google Developer Knowledge.

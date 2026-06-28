@@ -3,6 +3,7 @@ import {
   gitDiffTool,
   listFilesTool,
   readFileTool,
+  runTestsTool,
   searchFilesTool,
   shellTool,
 } from "../tools/index.js";
@@ -159,6 +160,16 @@ async function runNativeTool(
         signal,
       });
     }
+
+    case "run_tests":
+      return runTestsTool({
+        cwd,
+        targetId: optionalString(args.targetId),
+        extraArgs: optionalStringArray(args.extraArgs),
+        timeoutMs: optionalInteger(args.timeoutMs),
+        maxBytes: optionalInteger(args.maxBytes),
+        signal,
+      });
 
     case "git_diff":
       return gitDiffTool({

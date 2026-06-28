@@ -97,6 +97,10 @@ function formatToolResultDetails(
       }
       break;
 
+    case "run_tests":
+      details.push(...formatRunTestsDetails(output));
+      break;
+
     case "shell":
       details.push(...formatShellDetails(output));
       break;
@@ -150,6 +154,36 @@ function formatShellDetails(output: JsonObject | undefined): string[] {
 
   pushTruncation(details, "stdout", getTruncation(output.stdoutTruncation));
   pushTruncation(details, "stderr", getTruncation(output.stderrTruncation));
+  return details;
+}
+
+function formatRunTestsDetails(output: JsonObject | undefined): string[] {
+  if (!output) {
+    return [];
+  }
+
+  const details: string[] = [];
+  if (typeof output.status === "string") {
+    details.push(`status=${output.status}`);
+  }
+  const target = isObject(output.target) ? output.target : undefined;
+  if (typeof target?.id === "string") {
+    details.push(`target=${JSON.stringify(target.id)}`);
+  }
+  if (typeof output.exitCode === "number") {
+    details.push(`exit=${output.exitCode}`);
+  } else if (output.exitCode === null) {
+    details.push("exit=null");
+  }
+  if (output.timedOut === true) {
+    details.push("timed_out=true");
+  }
+  if (output.stdoutTruncated === true) {
+    details.push("stdout_truncated=true");
+  }
+  if (output.stderrTruncated === true) {
+    details.push("stderr_truncated=true");
+  }
   return details;
 }
 

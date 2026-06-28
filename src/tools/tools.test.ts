@@ -29,9 +29,11 @@ test("registry exposes native local coding tools", () => {
     "git_diff",
     "list_files",
     "read_file",
+    "run_tests",
     "search_files",
     "shell",
   ]);
+  assert.equal(typeof toolRegistry.run_tests, "function");
 });
 
 test("truncation keeps returned text within byte limits for multibyte text", () => {

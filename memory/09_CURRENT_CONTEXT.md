@@ -35,7 +35,7 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin `components.hooks` JSON can contribute hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run manually through `hooks run` / `/hooks run` or automatically on matching lifecycle events with minimal env/cwd and JSONL audit logging.
 - Enabled plugin `components.bins` directories can contribute explicit operator-run bins. Regular cached bin files appear as `plugin:<plugin-id>:bin:<file>` in `orx bins`, `/bins`, and `/status`; trusted bin hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run only through explicit `bins run` / `/bins run` with cached-plugin cwd, manifest-declared env, redacted/truncated output, and JSONL audit logs without raw argument lists.
 - Enabled plugin prompt commands and bins now produce namespaced aliases visible through `/plugin list`, `orx plugins commands`, and `/status`. `/plugin:<plugin-id>:command:<slug>` activates the matching prompt as untrusted context; `/plugin:<plugin-id>:bin:<file> [args...]` runs the matching bin through the same trusted-hash gates as `/bins run`.
-- Native test target commands are implemented through `orx tests list|run`, `/tests list|run`, `/test`, package `test*` script discovery, direct Node test/spec fallback, bounded shell-disabled execution, and status counts.
+- Native test target commands are implemented through `orx tests list|run`, `/tests list|run`, `/test`, package `test*` script discovery, direct Node test/spec fallback, bounded shell-disabled execution, and status counts. The same adapter is exposed to the model loop through the native `run_tests` tool.
 - Dependency-free local code maps and symbol indexes are implemented through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `/map`, `/code map`, `/code symbols`, and `/symbols`; output is local-only/no-key and includes bounded language, key-file, entrypoint, JavaScript/TypeScript import/export, and exported-symbol summaries.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
@@ -72,6 +72,15 @@ Current files:
 
 ## Latest Work
 
+Implemented model-visible native `run_tests`:
+
+- Added `src/tools/run-tests.ts` and registered `run_tests` in the native local coding tool registry.
+- Added the OpenRouter tool schema for `run_tests` with optional `targetId`, `extraArgs`, `timeoutMs`, and `maxBytes`.
+- `dispatchNativeToolCall` now routes `run_tests` to the existing `src/testing/` adapter with the active cwd, abort signal, shell-disabled process runner, timeout/output bounds, and sanitized extra arguments.
+- Visible tool summaries show test status, target id, exit/timed-out state, and stdout/stderr truncation flags without dumping test output into the terminal summary.
+- Verification: `npm run typecheck`, `npm run build`, `git diff --check`, focused build-backed runtime/tools/CLI tests with 76 tests, full `npm test` with 376 tests, and dogfood `npm run dev -- tests run script:test -- --test-name-pattern ...` pass.
+- Next likely programming-power-pack work after this slice: framework-specific Vitest/Jest/Playwright adapters and richer test report parsing, or syntax-aware ast-grep/tree-sitter code intelligence.
+
 Implemented dependency-free local code maps and symbols:
 
 - Added `src/code-map/` for operator-invoked local repository maps.
@@ -82,7 +91,7 @@ Implemented dependency-free local code maps and symbols:
 - Import/export extraction is line-oriented and tracks block comments/template literals to avoid counting example code inside comments or template strings.
 - Verification after the map slice: implementor focused tests passed with 107 tests; full `npm test` passed with 375 tests; `npm run typecheck`, `npm run build`, `git diff --check`, and dogfood `npm run dev -- code map` passed. External verifier agent could not complete because the subagent usage limit was reached, so a local verifier-style pass added the comment/template-literal regression coverage before commit.
 - Symbol index follow-up verification: focused code-map/CLI/slash tests passed with 107 tests, and dogfood `npm run dev -- code symbols createCode` plus `npm run dev -- symbols renderCode` returned expected exported symbols with file paths and line numbers before final full-suite verification.
-- Next likely programming-power-pack work: tree-sitter-backed call/reference slices, ast-grep search/codemod previews, framework-specific Vitest/Jest/Playwright adapters, richer test reports, and eventual model-visible `run_tests`.
+- Next likely programming-power-pack work: tree-sitter-backed call/reference slices, ast-grep search/codemod previews, framework-specific Vitest/Jest/Playwright adapters, and richer test reports.
 
 Implemented native test target commands:
 
@@ -91,7 +100,7 @@ Implemented native test target commands:
 - Test runs use the shared process runner with shell disabled, output caps, timeouts, sanitized extra arguments, secret redaction in rendered stdout/stderr, redacted omitted script paths, and safe absolute paths for root dash-leading Node test files.
 - `/status` and `orx status` now show `test_targets`, `test_default_target`, `test_package_scripts`, and `test_node_targets`.
 - Verification: implementor full suite passed with 371 tests; verifier rechecked redaction, unsafe omitted script names, no-key operation, command-injection probe, and dash-leading Node test fallback with no findings after fixes.
-- Next likely programming-power-pack work: richer code intelligence such as tree-sitter repo maps, ast-grep previews, or framework-specific Vitest/Jest/Playwright adapters; model-visible `run_tests` remains future work.
+- Model-visible `run_tests` is now implemented; next likely test work is framework-specific Vitest/Jest/Playwright adapters and richer reports.
 
 Implemented namespaced plugin command aliases:
 

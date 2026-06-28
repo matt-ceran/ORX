@@ -38,17 +38,17 @@ const baseConfig: OrxConfig = {
 test("native tool schemas expose the local coding tool surface", () => {
   assert.deepEqual(
     nativeToolDefinitions.map((tool) => tool.function.name).sort(),
-    ["apply_patch", "git_diff", "list_files", "read_file", "search_files", "shell"],
+    ["apply_patch", "git_diff", "list_files", "read_file", "run_tests", "search_files", "shell"],
   );
   assert.deepEqual(
     getNativeToolDefinitions().map((tool) => tool.function.name).sort(),
-    ["apply_patch", "git_diff", "list_files", "read_file", "search_files", "shell"],
+    ["apply_patch", "git_diff", "list_files", "read_file", "run_tests", "search_files", "shell"],
   );
   assert.deepEqual(
     getNativeToolDefinitions({ includeMcpCallTool: true })
       .map((tool) => tool.function.name)
       .sort(),
-    ["apply_patch", "git_diff", "list_files", "mcp_call", "read_file", "search_files", "shell"],
+    ["apply_patch", "git_diff", "list_files", "mcp_call", "read_file", "run_tests", "search_files", "shell"],
   );
 });
 
@@ -111,6 +111,46 @@ test("dispatchNativeToolCall reports invalid arguments as tool errors", async ()
   const output = JSON.parse(envelope.output);
   assert.equal(output.ok, false);
   assert.equal(output.error.code, "INVALID_TOOL_ARGUMENT_JSON");
+});
+
+test("dispatchNativeToolCall runs discovered test targets through run_tests", async () => {
+  const cwd = createTempDir();
+  try {
+    writeFileSync(
+      join(cwd, "sample.test.js"),
+      [
+        "const test = require('node:test');",
+        "const assert = require('node:assert/strict');",
+        "test('sample', () => assert.equal(2 + 2, 4));",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await dispatchNativeToolCall(
+      {
+        id: "call_tests",
+        type: "function",
+        function: {
+          name: "run_tests",
+          arguments: JSON.stringify({
+            maxBytes: 1024,
+          }),
+        },
+      },
+      { cwd },
+    );
+
+    assert.equal(result.ok, true);
+    const envelope = JSON.parse(String(result.message.content));
+    const output = JSON.parse(envelope.output);
+    assert.equal(output.ok, true);
+    assert.equal(output.status, "ok");
+    assert.equal(output.target.id, "node:test");
+    assert.match(output.message, /passed/);
+    assert.match(formatToolResult(result), /\[tool\] run_tests ok duration=\d+ms status=ok target="node:test"/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("dispatchNativeToolCall keeps model MCP calls disabled unless enabled", async () => {
@@ -595,7 +635,7 @@ test("runAgentTurn executes model-requested tools and continues to final answer"
       if (fetchCount === 1) {
         assert.deepEqual(
           body.tools.map((tool: { function: { name: string } }) => tool.function.name).sort(),
-          ["apply_patch", "git_diff", "list_files", "read_file", "search_files", "shell"],
+          ["apply_patch", "git_diff", "list_files", "read_file", "run_tests", "search_files", "shell"],
         );
         return new Response(
           streamFrom([

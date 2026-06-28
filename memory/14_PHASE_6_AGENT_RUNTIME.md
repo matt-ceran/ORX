@@ -46,8 +46,8 @@ The API key can come from `OPENROUTER_API_KEY` or ignored local config at `.orx/
 - `src/tui/chat.ts` owns the readline chat loop, streaming display, in-process history, and slash dispatch.
 - `src/slash/` owns slash command parsing and handlers.
 - `src/openrouter/` owns request construction, streaming SSE parsing, metadata capture, and Fusion plugin config shaping.
-- `src/tools/` owns native local tools: `read_file`, `list_files`, `search_files`, `shell`, `git_diff`, and `apply_patch`.
-- `src/agent/` owns native tool schemas, native tool dispatch, bounded tool-result envelopes, and the guarded multi-turn tool-call loop now used by `ask` and `chat`.
+- `src/tools/` owns native local tools: `read_file`, `list_files`, `search_files`, `run_tests`, `shell`, `git_diff`, and `apply_patch`.
+- `src/agent/` owns native tool schemas, native tool dispatch, bounded tool-result envelopes, and the guarded multi-turn tool-call loop now used by `ask` and `chat`. The native tool surface now includes `run_tests` in addition to file/search/shell/git/patch tools and optional model-granted `mcp_call`.
 
 Phase 6 now connects these pieces through `src/agent/` rather than expanding `src/tui/chat.ts` with ad hoc logic.
 

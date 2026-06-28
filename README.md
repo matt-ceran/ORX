@@ -9,7 +9,7 @@ ORX is planned as a personal CLI for using OpenRouter models with a polished ter
 - Launch with a dedicated `orx` command.
 - Switch between exact models, `openrouter/auto`, and `openrouter/fusion`.
 - Support OpenRouter Fusion presets and custom panel configuration.
-- Provide local coding-agent tools for file reads, search, patching, shell commands, diffs, and session history.
+- Provide local coding-agent tools for file reads, search, patching, shell commands, diffs, test runs, and session history.
 - Track model, mode, token usage, and estimated cost.
 - Use a professional terminal UI with streaming output, slash commands, status footer, and colored tool output.
 
@@ -75,6 +75,8 @@ orx tests run script:test:unit -- --watch=false
 ```
 
 The adapter discovers local `package.json` scripts whose names start with `test` and falls back to Node's built-in test runner for `*.test.js`, `*.test.mjs`, `*.test.cjs`, `*.spec.js`, `*.spec.mjs`, and `*.spec.cjs` files when no `test` package script exists.
+
+The agent loop also exposes `run_tests` as a native model tool. It runs the same discovered target with shell disabled, bounded output, timeouts, and sanitized extra arguments, so routine verification can use the test adapter instead of raw shell commands.
 
 Local code-map discovery is also available without an OpenRouter API key:
 

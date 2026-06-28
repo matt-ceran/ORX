@@ -138,6 +138,35 @@ const localCodingToolDefinitions: OpenRouterToolDefinition[] = [
   {
     type: "function",
     function: {
+      name: "run_tests",
+      description:
+        "Run the repository's discovered native test target with bounded output. Prefer this over shell for routine test verification.",
+      parameters: objectSchema({
+        targetId: {
+          type: "string",
+          description: "Optional discovered test target id, such as script:test. Omit to run the default target.",
+        },
+        extraArgs: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional extra test runner arguments. Unsafe values are rejected by the test adapter.",
+        },
+        timeoutMs: {
+          type: "integer",
+          minimum: 1,
+          description: "Optional timeout in milliseconds.",
+        },
+        maxBytes: {
+          type: "integer",
+          minimum: 0,
+          description: "Maximum bytes to retain separately for stdout and stderr.",
+        },
+      }),
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "git_diff",
       description: "Show the current working tree diff, optionally scoped to specific paths.",
       parameters: objectSchema({
