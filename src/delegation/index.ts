@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import type { DelegationPolicyResultMerge } from "./policy.js";
 
 export * from "./policy.js";
 export * from "./runtime.js";
@@ -50,6 +51,7 @@ export interface DelegationReadinessRenderOptions {
   surface?: "interactive" | "cli";
   policy?: {
     executionEnabled?: boolean;
+    resultMerge?: DelegationPolicyResultMerge;
   };
 }
 
@@ -57,6 +59,7 @@ export interface DelegationStatusRenderOptions {
   surface?: "interactive" | "cli";
   policy?: {
     executionEnabled?: boolean;
+    resultMerge?: DelegationPolicyResultMerge;
   };
 }
 
@@ -588,6 +591,7 @@ export function renderDelegationReadinessPlan(
 ): string {
   const normalized = normalizeDelegationState(state);
   const policyEnabled = options.policy?.executionEnabled === true;
+  const resultMerge = options.policy?.resultMerge;
   const hasDelegate = normalized.delegates.length > 0;
   const chatReady = options.surface !== "cli" && policyEnabled && hasDelegate;
   const blockers: string[] = [];
@@ -620,7 +624,9 @@ export function renderDelegationReadinessPlan(
     "readiness_blockers:",
     blockers.length === 0 ? "  none" : blockers.map((blocker) => `  - ${blocker}`),
     "readiness_notes:",
-    "  - delegated model output is untrusted and must be manually summarized",
+    resultMerge === "metadata_only"
+      ? "  - delegated model text is omitted from model-facing tool output by policy"
+      : "  - delegated model output is untrusted and must be manually summarized",
   ];
   return lines.flat().join("\n");
 }

@@ -1001,7 +1001,7 @@ function runDelegationPolicyCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx delegates policy [status|set --execution enabled|disabled --max-cost-usd <n> --timeout-ms <ms> --max-result-bytes <bytes> --max-concurrent <n> --credentials none --result-persistence none --result-merge manual_summary]",
+    "Usage: orx delegates policy [status|set --execution enabled|disabled --max-cost-usd <n> --timeout-ms <ms> --max-result-bytes <bytes> --max-concurrent <n> --credentials none --result-persistence none --result-merge manual_summary|metadata_only]",
   );
   return 1;
 }

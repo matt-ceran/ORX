@@ -3147,7 +3147,7 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
         "  /delegate remove <name>",
         "  /delegate clear",
         "  /delegate policy",
-        "  /delegate policy set --execution enabled|disabled --max-cost-usd <n> --timeout-ms <ms>",
+        "  /delegate policy set --execution enabled|disabled --max-cost-usd <n> --timeout-ms <ms> --max-result-bytes <bytes> --max-concurrent <n> --credentials none --result-persistence none --result-merge manual_summary|metadata_only",
         "  /delegate team save <id>",
         "  /delegate team use <id>",
         "  /delegates",
@@ -3293,7 +3293,7 @@ function handleDelegationPolicySlashCommand(
 
   writeLine(
     context.io.stderr,
-    `Usage: ${usagePrefix} [status|set --execution enabled|disabled --max-cost-usd <n> --timeout-ms <ms> --max-result-bytes <bytes> --max-concurrent <n> --credentials none --result-persistence none --result-merge manual_summary]`,
+    `Usage: ${usagePrefix} [status|set --execution enabled|disabled --max-cost-usd <n> --timeout-ms <ms> --max-result-bytes <bytes> --max-concurrent <n> --credentials none --result-persistence none --result-merge manual_summary|metadata_only]`,
   );
 }
 

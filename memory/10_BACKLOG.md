@@ -106,11 +106,12 @@ Completed:
 - Add Phase 11 delegation execution policy: private `~/.orx/delegation/policy.json` storage with `ORX_DELEGATION_POLICY_PATH`, `orx delegate policy`, `orx delegates policy`, `/delegate policy`, `/delegates policy`, explicit `--execution enabled|disabled`, policy limits for cost/timeout/result bytes/concurrency, fixed credential/result modes, and `/status` visibility.
 - Add Phase 11 `delegate_task` runtime contract: optional native schema, dispatch path, policy-bounded argument validation, sanitized delegate resolution, result envelope, hash-only audit JSONL at `~/.orx/audit/delegation.jsonl` with `ORX_DELEGATION_AUDIT_PATH`, status/readiness visibility, and later policy-gated OpenRouter delegate calls in interactive chat only.
 - Add policy-gated OpenRouter delegate adapter: explicit `--execution enabled|disabled`, chat-only `delegate_task` exposure when policy plus delegate state are present, OpenRouter streaming delegate calls, untrusted result wrapping, secret-like live payload refusal, hash-only audit metadata, and no subprocess or credential forwarding.
+- Add delegation result merge controls: `--result-merge manual_summary|metadata_only`, model-facing omission of delegate text in metadata-only mode, hash/result metadata preservation, terminal summary/status visibility, and no automatic result merge.
 
 Next:
 
 - Add managed OAuth/provider auth setup beyond the current env-only MCP bearer readiness/setup path.
-- Dogfood policy-enabled OpenRouter delegation with a real key using isolated policy/audit paths, then tighten result merge controls, delegate team/profile ergonomics, and any stronger pre-spend budget strategy OpenRouter can support.
+- Dogfood policy-enabled OpenRouter delegation with a real key using isolated policy/audit paths, then tighten delegate team/profile ergonomics and any stronger pre-spend budget strategy OpenRouter can support.
 - Add secret redaction and minimal env forwarding for future stdio/child-process MCP runners if ORX adds them beyond the current remote HTTP path.
 
 ## P4
@@ -179,8 +180,8 @@ Next:
 - Add cloud/devops profiles only as explicit opt-ins with account/project/region visible in `/status`.
 - Add research profiles: `research-web`, `research-crawl`, `research-scholar`, `research-docs`, `research-browser`, `research-rag`, and `research-memory`.
 - Extend citation support later with style selection and richer paper/PDF identifiers after scholarly/document source adapters exist.
-- Extend saved orchestration teams with active execution policy selection only after model-visible `delegate_task` boundaries, live policy enforcement, result merge, and audit semantics are implemented.
-- Add stronger live delegated-task result merge controls and pre-spend budget strategy if provider APIs support it.
+- Extend saved orchestration teams with active execution policy selection after model-visible `delegate_task` boundaries, live policy enforcement, and audit semantics are implemented.
+- Add stronger live delegated-task pre-spend budget strategy if provider APIs support it.
 - Add Codex delegate adapter.
 - Add Devin delegate adapter through MCP/API when credentials are configured.
 - Add live budget, permission, timeout, and result-truncation enforcement for delegated tasks.

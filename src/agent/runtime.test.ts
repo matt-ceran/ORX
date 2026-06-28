@@ -343,6 +343,91 @@ test("dispatchNativeToolCall wraps delegate output as untrusted model data", asy
   }
 });
 
+test("dispatchNativeToolCall omits delegate text from model output when result merge is metadata-only", async () => {
+  const cwd = createTempDir();
+  const auditLogPath = join(cwd, "audit", "delegation.jsonl");
+  const policyConfigPath = join(cwd, "delegation", "policy.json");
+  const delegateText = "Finding: should not reach controller.";
+
+  try {
+    updateDelegationExecutionPolicy(
+      { executionEnabled: true, maxResultBytes: 4_096, resultMerge: "metadata_only" },
+      { configPath: policyConfigPath },
+    );
+
+    const result = await dispatchNativeToolCall(
+      {
+        id: "call_delegate_metadata_only",
+        type: "function",
+        function: {
+          name: "delegate_task",
+          arguments: JSON.stringify({
+            delegate: "reviewer",
+            task: "Review metadata-only model exposure.",
+          }),
+        },
+      },
+      {
+        cwd,
+        delegation: {
+          enabled: true,
+          apiKey: "sk-or-v1-test",
+          auditLogPath,
+          policyConfigPath,
+          state: {
+            executionEnabled: false,
+            delegates: [
+              {
+                name: "reviewer",
+                provider: "openrouter",
+                model: "anthropic/claude-sonnet-4.5",
+                execution: "disabled",
+              },
+            ],
+          },
+          fetch: async () =>
+            new Response(
+              streamFrom([
+                sse({
+                  model: "anthropic/claude-sonnet-4.5",
+                  choices: [
+                    {
+                      delta: { content: delegateText },
+                      finish_reason: "stop",
+                    },
+                  ],
+                }),
+                "data: [DONE]\n\n",
+              ]),
+              { status: 200, headers: { "content-type": "text/event-stream" } },
+            ),
+        },
+      },
+    );
+
+    assert.equal(result.ok, true);
+    assert.match(JSON.stringify(result.output), new RegExp(delegateText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+    const toolMessage = String(result.message.content);
+    assert.doesNotMatch(toolMessage, /Finding: should not reach controller/);
+    const envelope = JSON.parse(toolMessage);
+    const output = JSON.parse(envelope.output);
+    assert.equal(output.ok, true);
+    assert.equal(output.status, "completed");
+    assert.equal(output.result, undefined);
+    assert.equal(output.resultMerge, "metadata_only");
+    assert.equal(output.modelExposure, "metadata_only_delegate_task_result");
+    assert.equal(output.modelVisibleResultOmitted, true);
+    assert.equal(output.modelVisibleResultOmittedReason, "delegation_policy_metadata_only");
+    assert.equal(output.modelVisibleResultBytes, 0);
+    assert.match(output.resultHash, /^sha256:[a-f0-9]{64}$/);
+    assert.equal(output.resultHashCovers, "full_wrapped_delegate_output");
+    assert.match(formatToolResult(result), /result_merge=metadata_only/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("dispatchNativeToolCall compacts large delegate output without dropping trust markers", async () => {
   const cwd = createTempDir();
   const auditLogPath = join(cwd, "audit", "delegation.jsonl");

@@ -821,6 +821,9 @@ test("orchestrator and delegate commands mutate local session metadata without n
     },
   });
 
+  assert.equal(handleSlashCommand("/delegate help", harness.context), "continue");
+  assert.match(harness.stdout(), /--result-merge manual_summary\|metadata_only/);
+
   assert.equal(handleSlashCommand("/orchestrator", harness.context), "continue");
   assert.match(harness.stdout(), /ORX orchestrator session:/);
   assert.match(harness.stdout(), /controller: none/);
@@ -987,7 +990,7 @@ test("delegation policy slash commands persist execution limits without network"
 
     assert.equal(
       handleSlashCommand(
-        "/delegate policy set --max-cost-usd 0.5 --timeout-ms 60000 --max-result-bytes 50000 --max-concurrent 2 --credentials none --result-persistence none --result-merge manual_summary",
+        "/delegate policy set --max-cost-usd 0.5 --timeout-ms 60000 --max-result-bytes 50000 --max-concurrent 2 --credentials none --result-persistence none --result-merge metadata_only",
         harness.context,
       ),
       "continue",
@@ -1004,7 +1007,7 @@ test("delegation policy slash commands persist execution limits without network"
     assert.match(harness.stdout(), /max_concurrent_delegates: 2/);
     assert.match(harness.stdout(), /credential_forwarding: none/);
     assert.match(harness.stdout(), /result_persistence: none/);
-    assert.match(harness.stdout(), /result_merge: manual_summary/);
+    assert.match(harness.stdout(), /result_merge: metadata_only/);
 
     assert.equal(
       handleSlashCommand("/delegate add reviewer openrouter openrouter/auto", harness.context),

@@ -422,7 +422,7 @@ test("cli delegation policy commands persist gated limits without an API key or 
           "--result-persistence",
           "none",
           "--result-merge",
-          "manual_summary",
+          "metadata_only",
         ],
         env,
         updated.io,
@@ -434,6 +434,7 @@ test("cli delegation policy commands persist gated limits without an API key or 
     assert.match(updated.stdout(), /task_timeout_ms: 60000/);
     assert.match(updated.stdout(), /max_result_bytes: 50000/);
     assert.match(updated.stdout(), /max_concurrent_delegates: 2/);
+    assert.match(updated.stdout(), /result_merge: metadata_only/);
     assert.equal(statSync(join(cwd, "delegation")).mode & 0o777, 0o700);
     assert.equal(statSync(policyPath).mode & 0o777, 0o600);
     assert.doesNotMatch(readFileSync(policyPath, "utf8"), /test-key|OPENROUTER_API_KEY/);

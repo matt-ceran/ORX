@@ -117,6 +117,7 @@ export function formatDoctor({
     `  timeout_ms: ${delegationPolicy.taskTimeoutMs}`,
     `  max_result_bytes: ${delegationPolicy.maxResultBytes}`,
     `  credential_forwarding: ${delegationPolicy.credentialForwarding}`,
+    `  result_merge: ${delegationPolicy.resultMerge}`,
     `  delegate_task_runtime: ${delegationPolicy.executionEnabled ? "policy_gated_openrouter_adapter" : "policy_enforced_disabled"}`,
     "  delegate_task_cli_exposure: unavailable_sessionless_cli",
     "  chat_readiness: not_evaluated_sessionless_cli",

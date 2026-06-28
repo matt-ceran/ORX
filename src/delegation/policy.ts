@@ -16,7 +16,7 @@ import { dirname, join, parse, relative, resolve, sep } from "node:path";
 
 export type DelegationPolicyCredentialMode = "none";
 export type DelegationPolicyResultPersistence = "none";
-export type DelegationPolicyResultMerge = "manual_summary";
+export type DelegationPolicyResultMerge = "manual_summary" | "metadata_only";
 
 export interface DelegationPolicyPathOptions {
   env?: NodeJS.ProcessEnv;
@@ -71,6 +71,7 @@ const POLICY_FILE_MODE = 0o600;
 const MAX_POLICY_BYTES = 64 * 1024;
 const O_NOFOLLOW = typeof fsConstants.O_NOFOLLOW === "number" ? fsConstants.O_NOFOLLOW : 0;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F-\x9F]/;
+const DELEGATION_POLICY_RESULT_MERGE_VALUES = ["manual_summary", "metadata_only"] as const;
 
 const DEFAULT_DELEGATION_POLICY: DelegationExecutionPolicy = {
   version: POLICY_VERSION,
@@ -210,6 +211,9 @@ export function renderDelegationExecutionPolicy(
     `  credential_forwarding: ${normalized.credentialForwarding}`,
     `  result_persistence: ${normalized.resultPersistence}`,
     `  result_merge: ${normalized.resultMerge}`,
+    `  model_merge: ${normalized.resultMerge === "metadata_only"
+      ? "delegate_text_omitted_from_model_tool_result"
+      : "controller_receives_untrusted_delegate_output"}`,
     `  updated_at: ${normalized.updatedAt ?? "default"}`,
     `  network_calls: ${normalized.executionEnabled ? "openrouter_delegate_only" : "none"}`,
     "  subprocesses: none",
@@ -245,8 +249,9 @@ export function sanitizeDelegationExecutionPolicy(value: unknown): DelegationExe
       record.credentialForwarding === "none" ? "none" : DEFAULT_DELEGATION_POLICY.credentialForwarding,
     resultPersistence:
       record.resultPersistence === "none" ? "none" : DEFAULT_DELEGATION_POLICY.resultPersistence,
-    resultMerge:
-      record.resultMerge === "manual_summary" ? "manual_summary" : DEFAULT_DELEGATION_POLICY.resultMerge,
+    resultMerge: isDelegationPolicyResultMerge(record.resultMerge)
+      ? record.resultMerge
+      : DEFAULT_DELEGATION_POLICY.resultMerge,
     ...(sanitizeTimestamp(record.updatedAt) ? { updatedAt: sanitizeTimestamp(record.updatedAt) } : {}),
   };
 }
@@ -291,10 +296,10 @@ export function validateDelegationPolicyPatch(
     result.resultPersistence = "none";
   }
   if (patch.resultMerge !== undefined) {
-    if (patch.resultMerge !== "manual_summary") {
-      throw new DelegationPolicyError("Result merge is fixed to manual_summary for the current OpenRouter delegate adapter.");
+    if (!isDelegationPolicyResultMerge(patch.resultMerge)) {
+      throw new DelegationPolicyError("Result merge must be manual_summary or metadata_only.");
     }
-    result.resultMerge = "manual_summary";
+    result.resultMerge = patch.resultMerge;
   }
   return result;
 }
@@ -363,7 +368,7 @@ export function parseDelegationExecutionPolicySetArgs(
     }
 
     if (arg === "--result-merge") {
-      patch.resultMerge = parsePolicyFixedArg(args, index, arg, "manual_summary");
+      patch.resultMerge = parsePolicyResultMergeArg(args, index, arg);
       index += 1;
       continue;
     }
@@ -473,6 +478,21 @@ function parsePolicyFixedArg<T extends string>(
   return allowed;
 }
 
+function parsePolicyResultMergeArg(
+  args: string[],
+  index: number,
+  option: string,
+): DelegationPolicyResultMerge {
+  const value = args[index + 1];
+  if (!value || value.startsWith("--")) {
+    throw new DelegationPolicyError(`Missing value for ${option}.`);
+  }
+  if (!isDelegationPolicyResultMerge(value)) {
+    throw new DelegationPolicyError(`${option} must be manual_summary or metadata_only.`);
+  }
+  return value;
+}
+
 function sanitizeCost(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100
     ? roundCost(value)
@@ -522,4 +542,8 @@ function roundCost(value: number): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isDelegationPolicyResultMerge(value: unknown): value is DelegationPolicyResultMerge {
+  return DELEGATION_POLICY_RESULT_MERGE_VALUES.includes(value as DelegationPolicyResultMerge);
 }

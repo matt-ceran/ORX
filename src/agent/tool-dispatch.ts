@@ -468,6 +468,19 @@ function compactDelegateTaskOutputForModel(output: unknown, maxOutputJsonBytes: 
     return output;
   }
 
+  if (output.resultMerge === "metadata_only") {
+    const rest = { ...output };
+    delete rest.result;
+    return {
+      ...rest,
+      modelVisibleResultOmitted: true,
+      modelVisibleResultOmittedReason: "delegation_policy_metadata_only",
+      modelVisibleResultBytes: 0,
+      modelVisibleResultOmittedBytes: byteLength(output.result),
+      resultHashCovers: "full_wrapped_delegate_output",
+    };
+  }
+
   if (byteLength(JSON.stringify(output)) <= maxOutputJsonBytes) {
     return output;
   }

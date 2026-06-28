@@ -261,6 +261,15 @@ function formatDelegateTaskDetails(output: JsonObject | undefined): string[] {
   if (typeof output.networkAttempted === "boolean") {
     details.push(`network=${output.networkAttempted ? "attempted" : "not_attempted"}`);
   }
+  if (typeof output.resultMerge === "string") {
+    details.push(`result_merge=${output.resultMerge}`);
+  }
+  if (typeof output.modelExposure === "string") {
+    details.push(`model_exposure=${output.modelExposure}`);
+  }
+  if (output.modelVisibleResultOmitted === true) {
+    details.push("model_visible_result=omitted");
+  }
   if (typeof output.observedCostUsd === "number") {
     details.push(`cost_usd=${formatCost(output.observedCostUsd)}`);
   }

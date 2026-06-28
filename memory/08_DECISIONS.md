@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Delegation Result Merge Has A Metadata-Only Mode
+
+Decision: ORX delegation policy should support `resultMerge = "manual_summary"` and `resultMerge = "metadata_only"`. `manual_summary` remains the default and returns wrapped untrusted delegate text to the controller model for manual summarization. `metadata_only` keeps runtime hashes, byte counts, audit metadata, and internal result details, but omits raw delegate text from the model-facing `delegate_task` tool result. Neither mode performs automatic result merging, credential forwarding, or extra delegate-output persistence.
+
+Reasoning: The operator needs a more cautious delegation mode for broader dogfooding. Metadata-only mode lets ORX prove delegate calls happened and preserve auditability without feeding untrusted delegate text back into the controller model by default.
+
 ## 2026-06-28: Refuse API-Key Storage Through Config CLI Args
 
 Decision: `orx config set` should edit only non-secret setup fields and refuse `api_key` and secret-like values through CLI arguments. Operators should use `OPENROUTER_API_KEY` or deliberate manual config editing for API keys.
@@ -30,7 +36,7 @@ Reasoning: The next adapter needs a concrete contract and audit path, but creati
 
 ## 2026-06-28: Delegation Execution Policy Was Stored Before Execution
 
-Decision: ORX may persist a private local delegation execution policy at `~/.orx/delegation/policy.json`, with `ORX_DELEGATION_POLICY_PATH` for isolated runs. This decision originally allowed policy storage before the live adapter existed; the later OpenRouter adapter slice made execution explicitly policy-gated for interactive chat. The policy stores enforcement limits for max task cost, task timeout, result byte cap, max concurrent delegates, credential forwarding, result persistence, and result merge mode. Credential forwarding remains fixed to `none`, result persistence remains fixed to `none`, and result merge remains fixed to `manual_summary`.
+Decision: ORX may persist a private local delegation execution policy at `~/.orx/delegation/policy.json`, with `ORX_DELEGATION_POLICY_PATH` for isolated runs. This decision originally allowed policy storage before the live adapter existed; the later OpenRouter adapter slice made execution explicitly policy-gated for interactive chat. The policy stores enforcement limits for max task cost, task timeout, result byte cap, max concurrent delegates, credential forwarding, result persistence, and result merge mode. Credential forwarding remains fixed to `none`, result persistence remains fixed to `none`, and result merge now accepts `manual_summary` or `metadata_only`.
 
 Reasoning: A comfortable delegation CLI needs editable limits, but writing or enabling a policy file must not imply that delegated execution can bypass chat-session readiness, output trust boundaries, or fixed credential/result modes. Keeping the policy local, private, and symlink-resistant gives the OpenRouter delegate adapter a concrete contract while preserving separate gates for model exposure, network calls, credentials, result persistence, and merge behavior.
 

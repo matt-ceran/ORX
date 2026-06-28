@@ -213,7 +213,7 @@ test("delegation execution policy saves private gated limits and validates patch
       "--result-persistence",
       "none",
       "--result-merge",
-      "manual_summary",
+      "metadata_only",
     ]);
     assert.deepEqual(parsed, {
       maxTaskCostUsd: 0.3333,
@@ -222,7 +222,7 @@ test("delegation execution policy saves private gated limits and validates patch
       maxConcurrentDelegates: 2,
       credentialForwarding: "none",
       resultPersistence: "none",
-      resultMerge: "manual_summary",
+      resultMerge: "metadata_only",
     });
     assert.deepEqual(parseDelegationExecutionPolicySetArgs(["--execution", "enabled"]), {
       executionEnabled: true,
@@ -244,6 +244,7 @@ test("delegation execution policy saves private gated limits and validates patch
     assert.equal(loaded.taskTimeoutMs, 60000);
     assert.equal(loaded.maxResultBytes, 50000);
     assert.equal(loaded.maxConcurrentDelegates, 2);
+    assert.equal(loaded.resultMerge, "metadata_only");
     assert.equal(loaded.updatedAt, "2026-06-28T12:00:00.000Z");
 
     assert.throws(
@@ -268,7 +269,7 @@ test("delegation execution policy saves private gated limits and validates patch
     );
     assert.throws(
       () => validateDelegationPolicyPatch({ resultMerge: "auto" as never }),
-      /Result merge is fixed to manual_summary/,
+      /manual_summary or metadata_only/,
     );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -318,7 +319,7 @@ test("delegation execution policy sanitizes malformed persisted values and refus
         maxConcurrentDelegates: 99,
         credentialForwarding: "env",
         resultPersistence: "disk",
-        resultMerge: "auto",
+        resultMerge: "metadata_only",
         updatedAt: "not a date",
       }),
     );
@@ -332,7 +333,7 @@ test("delegation execution policy sanitizes malformed persisted values and refus
     assert.equal(sanitized.maxConcurrentDelegates, 1);
     assert.equal(sanitized.credentialForwarding, "none");
     assert.equal(sanitized.resultPersistence, "none");
-    assert.equal(sanitized.resultMerge, "manual_summary");
+    assert.equal(sanitized.resultMerge, "metadata_only");
     assert.equal(sanitized.updatedAt, undefined);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -546,6 +547,65 @@ test("delegate_task runs the OpenRouter adapter when policy is enabled", async (
     assert.match(audit, /"networkAttempted":true/);
     assert.match(audit, /"resultHash":"sha256:[a-f0-9]{64}"/);
     assert.doesNotMatch(audit, /Review the CLI flow|adapter path is bounded/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegate_task records metadata-only merge mode for policy-enabled delegate output", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-metadata-only-"));
+  const auditLogPath = join(cwd, "audit", "delegation.jsonl");
+  const policyConfigPath = join(cwd, "delegation", "policy.json");
+
+  try {
+    updateDelegationExecutionPolicy(
+      {
+        executionEnabled: true,
+        maxResultBytes: 4_096,
+        resultMerge: "metadata_only",
+      },
+      { configPath: policyConfigPath },
+    );
+    const state = addOpenRouterDelegate(
+      createEmptyDelegationState(),
+      "reviewer",
+      "anthropic/claude-sonnet-4.5",
+    ).state;
+
+    const result = await runDelegateTask(
+      {
+        delegate: "reviewer",
+        task: "Review the CLI flow and return one concise finding.",
+        expected_output: "One short finding.",
+        max_result_bytes: 4_096,
+      },
+      {
+        state,
+        policyConfigPath,
+        auditLogPath,
+        enabled: true,
+        apiKey: "sk-or-v1-test",
+        fetch: async () =>
+          new Response(
+            streamFrom([
+              'data: {"model":"anthropic/claude-sonnet-4.5","choices":[{"delta":{"content":"Finding: metadata-only path is bounded."},"finish_reason":"stop"}]}\n\n',
+              "data: [DONE]\n\n",
+            ]),
+            { status: 200, headers: { "content-type": "text/event-stream" } },
+          ),
+      },
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.resultMerge, "metadata_only");
+    assert.equal(result.modelExposure, "metadata_only_delegate_task_result");
+    assert.match(result.result, /Finding: metadata-only path is bounded\./);
+    assert.match(result.resultHash, /^sha256:[a-f0-9]{64}$/);
+
+    const audit = readFileSync(auditLogPath, "utf8");
+    assert.match(audit, /"resultMerge":"metadata_only"/);
+    assert.match(audit, /"modelExposure":"metadata_only_delegate_task_result"/);
+    assert.doesNotMatch(audit, /metadata-only path is bounded|Review the CLI flow/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
