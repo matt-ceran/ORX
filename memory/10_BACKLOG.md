@@ -111,12 +111,13 @@ Next:
   - Add Phase 10 slash-only web search MVP: `/web search <query>` and `/search <query>` backed by `BRAVE_SEARCH_API_KEY`, bounded Brave queries, blocked-result URL filtering, secondary snippet evidence, untrusted search context insertion, and citation provenance marking for provider snippets.
   - Add Phase 10 browser automation foundation: `/web browse <url>` and `/browse <url>` slash-only browser snapshots, `kind=browser` evidence, bounded untrusted browser context insertion, session persistence, DNS-bound document fetch before browser rendering, disabled JavaScript, aborted browser network routes, guarded redirects/final URLs, and optional dynamic Playwright runtime.
   - Add plugin management CLI ergonomics: `orx plugins list|inspect|register|install|enable|disable`, `/plugins install <manifest-path>` alias, no-API-key/no-fetch operation, sanitized unknown-plugin errors, override parent permission preservation, and tests preserving inert hooks/bins/MCP/plugin-command/code-execution surfaces.
+  - Add ORX-owned local plugin install cache: `~/.orx/plugins/cache` with `ORX_PLUGIN_CACHE_DIR`, sanitized cached manifests, declared-component-only snapshots, cached lock manifest paths with original-path provenance, `/status` cache path visibility, and skill discovery from cache after source removal.
 
 - Extend browser automation beyond static DNS-bound document snapshots when a safe browser-network/proxy design can preserve SSRF protections.
 - Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
 - Follow `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md` for the full-stack plugin/MCP/research build order.
 - Add MCP presets: `openrouter`, `context7`, `github-readonly`, `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
-- Extend the plugin system beyond the local registry/CLI substrate with install cache, marketplace/catalog metadata, source fetching, lockfile pins for remote sources, and namespacing.
+- Extend the plugin system beyond the local registry/CLI/cache substrate with marketplace/catalog metadata, source fetching, lockfile pins for remote sources, and namespacing.
 - Add plugin-provided slash commands/prompts and rules.
 - Add hook runtime with hash trust and `/status` visibility.
 - Add plugin-provided MCP server presets routed through ORX policy.

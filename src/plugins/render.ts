@@ -43,6 +43,7 @@ export function renderPluginInspect(plugin: InstalledPluginRecord): string {
     `  source: ${formatSource(plugin)}`,
     `  resolved_ref: ${plugin.lock.resolvedRef ?? "none"}`,
     `  manifest_path: ${plugin.lock.source.manifestPath}`,
+    `  original_manifest_path: ${plugin.lock.source.originalManifestPath ?? "none"}`,
     "  components:",
     ...(componentEntries.length === 0
       ? ["    - none"]

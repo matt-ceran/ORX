@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import {
   boundMessagesForContext,
   formatContextState,
@@ -193,6 +194,7 @@ export interface SlashCommandContext {
   setLatestCredits?: (credits: OpenRouterCreditsInfo) => void;
   mcpAuditLogPath?: string;
   mcpConfigPath?: string;
+  pluginCacheDirectory?: string;
   pluginRegistryPath?: string;
   profileConfigPath?: string;
   recordActivatedSkill?: (skill: PluginSkillActivationProvenance) => void;
@@ -1373,6 +1375,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       cwd: context.io.cwd,
       loadedConfig,
       mcpConfigPath: context.mcpConfigPath,
+      pluginCacheDirectory: context.pluginCacheDirectory,
       pluginRegistryPath: context.pluginRegistryPath,
       profileConfigPath: context.profileConfigPath,
       delegationState: getDelegationState(context),
@@ -1687,15 +1690,16 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
   }
 
   if (subcommand === "register" || subcommand === "install") {
-    const manifestPath = command.args.slice(1).join(" ").trim();
-    if (!manifestPath) {
+    const manifestPathText = command.args.slice(1).join(" ").trim();
+    if (!manifestPathText) {
       writeLine(context.io.stderr, `Usage: /plugins ${subcommand} <manifest-path>`);
       return;
     }
 
     try {
-      const result = registerPluginManifest(manifestPath, {
+      const result = registerPluginManifest(resolve(context.io.cwd, manifestPathText), {
         registryPath: context.pluginRegistryPath,
+        cacheDirectory: context.pluginCacheDirectory,
       });
       writeLine(context.io.stdout, result.message);
     } catch (error) {

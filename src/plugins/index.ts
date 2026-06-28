@@ -11,6 +11,13 @@ export {
 } from "./manifest.js";
 export { canonicalJson, sha256 } from "./hash.js";
 export {
+  defaultPluginCacheDirectory,
+  resolvePluginCacheDirectory,
+  type CachedPluginManifest,
+  type PluginCacheOptions,
+  type PluginCachePathOptions,
+} from "./cache.js";
+export {
   createPluginLockRecord,
   type PluginComponentHash,
   type PluginLockOptions,

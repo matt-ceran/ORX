@@ -71,7 +71,7 @@ orx plugins enable acme.example@1.0.0
 orx plugins disable acme.example@1.0.0
 ```
 
-Plugin install/register stores an inert local registry record. Enabling a plugin only enables its metadata/skills surface where supported; hooks, bins, plugin MCP servers, plugin commands, and plugin code execution remain inactive in the current scaffold.
+Plugin install/register stores an inert local registry record plus an ORX-owned cache snapshot of the sanitized manifest and declared components. By default the registry lives at `~/.orx/plugins/registry.json` and the cache at `~/.orx/plugins/cache`; use `ORX_PLUGIN_REGISTRY_PATH` and `ORX_PLUGIN_CACHE_DIR` to isolate them. Enabling a plugin only enables its metadata/skills surface where supported; hooks, bins, plugin MCP servers, plugin commands, and plugin code execution remain inactive in the current scaffold.
 
 Send one non-interactive streaming request with:
 

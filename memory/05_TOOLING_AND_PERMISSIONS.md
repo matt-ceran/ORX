@@ -95,13 +95,14 @@ Current Phase 8 scaffold:
 Current Phase 9 plugin scaffold:
 
 - `src/plugins/` validates and sanitizes ORX plugin manifests before storing them.
-- Plugin registry state is ORX-owned operator state outside repositories, defaulting to `~/.orx/plugins/registry.json` with `ORX_PLUGIN_REGISTRY_PATH` for tests and isolated runs.
-- Registering a local manifest computes a stable plugin id, manifest hash, lock-style integrity record, install time, source metadata, and bounded local component hashes when files/directories are available.
+- Plugin registry/cache state is ORX-owned operator state outside repositories, defaulting to `~/.orx/plugins/registry.json` and `~/.orx/plugins/cache` with `ORX_PLUGIN_REGISTRY_PATH` / `ORX_PLUGIN_CACHE_DIR` for tests and isolated runs.
+- Registering a local manifest snapshots the sanitized manifest plus declared component paths into the ORX-owned cache before writing the registry record; unknown manifest fields and unreferenced local files are not copied.
+- Registering a local manifest computes a stable plugin id, manifest hash, lock-style integrity record, install time, source metadata, cached manifest path, original manifest path provenance, and bounded component hashes from the cached snapshot when files/directories are available.
 - Git source manifests must include a pinned `resolvedCommit`; floating refs can be recorded as context but cannot be the lock pin.
 - Manifest and loaded registry display fields reject secret-like values and terminal control characters before they can be stored or rendered.
 - Registering stores plugins disabled by default. `/plugins enable` and `/plugins disable` persist only an inert enabled flag.
 - Enabled plugins can contribute Agent Skills metadata only. Skill discovery is bounded to `components.skills` root `SKILL.md` files and immediate child `SKILL.md` files, omits unsafe/oversized metadata, and exposes compact metadata through `/skills list`, `/status`, and ephemeral model context.
-- Skill discovery requires a safe absolute manifest path in the ORX-owned registry record and fails closed for malformed registry state.
+- Skill discovery requires a safe absolute cached manifest path in the ORX-owned registry record and fails closed for malformed registry state.
 - Full `SKILL.md` content is loaded only through explicit `/skills activate <id>`, rejects secret-like values and terminal control characters before model/session use, then stores safe content as an untrusted system message and records provenance in session metadata.
 - Activated skill context is pruned from chat messages and session provenance when the backing plugin/skill is no longer enabled.
 - Skill content and metadata cannot authorize tool use, permission changes, MCP enablement, hooks, bins, plugin commands, or command execution.

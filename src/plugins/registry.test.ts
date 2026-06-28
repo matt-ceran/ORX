@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -11,13 +12,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   getPluginStatusSummary,
   loadPluginRegistry,
   formatPluginIdForMessage,
   registerPluginManifest,
   renderPluginInspect,
+  resolvePluginCacheDirectory,
   resolvePluginRegistryPath,
   setPluginEnabledState,
 } from "./index.js";
@@ -31,6 +33,7 @@ test("registerPluginManifest sanitizes untrusted manifest JSON and writes privat
   const manifestPath = join(pluginDirectory, "orx-plugin.json");
   mkdirSync(join(pluginDirectory, "skills"), { recursive: true });
   writeFileSync(join(pluginDirectory, "skills", "SKILL.md"), "# Safe skill\n");
+  writeFileSync(join(pluginDirectory, "secret.txt"), "sk-or-v1-secret\n");
   writeFileSync(
     manifestPath,
     JSON.stringify({
@@ -70,6 +73,8 @@ test("registerPluginManifest sanitizes untrusted manifest JSON and writes privat
     assert.equal(result.plugin?.enabled, false);
     assert.match(result.plugin?.manifestHash ?? "", /^sha256:[a-f0-9]{64}$/);
     assert.match(result.plugin?.lock.componentHashes.skills?.hash ?? "", /^sha256:[a-f0-9]{64}$/);
+    assert.notEqual(result.plugin?.lock.source.manifestPath, manifestPath);
+    assert.equal(result.plugin?.lock.source.originalManifestPath, manifestPath);
 
     const registryText = readFileSync(registryPath, "utf8");
     assert.doesNotMatch(registryText, /sk-or-v1-secret|secret-source-value|do-not-store/);
@@ -78,6 +83,13 @@ test("registerPluginManifest sanitizes untrusted manifest JSON and writes privat
 
     assert.equal(modeBits(cwd, "state"), "700");
     assert.equal(modeBits(cwd, "state/registry.json"), "600");
+    assert.equal(modeBits(cwd, "state/cache"), "700");
+    assert.equal(modeBits(cwd, "state/cache/acme.safe-plugin@1.2.3"), "700");
+
+    const cachedManifestPath = result.plugin?.lock.source.manifestPath ?? "";
+    const cachedManifestText = readFileSync(cachedManifestPath, "utf8");
+    assert.doesNotMatch(cachedManifestText, /sk-or-v1-secret|secret-source-value|privateToken|apiKey/);
+    assert.equal(existsSync(join(dirname(cachedManifestPath), "secret.txt")), false);
 
     const loaded = loadPluginRegistry({ registryPath });
     assert.equal(Object.keys(loaded.plugins).length, 1);
@@ -503,6 +515,23 @@ test("plugin registry preserves existing override parent permissions", () => {
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("plugin cache path supports registry-derived and environment overrides", () => {
+  assert.equal(
+    resolvePluginCacheDirectory({
+      registryPath: "/tmp/orx/plugins/registry.json",
+    }),
+    "/tmp/orx/plugins/cache",
+  );
+  assert.equal(
+    resolvePluginCacheDirectory({
+      env: { ORX_PLUGIN_CACHE_DIR: "plugin-cache" },
+      cwd: "/tmp/orx",
+      registryPath: "/tmp/orx/plugins/registry.json",
+    }),
+    "/tmp/orx/plugin-cache",
+  );
 });
 
 test("resolvePluginRegistryPath supports ORX_PLUGIN_REGISTRY_PATH overrides", () => {

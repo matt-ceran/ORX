@@ -67,6 +67,42 @@ test("discovers enabled plugin skills from root and immediate child SKILL.md fil
   }
 });
 
+test("discovers enabled plugin skills from cached components after source removal", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-skills-cache-"));
+  const registryPath = join(cwd, "registry.json");
+  const pluginDirectory = join(cwd, "plugin");
+  const manifestPath = join(pluginDirectory, "orx-plugin.json");
+  mkdirSync(join(pluginDirectory, "skills"), { recursive: true });
+  writeFileSync(
+    join(pluginDirectory, "skills", "SKILL.md"),
+    [
+      "---",
+      "name: Cached Skill",
+      "description: Survives source removal.",
+      "---",
+      "# Cached Skill",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(manifestPath, JSON.stringify(validManifest({ skills: "./skills" })));
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    rmSync(pluginDirectory, { recursive: true, force: true });
+    setPluginEnabledState("acme.demo-plugin@1.0.0", true, { registryPath });
+
+    const discovery = discoverEnabledPluginSkills({ registryPath });
+
+    assert.equal(discovery.skills.length, 1);
+    assert.equal(discovery.skills[0].id, "plugin:acme.demo-plugin@1.0.0:cached-skill");
+    assert.equal(discovery.skills[0].relativePath, "skills/SKILL.md");
+    assert.match(discovery.skills[0].filePath, /cache\/acme\.demo-plugin@1\.0\.0\//);
+    assert.equal(discovery.omissions.length, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("skill discovery drops unsafe metadata and omits oversized skill files", () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-skill-sanitize-"));
   const registryPath = join(cwd, "registry.json");

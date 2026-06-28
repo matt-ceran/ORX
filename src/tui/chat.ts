@@ -91,6 +91,7 @@ export interface ChatOptions {
   sessionDirectory?: string;
   mcpAuditLogPath?: string;
   mcpConfigPath?: string;
+  pluginCacheDirectory?: string;
   pluginRegistryPath?: string;
   profileConfigPath?: string;
   braveSearchApiKey?: string;
@@ -111,6 +112,7 @@ export async function runChat({
   sessionDirectory,
   mcpAuditLogPath,
   mcpConfigPath,
+  pluginCacheDirectory,
   pluginRegistryPath,
   profileConfigPath,
   braveSearchApiKey = process.env.BRAVE_SEARCH_API_KEY,
@@ -225,6 +227,7 @@ export async function runChat({
           },
           mcpAuditLogPath,
           mcpConfigPath,
+          pluginCacheDirectory,
           pluginRegistryPath,
           profileConfigPath,
           recordActivatedSkill: (skill) => {

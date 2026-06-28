@@ -23,6 +23,7 @@ Urgent UX recovery additions from user testing:
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; executable plugin surfaces remain inactive.
+- Plugin install/register now snapshots sanitized manifests plus declared components into ORX-owned plugin cache storage before registry persistence; enabled skill discovery resolves from the cached manifest path, not the original source checkout.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -57,6 +58,16 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented and focused-verified ORX-owned local plugin install cache:
+
+- Added `src/plugins/cache.ts` with `~/.orx/plugins/cache` default storage, `ORX_PLUGIN_CACHE_DIR` override support, registry-derived test isolation, private cache directories/files, bounded component snapshots, and temp-directory staging per plugin id/manifest hash.
+- Plugin install/register now writes a sanitized cached `orx-plugin.json` plus declared component paths only; unknown manifest fields and unreferenced local files are not copied into ORX state.
+- Plugin lock records now use the cached manifest path for runtime discovery and keep `originalManifestPath` provenance for inspection.
+- CLI and slash plugin install/register resolve relative manifests from the active cwd and pass the same cache directory through chat. `/status` reports `plugin_cache_path`.
+- Enabled plugin skill discovery now survives removal of the original plugin source directory because `components.skills` resolves from the cached manifest directory.
+- Focused verification: `npm run typecheck` and `npm run build && node --test dist/plugins/registry.test.js dist/plugins/skills.test.js dist/cli.test.js dist/slash/index.test.js dist/tui/chat.test.js` pass with 119 tests.
+- Next likely plugin work: catalog/source fetching and richer plugin metadata/namespacing, then plugin-provided prompts/rules and MCP preset wiring while executable hooks/bins/MCP/plugin commands remain gated.
 
 Implemented and verified plugin management CLI ergonomics:
 

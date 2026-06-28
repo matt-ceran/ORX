@@ -27,6 +27,7 @@ import {
   registerPluginManifest,
   renderPluginInspect,
   renderPluginList,
+  resolvePluginCacheDirectory,
   resolvePluginRegistryPath,
   setPluginEnabledState,
 } from "./plugins/index.js";
@@ -102,6 +103,11 @@ export async function runCli(
 
   const mcpConfigPath = resolveMcpConfigPath({ env, cwd: io.cwd });
   const pluginRegistryPath = resolvePluginRegistryPath({ env, cwd: io.cwd });
+  const pluginCacheDirectory = resolvePluginCacheDirectory({
+    env,
+    cwd: io.cwd,
+    registryPath: pluginRegistryPath,
+  });
   const profileConfigPath = resolveProfileConfigPath({ env, cwd: io.cwd });
   const loadedConfigResult = loadConfigWithProfile({
     env,
@@ -122,6 +128,7 @@ export async function runCli(
         cwd: io.cwd,
         loadedConfig,
         mcpConfigPath,
+        pluginCacheDirectory,
         pluginRegistryPath,
         profileConfigPath,
         renderOptions: { stream: io.stdout, theme: loadedConfig.config.theme },
@@ -135,7 +142,7 @@ export async function runCli(
   }
 
   if (first === "plugins" || first === "plugin") {
-    return runPluginsCommand(args.slice(1), io, pluginRegistryPath);
+    return runPluginsCommand(args.slice(1), io, pluginRegistryPath, pluginCacheDirectory);
   }
 
   const apiKeyError = validateApiKey(loadedConfig);
@@ -165,6 +172,7 @@ export async function runCli(
   if (!first || first === "chat") {
     return runChatCommand(env, loadedConfig, io, {
       mcpConfigPath,
+      pluginCacheDirectory,
       pluginRegistryPath,
       profileConfigPath,
     });
@@ -215,6 +223,7 @@ function runChatCommand(
   io: CliIo,
   paths?: {
     mcpConfigPath?: string;
+    pluginCacheDirectory?: string;
     pluginRegistryPath?: string;
     profileConfigPath?: string;
   },
@@ -234,6 +243,7 @@ function runChatCommand(
     sessionDirectory: resolveSessionDirectory({ env, cwd: io.cwd }),
     mcpAuditLogPath: env.ORX_MCP_AUDIT_PATH,
     mcpConfigPath: paths?.mcpConfigPath,
+    pluginCacheDirectory: paths?.pluginCacheDirectory,
     pluginRegistryPath: paths?.pluginRegistryPath,
     profileConfigPath: paths?.profileConfigPath,
     braveSearchApiKey: env.BRAVE_SEARCH_API_KEY,
@@ -394,7 +404,12 @@ function runProfileCommand(
   return 1;
 }
 
-function runPluginsCommand(args: string[], io: CliIo, pluginRegistryPath: string): number {
+function runPluginsCommand(
+  args: string[],
+  io: CliIo,
+  pluginRegistryPath: string,
+  pluginCacheDirectory: string,
+): number {
   const subcommand = args[0]?.toLowerCase() ?? "list";
   const pluginId = args[1];
 
@@ -423,15 +438,16 @@ function runPluginsCommand(args: string[], io: CliIo, pluginRegistryPath: string
   }
 
   if (subcommand === "register" || subcommand === "install") {
-    const manifestPath = args.slice(1).join(" ").trim();
-    if (!manifestPath) {
+    const manifestPathText = args.slice(1).join(" ").trim();
+    if (!manifestPathText) {
       writeLine(io.stderr, `Usage: orx plugins ${subcommand} <manifest-path>`);
       return 1;
     }
 
     try {
-      const result = registerPluginManifest(manifestPath, {
+      const result = registerPluginManifest(resolve(io.cwd, manifestPathText), {
         registryPath: pluginRegistryPath,
+        cacheDirectory: pluginCacheDirectory,
       });
       writeLine(io.stdout, result.message);
       return 0;

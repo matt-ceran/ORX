@@ -19,6 +19,7 @@ import {
   createPluginLockRecord,
   type PluginLockRecord,
 } from "./lockfile.js";
+import { cachePluginManifest } from "./cache.js";
 
 export interface PluginRegistryPathOptions {
   env?: NodeJS.ProcessEnv;
@@ -28,6 +29,7 @@ export interface PluginRegistryPathOptions {
 
 export interface PluginRegistryIoOptions {
   registryPath?: string;
+  cacheDirectory?: string;
 }
 
 export interface InstalledPluginRecord {
@@ -153,8 +155,13 @@ export function registerPluginManifest(
   const manifestHash = hashPluginManifest(manifest);
   const now = (options.now?.() ?? new Date()).toISOString();
   const registry = loadPluginRegistry({ registryPath: options.registryPath });
+  const cached = cachePluginManifest(manifestPath, manifest, manifestHash, {
+    registryPath: options.registryPath,
+    cacheDirectory: options.cacheDirectory,
+  });
   const lock = createPluginLockRecord(manifest, {
-    manifestPath,
+    manifestPath: cached.manifestPath,
+    originalManifestPath: cached.originalManifestPath,
     manifestHash,
     now: () => new Date(now),
   });
@@ -330,6 +337,8 @@ function sanitizeLockRecord(
     ? {
         ...manifest.source,
         manifestPath: sanitizeDisplayString(value.source.manifestPath, "", 4096),
+        originalManifestPath:
+          sanitizeDisplayString(value.source.originalManifestPath, "", 4096) || undefined,
       }
     : {
         ...manifest.source,

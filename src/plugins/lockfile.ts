@@ -21,6 +21,7 @@ export interface PluginComponentHash {
 export interface PluginLockRecord {
   source: PluginSource & {
     manifestPath: string;
+    originalManifestPath?: string;
   };
   resolvedRef?: string;
   integrity: string;
@@ -30,6 +31,7 @@ export interface PluginLockRecord {
 
 export interface PluginLockOptions {
   manifestPath: string;
+  originalManifestPath?: string;
   manifestHash: string;
   now?: () => Date;
 }
@@ -61,6 +63,9 @@ export function createPluginLockRecord(
     source: {
       ...manifest.source,
       manifestPath: absoluteManifestPath,
+      originalManifestPath: options.originalManifestPath
+        ? resolve(options.originalManifestPath)
+        : undefined,
     },
     resolvedRef:
       manifest.source.type === "git"

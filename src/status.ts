@@ -11,6 +11,7 @@ export interface StatusOptions {
   cwd: string;
   loadedConfig: LoadedConfig;
   mcpConfigPath?: string;
+  pluginCacheDirectory?: string;
   pluginRegistryPath?: string;
   profileConfigPath?: string;
   delegationState?: DelegationState;
@@ -21,6 +22,7 @@ export function formatStatus({
   cwd,
   loadedConfig,
   mcpConfigPath,
+  pluginCacheDirectory,
   pluginRegistryPath,
   profileConfigPath,
   delegationState,
@@ -69,6 +71,7 @@ export function formatStatus({
     }`,
     `plugin_installed_count: ${pluginStatus.installedCount}`,
     `plugin_enabled_count: ${pluginStatus.enabledCount}`,
+    `plugin_cache_path: ${pluginCacheDirectory ?? "default"}`,
     `plugin_enabled_hooks: ${pluginStatus.enabledHookCount}`,
     `plugin_enabled_bins: ${pluginStatus.enabledBinCount}`,
     `plugin_enabled_mcp: ${pluginStatus.enabledMcpCount}`,
