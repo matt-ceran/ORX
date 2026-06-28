@@ -1139,7 +1139,7 @@ test("mcp inspect renders profile metadata and audits without network", async ()
     assert.match(harness.stdout(), /auth_status: required \(OAuth or dedicated expiring MCP key\)/);
     assert.match(
       harness.stdout(),
-      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable exposes read-only non-billable mcp_call only/,
+      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
     );
     assert.match(harness.stdout(), /normal_inference: direct OpenRouter REST API/);
     assert.match(harness.stdout(), /model-get risk=read auth=yes billable=no/);
@@ -1181,7 +1181,7 @@ test("mcp tools renders declared tool policy without network", async () => {
     assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes policy=blocked_by_profile/);
     assert.match(
       harness.stdout(),
-      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable exposes read-only non-billable mcp_call only/,
+      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
     );
 
     const events = readAuditEvents(auditLogPath);
@@ -1585,7 +1585,10 @@ test("mcp discover calls fetch for enabled trusted profile and does not execute 
     assert.doesNotMatch(seenRequests[0], /tools\/call|chat-send/);
     assert.match(harness.stdout(), /status: ok/);
     assert.match(harness.stdout(), /server_name: openrouter/);
-    assert.match(harness.stdout(), /tool_execution: explicit \/mcp call only/);
+    assert.match(
+      harness.stdout(),
+      /tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+    );
 
     const events = readAuditEvents(auditLogPath);
     assert.deepEqual(
@@ -1725,7 +1728,10 @@ test("mcp remote-tools calls tools/list for enabled trusted profile and does not
     assert.match(harness.stdout(), /models-list description="List models" tool_hash=sha256:[a-f0-9]{64}/);
     assert.match(harness.stdout(), /input_schema_hash=sha256:[a-f0-9]{64}/);
     assert.match(harness.stdout(), /trust_boundary: remote tool metadata is untrusted/);
-    assert.match(harness.stdout(), /tool_execution: explicit \/mcp call only/);
+    assert.match(
+      harness.stdout(),
+      /tool_execution: explicit \/mcp call or orx mcp call; tools\/list metadata is untrusted operator output; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+    );
     assert.doesNotMatch(harness.stdout(), /"type":"object"/);
 
     const events = readAuditEvents(auditLogPath);
@@ -2020,7 +2026,7 @@ test("mcp slash commands discover trusted plugin-provided remote-http presets", 
     assert.match(harness.stdout(), /component_path=mcp.json/);
     assert.match(
       harness.stdout(),
-      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable exposes read-only non-billable mcp_call only/,
+      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
     );
 
     assert.equal(await handleSlashCommand(`/mcp tools ${profileId}`, harness.context), "continue");
@@ -2033,7 +2039,10 @@ test("mcp slash commands discover trusted plugin-provided remote-http presets", 
     assert.equal(fetchCalls, 1);
     assert.match(harness.stdout(), /status: ok/);
     assert.match(harness.stdout(), /server_name: plugin-docs/);
-    assert.match(harness.stdout(), /tool_execution: explicit \/mcp call only/);
+    assert.match(
+      harness.stdout(),
+      /tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

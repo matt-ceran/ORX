@@ -886,6 +886,128 @@ test("ask streams text and prints compact metadata summary", async () => {
   assert.equal(capture.stderr(), "");
 });
 
+test("ask --mcp-tools exposes read-only MCP calls through dedicated transport", async () => {
+  const cwd = createTempDir();
+  const mcpConfigPath = join(cwd, "mcp", "profiles.json");
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const seenMcpRequests: Array<{ authorization: string | null; body: string }> = [];
+  let chatRequestCount = 0;
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath: mcpConfigPath });
+    const capture = createIo({
+      cwd,
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        chatRequestCount += 1;
+
+        if (chatRequestCount === 1) {
+          assert.ok(
+            body.tools.some((tool: { function: { name: string } }) => tool.function.name === "mcp_call"),
+          );
+          return new Response(
+            streamFrom([
+              sse({
+                choices: [
+                  {
+                    delta: {
+                      tool_calls: [
+                        {
+                          index: 0,
+                          id: "call_mcp",
+                          type: "function",
+                          function: {
+                            name: "mcp_call",
+                            arguments: JSON.stringify({
+                              profile: "openrouter",
+                              tool: "models-list",
+                              arguments: { query: "claude" },
+                            }),
+                          },
+                        },
+                      ],
+                    },
+                    finish_reason: "tool_calls",
+                  },
+                ],
+              }),
+              "data: [DONE]\n\n",
+            ]),
+            { status: 200 },
+          );
+        }
+
+        assert.equal(body.messages.at(-1).role, "tool");
+        assert.equal(body.messages.at(-1).tool_call_id, "call_mcp");
+        const envelope = JSON.parse(String(body.messages.at(-1).content));
+        assert.equal(envelope.tool, "mcp_call");
+        assert.doesNotMatch(envelope.output, /remote-secret|mcp-secret-token/);
+        assert.match(envelope.output, /returned_to_model_as_untrusted_tool_result/);
+        return new Response(
+          streamFrom([
+            sse({
+              choices: [
+                {
+                  delta: {
+                    content: "Used MCP.",
+                  },
+                },
+              ],
+            }),
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+      mcpCallFetch: async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit);
+        seenMcpRequests.push({
+          authorization: headers.get("authorization"),
+          body: String(init?.body),
+        });
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-tools-call-1",
+            result: {
+              content: [{ type: "text", text: "ok token=remote-secret" }],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    const exitCode = await runCli(
+      ["node", "cli", "ask", "Use MCP", "--mcp-tools"],
+      {
+        OPENROUTER_API_KEY: "test-key",
+        ORX_MCP_AUDIT_PATH: auditLogPath,
+        ORX_MCP_BEARER_OPENROUTER: "mcp-secret-token",
+        ORX_MCP_CONFIG_PATH: mcpConfigPath,
+      },
+      capture.io,
+    );
+
+    assert.equal(exitCode, 0);
+    assert.equal(chatRequestCount, 2);
+    assert.equal(seenMcpRequests.length, 1);
+    assert.equal(seenMcpRequests[0].authorization, "Bearer mcp-secret-token");
+    assert.match(seenMcpRequests[0].body, /"method":"tools\/call"/);
+    assert.match(stripAnsi(capture.stdout()), /\[tool\] mcp_call profile="openrouter" tool="models-list" arguments=<object>/);
+    assert.match(stripAnsi(capture.stdout()), /\[tool\] mcp_call ok duration=\d+ms status=ok policy=allowed network=attempted result_hash=sha256:[a-f0-9]{64}/);
+    assert.match(capture.stdout(), /Used MCP\./);
+    assert.doesNotMatch(capture.stdout(), /remote-secret|mcp-secret-token/);
+
+    const audit = readFileSync(auditLogPath, "utf8");
+    assert.match(audit, /"source":"model_loop"/);
+    assert.match(audit, /"status":"ok"/);
+    assert.doesNotMatch(audit, /remote-secret|mcp-secret-token|claude/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("ask prepends enabled plugin skill metadata without full SKILL content", async () => {
   const cwd = createTempDir();
   const registryPath = join(cwd, "plugins", "registry.json");
@@ -1973,6 +2095,7 @@ function assertNativeTools(tools: unknown) {
   const names = (tools as Array<{ function: { name: string } }>)
     .map((tool) => tool.function.name)
     .sort();
+  assert.doesNotMatch(names.join(","), /mcp_call/);
   assert.deepEqual(names, [
     "apply_patch",
     "git_diff",

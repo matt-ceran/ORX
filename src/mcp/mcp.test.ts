@@ -285,7 +285,10 @@ test("plugin MCP discovery contacts enabled trusted remote-http endpoints withou
     assert.equal(result.status, "ok");
     assert.equal(result.networkAttempted, true);
     assert.equal(result.serverInfo?.name, "context7");
-    assert.match(formatMcpDiscoveryResult(result), /tool_execution: explicit \/mcp call only/);
+    assert.match(
+      formatMcpDiscoveryResult(result),
+      /tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -446,7 +449,10 @@ test("remote MCP tools/list reads bounded untrusted tool metadata without execut
     assert.deepEqual(result.tools?.[0].annotationKeys, ["destructiveHint", "readOnlyHint"]);
     const formatted = formatMcpRemoteToolsResult(result);
     assert.match(formatted, /trust_boundary: remote tool metadata is untrusted/);
-    assert.match(formatted, /tool_execution: explicit \/mcp call only/);
+    assert.match(
+      formatted,
+      /tool_execution: explicit \/mcp call or orx mcp call; tools\/list metadata is untrusted operator output; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+    );
     assert.doesNotMatch(formatted, /"type":"object"/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -1270,7 +1276,7 @@ test("mcp tools renderer includes risk auth billable and policy decisions", () =
     assert.match(rendered, /MCP tools: openrouter/);
     assert.match(
       rendered,
-      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable exposes read-only non-billable mcp_call only/,
+      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
     );
     assert.match(rendered, /decisions: allowed=12 denied=1/);
     assert.match(rendered, /models-list risk=read auth=yes billable=no policy=allowed/);
@@ -1594,7 +1600,10 @@ test("mcp discovery calls provided fetch for enabled trusted remote-http profile
     assert.equal(result.networkAttempted, true);
     assert.equal(result.serverInfo?.name, "openrouter");
     assert.deepEqual(result.capabilityKeys, ["resources", "tools"]);
-    assert.match(formatMcpDiscoveryResult(result), /tool_execution: explicit \/mcp call only/);
+    assert.match(
+      formatMcpDiscoveryResult(result),
+      /tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

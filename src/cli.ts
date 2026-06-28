@@ -100,6 +100,7 @@ interface CliIo {
 interface AskCommand {
   prompt: string;
   overrides: AskRequestOverrides;
+  mcpTools: boolean;
 }
 
 interface GlobalCliOptions {
@@ -226,6 +227,8 @@ export async function runCli(
   if (first === "ask") {
     return runAskCommand(args.slice(1), loadedConfig.config.apiKey ?? "", loadedConfig.config, io, {
       hookEnv: env,
+      mcpAuditLogPath: env.ORX_MCP_AUDIT_PATH,
+      mcpConfigPath,
       pluginHooksAuditLogPath,
       pluginHooksConfigPath,
       pluginRegistryPath,
@@ -289,6 +292,7 @@ function helpText(): string {
     "  --model <slug>          Use an exact OpenRouter model slug",
     "  --mode <auto|fusion|exact>",
     "  --fusion <preset>       Use an OpenRouter Fusion preset",
+    "  --mcp-tools             Expose read-only non-billable MCP tools to the model",
     "",
     "Global options:",
     "  --profile <id>          Apply a saved ORX profile for this invocation",
@@ -1034,6 +1038,8 @@ async function runAskCommand(
   io: CliIo,
   options: {
     hookEnv?: NodeJS.ProcessEnv;
+    mcpAuditLogPath?: string;
+    mcpConfigPath?: string;
     pluginHooksAuditLogPath?: string;
     pluginHooksConfigPath?: string;
     pluginRegistryPath?: string;
@@ -1070,6 +1076,16 @@ async function runAskCommand(
         messages: requestMessages,
         cwd: io.cwd,
         fetch: io.fetch,
+        mcp: parsed.mcpTools
+          ? {
+              enabled: true,
+              auditLogPath: options.mcpAuditLogPath,
+              authEnv: options.hookEnv,
+              configPath: options.mcpConfigPath,
+              fetch: io.mcpCallFetch,
+              pluginRegistryPath: options.pluginRegistryPath,
+            }
+          : undefined,
         ephemeralSystemMessages: compactPluginContextMessages(options.pluginRegistryPath),
         callbacks: {
           onText(text) {
@@ -1200,6 +1216,7 @@ function loadConfigWithProfile(options: {
 function parseAskArgs(args: string[]): AskCommand | string {
   const promptParts: string[] = [];
   const overrides: AskRequestOverrides = {};
+  let mcpTools = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -1237,6 +1254,11 @@ function parseAskArgs(args: string[]): AskCommand | string {
       continue;
     }
 
+    if (arg === "--mcp-tools") {
+      mcpTools = true;
+      continue;
+    }
+
     if (arg.startsWith("--")) {
       return `Unknown ask option: ${arg}`;
     }
@@ -1260,6 +1282,7 @@ function parseAskArgs(args: string[]): AskCommand | string {
   return {
     prompt,
     overrides,
+    mcpTools,
   };
 }
 

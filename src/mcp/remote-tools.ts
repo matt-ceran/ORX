@@ -175,7 +175,7 @@ export function formatMcpRemoteToolsResult(result: McpRemoteToolsResult): string
     result.error ? `  error: ${result.error}` : undefined,
     `  detail: ${result.message}`,
     "  trust_boundary: remote tool metadata is untrusted",
-    "  tool_execution: explicit /mcp call only; tools/list metadata is not exposed to the model loop",
+    "  tool_execution: explicit /mcp call or orx mcp call; tools/list metadata is untrusted operator output; /mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only",
     result.tools && result.tools.length > 0 ? "  tools:" : undefined,
     ...(result.tools ?? []).map((tool) => `    - ${formatRemoteToolSummary(tool)}`),
   ];

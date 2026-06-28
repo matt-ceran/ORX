@@ -31,7 +31,7 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin `components.mcpServers` JSON can contribute MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp call`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`; trusted unchanged `remote-http` plugin profiles can be discovered, list remote tool metadata, run explicit operator `tools/call`, and optionally expose read-only non-billable tools to the model through session-local `/mcp model enable`.
 - MCP tool grants are implemented: `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` persist per-tool grants for billable/write/destructive declared tools only on enabled/trusted/unchanged profiles. Grants bind to the current trusted profile hash; stale grants are visible and denied before explicit calls can reach the network.
 - Explicit MCP `tools/call` is implemented for operator commands: `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` require enabled/trusted/unchanged profiles, allowed declared-tool policy, env-only bearer auth for auth-bearing tools, guarded DNS-vetted transport, redacted/truncated untrusted output, and audit logs without raw arguments/output.
-- Session-local model MCP exposure is implemented through `/mcp model enable|disable|status`. When enabled in interactive chat, ORX adds a single native model tool `mcp_call`, limited to read-only non-billable declared MCP tools; broad/billable/write/destructive model-loop MCP exposure remains inactive.
+- Model MCP exposure is implemented through `/mcp model enable|disable|status` for interactive chat and `orx ask --mcp-tools` for one-shot requests. ORX adds a single native model tool `mcp_call`, limited to read-only non-billable declared MCP tools; broad/billable/write/destructive model-loop MCP exposure remains inactive.
 - Enabled plugin `components.hooks` JSON can contribute hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run manually through `hooks run` / `/hooks run` or automatically on matching lifecycle events with minimal env/cwd and JSONL audit logging.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
@@ -75,7 +75,9 @@ Implemented session-local model MCP `mcp_call` runtime:
 - `mcp_call` reuses the same enabled/trusted/unchanged profile gates, declared-tool policy, env-only bearer auth, guarded remote transport, redacted/truncated output, and audit event shape as explicit MCP calls.
 - Model-visible MCP calls are limited to read-only non-billable declared tools. Billable/write/destructive MCP tools are denied before network even when an explicit operator grant exists.
 - Verification: verifier found only stale docs/memory wording; the wording was corrected. `npm run typecheck`, `git diff --check`, focused MCP/agent/slash/chat tests with 168 tests, full `npm test` with 350 tests, and `npm run dev -- status` pass.
-- Next likely MCP work: persisted/per-profile model MCP allowlists, noninteractive `ask` opt-in, or executable plugin slash commands/bins.
+- Follow-up one-shot support: `orx ask --mcp-tools` now exposes the same read-only non-billable `mcp_call` bridge for one noninteractive request, with dedicated MCP transport injection in tests and no default exposure.
+- Verification for the ask opt-in: verifier found stale discovery/remote-tools/memory wording and requested an explicit plain-ask negative assertion; fixes were applied and verifier recheck reported no findings. `npm run typecheck`, `git diff --check`, focused CLI/agent/MCP/slash tests with 169 tests, full `npm test` with 351 tests, and `npm run dev -- status` pass.
+- Next likely MCP work: persisted/per-profile model MCP allowlists or executable plugin slash commands/bins.
 
 Implemented explicit operator MCP `tools/call` runtime:
 
@@ -85,7 +87,7 @@ Implemented explicit operator MCP `tools/call` runtime:
 - Result rendering is bounded, redacted, marked untrusted, and explicitly not exposed to the model loop. Audit events record status/policy/result hashes/content types without raw arguments, raw output, bearer tokens, or schemas.
 - Billable/write/destructive tools still require active profile-hash-bound grants; stale grants deny before network.
 - Verification: verifier recheck reported no findings. `npm run typecheck`, `git diff --check`, focused MCP/slash/CLI tests with 146 tests, full `npm test` with 344 tests, and `npm run dev -- status` pass.
-- That slice's next likely controlled model-loop exposure foundation is now implemented; remaining MCP work is persisted/per-profile model allowlists, noninteractive opt-in, or executable plugin slash commands/bins.
+- That slice's next likely controlled model-loop exposure foundation and noninteractive opt-in are now implemented; remaining MCP work is persisted/per-profile model allowlists or executable plugin slash commands/bins.
 
 Implemented MCP per-tool grant policy storage:
 

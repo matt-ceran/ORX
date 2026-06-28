@@ -125,6 +125,7 @@ Next:
   - Add MCP per-tool grant policy storage: `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` persist profile-hash-bound grants for billable/write/destructive declared tools, render active/stale grant state, audit mutations, and still do not execute MCP tools.
   - Add explicit operator MCP tool calls: `/mcp call` and `orx mcp call` execute guarded `tools/call` only for enabled/trusted/unchanged profiles with allowed declared-tool policy, env-only bearer auth, redacted/truncated untrusted output, and audit logs without raw arguments/output.
   - Add session-local model MCP read-only bridge: `/mcp model enable` exposes one native `mcp_call` model tool for read-only non-billable declared MCP tools only; broad/billable/write model-loop MCP exposure remains inactive.
+  - Add one-shot model MCP read-only opt-in: `orx ask --mcp-tools` exposes the same `mcp_call` bridge for one noninteractive request only.
 
 - Extend browser automation beyond static DNS-bound document snapshots when a safe browser-network/proxy design can preserve SSRF protections.
 - Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
@@ -132,7 +133,7 @@ Next:
 - Add MCP presets: `openrouter`, `context7`, `github-readonly`, `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
 - Extend the plugin system beyond the local registry/CLI/cache/catalog substrate with remote source fetching, lockfile pins for remote sources, richer metadata, and namespacing.
 - Add executable slash command design after the prompt/rule metadata, explicit activation surfaces, and trusted lifecycle hook runtime.
-- Extend model-loop MCP controls with persisted/per-profile allowlists, noninteractive `ask` opt-in, clearer prompt-injection boundaries, and optional operator grants for any future billable/write model exposure.
+- Extend model-loop MCP controls with persisted/per-profile allowlists, clearer prompt-injection boundaries, and optional operator grants for any future billable/write model exposure.
 - Extend plugin metadata further only where needed for remote source UX, marketplace/catalog trust, or executable surface policy decisions.
 - Add `/plugins` command for list/install/enable/disable/inspect.
 - Add tree-sitter and ast-grep code intelligence for repo maps, symbol slices, syntax-aware search, and codemod previews.
