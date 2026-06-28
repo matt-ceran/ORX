@@ -7,7 +7,7 @@ import {
   type AgentContextBudget,
   type SessionDiffState,
 } from "../agent/index.js";
-import { createCodeMap, renderCodeMap } from "../code-map/index.js";
+import { createCodeMap, createCodeSymbolIndex, renderCodeMap, renderCodeSymbols } from "../code-map/index.js";
 import type { LoadedConfig, OrxConfig, OrxTheme } from "../config/types.js";
 import {
   DEFAULT_THEME,
@@ -355,7 +355,7 @@ const PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS = ["list", "status"] as const;
 const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
-const CODE_SUBCOMMAND_COMPLETIONS = ["map"] as const;
+const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const RULE_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -555,21 +555,47 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/code": {
-    usage: "/code [map]",
+    usage: "/code [map|symbols]",
     description: "Run local code intelligence commands",
     group: "Workspace",
     tier: "advanced",
     handler: (command, context): SlashResult => {
       const subcommand = command.args[0]?.toLowerCase() ?? "map";
-      if (subcommand !== "map") {
-        writeLine(context.io.stderr, "Usage: /code [map] [path]");
+      if (subcommand === "map") {
+        writeLine(
+          context.io.stdout,
+          renderCodeMap(createCodeMap({
+            cwd: context.io.cwd,
+            targetPath: command.args.slice(1).join(" ").trim() || undefined,
+          })),
+        );
         return "continue";
       }
+      if (subcommand === "symbols" || subcommand === "symbol") {
+        writeLine(
+          context.io.stdout,
+          renderCodeSymbols(createCodeSymbolIndex({
+            cwd: context.io.cwd,
+            query: command.args.slice(1).join(" ").trim() || undefined,
+          })),
+        );
+        return "continue";
+      }
+      writeLine(context.io.stderr, "Usage: /code [map|symbols] [query-or-path]");
+      return "continue";
+    },
+  },
+  "/symbols": {
+    usage: "/symbols [query]",
+    description: "Render local exported symbols",
+    group: "Workspace",
+    tier: "advanced",
+    handler: (command, context): SlashResult => {
       writeLine(
         context.io.stdout,
-        renderCodeMap(createCodeMap({
+        renderCodeSymbols(createCodeSymbolIndex({
           cwd: context.io.cwd,
-          targetPath: command.args.slice(1).join(" ").trim() || undefined,
+          query: command.argText || undefined,
         })),
       );
       return "continue";

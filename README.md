@@ -47,6 +47,7 @@ orx tests list
 orx tests run
 orx code map
 orx map src
+orx code symbols
 OPENROUTER_API_KEY=... orx
 ```
 
@@ -81,9 +82,11 @@ Local code-map discovery is also available without an OpenRouter API key:
 orx code map
 orx map src
 orx code-map src
+orx code symbols
+orx symbols renderCode
 ```
 
-The code map scans a bounded local tree, skips generated/vendor directories such as `node_modules`, `.git`, `.orx`, `dist`, `build`, and `coverage`, summarizes languages, key files, package/config/source entrypoints, and top JavaScript/TypeScript source imports/exports, and redacts secret-like rendered paths or symbols.
+The code map scans a bounded local tree, skips generated/vendor directories such as `node_modules`, `.git`, `.orx`, `dist`, `build`, and `coverage`, summarizes languages, key files, package/config/source entrypoints, and top JavaScript/TypeScript source imports/exports, and redacts secret-like rendered paths or symbols. The symbol index reuses the same bounded scan to list exported JavaScript/TypeScript symbols with file paths and line numbers.
 
 Plugin registry management is also available outside chat:
 
@@ -176,7 +179,8 @@ The chat UI keeps in-session message history for the current process, streams as
 /profile [list|save|use|inspect|delete]
 /tests [list|run]
 /map [path]
-/code [map]
+/code [map|symbols]
+/symbols [query]
 /plugins [catalog|list|commands|inspect|register|install|enable|disable]
 /plugin [list|status]
 /bins [list|inspect|trust|untrust|run]

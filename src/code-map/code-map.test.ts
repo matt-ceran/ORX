@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createCodeMap, renderCodeMap } from "./index.js";
+import { createCodeMap, createCodeSymbolIndex, renderCodeMap, renderCodeSymbols } from "./index.js";
 
 test("code map discovers languages entrypoints exports and imports", () => {
   const cwd = createTempDir();
@@ -75,12 +75,17 @@ test("code map discovers languages entrypoints exports and imports", () => {
     assert.ok(index);
     assert.deepEqual(index.exports, ["renamedHelper", "run"]);
     assert.deepEqual(index.imports, ["./util.js", "node:fs"]);
+    assert.deepEqual(
+      index.symbols.map((symbol) => `${symbol.name}:${symbol.line}`),
+      ["renamedHelper:6", "run:5"],
+    );
     assert.ok(!map.sourceFiles.some((file) => file.path.includes("node_modules")));
 
     const literals = map.sourceFiles.find((file) => file.path === "src/literals.ts");
     assert.ok(literals);
     assert.deepEqual(literals.exports, ["realLiteralExport"]);
     assert.deepEqual(literals.imports, []);
+    assert.deepEqual(literals.symbols.map((symbol) => `${symbol.name}:${symbol.line}`), ["realLiteralExport:9"]);
 
     const truncated = createCodeMap({ cwd, maxFiles: 1 });
     assert.equal(truncated.truncated, true);
@@ -91,6 +96,20 @@ test("code map discovers languages entrypoints exports and imports", () => {
     assert.match(rendered, /TypeScript: 3/);
     assert.match(rendered, /exports="renamedHelper,run"/);
     assert.match(rendered, /imports="\.\/util\.js,node:fs"/);
+
+    const symbolIndex = createCodeSymbolIndex({ cwd, query: "real" });
+    assert.equal(symbolIndex.totalSymbols, 1);
+    assert.deepEqual(symbolIndex.symbols.map((symbol) => symbol.name), ["realLiteralExport"]);
+    const renderedSymbols = renderCodeSymbols(symbolIndex);
+    assert.match(renderedSymbols, /Code Symbols/);
+    assert.match(renderedSymbols, /query: "real"/);
+    assert.match(renderedSymbols, /name="realLiteralExport"/);
+    assert.match(renderedSymbols, /path="src\/literals\.ts"/);
+    assert.match(renderedSymbols, /line=9/);
+
+    const limitedSymbols = renderCodeSymbols(createCodeSymbolIndex({ cwd, maxSymbols: 1 }));
+    assert.match(limitedSymbols, /symbols: 5/);
+    assert.match(limitedSymbols, /4 more symbols omitted/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

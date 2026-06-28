@@ -63,6 +63,7 @@ Completed:
 - Add richer session-level diff state and `/diff` behavior after file edits.
 - Add native test-runner adapters: package `test*` script discovery/run, direct Node test fallback, `orx tests list|run`, `/tests list|run`, and status visibility.
 - Add dependency-free local code maps: bounded tree scan, language/key-file/entrypoint summaries, JavaScript/TypeScript import/export extraction, `orx code map`, `orx map`, `orx code-map`, `/map`, and `/code map`.
+- Add dependency-free local symbol indexes: exported JavaScript/TypeScript symbol names with file paths and line numbers through `orx code symbols`, `orx symbols`, `/code symbols`, and `/symbols`.
 
 Next:
 
@@ -130,7 +131,7 @@ Next:
   - Add persisted model MCP read-only allowlists: `/mcp allow-model-tool`, `/mcp revoke-model-tool`, and `orx mcp allow-model-tool|revoke-model-tool` store profile-hash-bound grants for model-visible read-only non-billable tools, with stale grants visible and denied.
   - Add explicit plugin bin runtime: `orx bins` and `/bins` list/inspect/trust/run/untrust enabled plugin `components.bins` files from the cached plugin snapshot, execute only trusted current hashes with manifest-declared env, and audit redacted bounded output without raw argument lists.
   - Add namespaced plugin command aliases: `/plugin:<plugin-id>:command:<slug>` activates enabled prompt commands as untrusted context, `/plugin:<plugin-id>:bin:<file>` runs trusted current bins through the existing bin runtime, and `/plugin list` / `orx plugins commands` render aliases.
-  - Add initial local code intelligence: `src/code-map/` dependency-free bounded repository maps exposed through `orx code map`, `orx map`, `orx code-map`, `/map`, and `/code map`, with language/key-file/entrypoint and JavaScript/TypeScript import/export summaries.
+  - Add initial local code intelligence: `src/code-map/` dependency-free bounded repository maps and exported-symbol indexes exposed through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `/map`, `/code map`, `/code symbols`, and `/symbols`, with language/key-file/entrypoint and JavaScript/TypeScript import/export summaries.
 
 - Extend browser automation beyond static DNS-bound document snapshots when a safe browser-network/proxy design can preserve SSRF protections.
 - Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
@@ -141,7 +142,7 @@ Next:
 - Extend model-loop MCP controls with clearer prompt-injection boundaries and optional operator grants for any future billable/write model exposure.
 - Extend plugin metadata further only where needed for remote source UX, marketplace/catalog trust, or executable surface policy decisions.
 - Add `/plugins` command for list/install/enable/disable/inspect.
-- Add tree-sitter and ast-grep code intelligence for richer symbol slices, syntax-aware search, and codemod previews beyond the dependency-free code map.
+- Add tree-sitter and ast-grep code intelligence for richer call/reference slices, syntax-aware search, and codemod previews beyond the dependency-free code map and exported-symbol index.
 - Add LSP/SCIP bridge research spike for diagnostics, references, hover, and go-to-definition.
 - Add Sourcegraph read-only profile for multi-repo search/navigation/history.
 - Add docs/retrieval providers: Context7, DeepWiki, OpenAI Docs, Microsoft Learn, AWS docs, Google Developer Knowledge.

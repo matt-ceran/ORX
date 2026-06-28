@@ -28,7 +28,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
-    assert.match(help.stdout(), /code map\s+Render a bounded local repository code map/);
+    assert.match(help.stdout(), /code\s+Render local code maps or symbol indexes/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
   }
@@ -165,6 +165,19 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.equal(await runCli(["node", "cli", "map", "src"], {}, alias.io), 0);
     assert.match(alias.stdout(), /root: .*src/);
     assert.match(alias.stdout(), /source_files: 1/);
+
+    const symbols = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "code", "symbols", "start"], {}, symbols.io), 0);
+    assert.match(symbols.stdout(), /Code Symbols/);
+    assert.match(symbols.stdout(), /query: "start"/);
+    assert.match(symbols.stdout(), /name="start"/);
+    assert.match(symbols.stdout(), /path="src\/index\.ts"/);
+    assert.equal(symbols.stderr(), "");
+
+    const symbolAlias = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "symbols", "start"], {}, symbolAlias.io), 0);
+    assert.match(symbolAlias.stdout(), /Code Symbols/);
+    assert.match(symbolAlias.stdout(), /name="start"/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

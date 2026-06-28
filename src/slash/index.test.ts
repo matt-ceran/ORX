@@ -109,7 +109,8 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/delegate <add\|remove\|clear>/);
   assert.match(output, /\/delegates/);
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
-  assert.match(output, /\/code \[map\]/);
+  assert.match(output, /\/code \[map\|symbols\]/);
+  assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog\|list\|commands\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
@@ -207,6 +208,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/hooks r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/tests r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/code m"), [["map "], "m"]);
+  assert.deepEqual(completeSlashCommandLine("/code s"), [["symbols "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/prompts a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/rules a"), [["activate "], "a"]);
@@ -253,6 +255,18 @@ test("map slash command renders a local code map", () => {
     assert.equal(handleSlashCommand("/code map src", scoped.context), "continue");
     assert.match(scoped.stdout(), /source_files: 1/);
     assert.match(scoped.stdout(), /root: .*src/);
+
+    const symbols = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/code symbols start", symbols.context), "continue");
+    assert.match(symbols.stdout(), /Code Symbols/);
+    assert.match(symbols.stdout(), /query: "start"/);
+    assert.match(symbols.stdout(), /name="start"/);
+    assert.match(symbols.stdout(), /path="src\/index\.ts"/);
+
+    const symbolAlias = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/symbols start", symbolAlias.context), "continue");
+    assert.match(symbolAlias.stdout(), /Code Symbols/);
+    assert.match(symbolAlias.stdout(), /name="start"/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -38,6 +38,15 @@ export interface CodeMapSourceFile {
   bytes: number;
   exports: string[];
   imports: string[];
+  symbols: CodeMapSymbol[];
+}
+
+export interface CodeMapSymbol {
+  name: string;
+  kind: "export";
+  path: string;
+  language: string;
+  line: number;
 }
 
 export interface CodeMapEntrypoint {
@@ -51,16 +60,43 @@ export interface CodeMapOmission {
   reason: string;
 }
 
+export interface CodeSymbolIndexOptions extends CodeMapOptions {
+  query?: string;
+  maxSymbols?: number;
+}
+
+export interface CodeSymbolIndex {
+  root: string;
+  query?: string;
+  symbols: CodeMapSymbol[];
+  totalSymbols: number;
+  omittedSymbols: number;
+  omissions: CodeMapOmission[];
+  truncated: boolean;
+}
+
+interface ExtractedExportSymbol {
+  name: string;
+  line: number;
+}
+
+interface KeywordStatement {
+  text: string;
+  line: number;
+}
+
 const DEFAULT_MAX_FILES = 160;
 const DEFAULT_MAX_ENTRIES = 8192;
 const DEFAULT_MAX_DEPTH = 8;
 const DEFAULT_MAX_SOURCE_BYTES = 512 * 1024;
+const DEFAULT_MAX_SYMBOL_INDEX_RESULTS = 120;
 const MAX_SYMBOLS_PER_FILE = 24;
 const MAX_IMPORTS_PER_FILE = 24;
 const MAX_RENDERED_SOURCE_FILES = 24;
 const MAX_RENDERED_IMPORTS = 8;
 const MAX_RENDERED_SYMBOLS = 10;
 const MAX_RENDERED_OMISSIONS = 12;
+const MAX_RENDERED_CODE_SYMBOLS = 80;
 const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/g;
 const EXPORT_DECLARATION_PATTERN =
@@ -321,6 +357,85 @@ export function renderCodeMap(map: CodeMap): string {
   return lines.join("\n");
 }
 
+export function createCodeSymbolIndex(options: CodeSymbolIndexOptions = {}): CodeSymbolIndex {
+  const map = createCodeMap(options);
+  const query = options.query?.trim();
+  const normalizedQuery = query?.toLowerCase();
+  const maxSymbols = Math.max(0, options.maxSymbols ?? DEFAULT_MAX_SYMBOL_INDEX_RESULTS);
+  const symbols = map.sourceFiles
+    .flatMap((file) => file.symbols)
+    .sort((left, right) => left.path.localeCompare(right.path) || left.line - right.line || left.name.localeCompare(right.name));
+  const filteredSymbols = normalizedQuery
+    ? symbols.filter((symbol) =>
+        symbol.name.toLowerCase().includes(normalizedQuery) ||
+        symbol.path.toLowerCase().includes(normalizedQuery) ||
+        symbol.language.toLowerCase().includes(normalizedQuery))
+    : symbols;
+  const renderedSymbols = filteredSymbols.slice(0, maxSymbols);
+  return {
+    root: map.root,
+    query: query || undefined,
+    symbols: renderedSymbols,
+    totalSymbols: filteredSymbols.length,
+    omittedSymbols: Math.max(0, filteredSymbols.length - renderedSymbols.length),
+    omissions: map.omissions,
+    truncated: map.truncated,
+  };
+}
+
+export function renderCodeSymbols(index: CodeSymbolIndex): string {
+  const lines = [
+    "Code Symbols",
+    `  root: ${sanitizeInline(index.root)}`,
+    `  symbols: ${index.totalSymbols}${index.truncated ? " (scan truncated)" : ""}`,
+  ];
+  if (index.query) {
+    lines.push(`  query: ${JSON.stringify(sanitizeInline(index.query))}`);
+  }
+
+  lines.push("  exports:");
+  if (index.symbols.length === 0) {
+    lines.push("    - none");
+  } else {
+    for (const symbol of index.symbols.slice(0, MAX_RENDERED_CODE_SYMBOLS)) {
+      lines.push(
+        [
+          `    - name=${JSON.stringify(sanitizeInline(symbol.name))}`,
+          `kind=${symbol.kind}`,
+          `path=${JSON.stringify(sanitizeInline(symbol.path))}`,
+          `line=${symbol.line}`,
+          `language=${JSON.stringify(sanitizeInline(symbol.language))}`,
+        ].join(" "),
+      );
+    }
+    const renderedCount = Math.min(index.symbols.length, MAX_RENDERED_CODE_SYMBOLS);
+    const omitted = Math.max(0, index.totalSymbols - renderedCount);
+    if (omitted > 0) {
+      lines.push(`    - ${omitted} more symbols omitted`);
+    }
+  }
+
+  if (index.omissions.length > 0) {
+    lines.push("  omitted:");
+    for (const omission of index.omissions.slice(0, MAX_RENDERED_OMISSIONS)) {
+      lines.push(
+        [
+          `    - reason=${JSON.stringify(sanitizeInline(omission.reason))}`,
+          omission.path ? `path=${JSON.stringify(sanitizeInline(omission.path))}` : undefined,
+        ]
+          .filter((part): part is string => typeof part === "string")
+          .join(" "),
+      );
+    }
+    if (index.omissions.length > MAX_RENDERED_OMISSIONS) {
+      lines.push(`    - ${index.omissions.length - MAX_RENDERED_OMISSIONS} more omissions omitted`);
+    }
+  }
+
+  lines.push("  usage: orx code symbols [query]");
+  return lines.join("\n");
+}
+
 function recordFile(
   path: string,
   size: number,
@@ -358,12 +473,20 @@ function recordFile(
     return;
   }
 
+  const extractedSymbols = extractExportSymbols(text);
   state.sourceFiles.push({
     path: relativePath,
     language,
     bytes: size,
-    exports: extractExports(text),
+    exports: extractedSymbols.map((symbol) => symbol.name).sort((left, right) => left.localeCompare(right)),
     imports: extractImports(text),
+    symbols: extractedSymbols.map((symbol) => ({
+      name: symbol.name,
+      kind: "export",
+      path: relativePath,
+      language,
+      line: symbol.line,
+    })),
   });
 }
 
@@ -421,37 +544,49 @@ function discoverEntrypoints(
   return uniqueEntrypoints(entrypoints).slice(0, 32);
 }
 
-function extractExports(text: string): string[] {
+function extractExportSymbols(text: string): ExtractedExportSymbol[] {
   const exports = new Set<string>();
+  const symbols: ExtractedExportSymbol[] = [];
+  const addSymbol = (name: string, line: number): boolean => {
+    if (!name || exports.has(name) || !/^[A-Za-z_$][\w$]*$/.test(name)) {
+      return false;
+    }
+    exports.add(name);
+    symbols.push({ name, line });
+    return exports.size >= MAX_SYMBOLS_PER_FILE;
+  };
+
   for (const statement of collectKeywordStatements(text, "export")) {
-    collectRegexMatches(statement, EXPORT_DECLARATION_PATTERN, exports, MAX_SYMBOLS_PER_FILE);
-    for (const match of statement.matchAll(NAMED_EXPORT_PATTERN)) {
+    EXPORT_DECLARATION_PATTERN.lastIndex = 0;
+    for (const match of statement.text.matchAll(EXPORT_DECLARATION_PATTERN)) {
+      if (addSymbol(String(match[1] ?? "").trim(), statement.line)) {
+        return sortExtractedSymbols(symbols);
+      }
+    }
+    NAMED_EXPORT_PATTERN.lastIndex = 0;
+    for (const match of statement.text.matchAll(NAMED_EXPORT_PATTERN)) {
       const names = String(match[1] ?? "")
         .split(",")
         .map((entry) => entry.trim().split(/\s+as\s+/i).at(-1)?.trim())
         .filter((entry): entry is string => Boolean(entry && /^[A-Za-z_$][\w$]*$/.test(entry)));
       for (const name of names) {
-        exports.add(name);
-        if (exports.size >= MAX_SYMBOLS_PER_FILE) {
-          return Array.from(exports).sort((left, right) => left.localeCompare(right));
+        if (addSymbol(name, statement.line)) {
+          return sortExtractedSymbols(symbols);
         }
       }
     }
     DEFAULT_EXPORT_PATTERN.lastIndex = 0;
-    if (DEFAULT_EXPORT_PATTERN.test(statement)) {
-      exports.add("default");
-    }
-    if (exports.size >= MAX_SYMBOLS_PER_FILE) {
-      return Array.from(exports).sort((left, right) => left.localeCompare(right));
+    if (DEFAULT_EXPORT_PATTERN.test(statement.text) && addSymbol("default", statement.line)) {
+      return sortExtractedSymbols(symbols);
     }
   }
-  return Array.from(exports).sort((left, right) => left.localeCompare(right));
+  return sortExtractedSymbols(symbols);
 }
 
 function extractImports(text: string): string[] {
   const imports = new Set<string>();
   for (const statement of collectKeywordStatements(text, "import")) {
-    collectRegexMatches(statement, IMPORT_FROM_PATTERN, imports, MAX_IMPORTS_PER_FILE);
+    collectRegexMatches(statement.text, IMPORT_FROM_PATTERN, imports, MAX_IMPORTS_PER_FILE);
     if (imports.size >= MAX_IMPORTS_PER_FILE) {
       return Array.from(imports).sort((left, right) => left.localeCompare(right));
     }
@@ -472,11 +607,13 @@ function extractImports(text: string): string[] {
   return Array.from(imports).sort((left, right) => left.localeCompare(right));
 }
 
-function collectKeywordStatements(text: string, keyword: "import" | "export"): string[] {
-  const statements: string[] = [];
-  let current: string | undefined;
+function collectKeywordStatements(text: string, keyword: "import" | "export"): KeywordStatement[] {
+  const statements: KeywordStatement[] = [];
+  let current: KeywordStatement | undefined;
   let lexicalState: "code" | "blockComment" | "template" = "code";
+  let lineNumber = 0;
   for (const line of text.split(/\r?\n/)) {
+    lineNumber += 1;
     const stateAtLineStart = lexicalState;
     lexicalState = advanceLexicalState(line, lexicalState);
     if (stateAtLineStart !== "code") {
@@ -489,7 +626,7 @@ function collectKeywordStatements(text: string, keyword: "import" | "export"): s
     }
 
     if (current !== undefined) {
-      current = `${current} ${trimmed}`;
+      current = { ...current, text: `${current.text} ${trimmed}` };
       if (trimmed.includes(";")) {
         statements.push(current);
         current = undefined;
@@ -499,9 +636,9 @@ function collectKeywordStatements(text: string, keyword: "import" | "export"): s
 
     if (trimmed.startsWith(`${keyword} `) || trimmed.startsWith(`${keyword}{`)) {
       if (shouldCaptureImmediateStatement(keyword, trimmed)) {
-        statements.push(trimmed);
+        statements.push({ text: trimmed, line: lineNumber });
       } else {
-        current = trimmed;
+        current = { text: trimmed, line: lineNumber };
       }
     }
   }
@@ -509,6 +646,10 @@ function collectKeywordStatements(text: string, keyword: "import" | "export"): s
     statements.push(current);
   }
   return statements;
+}
+
+function sortExtractedSymbols(symbols: ExtractedExportSymbol[]): ExtractedExportSymbol[] {
+  return symbols.sort((left, right) => left.name.localeCompare(right.name) || left.line - right.line);
 }
 
 function shouldCaptureImmediateStatement(keyword: "import" | "export", statement: string): boolean {

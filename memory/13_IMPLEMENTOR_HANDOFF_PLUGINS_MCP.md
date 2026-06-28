@@ -192,12 +192,12 @@ Acceptance:
 
 Goal: make ORX substantially stronger at coding without bloating MCP surface.
 
-Current status as of 2026-06-28: first native test adapter and dependency-free code-map slices are implemented. ORX can discover safe package `test*` scripts, fall back to direct Node test/spec files when no package `test` script exists, show target/default counts in `/status` and `orx status`, and run targets through explicit `orx tests run` / `/tests run` with shell disabled, bounded output, timeouts, and sanitized extra arguments. ORX can also render bounded local repository maps through `orx code map`, `orx map`, `orx code-map`, `/map`, and `/code map`, summarizing language counts, key files, package/config/source entrypoints, and JavaScript/TypeScript imports/exports without an API key. Vitest/Jest/Playwright-specific parsing, model-visible `run_tests`, richer report formats, tree-sitter-backed symbol slices, ast-grep previews, and LSP/SCIP diagnostics remain future work.
+Current status as of 2026-06-28: first native test adapter, dependency-free code-map, and dependency-free exported-symbol index slices are implemented. ORX can discover safe package `test*` scripts, fall back to direct Node test/spec files when no package `test` script exists, show target/default counts in `/status` and `orx status`, and run targets through explicit `orx tests run` / `/tests run` with shell disabled, bounded output, timeouts, and sanitized extra arguments. ORX can also render bounded local repository maps through `orx code map`, `orx map`, `orx code-map`, `/map`, and `/code map`, summarizing language counts, key files, package/config/source entrypoints, and JavaScript/TypeScript imports/exports without an API key. `orx code symbols`, `orx symbols`, `/code symbols`, and `/symbols` render exported JavaScript/TypeScript symbols with file paths and line numbers. Vitest/Jest/Playwright-specific parsing, model-visible `run_tests`, richer report formats, tree-sitter-backed call/reference slices, ast-grep previews, and LSP/SCIP diagnostics remain future work.
 
 Implement native or profile-scoped integrations:
 
 - Extend test adapters after the initial package-script/Node slice: Vitest, Jest, Playwright, richer target/report formats, and eventual model-visible `run_tests`.
-- tree-sitter-backed repo maps and symbol slices beyond the dependency-free overview.
+- tree-sitter-backed repo maps, call/reference slices, and import graphs beyond the dependency-free overview.
 - ast-grep syntax-aware search and codemod previews.
 - LSP/SCIP spike for diagnostics, references, hover, go-to-definition.
 - Sourcegraph read-only profile for multi-repo search/navigation/history.

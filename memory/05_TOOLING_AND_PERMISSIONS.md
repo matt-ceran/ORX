@@ -77,7 +77,8 @@ Implemented under `src/code-map/`:
 - bounded local tree scanning for repository overview
 - generated/vendor directory skips for `.git`, `.orx`, `node_modules`, `dist`, `build`, `coverage`, and similar caches
 - language, key-file, package/config/source entrypoint, and JavaScript/TypeScript import/export summaries
-- explicit operator commands `orx code map`, `orx map`, `orx code-map`, `/map`, and `/code map`
+- exported-symbol indexes with file paths and line numbers
+- explicit operator commands `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `/map`, `/code map`, `/code symbols`, and `/symbols`
 
 The code-map adapter is local-only, no-key, and not model-autonomous. It reads bounded local file metadata/content, redacts secret-like rendered paths and symbols, skips symlinks, and reports omissions/truncation instead of following unbounded trees.
 
