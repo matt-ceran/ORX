@@ -5,14 +5,18 @@ import {
 import {
   discoverEnabledPluginPrompts,
 } from "./prompts.js";
+import {
+  discoverEnabledPluginExecutableCommands,
+} from "./executable-commands.js";
 import type { PluginRegistryIoOptions } from "./registry.js";
 
-export type PluginCommandAliasKind = "prompt" | "bin";
+export type PluginCommandAliasKind = "prompt" | "bin" | "exec";
 export type PluginCommandAliasState =
   | "activate_prompt"
   | "trusted"
   | "untrusted"
-  | "pending_hash_change";
+  | "pending_hash_change"
+  | "missing_bin";
 
 export interface PluginCommandAlias {
   alias: string;
@@ -23,12 +27,16 @@ export interface PluginCommandAlias {
   state: PluginCommandAliasState;
   name: string;
   description?: string;
+  usage?: string;
+  maxArgs?: number;
+  commandHash?: string;
 }
 
 export interface PluginCommandAliasesDiscovery {
   aliases: PluginCommandAlias[];
   promptAliasCount: number;
   binAliasCount: number;
+  execAliasCount: number;
   omissions: Array<{ pluginId: string; path?: string; reason: string }>;
   truncated: boolean;
 }
@@ -37,9 +45,14 @@ export interface PluginCommandAliasSummary {
   aliasCount: number;
   promptAliasCount: number;
   binAliasCount: number;
+  execAliasCount: number;
   trustedBinAliasCount: number;
+  trustedExecAliasCount: number;
   pendingBinAliasCount: number;
+  pendingExecAliasCount: number;
   untrustedBinAliasCount: number;
+  untrustedExecAliasCount: number;
+  missingExecBinAliasCount: number;
   truncated: boolean;
   omissionCount: number;
 }
@@ -57,6 +70,7 @@ export function discoverEnabledPluginCommandAliases(
 ): PluginCommandAliasesDiscovery {
   const promptDiscovery = discoverEnabledPluginPrompts({ registryPath: options.registryPath });
   const binDiscovery = discoverEnabledPluginBins({ registryPath: options.registryPath });
+  const execDiscovery = discoverEnabledPluginExecutableCommands({ registryPath: options.registryPath });
   const binTrust = loadPluginBinsTrustConfig({ configPath: options.binsConfigPath });
 
   const promptAliases: PluginCommandAlias[] = promptDiscovery.prompts.map((prompt) => ({
@@ -90,7 +104,35 @@ export function discoverEnabledPluginCommandAliases(
     };
   });
 
-  const aliases = [...promptAliases, ...binAliases].sort((left, right) =>
+  const execAliases: PluginCommandAlias[] = execDiscovery.commands.map((command) => {
+    const bin = binDiscovery.bins.find(
+      (candidate) => candidate.pluginId === command.pluginId && candidate.binId === command.binId,
+    );
+    const record = bin ? binTrust.bins[bin.id] : undefined;
+    const state: PluginCommandAliasState = !bin
+      ? "missing_bin"
+      : record?.binHash === bin.binHash
+        ? "trusted"
+        : record
+          ? "pending_hash_change"
+          : "untrusted";
+
+    return {
+      alias: `/${command.id}`,
+      id: command.id,
+      pluginId: command.pluginId,
+      kind: "exec",
+      targetId: bin?.id ?? `plugin:${command.pluginId}:bin:${command.binId}`,
+      state,
+      name: command.name,
+      description: command.description,
+      usage: command.usage,
+      maxArgs: command.maxArgs,
+      commandHash: command.commandHash,
+    };
+  });
+
+  const aliases = [...promptAliases, ...binAliases, ...execAliases].sort((left, right) =>
     left.alias.localeCompare(right.alias),
   );
 
@@ -98,11 +140,13 @@ export function discoverEnabledPluginCommandAliases(
     aliases,
     promptAliasCount: promptAliases.length,
     binAliasCount: binAliases.length,
+    execAliasCount: execAliases.length,
     omissions: [
       ...promptDiscovery.omissions,
       ...binDiscovery.omissions,
+      ...execDiscovery.omissions,
     ],
-    truncated: promptDiscovery.truncated || binDiscovery.truncated,
+    truncated: promptDiscovery.truncated || binDiscovery.truncated || execDiscovery.truncated,
   };
 }
 
@@ -111,19 +155,37 @@ export function getEnabledPluginCommandAliasSummary(
 ): PluginCommandAliasSummary {
   const discovery = discoverEnabledPluginCommandAliases(options);
   let trustedBinAliasCount = 0;
+  let trustedExecAliasCount = 0;
   let pendingBinAliasCount = 0;
+  let pendingExecAliasCount = 0;
   let untrustedBinAliasCount = 0;
+  let untrustedExecAliasCount = 0;
+  let missingExecBinAliasCount = 0;
 
   for (const alias of discovery.aliases) {
-    if (alias.kind !== "bin") {
+    if (alias.kind !== "bin" && alias.kind !== "exec") {
       continue;
     }
     if (alias.state === "trusted") {
-      trustedBinAliasCount += 1;
+      if (alias.kind === "bin") {
+        trustedBinAliasCount += 1;
+      } else {
+        trustedExecAliasCount += 1;
+      }
     } else if (alias.state === "pending_hash_change") {
-      pendingBinAliasCount += 1;
+      if (alias.kind === "bin") {
+        pendingBinAliasCount += 1;
+      } else {
+        pendingExecAliasCount += 1;
+      }
+    } else if (alias.state === "missing_bin") {
+      missingExecBinAliasCount += 1;
     } else {
-      untrustedBinAliasCount += 1;
+      if (alias.kind === "bin") {
+        untrustedBinAliasCount += 1;
+      } else {
+        untrustedExecAliasCount += 1;
+      }
     }
   }
 
@@ -131,9 +193,14 @@ export function getEnabledPluginCommandAliasSummary(
     aliasCount: discovery.aliases.length,
     promptAliasCount: discovery.promptAliasCount,
     binAliasCount: discovery.binAliasCount,
+    execAliasCount: discovery.execAliasCount,
     trustedBinAliasCount,
+    trustedExecAliasCount,
     pendingBinAliasCount,
+    pendingExecAliasCount,
     untrustedBinAliasCount,
+    untrustedExecAliasCount,
+    missingExecBinAliasCount,
     truncated: discovery.truncated,
     omissionCount: discovery.omissions.length,
   };
@@ -159,6 +226,7 @@ export function renderPluginCommandAliases(discovery: PluginCommandAliasesDiscov
     `  aliases: ${discovery.aliases.length}${discovery.truncated ? " (truncated)" : ""}`,
     `  prompt_aliases: ${discovery.promptAliasCount}`,
     `  bin_aliases: ${discovery.binAliasCount}`,
+    `  exec_aliases: ${discovery.execAliasCount}`,
     "  commands:",
   ];
 
@@ -174,6 +242,9 @@ export function renderPluginCommandAliases(discovery: PluginCommandAliasesDiscov
           `target=${alias.targetId}`,
           `name=${alias.name}`,
           alias.description ? `description=${JSON.stringify(alias.description)}` : undefined,
+          alias.usage ? `usage=${JSON.stringify(alias.usage)}` : undefined,
+          alias.maxArgs !== undefined ? `max_args=${alias.maxArgs}` : undefined,
+          alias.commandHash ? `command_hash=${alias.commandHash}` : undefined,
         ]
           .filter((part): part is string => typeof part === "string")
           .join(" "),
@@ -200,7 +271,7 @@ export function renderPluginCommandAliases(discovery: PluginCommandAliasesDiscov
   }
 
   lines.push(
-    "  usage: /plugin:<plugin-id>:command:<slug> activates a prompt; /plugin:<plugin-id>:bin:<file> [args...] runs a trusted bin",
+    "  usage: /plugin:<plugin-id>:command:<slug> activates a prompt; /plugin:<plugin-id>:bin:<file> [args...] runs a trusted bin; /plugin:<plugin-id>:exec:<slug> [args...] runs a manifest-defined command backed by a trusted bin",
   );
   return lines.join("\n");
 }

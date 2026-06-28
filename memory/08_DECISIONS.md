@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Executable Plugin Commands Reuse Bin Trust
+
+Decision: ORX may load manifest-defined executable command schemas from enabled plugins through `components.commandSchemas` and expose them as `/plugin:<plugin-id>:exec:<slug>` aliases. These schemas provide sanitized command metadata, usage text, bin references, and optional max-argument counts only. Execution must delegate to the existing trusted-current plugin bin runtime for the referenced bin; command schemas do not create a separate trust store, environment policy, cwd policy, audit path, or model-visible tool.
+
+Reasoning: Schema-backed aliases make plugins feel more like a polished CLI without adding a new plugin execution authority. Reusing bin hash trust preserves the reviewed executable boundary, catches changed cached plugin files, keeps audit/redaction behavior centralized, and prevents plugin manifests, fetched content, or model output from authorizing new code execution semantics.
+
 ## 2026-06-28: Parse Test Reports From Captured Output Only
 
 Decision: ORX test report summaries should initially be parsed from the already-captured, sanitized stdout/stderr of `run_tests` executions. The parser may recognize common Node, Vitest, Jest, and Playwright summary lines and store only numeric counts/durations. ORX should not yet rewrite project test commands to force JSON reporters or read framework-generated report files.

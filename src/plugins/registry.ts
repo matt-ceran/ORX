@@ -77,6 +77,7 @@ const PLUGIN_FILE_MODE = 0o600;
 const COMPONENT_KEYS = new Set<PluginComponentKey>([
   "skills",
   "commands",
+  "commandSchemas",
   "rules",
   "hooks",
   "mcpServers",

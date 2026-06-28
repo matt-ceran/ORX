@@ -361,7 +361,7 @@ test("plugin manifest metadata is sanitized and rendered as inert risk context",
     assert.match(rendered, /privacy_data_access: repo-files/);
     assert.match(rendered, /runtime_node: >=20/);
     assert.match(rendered, /runtime_tools: node/);
-    assert.match(rendered, /executable_surfaces: hooks=hash_trust_required bins=hash_trust_required mcp=gated commands=inactive/);
+    assert.match(rendered, /executable_surfaces: hooks=hash_trust_required bins=hash_trust_required command_schemas=bin_hash_trust_required mcp=gated/);
     assert.match(formatPluginIdForMessage("acme.demo-plugin@1.0.0"), /acme\.demo-plugin@1\.0\.0/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });

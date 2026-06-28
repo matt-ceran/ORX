@@ -671,8 +671,8 @@ test("cli plugins install list inspect enable and disable without an API key", a
       0,
     );
     assert.match(inspected.stdout(), /Plugin: acme\.cli-plugin@1\.0\.0/);
-    assert.match(inspected.stdout(), /executable_surfaces: hooks=hash_trust_required bins=hash_trust_required mcp=gated commands=inactive/);
-    assert.match(inspected.stdout(), /plugin_code_execution: trusted current hooks run manually\/on lifecycle; trusted bins run only by explicit operator command/);
+    assert.match(inspected.stdout(), /executable_surfaces: hooks=hash_trust_required bins=hash_trust_required command_schemas=bin_hash_trust_required mcp=gated/);
+    assert.match(inspected.stdout(), /plugin_code_execution: trusted current hooks run manually\/on lifecycle; trusted bins and schema-backed exec aliases run only by explicit operator command/);
 
     const enabled = createNoFetchIo();
     assert.equal(

@@ -73,10 +73,10 @@ export function renderPluginInspect(plugin: InstalledPluginRecord): string {
     "  metadata:",
     ...formatMetadataLines(plugin),
     plugin.manifest.components.mcpServers
-      ? "  mcp_profiles: discoverable via /mcp list when plugin is enabled; execution inactive"
+      ? "  mcp_profiles: discoverable via /mcp list when plugin is enabled; execution separately gated through MCP profile trust and policy"
       : "  mcp_profiles: none declared",
-    "  executable_surfaces: hooks=hash_trust_required bins=hash_trust_required mcp=gated commands=inactive",
-    "  plugin_code_execution: trusted current hooks run manually/on lifecycle; trusted bins run only by explicit operator command",
+    "  executable_surfaces: hooks=hash_trust_required bins=hash_trust_required command_schemas=bin_hash_trust_required mcp=gated",
+    "  plugin_code_execution: trusted current hooks run manually/on lifecycle; trusted bins and schema-backed exec aliases run only by explicit operator command",
   ].join("\n");
 }
 

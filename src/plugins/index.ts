@@ -165,6 +165,12 @@ export {
   type PluginCommandAliasSummary,
 } from "./command-aliases.js";
 export {
+  discoverEnabledPluginExecutableCommands,
+  type PluginExecutableCommandDefinition,
+  type PluginExecutableCommandOmission,
+  type PluginExecutableCommandsDiscovery,
+} from "./executable-commands.js";
+export {
   defaultPluginHooksAuditLogPath,
   defaultPluginHooksConfigPath,
   discoverEnabledPluginHooks,

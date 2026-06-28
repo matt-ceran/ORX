@@ -26,7 +26,7 @@ Urgent UX recovery additions from user testing:
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
 - Plugin install/register now snapshots sanitized manifests plus declared components and declared hook cwd directories into ORX-owned plugin cache storage before registry persistence; enabled skill/hook discovery resolves from the cached manifest path, not the original source checkout.
 - Plugin catalog support is local-only: `orx plugins catalog`, `/plugins catalog`, and `plugins install <catalog-id>` read sanitized entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH` and do not fetch remote sources.
-- Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` or the derived `/plugin:<plugin-id>:command:<slug>` alias as untrusted context; custom manifest-defined executable command schemas remain inactive.
+- Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` or the derived `/plugin:<plugin-id>:command:<slug>` alias as untrusted context. Manifest-defined executable command schemas are discoverable through `components.commandSchemas` and exposed as `/plugin:<plugin-id>:exec:<slug>` aliases that can only run referenced trusted current bins.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
 - Enabled plugin `components.mcpServers` JSON can contribute MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp call`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`; trusted unchanged `remote-http` plugin profiles can be discovered, list remote tool metadata, run explicit operator `tools/call`, and optionally expose model-granted read-only non-billable tools through session-local `/mcp model enable`.
@@ -72,6 +72,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented manifest-defined executable plugin command schemas:
+
+- Added sanitized `components.commandSchemas` support for enabled plugins. The JSON schema declares bounded command metadata, a direct plugin bin reference, optional usage text, and optional `maxArgs`.
+- `/plugin list` and `orx plugins commands` now show `exec` aliases as `/plugin:<plugin-id>:exec:<slug>` with command hashes, target bins, trust state inherited from the referenced bin, and missing-bin visibility.
+- Slash execution for `exec` aliases enforces `maxArgs` and then delegates to the existing trusted-current bin runtime, preserving cached-plugin cwd, manifest-declared env only, redacted/truncated output, and JSONL audit behavior.
+- Verification so far: `npm run typecheck`, `git diff --check`, focused source tests for plugin command aliases/slash/CLI/registry, and build-backed focused plugin/slash/CLI tests pass.
+- Next likely plugin/MCP work: remote source fetching/lockfile pins, richer marketplace/catalog UX, or broader docs/provider presets.
 
 Implemented compact test report parsing:
 
@@ -134,7 +142,7 @@ Implemented namespaced plugin command aliases:
 - Added `/plugin list`, `/plugins commands`, and `orx plugins commands` to list aliases. `/status` and `orx status` now show command alias, prompt alias, bin alias, and trusted-bin-alias counts.
 - Dynamic slash dispatch now recognizes `/plugin:...` aliases. Prompt aliases call the existing untrusted prompt activation path; bin aliases call the existing trusted bin runtime and preserve bin hash/env/output/audit gates.
 - Verification: verifier found no issues after independent probes for prompt arg rejection, unknown alias handling, bin trust/stale mutation, env forwarding, audit arg redaction, and list/status counts. `npm run typecheck`, build-backed focused plugin/CLI/slash/TUI tests with 127 tests, `git diff --check`, full `npm test` with 364 tests, and `npm run dev -- status` pass.
-- Next likely plugin work: custom manifest-defined command schema design, or richer code-intelligence adapters.
+- Later work added manifest-defined exec aliases; next likely plugin work is remote source fetching, richer catalog UX, or docs/provider presets.
 
 Implemented explicit plugin bin runtime:
 
@@ -152,7 +160,7 @@ Implemented persisted model MCP tool allowlists:
 - `mcp_call` now requires active model-tool grants in addition to session/ask opt-in, enabled/trusted/unchanged profiles, declared-tool policy, read-only non-billable risk, env-only bearer auth, guarded transport, redaction/truncation, and audit logging.
 - Status and MCP policy renderers show `model_tool_grants`, `stale_model_tool_grants`, per-tool `model_grant=active|stale`, and `model_policy=allowed|denied` when a model grant exists.
 - Verification: Zeno found no behavior/security issue; wording and `/mcp tools` model-policy clarity fixes were applied. `npm run typecheck`, focused MCP/agent/CLI/slash tests with 173 tests, full `npm test` with 355 tests, `git diff --check`, and `npm run dev -- status` pass.
-- Next likely MCP/plugin work: custom manifest-defined plugin command schema design, or richer code-intelligence adapters.
+- Later work added manifest-defined exec aliases; next likely MCP/plugin work is remote source fetching, richer catalog UX, or docs/provider presets.
 
 Implemented session-local model MCP `mcp_call` runtime:
 
@@ -163,7 +171,7 @@ Implemented session-local model MCP `mcp_call` runtime:
 - Verification: verifier found only stale docs/memory wording; the wording was corrected. `npm run typecheck`, `git diff --check`, focused MCP/agent/slash/chat tests with 168 tests, full `npm test` with 350 tests, and `npm run dev -- status` pass.
 - Follow-up one-shot support: `orx ask --mcp-tools` now exposes the same read-only non-billable `mcp_call` bridge for one noninteractive request, with dedicated MCP transport injection in tests and no default exposure.
 - Verification for the ask opt-in: verifier found stale discovery/remote-tools/memory wording and requested an explicit plain-ask negative assertion; fixes were applied and verifier recheck reported no findings. `npm run typecheck`, `git diff --check`, focused CLI/agent/MCP/slash tests with 169 tests, full `npm test` with 351 tests, and `npm run dev -- status` pass.
-- Next likely MCP work: persisted model allowlists or custom plugin command schemas.
+- Later work added persisted model allowlists and manifest-defined exec aliases; next likely MCP work is clearer prompt-injection boundaries or provider presets.
 
 Implemented explicit operator MCP `tools/call` runtime:
 
@@ -173,7 +181,7 @@ Implemented explicit operator MCP `tools/call` runtime:
 - Result rendering is bounded, redacted, marked untrusted, and explicitly not exposed to the model loop. Audit events record status/policy/result hashes/content types without raw arguments, raw output, bearer tokens, or schemas.
 - Billable/write/destructive tools still require active profile-hash-bound grants; stale grants deny before network.
 - Verification: verifier recheck reported no findings. `npm run typecheck`, `git diff --check`, focused MCP/slash/CLI tests with 146 tests, full `npm test` with 344 tests, and `npm run dev -- status` pass.
-- That slice's next likely controlled model-loop exposure foundation and noninteractive opt-in are now implemented; remaining MCP work is persisted/per-profile model allowlists or custom plugin command schemas.
+- That slice's next likely controlled model-loop exposure foundation, noninteractive opt-in, persisted model allowlists, and manifest-defined exec aliases are now implemented; remaining MCP work is clearer prompt-injection boundaries or provider presets.
 
 Implemented MCP per-tool grant policy storage:
 
@@ -183,7 +191,7 @@ Implemented MCP per-tool grant policy storage:
 - Added grant counts to `/status`, `orx status`, and `/mcp tools`, plus redacted audit events for grant allow/revoke attempts.
 - At that checkpoint no MCP `tools/call`, remote execution, or model-loop exposure was added; explicit operator `tools/call` was implemented later while model-loop exposure remains absent.
 - Verification: verifier found and rechecked fixes for audit assignment redaction and grant-aware inspect output with no remaining findings; `npm run typecheck`, `git diff --check`, focused MCP/slash/CLI tests with 139 tests, full `npm test` with 337 tests, and `npm run dev -- status` pass.
-- Next likely MCP work: implement a guarded, audit-first `tools/call` runtime for explicitly granted read/billable tools, or design custom plugin command schemas.
+- Later work implemented guarded `tools/call`, model MCP grants, and manifest-defined exec aliases; next likely MCP work is clearer prompt-injection boundaries or provider presets.
 
 Implemented read-only remote MCP `tools/list` metadata:
 
@@ -241,7 +249,7 @@ Implemented inert plugin metadata fields:
 
 - Added optional manifest `metadata` fields for homepage, documentation, license, trust tier, auth requirements, privacy/data-access notes, and runtime requirements.
 - Metadata is strictly sanitized: URLs reject credentials/query/fragment, env names stay names-only, arrays are bounded, and known metadata fields reject secret-like values and terminal control characters.
-- `/plugins inspect` now renders trust tier, auth, privacy, and runtime requirements; plugin summaries include trust tier/auth state while executable surfaces remain inactive.
+- `/plugins inspect` now renders trust tier, auth, privacy, and runtime requirements; later work also made bin-backed executable command schemas visible through plugin command aliases.
 - Updated README and tooling memory for display-only metadata.
 - Focused verification: `npm run typecheck` and `npm run build && node --test dist/plugins/registry.test.js dist/cli.test.js dist/slash/index.test.js` pass with 101 tests.
 - Next likely plugin work: plugin-provided MCP preset wiring or executable slash-command design/hook trust, both still gated by explicit policy.
@@ -288,7 +296,7 @@ Implemented and verified plugin management CLI ergonomics:
 
 - Added `orx plugins list|inspect|register|install|enable|disable` as a no-API-key, noninteractive wrapper around the existing private plugin registry.
 - Added `/plugins install <manifest-path>` as an operator-facing alias for the existing inert `/plugins register <manifest-path>` flow.
-- Plugin install/register still stores a local disabled registry record only; enabling a plugin persists an enabled marker. Later work added trusted bin manual execution, trusted hook manual execution, automatic trusted lifecycle hook dispatch, and separately gated plugin MCP execution; executable plugin command aliases and other plugin code execution remain inactive.
+- Plugin install/register still stores a local disabled registry record only; enabling a plugin persists an enabled marker. Later work added trusted bin manual execution, bin-backed executable command aliases, trusted hook manual execution, automatic trusted lifecycle hook dispatch, and separately gated plugin MCP execution.
 - Updated slash completions, help/palette usage, README, and command memory for the new `install` alias and CLI plugin commands.
 - Added focused CLI coverage for install/list/inspect/enable/disable without `OPENROUTER_API_KEY`, plus updated slash completion/help assertions.
 - Verifier found and fixed plugin registry override parent chmod behavior, so existing `ORX_PLUGIN_REGISTRY_PATH` parent directories keep their mode while default/new ORX-owned registry directories remain private and registry files stay `0600`.
@@ -492,7 +500,7 @@ Implemented and verified the Phase 9 Slice 2 Agent Skills loader with progressiv
 - Skill discovery fails closed if an enabled plugin registry record lacks a safe absolute manifest path, preventing malformed registry state from resolving skills relative to the process cwd.
 - `/status` now reports `plugin_enabled_skills`.
 - Session JSON can store `activatedSkills` provenance while keeping API keys out of saved config snapshots.
-- Later work added trusted bin manual execution, trusted hook manual execution, automatic trusted lifecycle hook dispatch, and separately gated plugin MCP execution; executable plugin command aliases, network/fetch install sources, and other plugin code execution remain inactive.
+- Later work added trusted bin manual execution, bin-backed executable command aliases, trusted hook manual execution, automatic trusted lifecycle hook dispatch, and separately gated plugin MCP execution; network/fetch install sources remain future work.
 - `npm run typecheck`, `git diff --check`, targeted plugin/slash/runtime/session/CLI/chat tests, and `npm test` pass with 177 tests.
 
 Implemented and verified the Phase 9 Slice 1 plugin manifest/registry/lockfile foundation:
@@ -501,7 +509,7 @@ Implemented and verified the Phase 9 Slice 1 plugin manifest/registry/lockfile f
 - Added private plugin registry persistence under `~/.orx/plugins/registry.json`, with `ORX_PLUGIN_REGISTRY_PATH` override support and `0700` directory / `0600` file writes.
 - Added installed vs enabled plugin state. Registering a local manifest stores the plugin disabled by default; enable/disable persist only an inert state marker.
 - Added `/plugins list`, `/plugins inspect <id>`, `/plugins register <manifest-path>`, `/plugins enable <id>`, and `/plugins disable <id>`.
-- Later work added trusted bin manual execution, trusted hook manual execution, automatic trusted lifecycle hook dispatch, and separately gated plugin MCP execution; `/plugins` and `/status` now show bin/hook/MCP trust and execution counts while executable plugin command aliases and other plugin code execution remain inactive.
+- Later work added trusted bin manual execution, bin-backed executable command aliases, trusted hook manual execution, automatic trusted lifecycle hook dispatch, and separately gated plugin MCP execution; `/plugins` and `/status` now show bin/hook/MCP trust and execution counts.
 - Added status visibility for installed plugin count, enabled plugin count, enabled hooks, enabled bins, and enabled MCP count; executable counts remain `0` in this slice.
 - Hardened manifests and loaded registry records against secret-like values, terminal control characters, credential/query-bearing git URLs, unpinned git sources, poisoned display metadata, and unbounded local component hashing.
 - Added tests for local register/list/inspect/enable/disable, invalid manifest rejection, no network/fetch, secret-field dropping, private registry file modes, registry override paths, status visibility, git source pinning, bounded component hashing, and poisoned registry sanitization.

@@ -5,6 +5,7 @@ export type PluginSourceType = "local" | "git";
 export type PluginComponentKey =
   | "skills"
   | "commands"
+  | "commandSchemas"
   | "rules"
   | "hooks"
   | "mcpServers"
@@ -74,6 +75,7 @@ export class PluginManifestError extends Error {
 const COMPONENT_KEYS: PluginComponentKey[] = [
   "skills",
   "commands",
+  "commandSchemas",
   "rules",
   "hooks",
   "mcpServers",

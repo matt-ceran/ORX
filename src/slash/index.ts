@@ -2183,6 +2183,23 @@ async function handlePluginCommandAlias(
     return "continue";
   }
 
+  if (alias.kind === "exec") {
+    if (alias.state === "missing_bin") {
+      writeLine(
+        context.io.stderr,
+        `Plugin command ${alias.alias} references a missing bin target: ${alias.targetId}`,
+      );
+      return "continue";
+    }
+    if (alias.maxArgs !== undefined && command.args.length > alias.maxArgs) {
+      writeLine(
+        context.io.stderr,
+        `Usage: ${alias.usage ?? `${alias.alias} [args...]`} (max_args=${alias.maxArgs})`,
+      );
+      return "continue";
+    }
+  }
+
   const result = await runPluginBin(alias.targetId, command.args, {
     auditLogPath: context.pluginBinsAuditLogPath,
     configPath: context.pluginBinsConfigPath,

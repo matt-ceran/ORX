@@ -2075,8 +2075,8 @@ test("plugins register, list, inspect, enable, and disable without network or ex
     assert.match(harness.stdout(), /skills: directory skills sha256:[a-f0-9]{64}/);
     assert.match(harness.stdout(), /filesystem: read:\./);
     assert.match(harness.stdout(), /env: DEMO_TOKEN/);
-    assert.match(harness.stdout(), /executable_surfaces: hooks=hash_trust_required bins=hash_trust_required mcp=gated commands=inactive/);
-    assert.match(harness.stdout(), /plugin_code_execution: trusted current hooks run manually\/on lifecycle; trusted bins run only by explicit operator command/);
+    assert.match(harness.stdout(), /executable_surfaces: hooks=hash_trust_required bins=hash_trust_required command_schemas=bin_hash_trust_required mcp=gated/);
+    assert.match(harness.stdout(), /plugin_code_execution: trusted current hooks run manually\/on lifecycle; trusted bins and schema-backed exec aliases run only by explicit operator command/);
 
     assert.equal(
       handleSlashCommand("/plugins enable acme.demo-plugin@1.0.0", harness.context),
@@ -2240,6 +2240,7 @@ test("plugin command aliases activate prompts and run trusted bins", async () =>
   const manifestPath = writePluginCommandAliasFixture(cwd);
   const promptAlias = "/plugin:acme.alias-slash-plugin@1.0.0:command:review-prompt";
   const binAlias = "/plugin:acme.alias-slash-plugin@1.0.0:bin:hello";
+  const execAlias = "/plugin:acme.alias-slash-plugin@1.0.0:exec:greet";
   const binId = "plugin:acme.alias-slash-plugin@1.0.0:bin:hello";
   const activated: Array<{ id: string }> = [];
   const harness = createSlashHarness({
@@ -2259,6 +2260,8 @@ test("plugin command aliases activate prompts and run trusted bins", async () =>
     assert.match(harness.stdout(), /Plugin Commands/);
     assert.match(harness.stdout(), /alias=\/plugin:acme\.alias-slash-plugin@1\.0\.0:command:review-prompt/);
     assert.match(harness.stdout(), /alias=\/plugin:acme\.alias-slash-plugin@1\.0\.0:bin:hello/);
+    assert.match(harness.stdout(), /alias=\/plugin:acme\.alias-slash-plugin@1\.0\.0:exec:greet/);
+    assert.match(harness.stdout(), /exec_aliases: 1/);
     assert.match(harness.stdout(), /state=untrusted/);
 
     assert.equal(await handleSlashCommand(promptAlias, harness.context), "continue");
@@ -2271,18 +2274,28 @@ test("plugin command aliases activate prompts and run trusted bins", async () =>
     assert.equal(await handleSlashCommand(`${binAlias} direct-arg`, harness.context), "continue");
     assert.match(harness.stderr(), /status: untrusted/);
     assert.doesNotMatch(harness.stderr(), /alias-bin=direct-arg/);
+    assert.equal(await handleSlashCommand(`${execAlias} direct-arg`, harness.context), "continue");
+    assert.match(harness.stderr(), /status: untrusted/);
+    assert.doesNotMatch(harness.stderr(), /alias-bin=direct-arg/);
 
     assert.equal(await handleSlashCommand(`/bins trust ${binId}`, harness.context), "continue");
+    assert.equal(await handleSlashCommand(`${execAlias} too many args`, harness.context), "continue");
+    assert.match(harness.stderr(), /max_args=1/);
+    assert.doesNotMatch(harness.stderr(), /alias-bin=too/);
     assert.equal(await handleSlashCommand(`${binAlias} direct-arg`, harness.context), "continue");
     assert.match(harness.stdout(), /Bin run: plugin:acme\.alias-slash-plugin@1\.0\.0:bin:hello/);
     assert.match(harness.stdout(), /status: ok/);
     assert.match(harness.stdout(), /stdout: "alias-bin=direct-arg\\n"/);
+    assert.equal(await handleSlashCommand(`${execAlias} schema-arg`, harness.context), "continue");
+    assert.match(harness.stdout(), /stdout: "alias-bin=schema-arg\\n"/);
 
     assert.equal(handleSlashCommand("/status", harness.context), "continue");
-    assert.match(harness.stdout(), /plugin_command_aliases: 2/);
+    assert.match(harness.stdout(), /plugin_command_aliases: 3/);
     assert.match(harness.stdout(), /plugin_prompt_aliases: 1/);
     assert.match(harness.stdout(), /plugin_bin_aliases: 1/);
     assert.match(harness.stdout(), /plugin_trusted_bin_aliases: 1/);
+    assert.match(harness.stdout(), /plugin_exec_aliases: 1/);
+    assert.match(harness.stdout(), /plugin_trusted_exec_aliases: 1/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -3488,6 +3501,20 @@ function writePluginCommandAliasFixture(cwd: string): string {
   );
   writeFileSync(join(pluginDirectory, "bin", "hello"), "printf 'alias-bin=%s\\n' \"$1\"\n");
   writeFileSync(
+    join(pluginDirectory, "command-schemas.json"),
+    JSON.stringify({
+      commands: {
+        greet: {
+          name: "Greet",
+          description: "Run the hello bin as a schema-backed command.",
+          bin: "hello",
+          usage: "/plugin:acme.alias-slash-plugin@1.0.0:exec:greet <name>",
+          maxArgs: 1,
+        },
+      },
+    }),
+  );
+  writeFileSync(
     manifestPath,
     JSON.stringify({
       schemaVersion: "1",
@@ -3501,6 +3528,7 @@ function writePluginCommandAliasFixture(cwd: string): string {
       },
       components: {
         commands: "./commands",
+        commandSchemas: "./command-schemas.json",
         bins: "./bin",
       },
       permissions: {
