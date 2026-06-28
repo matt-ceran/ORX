@@ -54,8 +54,8 @@ import {
   getPluginBinTrustSummary,
   getPluginHookTrustSummary,
   getPluginStatusSummary,
+  installPlugin,
   loadPluginCatalog,
-  registerPluginManifest,
   renderPluginBinInspect,
   renderPluginBinRunResult,
   renderPluginBins,
@@ -73,7 +73,6 @@ import {
   resolvePluginCacheDirectory,
   resolvePluginCatalogPath,
   resolvePluginHooksConfigPath,
-  resolvePluginInstallTarget,
   resolvePluginRegistryPath,
   runPluginBin,
   runPluginHook,
@@ -620,7 +619,7 @@ function parseTestRunArgs(args: string[]): { targetId?: string; extraArgs: strin
   return { targetId: args[0], extraArgs: args.slice(1) };
 }
 
-function runPluginsCommand(
+async function runPluginsCommand(
   args: string[],
   io: CliIo,
   pluginRegistryPath: string,
@@ -628,7 +627,7 @@ function runPluginsCommand(
   pluginCatalogPath: string,
   pluginBinsConfigPath: string,
   pluginHooksConfigPath: string,
-): number {
+): Promise<number> {
   const subcommand = args[0]?.toLowerCase() ?? "list";
   const pluginId = args[1];
 
@@ -691,17 +690,13 @@ function runPluginsCommand(
     }
 
     try {
-      const target = resolvePluginInstallTarget(manifestPathText, {
+      const result = await installPlugin(manifestPathText, {
         cwd: io.cwd,
         catalogPath: pluginCatalogPath,
-      });
-      const result = registerPluginManifest(target.manifestPath, {
         registryPath: pluginRegistryPath,
         cacheDirectory: pluginCacheDirectory,
       });
-      const sourceMessage = target.catalogEntry
-        ? `Catalog entry ${target.catalogEntry.id} resolved to ${target.manifestPath}.\n`
-        : "";
+      const sourceMessage = result.sourceMessage ? `${result.sourceMessage}\n` : "";
       writeLine(io.stdout, `${sourceMessage}${result.message}`);
       return 0;
     } catch (error) {

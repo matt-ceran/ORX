@@ -54,7 +54,8 @@ Install/runtime shape:
 - Keep installed state separate from enabled state.
 - Namespace all plugin-provided surfaces: `/plugin:command`, `plugin:skill`, and `mcp__plugin__server__tool`.
 - Keep plugin binaries scoped to ORX execution; do not add them to the user's global `PATH`.
-- Support local path, GitHub shorthand, Git URL, and marketplace JSON later.
+- Current implementation supports local manifest paths, local catalog manifest paths, and pinned git catalog entries. Git catalog installs require a full commit pin, clone with shell-disabled bounded `git`, checkout that exact commit, normalize cached manifest provenance to the catalog pin, and then register the plugin disabled/inert.
+- Support GitHub shorthand, richer marketplace JSON, update checks, and optional signing/provenance layers later.
 - Maintain a lockfile with source, resolved commit, integrity, install time, and enabled components.
 
 Minimum plugin metadata:

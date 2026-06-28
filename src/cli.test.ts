@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
+import { pathToFileURL } from "node:url";
 import { runCli } from "./cli.js";
 import { allowMcpModelToolGrant, setMcpProfilePersistentState } from "./mcp/index.js";
 import {
@@ -1053,6 +1054,87 @@ test("cli plugins catalog lists and installs local catalog entries without fetch
     assert.match(installed.stdout(), /Catalog entry acme\.catalog-plugin@1\.0\.0 resolved to/);
     assert.match(installed.stdout(), /Plugin acme\.catalog-plugin@1\.0\.0 registered disabled/);
     assert.match(readFileSync(registryPath, "utf8"), /acme\.catalog-plugin@1\.0\.0/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli plugins install supports pinned git catalog entries without fetch", async () => {
+  const cwd = createTempDir();
+  const repoPath = join(cwd, "repo");
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const catalogPath = join(cwd, "catalog", "plugins.json");
+  let fetchCalls = 0;
+  mkdirSync(join(cwd, "catalog"), { recursive: true });
+  mkdirSync(join(repoPath, "skills"), { recursive: true });
+  writeFileSync(join(repoPath, "skills", "SKILL.md"), "# CLI git catalog skill\n");
+  writeFileSync(
+    join(repoPath, "orx-plugin.json"),
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "git-cli-plugin",
+      version: "1.0.0",
+      description: "Git CLI plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        skills: "./skills",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+  const commit = commitRepo(repoPath);
+  writeFileSync(
+    catalogPath,
+    JSON.stringify({
+      version: 1,
+      entries: [
+        {
+          id: "acme.git-cli-plugin@1.0.0",
+          description: "Install from git catalog.",
+          source: {
+            type: "git",
+            repository: pathToFileURL(repoPath).href,
+            resolvedCommit: commit,
+            manifestPath: "orx-plugin.json",
+          },
+          tags: ["git"],
+        },
+      ],
+    }),
+  );
+  const env = {
+    ORX_PLUGIN_REGISTRY_PATH: registryPath,
+    ORX_PLUGIN_CATALOG_PATH: catalogPath,
+  };
+  const capture = createIo({
+    cwd,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("plugin git catalog install should use git, not fetch");
+    },
+  });
+
+  try {
+    assert.equal(
+      await runCli(["node", "cli", "plugins", "install", "acme.git-cli-plugin@1.0.0"], env, capture.io),
+      0,
+    );
+    assert.match(capture.stdout(), /Catalog entry acme\.git-cli-plugin@1\.0\.0 resolved to git source/);
+    assert.match(capture.stdout(), new RegExp(commit));
+    assert.match(capture.stdout(), /Plugin acme\.git-cli-plugin@1\.0\.0 registered disabled/);
+    const registryText = readFileSync(registryPath, "utf8");
+    assert.match(registryText, /"type": "git"/);
+    assert.match(registryText, new RegExp(commit));
     assert.equal(fetchCalls, 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -2363,6 +2445,15 @@ function git(cwd: string, ...args: string[]): string {
     cwd,
     encoding: "utf8",
   });
+}
+
+function commitRepo(cwd: string): string {
+  git(cwd, "init");
+  git(cwd, "config", "user.email", "orx@example.test");
+  git(cwd, "config", "user.name", "ORX Tests");
+  git(cwd, "add", ".");
+  git(cwd, "commit", "-m", "initial");
+  return git(cwd, "rev-parse", "HEAD").trim();
 }
 
 function streamFrom(chunks: string[]): ReadableStream<Uint8Array> {

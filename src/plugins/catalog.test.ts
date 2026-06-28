@@ -51,6 +51,39 @@ test("plugin catalog loads sanitized entries and resolves relative manifest path
           description: "Query token plugin.",
           manifestPath: "../query/orx-plugin.json?token=abc123",
         },
+        {
+          id: "acme.git-plugin@1.0.0",
+          description: "Git catalog entry.",
+          source: {
+            type: "git",
+            repository: "https://example.test/acme/git-plugin.git",
+            ref: "main",
+            resolvedCommit: "0123456789abcdef0123456789abcdef01234567",
+            manifestPath: "./orx-plugin.json",
+          },
+          tags: ["git"],
+        },
+        {
+          id: "acme.git-secret@1.0.0",
+          description: "Git secret catalog entry.",
+          source: {
+            type: "git",
+            repository: "https://example.test/acme/plugin.git?access_token=secret",
+            resolvedCommit: "0123456789abcdef0123456789abcdef01234567",
+            manifestPath: "./orx-plugin.json",
+          },
+        },
+        {
+          id: "acme.git-fallback@1.0.0",
+          description: "Git source must not fall back to local manifest.",
+          manifestPath: "../plugins/demo/orx-plugin.json",
+          source: {
+            type: "git",
+            repository: "https://example.test/acme/plugin.git?access_token=secret",
+            resolvedCommit: "0123456789abcdef0123456789abcdef01234567",
+            manifestPath: "./orx-plugin.json",
+          },
+        },
       ],
     }),
   );
@@ -58,24 +91,38 @@ test("plugin catalog loads sanitized entries and resolves relative manifest path
   try {
     const catalog = loadPluginCatalog({ catalogPath });
     assert.equal(catalog.path, catalogPath);
-    assert.equal(catalog.entries.length, 1);
-    assert.equal(catalog.entries[0].id, "acme.demo-plugin@1.0.0");
-    assert.equal(catalog.entries[0].publisher, "acme");
-    assert.equal(catalog.entries[0].name, "demo-plugin");
-    assert.equal(catalog.entries[0].version, "1.0.0");
-    assert.deepEqual(catalog.entries[0].tags, ["demo", "safe"]);
+    assert.equal(catalog.entries.length, 2);
+    const localEntry = catalog.entries.find((entry) => entry.id === "acme.demo-plugin@1.0.0");
+    assert.equal(localEntry?.publisher, "acme");
+    assert.equal(localEntry?.name, "demo-plugin");
+    assert.equal(localEntry?.version, "1.0.0");
+    assert.deepEqual(localEntry?.tags, ["demo", "safe"]);
+    const gitEntry = catalog.entries.find((entry) => entry.id === "acme.git-plugin@1.0.0");
+    assert.equal(gitEntry?.source?.type, "git");
+    assert.equal(gitEntry?.source?.repository, "https://example.test/acme/git-plugin.git");
+    assert.equal(gitEntry?.source?.resolvedCommit, "0123456789abcdef0123456789abcdef01234567");
+    assert.equal(gitEntry?.source?.manifestPath, "orx-plugin.json");
 
     const rendered = renderPluginCatalog(catalog);
     assert.match(rendered, /Plugin Catalog/);
-    assert.match(rendered, /entries: 1/);
+    assert.match(rendered, /entries: 2/);
     assert.match(rendered, /id=acme\.demo-plugin@1\.0\.0/);
+    assert.match(rendered, /id=acme\.git-plugin@1\.0\.0/);
+    assert.match(rendered, /source=git repository=https:\/\/example\.test\/acme\/git-plugin\.git commit=0123456789ab manifest=orx-plugin\.json/);
     assert.doesNotMatch(rendered, /sk-or-v1-secret|\u001b|Bearer|token=/i);
 
     const target = resolvePluginInstallTarget("acme.demo-plugin@1.0.0", { catalogPath });
+    assert.equal(target.kind, "manifest");
     assert.equal(target.manifestPath, manifestPath);
     assert.equal(target.catalogEntry?.id, "acme.demo-plugin@1.0.0");
 
+    const gitTarget = resolvePluginInstallTarget("acme.git-plugin@1.0.0", { catalogPath });
+    assert.equal(gitTarget.kind, "git");
+    assert.equal(gitTarget.manifestPath, "orx-plugin.json");
+    assert.equal(gitTarget.gitSource?.repository, "https://example.test/acme/git-plugin.git");
+
     const directTarget = resolvePluginInstallTarget("./plugin.json", { cwd });
+    assert.equal(directTarget.kind, "manifest");
     assert.equal(directTarget.manifestPath, join(cwd, "plugin.json"));
     assert.equal(directTarget.catalogEntry, undefined);
   } finally {

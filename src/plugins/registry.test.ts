@@ -216,8 +216,11 @@ test("plugin manifest rejects git repository query strings and requires pinned c
   const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-git-source-"));
   const registryPath = join(cwd, "registry.json");
   const secretManifestPath = join(cwd, "secret-url.json");
+  const unsafeManifestPath = join(cwd, "unsafe-url.json");
+  const malformedManifestPath = join(cwd, "malformed-url.json");
   const floatingManifestPath = join(cwd, "floating-ref.json");
   const pinnedManifestPath = join(cwd, "pinned-ref.json");
+  const sshManifestPath = join(cwd, "ssh-ref.json");
   writeFileSync(
     secretManifestPath,
     JSON.stringify({
@@ -242,12 +245,48 @@ test("plugin manifest rejects git repository query strings and requires pinned c
     }),
   );
   writeFileSync(
+    unsafeManifestPath,
+    JSON.stringify({
+      ...validManifest(),
+      source: {
+        type: "git",
+        repository: "ext::sh -c echo unsafe",
+        ref: "main",
+        resolvedCommit: "0123456789abcdef0123456789abcdef01234567",
+      },
+    }),
+  );
+  writeFileSync(
+    malformedManifestPath,
+    JSON.stringify({
+      ...validManifest(),
+      source: {
+        type: "git",
+        repository: "not a git url with spaces",
+        ref: "main",
+        resolvedCommit: "0123456789abcdef0123456789abcdef01234567",
+      },
+    }),
+  );
+  writeFileSync(
     pinnedManifestPath,
     JSON.stringify({
       ...validManifest(),
       source: {
         type: "git",
         repository: "https://example.test/acme/plugin.git",
+        ref: "v1.0.0",
+        resolvedCommit: "0123456789abcdef0123456789abcdef01234567",
+      },
+    }),
+  );
+  writeFileSync(
+    sshManifestPath,
+    JSON.stringify({
+      ...validManifest(),
+      source: {
+        type: "git",
+        repository: "ssh://git@example.test/acme/plugin.git",
         ref: "v1.0.0",
         resolvedCommit: "0123456789abcdef0123456789abcdef01234567",
       },
@@ -263,6 +302,14 @@ test("plugin manifest rejects git repository query strings and requires pinned c
       () => registerPluginManifest(floatingManifestPath, { registryPath }),
       /source\.resolvedCommit is required for git sources/,
     );
+    assert.throws(
+      () => registerPluginManifest(unsafeManifestPath, { registryPath }),
+      /source\.repository must not use an unsafe git transport/,
+    );
+    assert.throws(
+      () => registerPluginManifest(malformedManifestPath, { registryPath }),
+      /source\.repository must use https, ssh, file, or scp-style git syntax/,
+    );
 
     const result = registerPluginManifest(pinnedManifestPath, {
       registryPath,
@@ -270,6 +317,10 @@ test("plugin manifest rejects git repository query strings and requires pinned c
     });
     assert.equal(result.ok, true);
     assert.equal(result.plugin?.lock.resolvedRef, "0123456789abcdef0123456789abcdef01234567");
+
+    const sshResult = registerPluginManifest(sshManifestPath, { registryPath });
+    assert.equal(sshResult.ok, true);
+    assert.equal(sshResult.plugin?.manifest.source.repository, "ssh://git@example.test/acme/plugin.git");
     assert.doesNotMatch(readFileSync(registryPath, "utf8"), /sk-or-v1-secret|access_token/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });

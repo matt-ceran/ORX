@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
 import type { DelegationState } from "../delegation/index.js";
 import type { OpenRouterCreditsInfo, OpenRouterModelInfo } from "../openrouter/live.js";
@@ -2052,7 +2053,7 @@ test("plugins register, list, inspect, enable, and disable without network or ex
     assert.match(harness.stdout(), /Plugin acme\.demo-plugin@1\.0\.0 registered disabled/);
     assert.match(harness.stdout(), /No hooks, bins, MCP servers, or plugin code are active/);
 
-    assert.equal(handleSlashCommand("/plugins list", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/plugins list", harness.context), "continue");
     assert.match(harness.stdout(), /Plugins/);
     assert.match(harness.stdout(), /installed: 1/);
     assert.match(harness.stdout(), /enabled: 0/);
@@ -2064,7 +2065,7 @@ test("plugins register, list, inspect, enable, and disable without network or ex
     assert.match(harness.stdout(), /components=bins,hooks,mcpServers,skills/);
 
     assert.equal(
-      handleSlashCommand("/plugins inspect acme.demo-plugin@1.0.0", harness.context),
+      await handleSlashCommand("/plugins inspect acme.demo-plugin@1.0.0", harness.context),
       "continue",
     );
     assert.match(harness.stdout(), /Plugin: acme\.demo-plugin@1\.0\.0/);
@@ -2079,7 +2080,7 @@ test("plugins register, list, inspect, enable, and disable without network or ex
     assert.match(harness.stdout(), /plugin_code_execution: trusted current hooks run manually\/on lifecycle; trusted bins and schema-backed exec aliases run only by explicit operator command/);
 
     assert.equal(
-      handleSlashCommand("/plugins enable acme.demo-plugin@1.0.0", harness.context),
+      await handleSlashCommand("/plugins enable acme.demo-plugin@1.0.0", harness.context),
       "continue",
     );
     assert.match(harness.stdout(), /Plugin acme\.demo-plugin@1\.0\.0 enabled/);
@@ -2093,7 +2094,7 @@ test("plugins register, list, inspect, enable, and disable without network or ex
     assert.match(harness.stdout(), /plugin_enabled_mcp: 0/);
 
     assert.equal(
-      handleSlashCommand("/plugins disable acme.demo-plugin@1.0.0", harness.context),
+      await handleSlashCommand("/plugins disable acme.demo-plugin@1.0.0", harness.context),
       "continue",
     );
     assert.match(harness.stdout(), /Plugin acme\.demo-plugin@1\.0\.0 disabled/);
@@ -2138,7 +2139,7 @@ test("mcp slash commands discover trusted plugin-provided remote-http presets", 
 
   try {
     assert.equal(await handleSlashCommand(`/plugins install ${manifestPath}`, harness.context), "continue");
-    assert.equal(handleSlashCommand("/plugins enable acme.mcp-slash-plugin@1.0.0", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/plugins enable acme.mcp-slash-plugin@1.0.0", harness.context), "continue");
 
     assert.equal(handleSlashCommand("/status", harness.context), "continue");
     assert.match(harness.stdout(), /plugin_mcp_presets: 1/);
@@ -2190,7 +2191,7 @@ test("bins slash command lists inspects trusts runs and untrusts bins", async ()
 
   try {
     assert.equal(await handleSlashCommand(`/plugins install ${manifestPath}`, harness.context), "continue");
-    assert.equal(handleSlashCommand("/plugins enable acme.bin-slash-plugin@1.0.0", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/plugins enable acme.bin-slash-plugin@1.0.0", harness.context), "continue");
 
     assert.equal(await handleSlashCommand("/bins list", harness.context), "continue");
     assert.match(harness.stdout(), /discovered_bins: 1/);
@@ -2216,7 +2217,7 @@ test("bins slash command lists inspects trusts runs and untrusts bins", async ()
     assert.match(harness.stdout(), /stdout: "slash-bin=slash-arg\\n"/);
     assert.match(readFileSync(binsAuditLogPath, "utf8"), /"type":"plugin.bin.run"/);
 
-    assert.equal(handleSlashCommand("/plugins list", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/plugins list", harness.context), "continue");
     assert.match(harness.stdout(), /enabled_bins: 1/);
 
     assert.equal(handleSlashCommand("/status", harness.context), "continue");
@@ -2254,7 +2255,7 @@ test("plugin command aliases activate prompts and run trusted bins", async () =>
 
   try {
     assert.equal(await handleSlashCommand(`/plugins install ${manifestPath}`, harness.context), "continue");
-    assert.equal(handleSlashCommand("/plugins enable acme.alias-slash-plugin@1.0.0", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/plugins enable acme.alias-slash-plugin@1.0.0", harness.context), "continue");
 
     assert.equal(handleSlashCommand("/plugin list", harness.context), "continue");
     assert.match(harness.stdout(), /Plugin Commands/);
@@ -2316,7 +2317,7 @@ test("hooks slash command lists inspects trusts runs and untrusts hooks", async 
 
   try {
     assert.equal(await handleSlashCommand(`/plugins install ${manifestPath}`, harness.context), "continue");
-    assert.equal(handleSlashCommand("/plugins enable acme.hook-slash-plugin@1.0.0", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/plugins enable acme.hook-slash-plugin@1.0.0", harness.context), "continue");
 
     assert.equal(await handleSlashCommand("/hooks list", harness.context), "continue");
     assert.match(harness.stdout(), /discovered_hooks: 1/);
@@ -2341,7 +2342,7 @@ test("hooks slash command lists inspects trusts runs and untrusts hooks", async 
     assert.match(harness.stdout(), /stdout: "slash-hook\\n"/);
     assert.match(readFileSync(hooksAuditLogPath, "utf8"), /"type":"plugin.hook.run"/);
 
-    assert.equal(handleSlashCommand("/plugins list", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/plugins list", harness.context), "continue");
     assert.match(harness.stdout(), /enabled_hooks: 1/);
 
     assert.equal(handleSlashCommand("/status", harness.context), "continue");
@@ -2413,7 +2414,7 @@ test("plugins catalog lists and installs local catalog entries without network",
   });
 
   try {
-    assert.equal(handleSlashCommand("/plugins catalog", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/plugins catalog", harness.context), "continue");
     assert.match(harness.stdout(), /Plugin Catalog/);
     assert.match(harness.stdout(), /id=acme\.catalog-slash-plugin@1\.0\.0/);
 
@@ -2430,6 +2431,85 @@ test("plugins catalog lists and installs local catalog entries without network",
     assert.equal(fetchCalls, 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugins install supports pinned git catalog entries without fetch", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugins-git-catalog-slash-"));
+  const repoPath = createGitRepo();
+  const registryPath = join(cwd, "registry", "plugins.json");
+  const catalogPath = join(cwd, "catalog", "plugins.json");
+  mkdirSync(join(cwd, "catalog"), { recursive: true });
+  mkdirSync(join(repoPath, "skills"), { recursive: true });
+  writeFileSync(join(repoPath, "skills", "SKILL.md"), "# Slash git catalog skill\n");
+  writeFileSync(
+    join(repoPath, "orx-plugin.json"),
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "git-slash-plugin",
+      version: "1.0.0",
+      description: "Git slash plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        skills: "./skills",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+  git(repoPath, "add", ".");
+  git(repoPath, "commit", "-m", "initial");
+  const commit = git(repoPath, "rev-parse", "HEAD").trim();
+  writeFileSync(
+    catalogPath,
+    JSON.stringify({
+      version: 1,
+      entries: [
+        {
+          id: "acme.git-slash-plugin@1.0.0",
+          description: "Install from slash git catalog.",
+          source: {
+            type: "git",
+            repository: pathToFileURL(repoPath).href,
+            resolvedCommit: commit,
+            manifestPath: "orx-plugin.json",
+          },
+          tags: ["git"],
+        },
+      ],
+    }),
+  );
+  const harness = createSlashHarness({
+    pluginCatalogPath: catalogPath,
+    pluginRegistryPath: registryPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(
+      await handleSlashCommand("/plugins install acme.git-slash-plugin@1.0.0", harness.context),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Catalog entry acme\.git-slash-plugin@1\.0\.0 resolved to git source/);
+    assert.match(harness.stdout(), new RegExp(commit));
+    assert.match(harness.stdout(), /Plugin acme\.git-slash-plugin@1\.0\.0 registered disabled/);
+    assert.match(readFileSync(registryPath, "utf8"), /acme\.git-slash-plugin@1\.0\.0/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(repoPath, { recursive: true, force: true });
   }
 });
 
@@ -2464,10 +2544,10 @@ test("plugins command rejects invalid manifests and unknown plugins without netw
     assert.match(harness.stderr(), /Invalid plugin manifest: schemaVersion must be "1"/);
     assert.equal(fetchCalls, 0);
 
-    assert.equal(handleSlashCommand("/plugins inspect missing", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/plugins inspect missing", harness.context), "continue");
     assert.match(harness.stderr(), /Unknown plugin: missing/);
 
-    assert.equal(handleSlashCommand("/plugins enable missing", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/plugins enable missing", harness.context), "continue");
     assert.match(harness.stderr(), /Unknown plugin: missing/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -2536,7 +2616,7 @@ test("skills list is metadata-only and activate appends an untrusted system mess
     assert.match(harness.stdout(), /enabled_skills: 0/);
     assert.doesNotMatch(harness.stdout(), /FULL SLASH SKILL BODY/);
 
-    assert.equal(handleSlashCommand("/plugins enable acme.demo-plugin@1.0.0", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/plugins enable acme.demo-plugin@1.0.0", harness.context), "continue");
     assert.equal(handleSlashCommand("/skills list", harness.context), "continue");
     assert.match(harness.stdout(), /id=plugin:acme\.demo-plugin@1\.0\.0:slash-skill/);
     assert.match(harness.stdout(), /description=Slash skill metadata\./);
@@ -2624,7 +2704,7 @@ test("prompts list is metadata-only and activate appends an untrusted system mes
     assert.match(harness.stdout(), /enabled_prompts: 0/);
     assert.doesNotMatch(harness.stdout(), /FULL SLASH PROMPT BODY/);
 
-    assert.equal(handleSlashCommand("/plugins enable acme.prompt-plugin@1.0.0", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/plugins enable acme.prompt-plugin@1.0.0", harness.context), "continue");
     assert.equal(handleSlashCommand("/prompts list", harness.context), "continue");
     assert.match(harness.stdout(), /id=plugin:acme\.prompt-plugin@1\.0\.0:command:review-prompt/);
     assert.match(harness.stdout(), /description=Slash prompt metadata\./);
@@ -2718,7 +2798,7 @@ test("rules list is metadata-only and activate appends an untrusted system messa
     assert.match(harness.stdout(), /enabled_rules: 0/);
     assert.doesNotMatch(harness.stdout(), /FULL SLASH RULE BODY/);
 
-    assert.equal(handleSlashCommand("/plugins enable acme.rule-plugin@1.0.0", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/plugins enable acme.rule-plugin@1.0.0", harness.context), "continue");
     assert.equal(handleSlashCommand("/rules list", harness.context), "continue");
     assert.match(harness.stdout(), /id=plugin:acme\.rule-plugin@1\.0\.0:rule:guardrail-rule/);
     assert.match(harness.stdout(), /description=Slash rule metadata\./);
@@ -2803,7 +2883,7 @@ test("skills inspect does not activate or read full skill content", async () => 
 
   try {
     assert.equal(await handleSlashCommand(`/plugins register ${manifestPath}`, harness.context), "continue");
-    assert.equal(handleSlashCommand("/plugins enable acme.inspect-plugin@1.0.0", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/plugins enable acme.inspect-plugin@1.0.0", harness.context), "continue");
     assert.equal(
       handleSlashCommand("/skills inspect plugin:acme.inspect-plugin@1.0.0:inspect-skill", harness.context),
       "continue",

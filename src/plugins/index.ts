@@ -31,10 +31,16 @@ export {
   resolvePluginInstallTarget,
   type PluginCatalog,
   type PluginCatalogEntry,
+  type PluginCatalogGitSource,
   type PluginCatalogLoadOptions,
   type PluginCatalogPathOptions,
   type PluginInstallTarget,
 } from "./catalog.js";
+export {
+  installPlugin,
+  type PluginInstallOptions,
+  type PluginInstallResult,
+} from "./installer.js";
 export {
   createPluginLockRecord,
   type PluginComponentHash,

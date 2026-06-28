@@ -85,9 +85,9 @@ import {
   getPluginBinTrustSummary,
   getPluginHookTrustSummary,
   getPluginStatusSummary,
+  installPlugin,
   isPluginCommandAliasName,
   loadPluginCatalog,
-  registerPluginManifest,
   renderPluginBinInspect,
   renderPluginBinRunResult,
   renderPluginBins,
@@ -104,7 +104,6 @@ import {
   renderPromptActivation,
   renderRuleActivation,
   renderSkillActivation,
-  resolvePluginInstallTarget,
   runPluginBin,
   runPluginHook,
   setPluginEnabledState,
@@ -921,8 +920,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
     description: "Show catalog entries and update inert plugin registry state",
     group: "Integrations",
     tier: "advanced",
-    handler: (command, context): SlashResult => {
-      handlePluginsCommand(command, context);
+    handler: async (command, context): Promise<SlashResult> => {
+      await handlePluginsCommand(command, context);
       return "continue";
     },
   },
@@ -2013,7 +2012,10 @@ function handleRulesCommand(command: SlashCommand, context: SlashCommandContext)
   writeLine(context.io.stderr, "Usage: /rules [list|status|activate <id>]");
 }
 
-function handlePluginsCommand(command: SlashCommand, context: SlashCommandContext): void {
+async function handlePluginsCommand(
+  command: SlashCommand,
+  context: SlashCommandContext,
+): Promise<void> {
   const subcommand = command.args[0]?.toLowerCase() ?? "list";
   const pluginId = command.args[1];
 
@@ -2079,17 +2081,13 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
     }
 
     try {
-      const target = resolvePluginInstallTarget(manifestPathText, {
+      const result = await installPlugin(manifestPathText, {
         cwd: context.io.cwd,
         catalogPath: context.pluginCatalogPath,
-      });
-      const result = registerPluginManifest(target.manifestPath, {
         registryPath: context.pluginRegistryPath,
         cacheDirectory: context.pluginCacheDirectory,
       });
-      const sourceMessage = target.catalogEntry
-        ? `Catalog entry ${target.catalogEntry.id} resolved to ${target.manifestPath}.\n`
-        : "";
+      const sourceMessage = result.sourceMessage ? `${result.sourceMessage}\n` : "";
       writeLine(context.io.stdout, `${sourceMessage}${result.message}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

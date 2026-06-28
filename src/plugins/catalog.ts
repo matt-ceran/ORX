@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, posix, resolve, sep } from "node:path";
 
 export interface PluginCatalogPathOptions {
   env?: NodeJS.ProcessEnv;
@@ -18,8 +18,17 @@ export interface PluginCatalogEntry {
   name: string;
   version: string;
   description: string;
-  manifestPath: string;
+  manifestPath?: string;
+  source?: PluginCatalogGitSource;
   tags: string[];
+}
+
+export interface PluginCatalogGitSource {
+  type: "git";
+  repository: string;
+  ref?: string;
+  resolvedCommit: string;
+  manifestPath: string;
 }
 
 export interface PluginCatalog {
@@ -29,7 +38,9 @@ export interface PluginCatalog {
 }
 
 export interface PluginInstallTarget {
+  kind: "manifest" | "git";
   manifestPath: string;
+  gitSource?: PluginCatalogGitSource;
   catalogEntry?: PluginCatalogEntry;
 }
 
@@ -37,6 +48,9 @@ const CATALOG_VERSION = 1;
 const CATALOG_ID_PATTERN =
   /^([a-z0-9][a-z0-9._-]{0,79})\.([a-z0-9][a-z0-9._-]{0,79})@([0-9A-Za-z][0-9A-Za-z.+-]{0,63})$/;
 const TAG_PATTERN = /^[a-z0-9][a-z0-9._-]{0,39}$/;
+const RESOLVED_COMMIT_PATTERN = /^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/;
+const SCP_LIKE_GIT_PATTERN =
+  /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[A-Za-z0-9._~/-]+(?:\.git)?$/;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
 const SECRET_LIKE_PATTERN =
   /\b(?:bearer\s+[A-Za-z0-9._~+/=-]{8,}|authorization:\s*bearer|access[_-]?token|api[_-]?key|token=|key=|secret=|sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/i;
@@ -88,16 +102,32 @@ export function resolvePluginInstallTarget(
   const trimmed = input.trim();
   const pathCandidate = resolve(options.cwd ?? process.cwd(), trimmed);
   if (existsSync(pathCandidate) || isPathLike(trimmed)) {
-    return { manifestPath: pathCandidate };
+    return {
+      kind: "manifest",
+      manifestPath: pathCandidate,
+    };
   }
 
   const catalog = loadPluginCatalog({ catalogPath: options.catalogPath });
   const entry = catalog.entries.find((candidate) => candidate.id === trimmed);
   if (!entry) {
-    return { manifestPath: pathCandidate };
+    return {
+      kind: "manifest",
+      manifestPath: pathCandidate,
+    };
+  }
+
+  if (entry.source) {
+    return {
+      kind: "git",
+      manifestPath: entry.source.manifestPath,
+      gitSource: entry.source,
+      catalogEntry: entry,
+    };
   }
 
   return {
+    kind: "manifest",
     manifestPath: resolveCatalogManifestPath(entry, catalog.path),
     catalogEntry: entry,
   };
@@ -124,7 +154,9 @@ export function renderPluginCatalog(catalog: PluginCatalog): string {
         `name=${entry.name}`,
         `version=${entry.version}`,
         `description=${entry.description || "none"}`,
-        `manifest=${entry.manifestPath}`,
+        entry.source
+          ? `source=git repository=${entry.source.repository} commit=${entry.source.resolvedCommit.slice(0, 12)} manifest=${entry.source.manifestPath}`
+          : `manifest=${entry.manifestPath ?? "none"}`,
         `tags=${entry.tags.length > 0 ? entry.tags.join(",") : "none"}`,
       ].join(" "),
     );
@@ -177,8 +209,13 @@ function sanitizePluginCatalogEntry(value: unknown): PluginCatalogEntry | undefi
     return undefined;
   }
 
-  const manifestPath = sanitizeManifestPathString(value.manifestPath);
-  if (!manifestPath) {
+  const hasSource = typeof value.source !== "undefined";
+  const source = sanitizeCatalogGitSource(value.source);
+  if (hasSource && !source) {
+    return undefined;
+  }
+  const manifestPath = hasSource ? undefined : sanitizeManifestPathString(value.manifestPath);
+  if (!source && !manifestPath) {
     return undefined;
   }
 
@@ -196,6 +233,7 @@ function sanitizePluginCatalogEntry(value: unknown): PluginCatalogEntry | undefi
     name: match[2],
     version: match[3],
     description: description ?? "",
+    source,
     manifestPath,
     tags: sanitizeTags(value.tags),
   };
@@ -250,9 +288,105 @@ function sanitizeManifestPathString(value: unknown): string | undefined {
 }
 
 function resolveCatalogManifestPath(entry: PluginCatalogEntry, catalogPath: string): string {
+  if (!entry.manifestPath) {
+    return resolve(dirname(catalogPath), "orx-plugin.json");
+  }
   return isAbsolute(entry.manifestPath)
     ? resolve(entry.manifestPath)
     : resolve(dirname(catalogPath), entry.manifestPath);
+}
+
+function sanitizeCatalogGitSource(value: unknown): PluginCatalogGitSource | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+  if (!isPlainObject(value) || value.type !== "git") {
+    return undefined;
+  }
+
+  const repository = sanitizeCatalogString(value.repository, 2048);
+  if (!repository || !isSafeCatalogGitRepository(repository)) {
+    return undefined;
+  }
+
+  const resolvedCommit = sanitizeCatalogString(value.resolvedCommit, 128);
+  if (!resolvedCommit || !RESOLVED_COMMIT_PATTERN.test(resolvedCommit)) {
+    return undefined;
+  }
+
+  const ref =
+    typeof value.ref === "undefined" ? undefined : sanitizeCatalogString(value.ref, 256);
+  if (typeof value.ref !== "undefined" && !ref) {
+    return undefined;
+  }
+
+  const manifestPath =
+    typeof value.manifestPath === "undefined"
+      ? "orx-plugin.json"
+      : sanitizeCatalogGitManifestPath(value.manifestPath);
+  if (!manifestPath) {
+    return undefined;
+  }
+
+  return {
+    type: "git",
+    repository,
+    ref,
+    resolvedCommit,
+    manifestPath,
+  };
+}
+
+function sanitizeCatalogGitManifestPath(value: unknown): string | undefined {
+  const manifestPath = sanitizeManifestPathString(value);
+  if (
+    !manifestPath ||
+    isAbsolute(manifestPath) ||
+    manifestPath.includes("\\") ||
+    manifestPath.includes("\0")
+  ) {
+    return undefined;
+  }
+
+  const normalized = posix.normalize(manifestPath.split(sep).join(posix.sep)).replace(/^\.\/+/, "");
+  if (
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    normalized.includes("/../")
+  ) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function isSafeCatalogGitRepository(value: string): boolean {
+  const normalized = value.toLowerCase();
+  if (value.startsWith("-") || normalized.startsWith("ext::")) {
+    return false;
+  }
+  if (SCP_LIKE_GIT_PATTERN.test(value)) {
+    return true;
+  }
+
+  try {
+    const url = new URL(value);
+    if (!["https:", "ssh:", "file:"].includes(url.protocol)) {
+      return false;
+    }
+    if (url.password || url.search || url.hash) {
+      return false;
+    }
+    if (url.protocol === "ssh:" && !url.username) {
+      return false;
+    }
+    if (url.protocol !== "ssh:" && url.username) {
+      return false;
+    }
+    return Boolean(url.hostname || url.protocol === "file:");
+  } catch {
+    return false;
+  }
 }
 
 function isPathLike(value: string): boolean {

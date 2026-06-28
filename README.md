@@ -113,7 +113,7 @@ orx hooks run plugin:acme.example@1.0.0:format
 orx hooks untrust plugin:acme.example@1.0.0:format
 ```
 
-Plugin install/register stores an inert local registry record plus an ORX-owned cache snapshot of the sanitized manifest, declared components, and declared hook cwd directories. By default the registry lives at `~/.orx/plugins/registry.json`, the cache at `~/.orx/plugins/cache`, the bin trust file at `~/.orx/plugins/bins.json`, the bin audit log at `~/.orx/audit/bins.jsonl`, the hook trust file at `~/.orx/plugins/hooks.json`, the hook audit log at `~/.orx/audit/hooks.jsonl`, and the optional local catalog at `~/.orx/plugins/catalog.json`; use `ORX_PLUGIN_REGISTRY_PATH`, `ORX_PLUGIN_CACHE_DIR`, `ORX_PLUGIN_BINS_CONFIG_PATH`, `ORX_PLUGIN_BINS_AUDIT_PATH`, `ORX_PLUGIN_HOOKS_CONFIG_PATH`, `ORX_PLUGIN_HOOKS_AUDIT_PATH`, and `ORX_PLUGIN_CATALOG_PATH` to isolate them. Enabling a plugin only enables its metadata, skills, prompt-command, rules, MCP preset, command-schema, bin review/trust, and hook review/trust surfaces where supported. Trusted current bins run only through explicit operator `bins run` / `/bins run` commands or their namespaced `/plugin:<plugin-id>:bin:<file>` aliases. Manifest-defined executable command aliases run only through referenced trusted current bins and add bounded usage/max-argument metadata; they do not create a separate execution trust store. Trusted current hooks can run manually or on matching lifecycle events. Plugin-declared MCP tools run only after the resulting MCP profile is separately enabled/trusted and invoked through the explicit or read-only model MCP gates.
+Plugin install/register stores an inert local registry record plus an ORX-owned cache snapshot of the sanitized manifest, declared components, and declared hook cwd directories. By default the registry lives at `~/.orx/plugins/registry.json`, the cache at `~/.orx/plugins/cache`, the bin trust file at `~/.orx/plugins/bins.json`, the bin audit log at `~/.orx/audit/bins.jsonl`, the hook trust file at `~/.orx/plugins/hooks.json`, the hook audit log at `~/.orx/audit/hooks.jsonl`, and the optional local catalog at `~/.orx/plugins/catalog.json`; use `ORX_PLUGIN_REGISTRY_PATH`, `ORX_PLUGIN_CACHE_DIR`, `ORX_PLUGIN_BINS_CONFIG_PATH`, `ORX_PLUGIN_BINS_AUDIT_PATH`, `ORX_PLUGIN_HOOKS_CONFIG_PATH`, `ORX_PLUGIN_HOOKS_AUDIT_PATH`, and `ORX_PLUGIN_CATALOG_PATH` to isolate them. Catalog installs can resolve local manifest paths or pinned git sources. Pinned git catalog installs clone into a private temporary source directory, checkout the exact `resolvedCommit`, normalize cached manifest provenance to that pin, and then reuse the same inert registry/cache path. Enabling a plugin only enables its metadata, skills, prompt-command, rules, MCP preset, command-schema, bin review/trust, and hook review/trust surfaces where supported. Trusted current bins run only through explicit operator `bins run` / `/bins run` commands or their namespaced `/plugin:<plugin-id>:bin:<file>` aliases. Manifest-defined executable command aliases run only through referenced trusted current bins and add bounded usage/max-argument metadata; they do not create a separate execution trust store. Trusted current hooks can run manually or on matching lifecycle events. Plugin-declared MCP tools run only after the resulting MCP profile is separately enabled/trusted and invoked through the explicit or read-only model MCP gates.
 
 Catalog files are local JSON:
 
@@ -130,6 +130,30 @@ Catalog files are local JSON:
   ]
 }
 ```
+
+Catalog entries can also install from pinned git sources:
+
+```json
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "acme.example@1.0.0",
+      "description": "Example plugin from git.",
+      "source": {
+        "type": "git",
+        "repository": "https://github.com/acme/orx-example-plugin.git",
+        "ref": "v1.0.0",
+        "resolvedCommit": "0123456789abcdef0123456789abcdef01234567",
+        "manifestPath": "orx-plugin.json"
+      },
+      "tags": ["example"]
+    }
+  ]
+}
+```
+
+Git catalog entries must be pinned to a full 40- or 64-character commit hash. Repository URLs may not contain credentials, query strings, fragments, unsafe git transports, or secret-like values.
 
 Plugin manifests may include optional inert `metadata` for risk display, such as `trustTier`, `homepage`, `documentation`, `license`, `auth`, `privacy`, and `runtime`. ORX sanitizes those fields for `/plugins inspect`; they do not grant permissions or activate executable surfaces.
 

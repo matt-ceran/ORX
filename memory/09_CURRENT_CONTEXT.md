@@ -25,7 +25,7 @@ Urgent UX recovery additions from user testing:
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
 - Plugin install/register now snapshots sanitized manifests plus declared components and declared hook cwd directories into ORX-owned plugin cache storage before registry persistence; enabled skill/hook discovery resolves from the cached manifest path, not the original source checkout.
-- Plugin catalog support is local-only: `orx plugins catalog`, `/plugins catalog`, and `plugins install <catalog-id>` read sanitized entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH` and do not fetch remote sources.
+- Plugin catalog support now handles both local manifest entries and pinned git source entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH`. `orx plugins install <catalog-id>` and `/plugins install <catalog-id>` clone git catalog sources into private temporary cache storage, checkout the exact pinned commit, normalize cached manifest provenance to that pin, and still register the plugin disabled/inert.
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` or the derived `/plugin:<plugin-id>:command:<slug>` alias as untrusted context. Manifest-defined executable command schemas are discoverable through `components.commandSchemas` and exposed as `/plugin:<plugin-id>:exec:<slug>` aliases that can only run referenced trusted current bins.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
@@ -73,13 +73,22 @@ Current files:
 
 ## Latest Work
 
+Implemented pinned git plugin catalog installs:
+
+- Extended catalog entries with sanitized `source.type = "git"` metadata: repository, optional ref, required full `resolvedCommit`, and safe relative manifest path.
+- Added `src/plugins/installer.ts` so `orx plugins install <catalog-id>` and `/plugins install <catalog-id>` can clone a catalog git source with shell-disabled bounded `git`, checkout the exact commit, reject unsafe git transports/credentials/query strings/fragments, reject manifest symlink escapes, normalize cached manifest provenance to the catalog pin, and then reuse the existing ORX-owned inert register/cache flow.
+- Direct manifest installs and local catalog manifest-path installs keep their existing behavior; git catalog installs still leave plugins disabled, and hooks/bins/MCP/exec aliases remain separately gated by enablement plus trust/policy.
+- Manifest git repository validation now allows normal SSH usernames such as `ssh://git@host/repo.git` while still rejecting passwords, unsafe transports, query strings, fragments, and secret-like values.
+- Verification so far: `npm run typecheck`, `npm run build`, and focused build-backed plugin/CLI/slash tests pass with 130 tests after verifier-found fixes for ambient Git filter/config inheritance and malformed direct-manifest git repository strings.
+- Next likely plugin/MCP work: richer catalog/marketplace UX, provider preset packs, prompt-injection boundary hardening for MCP/research outputs, or broader docs around plugin authoring.
+
 Implemented manifest-defined executable plugin command schemas:
 
 - Added sanitized `components.commandSchemas` support for enabled plugins. The JSON schema declares bounded command metadata, a direct plugin bin reference, optional usage text, and optional `maxArgs`.
 - `/plugin list` and `orx plugins commands` now show `exec` aliases as `/plugin:<plugin-id>:exec:<slug>` with command hashes, target bins, trust state inherited from the referenced bin, and missing-bin visibility.
 - Slash execution for `exec` aliases enforces `maxArgs` and then delegates to the existing trusted-current bin runtime, preserving cached-plugin cwd, manifest-declared env only, redacted/truncated output, and JSONL audit behavior.
-- Verification so far: `npm run typecheck`, `git diff --check`, focused source tests for plugin command aliases/slash/CLI/registry, and build-backed focused plugin/slash/CLI tests pass.
-- Next likely plugin/MCP work: remote source fetching/lockfile pins, richer marketplace/catalog UX, or broader docs/provider presets.
+- Verification: `npm run typecheck`, `git diff --check`, focused source tests for plugin command aliases/slash/CLI/registry, build-backed focused plugin/slash/CLI tests, full `npm test` with 383 tests, and independent verifier recheck pass.
+- Later work added pinned git catalog installs; next likely plugin/MCP work is richer marketplace/catalog UX, provider presets, prompt-injection boundary hardening, or broader docs/provider presets.
 
 Implemented compact test report parsing:
 
@@ -287,7 +296,7 @@ Implemented local plugin catalog metadata and install-by-id groundwork:
 
 - Added `src/plugins/catalog.ts` for local catalog JSON under `~/.orx/plugins/catalog.json`, with `ORX_PLUGIN_CATALOG_PATH` override support, sanitized catalog ids/descriptions/tags/manifest paths, broader token-like metadata rejection, and relative manifest resolution from the catalog file location.
 - Added `orx plugins catalog`, `/plugins catalog`, and `plugins install <catalog-id>` / `/plugins install <catalog-id>` resolution while preserving direct manifest-path installs.
-- Catalog operations are local and no-fetch; they only resolve a local manifest path and then reuse the existing inert register/cache flow.
+- Initial catalog operations were local and no-fetch; later work added pinned git catalog source installs that checkout a pinned commit and then reuse the existing inert register/cache flow.
 - Updated help, command palette, slash completions, README, CLI tests, slash tests, and catalog parser tests.
 - Focused verification: `npm run typecheck` and `npm run build && node --test dist/plugins/catalog.test.js dist/cli.test.js dist/slash/index.test.js dist/tui/chat.test.js` pass with 101 tests.
 - Next likely plugin work: remote source fetching or richer plugin metadata/namespacing, then plugin-provided prompts/rules and MCP preset wiring while executable hooks/bins/MCP/plugin commands remain gated.

@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Treat Catalog Git Pins As Authoritative Install Provenance
+
+Decision: For catalog git installs, ORX should treat the catalog entry's repository/ref/resolvedCommit as the authoritative source pin. The installer checks out that exact commit, rejects unsafe transports and manifest path escapes, normalizes the cached manifest source to the catalog pin, and then registers the plugin disabled/inert through the normal cache flow.
+
+Reasoning: A manifest committed inside a git repository cannot reliably contain the exact commit hash of the commit that contains that same manifest, because updating the manifest changes the commit hash. Catalog pins solve that self-reference problem while preserving lockfile provenance and keeping plugin executable surfaces behind the existing enable/trust/policy gates.
+
 ## 2026-06-28: Executable Plugin Commands Reuse Bin Trust
 
 Decision: ORX may load manifest-defined executable command schemas from enabled plugins through `components.commandSchemas` and expose them as `/plugin:<plugin-id>:exec:<slug>` aliases. These schemas provide sanitized command metadata, usage text, bin references, and optional max-argument counts only. Execution must delegate to the existing trusted-current plugin bin runtime for the referenced bin; command schemas do not create a separate trust store, environment policy, cwd policy, audit path, or model-visible tool.

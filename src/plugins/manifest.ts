@@ -95,6 +95,8 @@ const ID_PART_PATTERN = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/;
 const ENV_PERMISSION_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const RESOLVED_COMMIT_PATTERN = /^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/;
+const SCP_LIKE_GIT_PATTERN =
+  /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[A-Za-z0-9._~/-]+(?:\.git)?$/;
 const SECRET_LIKE_PATTERN =
   /\b(?:bearer\s+[A-Za-z0-9._~+/=-]{8,}|authorization:\s*bearer\s+[A-Za-z0-9._~+/=-]{8,}|(?:access[_-]?token|api[_-]?key|token|key|secret)\s*[=:]\s*[A-Za-z0-9._~+/=-]{4,}|sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/i;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
@@ -533,6 +535,13 @@ function sanitizeRelativeComponentPath(value: unknown, field: string): string {
 }
 
 function validateGitRepository(value: string, field: string): void {
+  const normalized = value.toLowerCase();
+  if (value.startsWith("-") || normalized.startsWith("ext::")) {
+    throw new PluginManifestError(
+      `Invalid plugin manifest: ${field} must not use an unsafe git transport.`,
+    );
+  }
+
   if (SECRET_LIKE_PATTERN.test(value)) {
     throw new PluginManifestError(
       `Invalid plugin manifest: ${field} must not contain secret-like values.`,
@@ -547,7 +556,14 @@ function validateGitRepository(value: string, field: string): void {
 
   try {
     const url = new URL(value);
-    if (url.username || url.password) {
+    if (!["https:", "ssh:", "file:"].includes(url.protocol)) {
+      throw new PluginManifestError(
+        `Invalid plugin manifest: ${field} must use https, ssh, file, or scp-style git syntax.`,
+      );
+    }
+    const hasDisallowedCredentials =
+      url.password || (url.username && url.protocol !== "ssh:");
+    if (hasDisallowedCredentials) {
       throw new PluginManifestError(
         `Invalid plugin manifest: ${field} must not contain credentials.`,
       );
@@ -561,8 +577,10 @@ function validateGitRepository(value: string, field: string): void {
     if (error instanceof PluginManifestError) {
       throw error;
     }
-    if (value.includes("://")) {
-      throw new PluginManifestError(`Invalid plugin manifest: ${field} must be a valid URL.`);
+    if (!SCP_LIKE_GIT_PATTERN.test(value)) {
+      throw new PluginManifestError(
+        `Invalid plugin manifest: ${field} must use https, ssh, file, or scp-style git syntax.`,
+      );
     }
   }
 }
