@@ -1448,7 +1448,6 @@ test("cli plugins install supports pinned git catalog entries without fetch", as
   const registryPath = join(cwd, "plugins", "registry.json");
   const catalogPath = join(cwd, "catalog", "plugins.json");
   let fetchCalls = 0;
-  mkdirSync(join(cwd, "catalog"), { recursive: true });
   mkdirSync(join(repoPath, "skills"), { recursive: true });
   writeFileSync(join(repoPath, "skills", "SKILL.md"), "# CLI git catalog skill\n");
   writeFileSync(
@@ -1475,38 +1474,49 @@ test("cli plugins install supports pinned git catalog entries without fetch", as
     }),
   );
   const commit = commitRepo(repoPath);
-  writeFileSync(
-    catalogPath,
-    JSON.stringify({
-      version: 1,
-      entries: [
-        {
-          id: "acme.git-cli-plugin@1.0.0",
-          description: "Install from git catalog.",
-          source: {
-            type: "git",
-            repository: pathToFileURL(repoPath).href,
-            resolvedCommit: commit,
-            manifestPath: "orx-plugin.json",
-          },
-          tags: ["git"],
-        },
-      ],
-    }),
-  );
   const env = {
     ORX_PLUGIN_REGISTRY_PATH: registryPath,
     ORX_PLUGIN_CATALOG_PATH: catalogPath,
   };
-  const capture = createIo({
-    cwd,
-    fetch: async () => {
-      fetchCalls += 1;
-      throw new Error("plugin git catalog install should use git, not fetch");
-    },
-  });
+  const createNoFetchIo = () =>
+    createIo({
+      cwd,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("plugin git catalog install should use git, not fetch");
+      },
+    });
 
   try {
+    const added = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        [
+          "node",
+          "cli",
+          "plugins",
+          "catalog",
+          "add-git",
+          "acme.git-cli-plugin@1.0.0",
+          pathToFileURL(repoPath).href,
+          commit,
+          "--tag",
+          "git",
+        ],
+        env,
+        added.io,
+      ),
+      0,
+    );
+    assert.match(added.stdout(), /Catalog git entry acme\.git-cli-plugin@1\.0\.0 added/);
+
+    const catalog = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "plugins", "catalog"], env, catalog.io), 0);
+    assert.match(catalog.stdout(), /source=git/);
+    assert.match(catalog.stdout(), new RegExp(commit.slice(0, 12)));
+    assert.match(catalog.stdout(), /tags=git/);
+
+    const capture = createNoFetchIo();
     assert.equal(
       await runCli(["node", "cli", "plugins", "install", "acme.git-cli-plugin@1.0.0"], env, capture.io),
       0,

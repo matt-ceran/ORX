@@ -99,6 +99,7 @@ import {
   installPlugin,
   isPluginCommandAliasName,
   loadPluginCatalog,
+  parsePluginCatalogAddGitArgs,
   parsePluginCatalogAddLocalArgs,
   parsePluginScaffoldArgs,
   removePluginCatalogEntry,
@@ -128,6 +129,7 @@ import {
   trustPluginHook,
   untrustPluginBin,
   untrustPluginHook,
+  upsertGitPluginCatalogEntry,
   upsertLocalPluginCatalogEntry,
   validatePluginManifestInput,
   type PluginPromptActivationProvenance,
@@ -382,7 +384,13 @@ const PLUGIN_SUBCOMMAND_COMPLETIONS = [
   "enable",
   "disable",
 ] as const;
-const PLUGIN_CATALOG_SUBCOMMAND_COMPLETIONS = ["list", "status", "add-local", "remove"] as const;
+const PLUGIN_CATALOG_SUBCOMMAND_COMPLETIONS = [
+  "list",
+  "status",
+  "add-local",
+  "add-git",
+  "remove",
+] as const;
 const PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS = ["list", "status"] as const;
 const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
@@ -949,7 +957,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/plugins": {
-    usage: "/plugins [catalog [list|add-local|remove]|list|commands|scaffold|validate|inspect|register|install|enable|disable]",
+    usage: "/plugins [catalog [list|add-local|add-git|remove]|list|commands|scaffold|validate|inspect|register|install|enable|disable]",
     description: "Show catalog entries and update inert plugin registry state",
     group: "Integrations",
     tier: "advanced",
@@ -2206,7 +2214,7 @@ async function handlePluginsCommand(
 
   writeLine(
     context.io.stderr,
-    "Usage: /plugins [catalog [list|add-local|remove]|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: /plugins [catalog [list|add-local|add-git|remove]|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
 }
 
@@ -2238,6 +2246,20 @@ function handlePluginCatalogCommand(
     return;
   }
 
+  if (subcommand === "add-git" || subcommand === "git") {
+    try {
+      const parsed = parsePluginCatalogAddGitArgs(args.slice(1));
+      const result = upsertGitPluginCatalogEntry(parsed, {
+        catalogPath: context.pluginCatalogPath,
+      });
+      writeLine(context.io.stdout, result.message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeLine(context.io.stderr, message);
+    }
+    return;
+  }
+
   if (subcommand === "remove" || subcommand === "rm" || subcommand === "delete") {
     const id = args[1];
     if (!id || args.length !== 2) {
@@ -2257,7 +2279,7 @@ function handlePluginCatalogCommand(
 
   writeLine(
     context.io.stderr,
-    "Usage: /plugins catalog [list|add-local <manifest-path-or-directory>|remove <id>]",
+    "Usage: /plugins catalog [list|add-local <manifest-path-or-directory>|add-git <id> <repository> <resolved-commit>|remove <id>]",
   );
 }
 

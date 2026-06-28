@@ -113,7 +113,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
-  assert.match(output, /\/plugins \[catalog \[list\|add-local\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(output, /\/plugins \[catalog \[list\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(output, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
@@ -147,7 +147,7 @@ test("command palette renderer is a pure grouped listing surface", () => {
 
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
-  assert.match(palette, /\/plugins \[catalog \[list\|add-local\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|reg/);
+  assert.match(palette, /\/plugins \[catalog \[list\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|reg/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -165,7 +165,7 @@ test("compact command palette renderer bounds TTY-oriented command discovery", (
   });
 
   assert.match(palette, /^Command palette matching "plugin" \(7\)/);
-  assert.match(palette, /\/plugins \[catalog \[list\|add-local\|remove\]\|list\|commands\|scaff/);
+  assert.match(palette, /\/plugins \[catalog \[list\|add-local\|add-git\|remove\]\|list\|comman/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -317,7 +317,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.equal(handleSlashCommand("/commands plugin", harness.context), "continue");
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
-  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|add-local\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(harness.stdout(), /\/plugin \[list\|status\]/);
   assert.match(harness.stdout(), /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(harness.stdout(), /\/skills \[list\|status\|activate <id>\]/);
@@ -2726,7 +2726,6 @@ test("plugins install supports pinned git catalog entries without fetch", async 
   const repoPath = createGitRepo();
   const registryPath = join(cwd, "registry", "plugins.json");
   const catalogPath = join(cwd, "catalog", "plugins.json");
-  mkdirSync(join(cwd, "catalog"), { recursive: true });
   mkdirSync(join(repoPath, "skills"), { recursive: true });
   writeFileSync(join(repoPath, "skills", "SKILL.md"), "# Slash git catalog skill\n");
   writeFileSync(
@@ -2755,26 +2754,8 @@ test("plugins install supports pinned git catalog entries without fetch", async 
   git(repoPath, "add", ".");
   git(repoPath, "commit", "-m", "initial");
   const commit = git(repoPath, "rev-parse", "HEAD").trim();
-  writeFileSync(
-    catalogPath,
-    JSON.stringify({
-      version: 1,
-      entries: [
-        {
-          id: "acme.git-slash-plugin@1.0.0",
-          description: "Install from slash git catalog.",
-          source: {
-            type: "git",
-            repository: pathToFileURL(repoPath).href,
-            resolvedCommit: commit,
-            manifestPath: "orx-plugin.json",
-          },
-          tags: ["git"],
-        },
-      ],
-    }),
-  );
   const harness = createSlashHarness({
+    cwd,
     pluginCatalogPath: catalogPath,
     pluginRegistryPath: registryPath,
     fetch: async () => {
@@ -2784,6 +2765,20 @@ test("plugins install supports pinned git catalog entries without fetch", async 
   });
 
   try {
+    assert.equal(
+      await handleSlashCommand(
+        `/plugins catalog add-git acme.git-slash-plugin@1.0.0 ${pathToFileURL(repoPath).href} ${commit} --tag git`,
+        harness.context,
+      ),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Catalog git entry acme\.git-slash-plugin@1\.0\.0 added/);
+
+    assert.equal(await handleSlashCommand("/plugins catalog", harness.context), "continue");
+    assert.match(harness.stdout(), /source=git/);
+    assert.match(harness.stdout(), new RegExp(commit.slice(0, 12)));
+    assert.match(harness.stdout(), /tags=git/);
+
     assert.equal(
       await handleSlashCommand("/plugins install acme.git-slash-plugin@1.0.0", harness.context),
       "continue",

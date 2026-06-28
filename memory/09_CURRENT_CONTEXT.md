@@ -28,7 +28,7 @@ Urgent UX recovery additions from user testing:
 - Plugin manifest validation is implemented through `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>`. It parses/sanitizes manifests, renders manifest/component hashes, permission counts, missing component warnings, and explicitly leaves registry/cache/trust/runtime state unchanged.
 - Plugin install/register now snapshots sanitized manifests plus declared components and declared hook cwd directories into ORX-owned plugin cache storage before registry persistence; enabled skill/hook discovery resolves from the cached manifest path, not the original source checkout.
 - Plugin catalog support now handles both local manifest entries and pinned git source entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH`. `orx plugins install <catalog-id>` and `/plugins install <catalog-id>` clone git catalog sources into private temporary cache storage, checkout the exact pinned commit, normalize cached manifest provenance to that pin, and still register the plugin disabled/inert.
-- Local plugin catalog editor commands are implemented through `orx plugins catalog add-local|remove` and `/plugins catalog add-local|remove`. They write private local catalog declarations only, preserving install/enable/trust/grant/fetch/execution as separate explicit steps.
+- Local plugin catalog editor commands are implemented through `orx plugins catalog add-local|add-git|remove` and `/plugins catalog add-local|add-git|remove`. They write private local catalog declarations only, preserving install/enable/trust/grant/fetch/execution as separate explicit steps.
 - Local user MCP profile catalogs are implemented through `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. Declarations are namespaced as `user:<profile-id>`, currently support sanitized `remote-http` transports, appear in `/mcp`, `orx mcp`, `/status`, interactive chat, and `orx ask --mcp-tools`, and share the same enable/trusted-hash/schema-change/tool-grant/model-grant/auth/audit gates as built-in and plugin MCP profiles.
 - Local user MCP catalog management commands are implemented through `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands. They write private local catalog files, preserve existing array/object/legacy `servers` declarations during edits, and avoid manual JSON editing for common remote MCP setup.
 - Built-in MCP provider presets are implemented through `orx mcp presets`, `orx mcp add-preset <preset>`, `/mcp presets`, and `/mcp add-preset <preset>`. Initial templates include `context7`, `microsoft-learn`, and `github-readonly`, and install into the same local user catalog without enabling or trusting profiles.
@@ -80,10 +80,19 @@ Current files:
 
 ## Latest Work
 
+Implemented pinned git plugin catalog editor commands:
+
+- Extended `src/plugins/catalog.ts` with `add-git` argument parsing and upsert helpers for pinned git catalog entries: id, repository, full resolved commit, optional ref, safe relative manifest path, description, and normalized tags.
+- Added `orx plugins catalog add-git <id> <repository> <resolved-commit>` and `/plugins catalog add-git ...` so pinned git catalog entries no longer require hand-written JSON.
+- `add-git` only writes private local catalog declarations. It does not clone, fetch, install, enable, trust, grant, or execute plugin surfaces; explicit `plugins install <catalog-id>` still performs the existing guarded checkout/register flow.
+- Existing pinned git install tests now author the catalog entry through the new command before installing by id.
+- Verification so far: `npm run typecheck`, `npm run build`, `git diff --check`, focused source and build-backed catalog/CLI/slash/TUI tests with 149 tests, and full build-backed `npm test` with 420 tests pass.
+- Next likely plugin/MCP work: richer catalog inspect/update UX, broader provider preset packs, or stronger prompt-injection boundaries for search/browser/research surfaces.
+
 Implemented local plugin catalog editor commands:
 
 - Extended `src/plugins/catalog.ts` with private catalog save/upsert/remove helpers, safe `add-local` argument parsing, directory-to-`orx-plugin.json` resolution, tag normalization, and `0600` catalog / `0700` parent permissions.
-- Added `orx plugins catalog add-local <manifest-path-or-directory>` / `orx plugins catalog remove <id>` and matching `/plugins catalog ...` slash commands, plus deterministic slash completions for nested catalog actions.
+- Added `orx plugins catalog add-local <manifest-path-or-directory>` / `orx plugins catalog remove <id>` and matching `/plugins catalog ...` slash commands, plus deterministic slash completions for nested catalog actions. Later work added `add-git` for pinned git declarations.
 - Catalog edits are local declarations only: they do not install, enable, trust, grant, fetch, execute, or write registry/cache runtime state. Installing by catalog id remains a separate explicit command.
 - Updated README examples for the comfortable authoring flow: scaffold, validate, add-local, install by catalog id, then enable/trust only as needed.
 - Verification so far: `npm run typecheck` and focused source tests `node --test --import tsx src/plugins/catalog.test.ts src/cli.test.ts src/slash/index.test.ts` pass with 120 tests.

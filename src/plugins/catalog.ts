@@ -59,6 +59,16 @@ export interface PluginCatalogAddLocalArgs {
   tags?: string[];
 }
 
+export interface PluginCatalogAddGitArgs {
+  id: string;
+  repository: string;
+  resolvedCommit: string;
+  ref?: string;
+  manifestPath?: string;
+  description?: string;
+  tags?: string[];
+}
+
 export interface PluginInstallTarget {
   kind: "manifest" | "git";
   manifestPath: string;
@@ -69,6 +79,10 @@ export interface PluginInstallTarget {
 const CATALOG_VERSION = 1;
 const CATALOG_DIRECTORY_MODE = 0o700;
 const CATALOG_FILE_MODE = 0o600;
+const ADD_LOCAL_USAGE =
+  "Usage: plugins catalog add-local <manifest-path-or-directory> [--description <text>] [--tag <tag>] [--tags <a,b>]";
+const ADD_GIT_USAGE =
+  "Usage: plugins catalog add-git <id> <repository> <resolved-commit> [--ref <ref>] [--manifest-path <path>] [--description <text>] [--tag <tag>] [--tags <a,b>]";
 const CATALOG_ID_PATTERN =
   /^([a-z0-9][a-z0-9._-]{0,79})\.([a-z0-9][a-z0-9._-]{0,79})@([0-9A-Za-z][0-9A-Za-z.+-]{0,63})$/;
 const TAG_PATTERN = /^[a-z0-9][a-z0-9._-]{0,39}$/;
@@ -140,7 +154,7 @@ export function parsePluginCatalogAddLocalArgs(args: string[]): PluginCatalogAdd
     const arg = args[index] ?? "";
     if (!arg.startsWith("--")) {
       if (manifestPath) {
-        throw new Error("Usage: plugins catalog add-local <manifest-path-or-directory> [--description <text>] [--tag <tag>] [--tags <a,b>]");
+        throw new Error(ADD_LOCAL_USAGE);
       }
       manifestPath = arg;
       continue;
@@ -168,10 +182,76 @@ export function parsePluginCatalogAddLocalArgs(args: string[]): PluginCatalogAdd
   }
 
   if (!manifestPath) {
-    throw new Error("Usage: plugins catalog add-local <manifest-path-or-directory> [--description <text>] [--tag <tag>] [--tags <a,b>]");
+    throw new Error(ADD_LOCAL_USAGE);
   }
 
   return {
+    manifestPath,
+    description,
+    tags: tags.length > 0 ? tags : undefined,
+  };
+}
+
+export function parsePluginCatalogAddGitArgs(args: string[]): PluginCatalogAddGitArgs {
+  const positionals: string[] = [];
+  let resolvedCommit: string | undefined;
+  let ref: string | undefined;
+  let manifestPath: string | undefined;
+  let description: string | undefined;
+  const tags: string[] = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (!arg.startsWith("--")) {
+      positionals.push(arg);
+      continue;
+    }
+
+    const [rawFlag, inlineValue] = arg.split("=", 2);
+    const flag = rawFlag.toLowerCase();
+    const value = inlineValue ?? args[index + 1];
+    if (typeof value === "undefined" || value.startsWith("--")) {
+      throw new Error(`Missing value for ${rawFlag}.`);
+    }
+    if (typeof inlineValue === "undefined") {
+      index += 1;
+    }
+
+    if (flag === "--commit" || flag === "--resolved-commit") {
+      resolvedCommit = value;
+    } else if (flag === "--ref") {
+      ref = value;
+    } else if (flag === "--manifest-path" || flag === "--manifest") {
+      manifestPath = value;
+    } else if (flag === "--description") {
+      description = value;
+    } else if (flag === "--tag") {
+      tags.push(value);
+    } else if (flag === "--tags") {
+      tags.push(...value.split(",").map((tag) => tag.trim()).filter(Boolean));
+    } else {
+      throw new Error(`Unknown catalog add-git option: ${rawFlag}`);
+    }
+  }
+
+  if (positionals.length > 3) {
+    throw new Error(ADD_GIT_USAGE);
+  }
+  const [id, repository, positionalCommit] = positionals;
+  if (resolvedCommit && positionalCommit) {
+    throw new Error("Catalog git commit must be provided only once.");
+  }
+  resolvedCommit = resolvedCommit ?? positionalCommit;
+
+  if (!id || !repository || !resolvedCommit) {
+    throw new Error(ADD_GIT_USAGE);
+  }
+
+  return {
+    id,
+    repository,
+    resolvedCommit,
+    ref,
     manifestPath,
     description,
     tags: tags.length > 0 ? tags : undefined,
@@ -215,6 +295,57 @@ export function upsertLocalPluginCatalogEntry(
     catalogPath,
     entry,
     message: `Catalog entry ${entry.id} ${action}. Source manifest: ${entry.manifestPath}`,
+  };
+}
+
+export function upsertGitPluginCatalogEntry(
+  args: PluginCatalogAddGitArgs,
+  options: PluginCatalogLoadOptions = {},
+): PluginCatalogEditResult {
+  const catalogPath = options.catalogPath ?? defaultPluginCatalogPath();
+  const id = sanitizeCatalogId(args.id);
+  const match = CATALOG_ID_PATTERN.exec(id);
+  if (!match) {
+    throw new Error("Catalog git id must use publisher.name@version.");
+  }
+  const description = sanitizeCatalogDescriptionForWrite(
+    args.description ?? `Pinned git plugin ${id}.`,
+  );
+  const source: PluginCatalogGitSource = {
+    type: "git",
+    repository: sanitizeCatalogGitRepositoryForWrite(args.repository),
+    ref: sanitizeCatalogGitRefForWrite(args.ref),
+    resolvedCommit: sanitizeCatalogGitCommitForWrite(args.resolvedCommit),
+    manifestPath: sanitizeCatalogGitManifestPathForWrite(args.manifestPath ?? "orx-plugin.json"),
+  };
+  const tags = typeof args.tags === "undefined" ? undefined : sanitizeTagsForWrite(args.tags);
+  const catalog = loadPluginCatalog({ catalogPath });
+  const existingIndex = catalog.entries.findIndex((entry) => entry.id === id);
+  const existing = existingIndex >= 0 ? catalog.entries[existingIndex] : undefined;
+  const entry: PluginCatalogEntry = {
+    id,
+    publisher: match[1],
+    name: match[2],
+    version: match[3],
+    description,
+    source,
+    tags: tags ?? existing?.tags ?? [],
+  };
+
+  if (existingIndex >= 0) {
+    catalog.entries[existingIndex] = entry;
+  } else {
+    catalog.entries.push(entry);
+  }
+  savePluginCatalog(catalog, { catalogPath });
+
+  const action = existingIndex >= 0 ? "updated" : "added";
+  return {
+    ok: true,
+    action,
+    catalogPath,
+    entry,
+    message: `Catalog git entry ${entry.id} ${action}. Source repository: ${source.repository} commit: ${source.resolvedCommit}`,
   };
 }
 
@@ -487,6 +618,41 @@ function sanitizeTagsForWrite(values: string[]): string[] {
     throw new Error("Catalog tags must use lowercase letters, numbers, dots, underscores, or dashes.");
   }
   return sanitizeTags(requested);
+}
+
+function sanitizeCatalogGitRepositoryForWrite(value: string): string {
+  const repository = sanitizeCatalogString(value, 2048);
+  if (!repository || !isSafeCatalogGitRepository(repository)) {
+    throw new Error("Catalog git repository must be a safe https, ssh, file, or scp-like URL.");
+  }
+  return repository;
+}
+
+function sanitizeCatalogGitRefForWrite(value: string | undefined): string | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+  const ref = sanitizeCatalogString(value, 256);
+  if (!ref) {
+    throw new Error("Catalog git ref must be a safe 1-256 character string.");
+  }
+  return ref;
+}
+
+function sanitizeCatalogGitCommitForWrite(value: string): string {
+  const resolvedCommit = sanitizeCatalogString(value, 128);
+  if (!resolvedCommit || !RESOLVED_COMMIT_PATTERN.test(resolvedCommit)) {
+    throw new Error("Catalog git commit must be a full 40 or 64 character hex commit.");
+  }
+  return resolvedCommit;
+}
+
+function sanitizeCatalogGitManifestPathForWrite(value: string): string {
+  const manifestPath = sanitizeCatalogGitManifestPath(value);
+  if (!manifestPath) {
+    throw new Error("Catalog git manifest path must be a safe relative path.");
+  }
+  return manifestPath;
 }
 
 function formatCatalogIdForMessage(id: string): string {

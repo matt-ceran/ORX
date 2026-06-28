@@ -5,10 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   loadPluginCatalog,
+  parsePluginCatalogAddGitArgs,
   removePluginCatalogEntry,
   renderPluginCatalog,
   resolvePluginCatalogPath,
   resolvePluginInstallTarget,
+  upsertGitPluginCatalogEntry,
   upsertLocalPluginCatalogEntry,
 } from "./index.js";
 
@@ -223,6 +225,100 @@ test("plugin catalog local editor adds updates and removes private entries", () 
     assert.equal(missing.ok, false);
     assert.equal(missing.action, "missing");
     assert.match(missing.message, /Unknown catalog entry/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugin catalog git editor adds pinned entries without fetching", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-catalog-git-edit-"));
+  const catalogPath = join(cwd, "private", "catalog.json");
+  const commit = "0123456789abcdef0123456789abcdef01234567";
+
+  try {
+    const parsed = parsePluginCatalogAddGitArgs([
+      "acme.git-editor@1.2.3",
+      "https://example.test/acme/git-editor.git",
+      commit,
+      "--ref",
+      "v1.2.3",
+      "--manifest-path",
+      "packages/orx-plugin.json",
+      "--tags",
+      "git,authoring,git",
+    ]);
+    assert.equal(parsed.id, "acme.git-editor@1.2.3");
+    assert.equal(parsed.repository, "https://example.test/acme/git-editor.git");
+    assert.equal(parsed.resolvedCommit, commit);
+
+    const added = upsertGitPluginCatalogEntry(parsed, { catalogPath });
+    assert.equal(added.ok, true);
+    assert.equal(added.action, "added");
+    assert.equal(added.entry?.source?.type, "git");
+    assert.equal(added.entry?.source?.ref, "v1.2.3");
+    assert.equal(added.entry?.source?.manifestPath, "packages/orx-plugin.json");
+    assert.deepEqual(added.entry?.tags, ["authoring", "git"]);
+
+    const catalog = loadPluginCatalog({ catalogPath });
+    assert.equal(catalog.entries.length, 1);
+    assert.equal(catalog.entries[0]?.manifestPath, undefined);
+    assert.equal(catalog.entries[0]?.source?.resolvedCommit, commit);
+
+    const target = resolvePluginInstallTarget("acme.git-editor@1.2.3", { catalogPath });
+    assert.equal(target.kind, "git");
+    assert.equal(target.gitSource?.repository, "https://example.test/acme/git-editor.git");
+    assert.equal(target.gitSource?.manifestPath, "packages/orx-plugin.json");
+
+    const updated = upsertGitPluginCatalogEntry(
+      {
+        id: "acme.git-editor@1.2.3",
+        repository: "git@example.test:acme/git-editor.git",
+        resolvedCommit: "abcdef0123456789abcdef0123456789abcdef01",
+        description: "Updated git catalog entry.",
+      },
+      { catalogPath },
+    );
+    assert.equal(updated.action, "updated");
+    assert.deepEqual(updated.entry?.tags, ["authoring", "git"]);
+    assert.equal(updated.entry?.source?.repository, "git@example.test:acme/git-editor.git");
+
+    assert.throws(
+      () =>
+        upsertGitPluginCatalogEntry(
+          {
+            id: "acme.git-editor@1.2.3",
+            repository: "https://example.test/acme/git-editor.git?token=secret",
+            resolvedCommit: commit,
+          },
+          { catalogPath },
+        ),
+      /Catalog git repository must be a safe/,
+    );
+    assert.throws(
+      () =>
+        upsertGitPluginCatalogEntry(
+          {
+            id: "acme.git-editor@1.2.3",
+            repository: "https://example.test/acme/git-editor.git",
+            resolvedCommit: "abc123",
+          },
+          { catalogPath },
+        ),
+      /full 40 or 64 character hex commit/,
+    );
+    assert.throws(
+      () =>
+        upsertGitPluginCatalogEntry(
+          {
+            id: "acme.git-editor@1.2.3",
+            repository: "https://example.test/acme/git-editor.git",
+            resolvedCommit: commit,
+            manifestPath: "../orx-plugin.json",
+          },
+          { catalogPath },
+        ),
+      /manifest path must be a safe relative path/,
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

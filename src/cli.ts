@@ -72,6 +72,7 @@ import {
   getPluginStatusSummary,
   installPlugin,
   loadPluginCatalog,
+  parsePluginCatalogAddGitArgs,
   parsePluginCatalogAddLocalArgs,
   parsePluginScaffoldArgs,
   removePluginCatalogEntry,
@@ -104,6 +105,7 @@ import {
   trustPluginHook,
   untrustPluginBin,
   untrustPluginHook,
+  upsertGitPluginCatalogEntry,
   upsertLocalPluginCatalogEntry,
   validatePluginManifestInput,
   type PluginHookEvent,
@@ -798,7 +800,7 @@ async function runPluginsCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx plugins [catalog [list|add-local|remove]|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: orx plugins [catalog [list|add-local|add-git|remove]|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
   return 1;
 }
@@ -830,6 +832,19 @@ function runPluginCatalogCommand(
     }
   }
 
+  if (subcommand === "add-git" || subcommand === "git") {
+    try {
+      const parsed = parsePluginCatalogAddGitArgs(args.slice(1));
+      const result = upsertGitPluginCatalogEntry(parsed, { catalogPath: pluginCatalogPath });
+      writeLine(io.stdout, result.message);
+      return 0;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeLine(io.stderr, message);
+      return 1;
+    }
+  }
+
   if (subcommand === "remove" || subcommand === "rm" || subcommand === "delete") {
     const id = args[1];
     if (!id || args.length !== 2) {
@@ -849,7 +864,7 @@ function runPluginCatalogCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx plugins catalog [list|add-local <manifest-path-or-directory>|remove <id>]",
+    "Usage: orx plugins catalog [list|add-local <manifest-path-or-directory>|add-git <id> <repository> <resolved-commit>|remove <id>]",
   );
   return 1;
 }
