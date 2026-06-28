@@ -20,6 +20,7 @@ import {
 } from "./openrouter/live.js";
 import { resolveMcpConfigPath } from "./mcp/index.js";
 import {
+  createEnabledPluginPromptsSystemMessage,
   createEnabledPluginSkillsSystemMessage,
   findInstalledPlugin,
   formatPluginIdForMessage,
@@ -545,7 +546,7 @@ async function runAskCommand(
         messages: requestMessages,
         cwd: io.cwd,
         fetch: io.fetch,
-        ephemeralSystemMessages: compactPluginSkillMessages(options.pluginRegistryPath),
+        ephemeralSystemMessages: compactPluginContextMessages(options.pluginRegistryPath),
         callbacks: {
           onText(text) {
             io.stdout.write(text);
@@ -573,9 +574,12 @@ async function runAskCommand(
   }
 }
 
-function compactPluginSkillMessages(pluginRegistryPath: string | undefined): OpenRouterMessage[] {
-  const message = createEnabledPluginSkillsSystemMessage({ registryPath: pluginRegistryPath });
-  return message ? [message] : [];
+function compactPluginContextMessages(pluginRegistryPath: string | undefined): OpenRouterMessage[] {
+  const messages = [
+    createEnabledPluginSkillsSystemMessage({ registryPath: pluginRegistryPath }),
+    createEnabledPluginPromptsSystemMessage({ registryPath: pluginRegistryPath }),
+  ];
+  return messages.filter((message): message is OpenRouterMessage => typeof message !== "undefined");
 }
 
 function applyAskOverrides(config: OrxConfig, overrides: AskRequestOverrides): OrxConfig {

@@ -540,6 +540,114 @@ test("chat skills activation persists provenance and full skill system message",
   }
 });
 
+test("chat prompt activation persists provenance and full prompt system message", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const registryPath = join(sessionDirectory, "plugins", "registry.json");
+  const manifestPath = join(sessionDirectory, "plugin", "orx-plugin.json");
+  const requests: Array<{
+    messages: Array<{ role: string; content: string | null }>;
+  }> = [];
+  mkdirSync(join(sessionDirectory, "plugin", "commands"), { recursive: true });
+  writeFileSync(
+    join(sessionDirectory, "plugin", "commands", "chat-review.md"),
+    [
+      "---",
+      "name: Chat Review Prompt",
+      "description: Chat prompt metadata.",
+      "---",
+      "# Chat Review Prompt",
+      "FULL CHAT PROMPT BODY",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "prompt-plugin",
+      version: "1.0.0",
+      description: "Prompt plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        commands: "./commands",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.prompt-plugin@1.0.0", true, { registryPath });
+    const capture = createIo({
+      stdin: Readable.from([
+        "/prompts activate plugin:acme.prompt-plugin@1.0.0:command:chat-review-prompt\n",
+        "Use the chat prompt\n",
+        "/exit\n",
+      ]),
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+
+        return new Response(
+          streamFrom([
+            'data: {"choices":[{"delta":{"content":"Chat prompt used."}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      pluginRegistryPath: registryPath,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].messages[0].role, "system");
+    assert.match(String(requests[0].messages[0].content), /enabled plugin prompts/);
+    assert.doesNotMatch(String(requests[0].messages[0].content), /FULL CHAT PROMPT BODY/);
+    assert.equal(requests[0].messages[1].role, "system");
+    assert.match(String(requests[0].messages[1].content), /FULL CHAT PROMPT BODY/);
+    assert.deepEqual(requests[0].messages[2], { role: "user", content: "Use the chat prompt" });
+    assert.match(
+      capture.stdout(),
+      /Prompt activated: plugin:acme\.prompt-plugin@1\.0\.0:command:chat-review-prompt/,
+    );
+    assert.match(capture.stdout(), /assistant: Chat prompt used\./);
+
+    const sessionFiles = readdirSync(sessionDirectory).filter((file) => file.endsWith(".json"));
+    assert.equal(sessionFiles.length, 1);
+    const saved = JSON.parse(
+      readFileSync(join(sessionDirectory, sessionFiles[0]), "utf8"),
+    ) as {
+      activatedPrompts?: Array<{ id: string; contentHash: string }>;
+      messages: Array<{ role: string; content: string | null }>;
+    };
+    assert.equal(
+      saved.activatedPrompts?.[0].id,
+      "plugin:acme.prompt-plugin@1.0.0:command:chat-review-prompt",
+    );
+    assert.match(saved.activatedPrompts?.[0].contentHash ?? "", /^sha256:[a-f0-9]{64}$/);
+    assert.match(String(saved.messages[0].content), /FULL CHAT PROMPT BODY/);
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 test("chat web fetch persists evidence sources and untrusted context", async () => {
   const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
   let fetchCalls = 0;
@@ -1030,6 +1138,99 @@ test("chat prunes activated skill context after plugin disable", async () => {
   }
 });
 
+test("chat prunes activated prompt context after plugin disable", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const registryPath = join(sessionDirectory, "plugins", "registry.json");
+  const manifestPath = join(sessionDirectory, "plugin", "orx-plugin.json");
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+  mkdirSync(join(sessionDirectory, "plugin", "commands"), { recursive: true });
+  writeFileSync(
+    join(sessionDirectory, "plugin", "commands", "disabled.md"),
+    [
+      "---",
+      "name: Disabled Prompt",
+      "description: Disabled prompt metadata.",
+      "---",
+      "# Disabled Prompt",
+      "FULL DISABLED PROMPT BODY",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "disable-prompt-plugin",
+      version: "1.0.0",
+      description: "Disable prompt plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        commands: "./commands",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.disable-prompt-plugin@1.0.0", true, { registryPath });
+    const capture = createIo({
+      stdin: Readable.from([
+        "/prompts activate plugin:acme.disable-prompt-plugin@1.0.0:command:disabled-prompt\n",
+        "/plugins disable acme.disable-prompt-plugin@1.0.0\n",
+        "Use any remaining prompt\n",
+        "/exit\n",
+      ]),
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+
+        return new Response(
+          streamFrom([
+            'data: {"choices":[{"delta":{"content":"No disabled prompt."}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      pluginRegistryPath: registryPath,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requests.length, 1);
+    assert.deepEqual(requests[0].messages, [{ role: "user", content: "Use any remaining prompt" }]);
+
+    const sessionFiles = readdirSync(sessionDirectory).filter((file) => file.endsWith(".json"));
+    assert.equal(sessionFiles.length, 1);
+    const saved = JSON.parse(
+      readFileSync(join(sessionDirectory, sessionFiles[0]), "utf8"),
+    ) as {
+      activatedPrompts?: Array<{ id: string }>;
+      messages: Array<{ role: string; content: string | null }>;
+    };
+    assert.deepEqual(saved.activatedPrompts, []);
+    assert.doesNotMatch(JSON.stringify(saved.messages), /FULL DISABLED PROMPT BODY/);
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 test("chat resumes an exact session id outside the recent display window", async () => {
   const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
   const savedCwd = mkdtempSync(join(tmpdir(), "orx-chat-resume-old-cwd-"));
@@ -1263,9 +1464,10 @@ test("tty chat renders compact command palette without a model request", async (
 
     const stdout = stripAnsi(capture.stdout());
     assert.equal(exitCode, 0);
-    assert.match(stdout, /Command palette matching "plugin" \(2\)/);
+    assert.match(stdout, /Command palette matching "plugin" \(3\)/);
     assert.match(stdout, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
     assert.match(stdout, /\/skills \[list\|activate <id>\]/);
+    assert.match(stdout, /\/prompts \[list\|activate <id>\]/);
     assert.doesNotMatch(stdout, /Integrations:/);
     assert.doesNotMatch(stdout, /\/model <id-or-search>/);
     assert.equal(capture.stderr(), "");

@@ -25,6 +25,7 @@ Urgent UX recovery additions from user testing:
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; executable plugin surfaces remain inactive.
 - Plugin install/register now snapshots sanitized manifests plus declared components into ORX-owned plugin cache storage before registry persistence; enabled skill discovery resolves from the cached manifest path, not the original source checkout.
 - Plugin catalog support is local-only: `orx plugins catalog`, `/plugins catalog`, and `plugins install <catalog-id>` read sanitized entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH` and do not fetch remote sources.
+- Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` as untrusted context; executable plugin commands remain inactive.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -59,6 +60,16 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented plugin markdown prompt-command activation:
+
+- Added `src/plugins/prompts.ts` for bounded discovery of enabled plugin `components.commands` markdown files from the ORX-owned cached manifest path only.
+- `/prompts list` and `/prompts status` expose sanitized metadata without loading full prompt content. `orx ask` and chat requests receive compact enabled-prompt metadata as ephemeral system context.
+- `/prompts activate <id>` explicitly loads full markdown, rejects secret-like values and terminal control characters, appends an untrusted system message, and records activated prompt provenance in session metadata.
+- Chat resume/persistence now carries activated prompt provenance and prunes activated prompt messages when the backing plugin prompt is disabled or removed.
+- `/status`, help, command palette, Tab completion, README, session tests, CLI tests, slash tests, and TTY tests were updated for prompt-command visibility.
+- Focused verification: `npm run typecheck` and `npm run build && node --test dist/plugins/prompts.test.js dist/cli.test.js dist/slash/index.test.js dist/tui/chat.test.js dist/sessions/store.test.js` pass with 116 tests.
+- Next likely plugin work: plugin rules or richer remote/plugin metadata, then MCP preset wiring while executable hooks/bins/MCP/plugin commands remain gated.
 
 Implemented and focused-verified ORX-owned local plugin install cache:
 

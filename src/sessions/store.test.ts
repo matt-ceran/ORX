@@ -100,6 +100,18 @@ test("saves and loads session JSON without persisting API keys", async () => {
           activatedAt: "2026-06-26T12:00:00.000Z",
         },
       ],
+      activatedPrompts: [
+        {
+          id: "plugin:acme.demo-plugin@1.0.0:command:review",
+          pluginId: "acme.demo-plugin@1.0.0",
+          name: "Review",
+          filePath: "/tmp/project/commands/review.md",
+          contentHash: "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          sourceManifestHash:
+            "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          activatedAt: "2026-06-26T12:00:30.000Z",
+        },
+      ],
       evidenceSources: [exampleEvidenceSource()],
       delegation: {
         controller: {
@@ -142,6 +154,11 @@ test("saves and loads session JSON without persisting API keys", async () => {
     assert.equal("apiKey" in loaded.activeConfig, false);
     assert.equal(loaded.activatedSkills?.[0].id, "plugin:acme.demo-plugin@1.0.0:demo");
     assert.equal(loaded.activatedSkills?.[0].activatedAt, "2026-06-26T12:00:00.000Z");
+    assert.equal(
+      loaded.activatedPrompts?.[0].id,
+      "plugin:acme.demo-plugin@1.0.0:command:review",
+    );
+    assert.equal(loaded.activatedPrompts?.[0].activatedAt, "2026-06-26T12:00:30.000Z");
     assert.equal(loaded.evidenceSources?.[0].id, "src-1");
     assert.equal(loaded.evidenceSources?.[0].canonicalUrl, "https://example.com/source");
     assert.equal(loaded.delegation?.controller?.model, "openrouter/fusion");
@@ -240,6 +257,18 @@ test("updates session records with active config, messages, and latest metadata"
         activatedAt: "2026-06-26T12:01:00.000Z",
       },
     ],
+    activatedPrompts: [
+      {
+        id: "plugin:acme.demo-plugin@1.0.0:command:update",
+        pluginId: "acme.demo-plugin@1.0.0",
+        name: "Update Prompt",
+        filePath: "/tmp/project/commands/update.md",
+        contentHash: "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        sourceManifestHash:
+          "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+        activatedAt: "2026-06-26T12:01:30.000Z",
+      },
+    ],
     evidenceSources: [
       {
         ...exampleEvidenceSource(),
@@ -272,6 +301,10 @@ test("updates session records with active config, messages, and latest metadata"
   assert.equal(record.messageCount, 2);
   assert.equal(record.latestMetadata?.generationId, "gen-123");
   assert.equal(record.activatedSkills?.[0].id, "plugin:acme.demo-plugin@1.0.0:update");
+  assert.equal(
+    record.activatedPrompts?.[0].id,
+    "plugin:acme.demo-plugin@1.0.0:command:update",
+  );
   assert.equal(record.evidenceSources?.[0].id, "src-2");
   assert.equal(record.evidenceSources?.[0].canonicalUrl, "https://example.com/updated");
   assert.equal(record.delegation?.controller?.model, "openrouter/auto");

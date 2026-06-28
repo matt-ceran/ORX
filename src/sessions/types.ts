@@ -37,6 +37,16 @@ export interface SessionActivatedSkill {
   activatedAt: string;
 }
 
+export interface SessionActivatedPrompt {
+  id: string;
+  pluginId: string;
+  name: string;
+  filePath: string;
+  contentHash: string;
+  sourceManifestHash: string;
+  activatedAt: string;
+}
+
 export interface OrxSessionRecord {
   schemaVersion: typeof SESSION_SCHEMA_VERSION;
   id: string;
@@ -48,6 +58,7 @@ export interface OrxSessionRecord {
   messages: OpenRouterMessage[];
   latestMetadata?: OpenRouterStreamMetadata;
   activatedSkills?: SessionActivatedSkill[];
+  activatedPrompts?: SessionActivatedPrompt[];
   evidenceSources?: EvidenceSource[];
   delegation?: DelegationState;
   messageCount: number;

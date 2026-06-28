@@ -13,6 +13,7 @@ import {
   type GitRepositoryMetadata,
   type ListedSessionRecord,
   type OrxSessionRecord,
+  type SessionActivatedPrompt,
   type SessionActivatedSkill,
   type SessionConfigSnapshot,
   type SessionSummary,
@@ -32,6 +33,7 @@ export interface CreateSessionRecordOptions {
   messages?: OpenRouterMessage[];
   latestMetadata?: OpenRouterStreamMetadata;
   activatedSkills?: SessionActivatedSkill[];
+  activatedPrompts?: SessionActivatedPrompt[];
   evidenceSources?: EvidenceSource[];
   delegation?: DelegationState;
   git?: GitRepositoryMetadata;
@@ -45,6 +47,7 @@ export interface UpdateSessionRecordOptions {
   messages?: OpenRouterMessage[];
   latestMetadata?: OpenRouterStreamMetadata;
   activatedSkills?: SessionActivatedSkill[];
+  activatedPrompts?: SessionActivatedPrompt[];
   evidenceSources?: EvidenceSource[];
   delegation?: DelegationState;
   now?: Date;
@@ -93,6 +96,7 @@ export async function createSessionRecord(
     messages,
     latestMetadata: cloneOptionalJson(options.latestMetadata),
     activatedSkills: cloneOptionalJson(options.activatedSkills),
+    activatedPrompts: cloneOptionalJson(options.activatedPrompts),
     evidenceSources: cloneOptionalJson(options.evidenceSources),
     delegation: cloneOptionalJson(compactDelegationStateForStorage(options.delegation)),
     messageCount: messages.length,
@@ -130,6 +134,10 @@ export function updateSessionRecord(
 
   if ("activatedSkills" in options) {
     record.activatedSkills = cloneOptionalJson(options.activatedSkills);
+  }
+
+  if ("activatedPrompts" in options) {
+    record.activatedPrompts = cloneOptionalJson(options.activatedPrompts);
   }
 
   if ("evidenceSources" in options) {

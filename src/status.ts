@@ -3,7 +3,11 @@ import type { LoadedConfig } from "./config/types.js";
 import { DEFAULT_THEME } from "./constants.js";
 import { getDelegationStatusSummary, type DelegationState } from "./delegation/index.js";
 import { getMcpStatusSummary, formatMcpProfile } from "./mcp/index.js";
-import { getEnabledPluginSkillSummary, getPluginStatusSummary } from "./plugins/index.js";
+import {
+  getEnabledPluginPromptSummary,
+  getEnabledPluginSkillSummary,
+  getPluginStatusSummary,
+} from "./plugins/index.js";
 import { getProfileStatusSummary } from "./profiles/index.js";
 import { createTerminalRenderer, type TerminalRenderOptions } from "./terminal/render.js";
 
@@ -33,6 +37,7 @@ export function formatStatus({
   const mcpStatus = getMcpStatusSummary({ configPath: mcpConfigPath });
   const pluginStatus = getPluginStatusSummary({ registryPath: pluginRegistryPath });
   const pluginSkillStatus = getEnabledPluginSkillSummary({ registryPath: pluginRegistryPath });
+  const pluginPromptStatus = getEnabledPluginPromptSummary({ registryPath: pluginRegistryPath });
   const profileStatus = getProfileStatusSummary({ configPath: profileConfigPath });
   const delegationStatus =
     delegationState === undefined ? undefined : getDelegationStatusSummary(delegationState);
@@ -77,6 +82,9 @@ export function formatStatus({
     `plugin_enabled_mcp: ${pluginStatus.enabledMcpCount}`,
     `plugin_enabled_skills: ${pluginSkillStatus.skillCount}${
       pluginSkillStatus.truncated ? " (truncated)" : ""
+    }`,
+    `plugin_enabled_prompts: ${pluginPromptStatus.promptCount}${
+      pluginPromptStatus.truncated ? " (truncated)" : ""
     }`,
     `profile_count: ${profileStatus.count}`,
     delegationStatus ? `orchestration_controller: ${delegationStatus.controller}` : undefined,

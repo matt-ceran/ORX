@@ -13,6 +13,7 @@ export {
 } from "./store.js";
 export type {
   GitRepositoryMetadata,
+  SessionActivatedPrompt,
   SessionActivatedSkill,
   ListedSessionRecord,
   OrxSessionRecord,

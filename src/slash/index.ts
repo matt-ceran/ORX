@@ -55,7 +55,9 @@ import {
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import {
+  activatePluginPrompt,
   activatePluginSkill,
+  discoverEnabledPluginPrompts,
   discoverEnabledPluginSkills,
   findInstalledPlugin,
   formatPluginIdForMessage,
@@ -65,10 +67,13 @@ import {
   renderPluginCatalog,
   renderPluginInspect,
   renderPluginList,
+  renderPluginPromptList,
   renderPluginSkillList,
+  renderPromptActivation,
   renderSkillActivation,
   resolvePluginInstallTarget,
   setPluginEnabledState,
+  type PluginPromptActivationProvenance,
   type PluginSkillActivationProvenance,
 } from "../plugins/index.js";
 import {
@@ -200,6 +205,7 @@ export interface SlashCommandContext {
   pluginCatalogPath?: string;
   pluginRegistryPath?: string;
   profileConfigPath?: string;
+  recordActivatedPrompt?: (prompt: PluginPromptActivationProvenance) => void;
   recordActivatedSkill?: (skill: PluginSkillActivationProvenance) => void;
   startNewSession?: () => Promise<void> | void;
   resumeSession?: (selector?: string) => Promise<ResumeSessionResult>;
@@ -277,6 +283,7 @@ const PLUGIN_SUBCOMMAND_COMPLETIONS = [
   "disable",
 ] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
+const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROFILE_SUBCOMMAND_COMPLETIONS = [
   "list",
   "status",
@@ -779,6 +786,16 @@ const COMMANDS: Record<string, SlashDefinition> = {
       return "continue";
     },
   },
+  "/prompts": {
+    usage: "/prompts [list|activate <id>]",
+    description: "List enabled plugin prompts or activate one for this chat",
+    group: "Integrations",
+    tier: "advanced",
+    handler: (command, context): SlashResult => {
+      handlePromptsCommand(command, context);
+      return "continue";
+    },
+  },
   "/orchestrator": {
     usage: "/orchestrator [openrouter <model>|clear]",
     description: "Show or configure inert OpenRouter orchestration",
@@ -1196,6 +1213,8 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       return argIndex === 0 ? [...PLUGIN_SUBCOMMAND_COMPLETIONS] : [];
     case "/skills":
       return argIndex === 0 ? [...SKILL_SUBCOMMAND_COMPLETIONS] : [];
+    case "/prompts":
+      return argIndex === 0 ? [...PROMPT_SUBCOMMAND_COMPLETIONS] : [];
     case "/orchestrator":
       if (argIndex === 0) {
         return [...ORCHESTRATOR_SUBCOMMAND_COMPLETIONS];
@@ -1663,6 +1682,43 @@ function handleSkillsCommand(command: SlashCommand, context: SlashCommandContext
   }
 
   writeLine(context.io.stderr, "Usage: /skills [list|activate <id>]");
+}
+
+function handlePromptsCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(
+      context.io.stdout,
+      renderPluginPromptList(
+        discoverEnabledPluginPrompts({ registryPath: context.pluginRegistryPath }),
+      ),
+    );
+    return;
+  }
+
+  if (subcommand === "activate") {
+    const promptId = command.args[1];
+    if (!promptId || command.args.length !== 2) {
+      writeLine(context.io.stderr, `Usage: /prompts ${subcommand} <id>`);
+      return;
+    }
+
+    try {
+      const activation = activatePluginPrompt(promptId, {
+        registryPath: context.pluginRegistryPath,
+      });
+      context.setMessages([...context.getMessages(), activation.systemMessage]);
+      context.recordActivatedPrompt?.(activation.provenance);
+      writeLine(context.io.stdout, renderPromptActivation(activation));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeLine(context.io.stderr, message);
+    }
+    return;
+  }
+
+  writeLine(context.io.stderr, "Usage: /prompts [list|activate <id>]");
 }
 
 function handlePluginsCommand(command: SlashCommand, context: SlashCommandContext): void {

@@ -102,13 +102,14 @@ Current Phase 9 plugin scaffold:
 - Git source manifests must include a pinned `resolvedCommit`; floating refs can be recorded as context but cannot be the lock pin.
 - Manifest and loaded registry display fields reject secret-like values and terminal control characters before they can be stored or rendered.
 - Registering stores plugins disabled by default. `/plugins enable` and `/plugins disable` persist only an inert enabled flag.
-- Enabled plugins can contribute Agent Skills metadata only. Skill discovery is bounded to `components.skills` root `SKILL.md` files and immediate child `SKILL.md` files, omits unsafe/oversized metadata, and exposes compact metadata through `/skills list`, `/status`, and ephemeral model context.
+- Enabled plugins can contribute Agent Skills metadata and markdown prompt-command metadata only. Skill discovery is bounded to `components.skills` root `SKILL.md` files and immediate child `SKILL.md` files; prompt discovery is bounded to immediate `.md` files under `components.commands`. Prompt command names/descriptions come only from explicit frontmatter or filenames, never markdown body text. Unsafe/oversized metadata is omitted, and compact metadata is exposed through `/skills list`, `/prompts list`, `/status`, and ephemeral model context.
 - Skill discovery requires a safe absolute cached manifest path in the ORX-owned registry record and fails closed for malformed registry state.
 - Full `SKILL.md` content is loaded only through explicit `/skills activate <id>`, rejects secret-like values and terminal control characters before model/session use, then stores safe content as an untrusted system message and records provenance in session metadata.
-- Activated skill context is pruned from chat messages and session provenance when the backing plugin/skill is no longer enabled.
-- Skill content and metadata cannot authorize tool use, permission changes, MCP enablement, hooks, bins, plugin commands, or command execution.
-- Hooks, bins, plugin MCP servers, plugin slash commands, and all plugin code execution are inactive in this scaffold even when a plugin is marked enabled.
-- `/plugins inspect`, `/skills`, and `/status` show this trust boundary explicitly; enabled hook/bin/MCP counts remain `0`.
+- Full prompt-command markdown is loaded only through explicit `/prompts activate <id>`, rejects secret-like values and terminal control characters before model/session use, then stores safe content as an untrusted system message and records provenance in session metadata.
+- Activated skill and prompt context is pruned from chat messages and session provenance when the backing plugin component is no longer enabled.
+- Skill or prompt content and metadata cannot authorize tool use, permission changes, MCP enablement, hooks, bins, executable plugin commands, or command execution.
+- Hooks, bins, plugin MCP servers, executable plugin slash commands, and all plugin code execution are inactive in this scaffold even when a plugin is marked enabled.
+- `/plugins inspect`, `/skills`, `/prompts`, and `/status` show this trust boundary explicitly; enabled hook/bin/MCP counts remain `0`.
 
 Current Phase 10 research scaffold:
 

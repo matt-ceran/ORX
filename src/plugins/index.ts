@@ -75,3 +75,17 @@ export {
   type PluginSkillOmission,
   type PluginSkillsDiscovery,
 } from "./skills.js";
+export {
+  activatePluginPrompt,
+  createEnabledPluginPromptsSystemMessage,
+  discoverEnabledPluginPrompts,
+  getEnabledPluginPromptSummary,
+  renderEnabledPluginPromptsForModel,
+  renderPluginPromptList,
+  renderPromptActivation,
+  type PluginPromptActivation,
+  type PluginPromptActivationProvenance,
+  type PluginPromptMetadata,
+  type PluginPromptOmission,
+  type PluginPromptsDiscovery,
+} from "./prompts.js";

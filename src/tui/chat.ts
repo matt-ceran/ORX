@@ -19,7 +19,9 @@ import type { OpenRouterCreditsInfo } from "../openrouter/live.js";
 import { formatOpenRouterMetadata } from "../openrouter/summary.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import {
+  createEnabledPluginPromptsSystemMessage,
   createEnabledPluginSkillsSystemMessage,
+  discoverEnabledPluginPrompts,
   discoverEnabledPluginSkills,
 } from "../plugins/index.js";
 import type {
@@ -36,6 +38,7 @@ import {
   updateSessionRecord,
   type ListedSessionRecord,
   type OrxSessionRecord,
+  type SessionActivatedPrompt,
   type SessionActivatedSkill,
 } from "../sessions/index.js";
 import {
@@ -133,6 +136,7 @@ export async function runChat({
   const diffState = createSessionDiffState();
   let session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
   let activatedSkills: SessionActivatedSkill[] = session.record.activatedSkills ?? [];
+  let activatedPrompts: SessionActivatedPrompt[] = session.record.activatedPrompts ?? [];
   let evidenceSources: EvidenceSource[] = session.record.evidenceSources ?? [];
   let delegationState: DelegationState = normalizeDelegationState(session.record.delegation);
   const { useReadlineTerminal, useTtyScreen } = resolveChatTerminalModes(io.stdin, io.stdout);
@@ -209,6 +213,7 @@ export async function runChat({
             latestMetadata = undefined;
             costMeterState = emptySessionCostMeterState();
             activatedSkills = [];
+            activatedPrompts = [];
             evidenceSources = [];
           },
           getEvidenceSources: () => evidenceSources,
@@ -236,9 +241,13 @@ export async function runChat({
           recordActivatedSkill: (skill) => {
             activatedSkills = upsertActivatedSkill(activatedSkills, skill);
           },
+          recordActivatedPrompt: (prompt) => {
+            activatedPrompts = upsertActivatedPrompt(activatedPrompts, prompt);
+          },
           startNewSession: async () => {
             session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
             activatedSkills = [];
+            activatedPrompts = [];
             evidenceSources = [];
             delegationState = createEmptyDelegationState();
           },
@@ -263,6 +272,7 @@ export async function runChat({
             latestMetadata = cloneOptionalJson(record.latestMetadata);
             costMeterState = createSessionCostMeterState(latestMetadata);
             activatedSkills = cloneJson(record.activatedSkills ?? []);
+            activatedPrompts = cloneJson(record.activatedPrompts ?? []);
             evidenceSources = cloneJson(record.evidenceSources ?? []);
             delegationState = normalizeDelegationState(record.delegation);
             resetSessionDiffState(diffState);
@@ -278,9 +288,10 @@ export async function runChat({
             };
           },
         });
-        ({ messages, activatedSkills } = pruneInactiveSkillState(
+        ({ messages, activatedSkills, activatedPrompts } = pruneInactivePluginActivationState(
           messages,
           activatedSkills,
+          activatedPrompts,
           pluginRegistryPath,
         ));
         await persistSession(
@@ -290,6 +301,7 @@ export async function runChat({
           messages,
           latestMetadata,
           activatedSkills,
+          activatedPrompts,
           evidenceSources,
           delegationState,
           io.stderr,
@@ -304,9 +316,10 @@ export async function runChat({
         continue;
       }
 
-      ({ messages, activatedSkills } = pruneInactiveSkillState(
+      ({ messages, activatedSkills, activatedPrompts } = pruneInactivePluginActivationState(
         messages,
         activatedSkills,
+        activatedPrompts,
         pluginRegistryPath,
       ));
       const userMessage: OpenRouterMessage = { role: "user", content: line };
@@ -332,7 +345,7 @@ export async function runChat({
             signal: activeAbort.signal,
             contextBudget,
             diffState,
-            ephemeralSystemMessages: compactPluginSkillMessages(pluginRegistryPath),
+            ephemeralSystemMessages: compactPluginContextMessages(pluginRegistryPath),
             callbacks: {
               onText(text) {
                 finishTtyActivityLine();
@@ -375,6 +388,7 @@ export async function runChat({
           messages,
           latestMetadata,
           activatedSkills,
+          activatedPrompts,
           evidenceSources,
           delegationState,
           io.stderr,
@@ -617,6 +631,7 @@ async function persistSession(
   messages: OpenRouterMessage[],
   latestMetadata: OpenRouterStreamMetadata | undefined,
   activatedSkills: SessionActivatedSkill[],
+  activatedPrompts: SessionActivatedPrompt[],
   evidenceSources: EvidenceSource[],
   delegationState: DelegationState,
   stderr: WritableLike,
@@ -627,6 +642,7 @@ async function persistSession(
       messages,
       latestMetadata,
       activatedSkills,
+      activatedPrompts,
       evidenceSources,
       delegation: delegationState,
       cwd,
@@ -642,9 +658,12 @@ async function persistSession(
   }
 }
 
-function compactPluginSkillMessages(pluginRegistryPath: string | undefined): OpenRouterMessage[] {
-  const message = createEnabledPluginSkillsSystemMessage({ registryPath: pluginRegistryPath });
-  return message ? [message] : [];
+function compactPluginContextMessages(pluginRegistryPath: string | undefined): OpenRouterMessage[] {
+  const messages = [
+    createEnabledPluginSkillsSystemMessage({ registryPath: pluginRegistryPath }),
+    createEnabledPluginPromptsSystemMessage({ registryPath: pluginRegistryPath }),
+  ];
+  return messages.filter((message): message is OpenRouterMessage => typeof message !== "undefined");
 }
 
 function upsertActivatedSkill(
@@ -654,35 +673,66 @@ function upsertActivatedSkill(
   return [...skills.filter((skill) => skill.id !== nextSkill.id), nextSkill];
 }
 
-function pruneInactiveSkillState(
+function upsertActivatedPrompt(
+  prompts: SessionActivatedPrompt[],
+  nextPrompt: SessionActivatedPrompt,
+): SessionActivatedPrompt[] {
+  return [...prompts.filter((prompt) => prompt.id !== nextPrompt.id), nextPrompt];
+}
+
+function pruneInactivePluginActivationState(
   messages: OpenRouterMessage[],
   activatedSkills: SessionActivatedSkill[],
+  activatedPrompts: SessionActivatedPrompt[],
   pluginRegistryPath: string | undefined,
-): { messages: OpenRouterMessage[]; activatedSkills: SessionActivatedSkill[] } {
-  if (activatedSkills.length === 0) {
+): {
+  messages: OpenRouterMessage[];
+  activatedSkills: SessionActivatedSkill[];
+  activatedPrompts: SessionActivatedPrompt[];
+} {
+  if (activatedSkills.length === 0 && activatedPrompts.length === 0) {
     return {
       messages,
       activatedSkills,
+      activatedPrompts,
     };
   }
 
   const activeSkillIds = new Set(
     discoverEnabledPluginSkills({ registryPath: pluginRegistryPath }).skills.map((skill) => skill.id),
   );
+  const activePromptIds = new Set(
+    discoverEnabledPluginPrompts({ registryPath: pluginRegistryPath }).prompts.map(
+      (prompt) => prompt.id,
+    ),
+  );
   const nextActivatedSkills = activatedSkills.filter((skill) => activeSkillIds.has(skill.id));
-  if (nextActivatedSkills.length === activatedSkills.length) {
+  const nextActivatedPrompts = activatedPrompts.filter((prompt) =>
+    activePromptIds.has(prompt.id),
+  );
+  if (
+    nextActivatedSkills.length === activatedSkills.length &&
+    nextActivatedPrompts.length === activatedPrompts.length
+  ) {
     return {
       messages,
       activatedSkills,
+      activatedPrompts,
     };
   }
 
   return {
     messages: messages.filter((message) => {
       const skillId = activatedSkillMessageId(message);
-      return !skillId || activeSkillIds.has(skillId);
+      if (skillId) {
+        return activeSkillIds.has(skillId);
+      }
+
+      const promptId = activatedPromptMessageId(message);
+      return !promptId || activePromptIds.has(promptId);
     }),
     activatedSkills: nextActivatedSkills,
+    activatedPrompts: nextActivatedPrompts,
   };
 }
 
@@ -696,6 +746,18 @@ function activatedSkillMessageId(message: OpenRouterMessage): string | undefined
   }
 
   return /^- skill_id: (plugin:[^\n]+)$/m.exec(message.content)?.[1];
+}
+
+function activatedPromptMessageId(message: OpenRouterMessage): string | undefined {
+  if (message.role !== "system" || typeof message.content !== "string") {
+    return undefined;
+  }
+
+  if (!message.content.startsWith("ORX plugin prompt activation.\n")) {
+    return undefined;
+  }
+
+  return /^- prompt_id: (plugin:[^\n]+)$/m.exec(message.content)?.[1];
 }
 
 function sessionInfo(session: ChatSessionHandle): { id: string; path: string } {
