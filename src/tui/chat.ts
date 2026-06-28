@@ -65,11 +65,13 @@ import {
 import { createTerminalRenderer, type TerminalRenderOptions } from "../terminal/render.js";
 import {
   isInteractiveTerminal,
+  renderPlainContinuationPrompt,
   renderPlainComposerPrompt,
   renderTtyStatusComposer,
   resolveTerminalWidth,
   shouldUseTtyScreen,
   type TtyActivityState,
+  type TtyInputState,
 } from "./screen.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
@@ -149,6 +151,7 @@ export async function runChat({
   let activeTtyActivityLineCount = 0;
   let activeTtyActivityTimer: ReturnType<typeof setInterval> | undefined;
   let ttyActivityFrame = 0;
+  let pendingInputLines: string[] = [];
   const diffState = createSessionDiffState();
   let session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
   let activatedSkills: SessionActivatedSkill[] = session.record.activatedSkills ?? [];
@@ -198,14 +201,20 @@ export async function runChat({
 
   try {
     for await (const rawLine of rl) {
-      const line = rawLine.trim();
+      const consumedInput = consumeInputLine(rawLine);
+      if (consumedInput === undefined) {
+        writeContinuationPromptOrComposer();
+        continue;
+      }
+
+      const line = consumedInput;
 
       if (!line) {
         writePromptOrComposer();
         continue;
       }
 
-      if (line.startsWith("/")) {
+      if (isSlashCommandSubmission(line)) {
         const result = await handleSlashCommand(line, {
           io: {
             stdout: io.stdout,
@@ -363,7 +372,7 @@ export async function runChat({
         pluginRegistryPath,
       ));
       activeAbort = new AbortController();
-      writeLine(io.stdout, `\nyou: ${line}`);
+      writeLine(io.stdout, `\nyou: ${formatUserSubmissionForScrollback(line)}`);
       await runLifecycleHooksAndWarn("user_prompt_submit", activeAbort.signal);
       const userMessage: OpenRouterMessage = { role: "user", content: line };
       const requestMessages = [...messages, userMessage];
@@ -492,7 +501,19 @@ export async function runChat({
     writePrompt(io.stdout);
   }
 
-  function renderCurrentTtyComposer(activity?: TtyActivityState): string {
+  function writeContinuationPromptOrComposer(): void {
+    if (useTtyScreen) {
+      writeComposer(io.stdout, renderCurrentTtyComposer(undefined, { mode: "multiline" }));
+      return;
+    }
+
+    writeContinuationPrompt(io.stdout);
+  }
+
+  function renderCurrentTtyComposer(
+    activity?: TtyActivityState,
+    input?: TtyInputState,
+  ): string {
     return renderTtyStatusComposer({
       cwd: activeCwd,
       model: activeConfig.model,
@@ -504,9 +525,26 @@ export async function runChat({
       costMeterState,
       latestCredits,
       activity,
+      input,
       width: resolveTerminalWidth(io.stdout),
       renderOptions: { stream: io.stdout, theme: activeConfig.theme },
     });
+  }
+
+  function consumeInputLine(rawLine: string): string | undefined {
+    if (hasInputContinuation(rawLine) || pendingInputLines.length > 0) {
+      const continues = hasInputContinuation(rawLine);
+      pendingInputLines.push(continues ? stripInputContinuation(rawLine) : rawLine);
+      if (continues) {
+        return undefined;
+      }
+
+      const input = normalizeSubmittedInput(pendingInputLines.join("\n"));
+      pendingInputLines = [];
+      return input;
+    }
+
+    return normalizeSubmittedInput(rawLine);
   }
 
   function startTtyActivity(kind: TtyActivityState["kind"], label?: string): void {
@@ -648,6 +686,10 @@ function writePrompt(stream: WritableLike) {
   stream.write(`\n${renderPlainComposerPrompt()}`);
 }
 
+function writeContinuationPrompt(stream: WritableLike) {
+  stream.write(`\n${renderPlainContinuationPrompt()}`);
+}
+
 function writeComposer(stream: WritableLike, composer: string) {
   stream.write(composer);
 }
@@ -666,6 +708,50 @@ function clearRenderedLines(lineCount: number): string {
     "\r\x1b[2K",
     ...Array.from({ length: count - 1 }, () => "\x1b[1F\x1b[2K"),
   ].join("");
+}
+
+function isSlashCommandSubmission(input: string): boolean {
+  return !input.includes("\n") && input.startsWith("/");
+}
+
+function hasInputContinuation(input: string): boolean {
+  const trimmedRight = input.replace(/[ \t]+$/g, "");
+  let slashCount = 0;
+  for (let index = trimmedRight.length - 1; index >= 0; index -= 1) {
+    if (trimmedRight[index] !== "\\") {
+      break;
+    }
+    slashCount += 1;
+  }
+  return slashCount % 2 === 1;
+}
+
+function stripInputContinuation(input: string): string {
+  const trimmedRight = input.replace(/[ \t]+$/g, "");
+  return trimmedRight.slice(0, -1);
+}
+
+function normalizeSubmittedInput(input: string): string {
+  if (!input.includes("\n")) {
+    return input.trim();
+  }
+
+  const lines = input.split("\n");
+  while (lines.length > 0 && lines[0].trim() === "") {
+    lines.shift();
+  }
+  while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+    lines.pop();
+  }
+  return lines.join("\n");
+}
+
+function formatUserSubmissionForScrollback(input: string): string {
+  const [firstLine = "", ...rest] = input.split("\n");
+  if (rest.length === 0) {
+    return firstLine;
+  }
+  return [firstLine, ...rest.map((line) => `     ${line}`)].join("\n");
 }
 
 async function createChatSession(

@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Add Multiline Input Without Raw-Mode Rewrite First
+
+Decision: ORX should support multiline chat prompts through line-based continuation before introducing a custom raw-mode editor. A trailing unescaped `\` continues input collection; the collected lines are submitted as one user message. TTY mode renders a distinct continuation composer, while non-TTY and `NO_COLOR` keep deterministic line-oriented prompts.
+
+Reasoning: Multiline prompts and pasted code are important for daily CLI comfort, but a full raw-mode editor would touch keyboard handling, history, completion, signal handling, and scriptability at once. Line-based continuation improves the workflow now while preserving Node readline behavior, Tab completion, Ctrl+C handling, and pipe/test compatibility.
+
 ## 2026-06-28: Keep Framework Test Adapters Metadata-First
 
 Decision: ORX should infer Node, Vitest, Jest, Playwright, and unknown framework metadata for discovered test targets without introducing separate framework-specific process runners yet. Package-script targets continue to execute through the package manager with shell disabled and sanitized extra arguments; direct Node fallback continues to use `node --test`. Framework and reporter hints are reporting/context metadata for operators and model-visible `run_tests` summaries.

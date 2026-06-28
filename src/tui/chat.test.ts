@@ -103,6 +103,141 @@ test("chat bounds in-process history before later turns", async () => {
   }
 });
 
+test("chat submits backslash-continuation multiline prompts", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+
+  try {
+    const capture = createIo({
+      stdin: Readable.from(["Write a patch\\\n", "with two lines\n", "/exit\n"]),
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+
+        return new Response(
+          streamFrom([
+            'data: {"choices":[{"delta":{"content":"Multiline reply"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].messages.at(-1)?.content, "Write a patch\nwith two lines");
+    assert.match(capture.stdout(), /\.\.\.> /);
+    assert.match(capture.stdout(), /you: Write a patch\n     with two lines/);
+    assert.match(capture.stdout(), /assistant: Multiline reply/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat renders continuation composer for multiline input", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+
+  try {
+    const capture = createIo({
+      stdin: Readable.from(["First line\\\n", "Second line\n", "/exit\n"]),
+      tty: true,
+      columns: 88,
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+
+        return new Response(
+          streamFrom([
+            'data: {"choices":[{"delta":{"content":"TTY multiline reply"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    const stdout = stripAnsi(capture.stdout());
+    assert.equal(exitCode, 0);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].messages.at(-1)?.content, "First line\nSecond line");
+    assert.match(stdout, /orx … /);
+    assert.match(stdout, /you: First line\n     Second line/);
+    assert.match(stdout, /assistant: TTY multiline reply/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("chat keeps escaped continuations and multiline slash input as user messages", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+  const doubleBackslashPrompt = `Path ${"\\".repeat(2)}`;
+
+  try {
+    const capture = createIo({
+      stdin: Readable.from([
+        `${doubleBackslashPrompt}\n`,
+        "/status\\\n",
+        "not a slash command\n",
+        "/exit\n",
+      ]),
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+
+        return new Response(
+          streamFrom([
+            'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].messages.at(-1)?.content, doubleBackslashPrompt);
+    assert.equal(requests[1].messages.at(-1)?.content, "/status\nnot a slash command");
+    assert.doesNotMatch(capture.stdout(), /ORX status/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 test("chat diff command shows native working tree diff without a model request", async () => {
   const cwd = createGitRepo();
   const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));

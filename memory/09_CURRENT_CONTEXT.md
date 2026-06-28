@@ -19,6 +19,7 @@ Urgent UX recovery additions from user testing:
 - TTY-only assistant/tool activity animation is implemented in the bottom status composer; continue polishing richer command discovery and input ergonomics.
 - TTY command discovery now has `/commands [query]` / `/palette [query]`, a compact TTY palette, and Tab completion for slash command names and aliases.
 - Tab completion now also covers deterministic slash subcommands/arguments for `/mode`, `/fusion`, `/web`, `/mcp`, `/plugins`, `/plugin`, `/bins`, `/hooks`, `/skills`, `/orchestrator`, `/delegate`, `/resume`, `/help`, and `/commands`.
+- Line-based multiline prompt continuation is implemented: a trailing unescaped `\` keeps collecting input, TTY mode shows an `orx …` continuation composer, non-TTY mode shows `...>`, and the collected lines are submitted as one user message.
 - The TTY bottom status notch now uses compact model badges for OpenRouter routing shortcuts, rendering `openrouter/auto` as `auto` and `openrouter/fusion` as `fusion`; full model ids remain unchanged in config, request construction, plain status, and non-TTY output.
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
@@ -71,6 +72,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented line-based multiline prompt continuation:
+
+- `orx chat` now treats an input line ending with an unescaped `\` as a continuation marker and collects following lines into one user message.
+- TTY mode renders a continuation `orx …` composer; non-TTY and `NO_COLOR` retain script-safe line-oriented behavior with a plain `...>` continuation prompt.
+- Multiline user scrollback indents continuation lines under the first `you:` line, and slash commands remain single-line-only dispatches.
+- Verification: `npm run typecheck`, `npm run build`, `git diff --check`, focused TUI/CLI build-backed tests, focused source TUI tests with 33 tests, full `npm test` with 380 tests through the independent verifier, and verifier ad hoc probes for escaped backslashes, multiline slash input, interior blank lines, and TTY `NO_COLOR` continuation fallback.
+- Next likely TTY polish: remaining provider badge polish, history/search ergonomics, or optional future raw-mode editing only with script-safe fallback preserved.
 
 Implemented framework-aware test metadata:
 

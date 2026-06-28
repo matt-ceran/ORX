@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   isInteractiveTerminal,
+  renderPlainContinuationPrompt,
   renderPlainComposerPrompt,
   renderTtyComposerPrompt,
   renderTtyStatusComposer,
@@ -202,7 +203,9 @@ test("tty screen respects NO_COLOR and prompt fallbacks", () => {
 
   assert.doesNotMatch(output, ANSI_PATTERN);
   assert.equal(renderTtyComposerPrompt({ color: false }), "orx › ");
+  assert.equal(renderTtyComposerPrompt({ color: false }, { mode: "multiline" }), "orx … ");
   assert.equal(renderPlainComposerPrompt(), "orx> ");
+  assert.equal(renderPlainContinuationPrompt(), "...> ");
   assert.equal(isInteractiveTerminal({ isTTY: true }, { isTTY: true }), true);
   assert.equal(shouldUseTtyScreen({ isTTY: true }, { isTTY: true }, {}), true);
   assert.equal(shouldUseTtyScreen({ isTTY: true }, { isTTY: true }, { NO_COLOR: "1" }), false);

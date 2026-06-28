@@ -28,6 +28,7 @@ export interface TtyStatusComposerState {
   costMeterState: SessionCostMeterState;
   latestCredits?: OpenRouterCreditsInfo;
   activity?: TtyActivityState;
+  input?: TtyInputState;
   width?: number;
   renderOptions?: TerminalRenderOptions;
 }
@@ -36,6 +37,10 @@ export interface TtyActivityState {
   kind: "assistant" | "tool";
   label?: string;
   frame?: number;
+}
+
+export interface TtyInputState {
+  mode: "normal" | "multiline";
 }
 
 const DEFAULT_SCREEN_WIDTH = 80;
@@ -64,7 +69,7 @@ export function resolveTerminalWidth(stream: unknown, fallback = DEFAULT_SCREEN_
 }
 
 export function renderTtyStatusComposer(state: TtyStatusComposerState): string {
-  return `${renderTtyStatusNotch(state)}\n${renderTtyComposerPrompt(state.renderOptions)}`;
+  return `${renderTtyStatusNotch(state)}\n${renderTtyComposerPrompt(state.renderOptions, state.input)}`;
 }
 
 export function renderTtyStatusNotch(state: TtyStatusComposerState): string {
@@ -102,13 +107,21 @@ export function renderTtyStatusNotch(state: TtyStatusComposerState): string {
   ].join("\n");
 }
 
-export function renderTtyComposerPrompt(renderOptions: TerminalRenderOptions = {}): string {
+export function renderTtyComposerPrompt(
+  renderOptions: TerminalRenderOptions = {},
+  input: TtyInputState = { mode: "normal" },
+): string {
   const renderer = createTerminalRenderer(renderOptions);
-  return `${renderer.accent("orx")} › `;
+  const prompt = input.mode === "multiline" ? "…" : "›";
+  return `${renderer.accent("orx")} ${prompt} `;
 }
 
 export function renderPlainComposerPrompt(): string {
   return "orx> ";
+}
+
+export function renderPlainContinuationPrompt(): string {
+  return "...> ";
 }
 
 function formatNotchContext(

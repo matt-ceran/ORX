@@ -53,6 +53,7 @@ Current MVP:
 - Saved profile controls persist named local config snapshots outside repos at `~/.orx/profiles.json`. Use `orx profile ...`, global `orx --profile <id>`, or chat `/profile [list|save|use|inspect|delete]` to manage/apply them. Profiles do not store API keys or enable MCP/plugin executable surfaces.
 - TTY chat shows a subtle `work <spinner> assistant` activity state while waiting for assistant output and `work <spinner> tool <name>` while native tools run. The activity composer clears in place before assistant/tool scrollback is printed.
 - Readline Tab completion now covers slash command names, aliases, and deterministic arguments for common command families such as routing, web, MCP, plugins, skills, orchestration, resume, help, and palette filtering.
+- Multiline prompt continuation is implemented without a raw-mode rewrite: an input line ending with an unescaped `\` keeps collecting lines, TTY mode renders a continuation `orx …` composer, non-TTY mode renders `...>`, and the collected lines are submitted as one user message with internal newlines preserved.
 - Assistant responses stream inline as chunks arrive.
 - In-process user/assistant history is sent with follow-up turns.
 - Ctrl+C aborts an active response or exits when idle, and active TTY activity is cleared before the interruption message.
@@ -68,7 +69,7 @@ bottom status notch: model | mode | context | cost | credits | permissions
 bottom composer: orx › current input
 ```
 
-Next TTY polish should focus on richer multiline/input ergonomics and any remaining provider badge polish without a broad raw-mode rewrite.
+Next TTY polish should focus on any remaining provider badge polish, history/search ergonomics, and optional future raw-mode editing only if it can preserve the current script-safe fallback.
 
 ## Slash Commands
 
@@ -146,7 +147,8 @@ Future orchestration commands:
 ## Keyboard Expectations
 
 - Enter submits.
-- Shift+Enter inserts newline when supported.
+- Trailing unescaped `\` continues a multiline prompt and submits the collected lines together.
+- Shift+Enter can be added later if a raw-mode editor is introduced safely.
 - Ctrl+C interrupts the current task before quitting.
 - Arrow keys navigate command history.
 - Slash command menu filters as the user types.

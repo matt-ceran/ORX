@@ -6,12 +6,13 @@ Last updated: 2026-06-28
 
 Urgent UX recovery:
 
-- Continue TTY polish after saved profile controls: richer multiline/input ergonomics and any remaining provider badge polish.
+- Continue TTY polish after multiline continuation: any remaining provider badge polish, history/search ergonomics, and optional future raw-mode editing only if it preserves script-safe fallback behavior.
 
 Completed:
 
 - Add saved local profile controls: private `~/.orx/profiles.json` registry with `ORX_PROFILE_CONFIG_PATH`, no API-key persistence, `orx profile list|save|use|inspect|delete`, global `orx --profile <id>`, `/profile [list|save|use|inspect|delete]`, `active_profile`/`profile_count` status visibility, session snapshot persistence, and stale active-profile clearing on manual routing/theme changes.
 - Add TTY theme controls: config `theme`, `/theme [default|mono|vivid]`, `ORX_TTY_THEME`/`ORX_THEME` overrides, theme-aware status/composer/tool summaries/credits/palette output, CLI status/credits/ask propagation, and session snapshot persistence.
+- Add line-based multiline prompt continuation: trailing unescaped `\` keeps collecting input lines, TTY renders `orx ...` continuation state, non-TTY renders `...>`, and ORX submits the collected lines as one user message.
 - Add compact TTY model badges for OpenRouter routing shortcuts (`auto` and `fusion`) while preserving full model ids in config, requests, plain status, and non-TTY output.
 - Add deterministic readline Tab completion for slash subcommands/arguments on high-traffic commands while avoiding dynamic IDs, paths, URLs, and free-form text.
 - Wire command discovery into TTY interaction: `/commands [query]` with `/palette` alias, compact TTY palette rendering, deterministic plain fallback, and readline Tab completion for slash command names and aliases.
