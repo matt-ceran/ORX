@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -316,6 +324,109 @@ test("delegation team registry sanitizes stored records and bounds count", () =>
     );
     assert.equal(loaded.teams.team00.createdAt, "2026-06-28T12:00:00.000Z");
     assert.equal(loaded.teams["bad id"], undefined);
+    assert.equal(loaded.teams.team00.description, "safe metadata");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegation team registry does not follow symlink paths", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-team-symlink-"));
+  const targetPath = join(cwd, "target.json");
+  const configPath = join(cwd, "teams.json");
+
+  try {
+    writeFileSync(
+      targetPath,
+      JSON.stringify({
+        version: 1,
+        teams: {},
+      }),
+    );
+    chmodSync(targetPath, 0o644);
+    symlinkSync(targetPath, configPath);
+
+    assert.deepEqual(loadDelegationTeamRegistry({ configPath }), {
+      version: 1,
+      teams: {},
+    });
+    assert.equal(statSync(targetPath).mode & 0o777, 0o644);
+
+    const state = setOpenRouterController(undefined, "openrouter/auto");
+    assert.throws(
+      () => saveDelegationTeam("safe", state, { configPath }),
+      /regular file|ELOOP/,
+    );
+    assert.equal(statSync(targetPath).mode & 0o777, 0o644);
+    assert.equal(readFileSync(targetPath, "utf8"), '{"version":1,"teams":{}}');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegation team descriptions strip every control character", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-team-description-"));
+  const configPath = join(cwd, "teams.json");
+
+  try {
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        teams: {
+          safe: {
+            id: "safe",
+            delegation: {
+              controller: {
+                provider: "openrouter",
+                model: "openrouter/auto",
+                execution: "disabled",
+              },
+              delegates: [],
+              executionEnabled: false,
+            },
+            description: "alpha\u001bbeta\u0007gamma",
+            createdAt: "2026-06-28T12:00:00.000Z",
+            updatedAt: "2026-06-28T12:00:00.000Z",
+          },
+        },
+      }),
+    );
+
+    const team = findSavedDelegationTeam("safe", { configPath });
+    assert.equal(team?.description, "alpha beta gamma");
+    const descriptionLine = renderDelegationTeamInspect(team!)
+      .split("\n")
+      .find((line) => line.startsWith("description: "));
+    assert.equal(descriptionLine, "description: alpha beta gamma");
+    assert.doesNotMatch(descriptionLine ?? "", /[\x00-\x1F\x7F-\x9F]/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("saving a new delegation team refuses the registry cap instead of dropping it", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-team-cap-"));
+  const configPath = join(cwd, "teams.json");
+
+  try {
+    const state = setOpenRouterController(undefined, "openrouter/auto");
+    for (let index = 0; index < 64; index += 1) {
+      const saved = saveDelegationTeam(`team${String(index).padStart(2, "0")}`, state, {
+        configPath,
+        now: () => new Date("2026-06-28T12:00:00.000Z"),
+      });
+      assert.equal(saved.ok, true);
+    }
+
+    const rejected = saveDelegationTeam("team64", state, { configPath });
+    assert.equal(rejected.ok, false);
+    assert.match(rejected.message, /Delegation team limit reached/);
+    assert.equal(findSavedDelegationTeam("team64", { configPath }), undefined);
+    assert.equal(getDelegationTeamStatusSummary({ configPath }).count, 64);
+
+    const updated = saveDelegationTeam("team00", state, { configPath });
+    assert.equal(updated.ok, true);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

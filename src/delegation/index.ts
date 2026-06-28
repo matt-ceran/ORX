@@ -1,4 +1,16 @@
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  closeSync,
+  constants as fsConstants,
+  existsSync,
+  fchmodSync,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -80,6 +92,7 @@ const SAFE_DELEGATE_NAME_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/;
 const SAFE_DELEGATION_TEAM_ID_PATTERN = /^[a-z][a-z0-9._-]{0,63}$/;
 const SAFE_OPENROUTER_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/[A-Za-z0-9][A-Za-z0-9._:+-]{0,127}$/;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F-\x9F]/;
+const CONTROL_CHAR_GLOBAL_PATTERN = /[\x00-\x1F\x7F-\x9F]/g;
 const SECRET_LIKE_PATTERN =
   /\b(?:sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/i;
 const MAX_MODEL_LENGTH = 160;
@@ -90,6 +103,7 @@ const MAX_DELEGATION_TEAM_REGISTRY_BYTES = 256 * 1024;
 const DELEGATION_TEAM_REGISTRY_VERSION = 1;
 const DELEGATION_TEAM_DIRECTORY_MODE = 0o700;
 const DELEGATION_TEAM_FILE_MODE = 0o600;
+const O_NOFOLLOW = typeof fsConstants.O_NOFOLLOW === "number" ? fsConstants.O_NOFOLLOW : 0;
 
 export function createEmptyDelegationState(): DelegationState {
   return {
@@ -249,13 +263,22 @@ export function loadDelegationTeamRegistry(
   }
 
   try {
-    tightenDelegationTeamRegistryPermissions(path);
     const stat = lstatSync(path);
     if (!stat.isFile() || stat.size > MAX_DELEGATION_TEAM_REGISTRY_BYTES) {
       return emptyDelegationTeamRegistry();
     }
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
-    return sanitizeDelegationTeamRegistry(parsed);
+    const fd = openSync(path, fsConstants.O_RDONLY | O_NOFOLLOW);
+    try {
+      const openStat = fstatSync(fd);
+      if (!openStat.isFile() || openStat.size > MAX_DELEGATION_TEAM_REGISTRY_BYTES) {
+        return emptyDelegationTeamRegistry();
+      }
+      tightenDelegationTeamRegistryPermissions(path, fd);
+      const parsed = JSON.parse(readFileSync(fd, { encoding: "utf8" })) as unknown;
+      return sanitizeDelegationTeamRegistry(parsed);
+    } finally {
+      closeSync(fd);
+    }
   } catch {
     return emptyDelegationTeamRegistry();
   }
@@ -276,11 +299,25 @@ export function saveDelegationTeamRegistry(
   if (shouldTightenDelegationTeamParent(path, parentExisted)) {
     chmodSync(parentDir, DELEGATION_TEAM_DIRECTORY_MODE);
   }
-  writeFileSync(path, `${JSON.stringify(sanitized, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: DELEGATION_TEAM_FILE_MODE,
-  });
-  chmodSync(path, DELEGATION_TEAM_FILE_MODE);
+  if (existsSync(path)) {
+    const existing = lstatSync(path);
+    if (!existing.isFile()) {
+      throw new DelegationStateError("Delegation team registry path must be a regular file.");
+    }
+  }
+  const fd = openSync(
+    path,
+    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | O_NOFOLLOW,
+    DELEGATION_TEAM_FILE_MODE,
+  );
+  try {
+    writeFileSync(fd, `${JSON.stringify(sanitized, null, 2)}\n`, {
+      encoding: "utf8",
+    });
+    fchmodSync(fd, DELEGATION_TEAM_FILE_MODE);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export function getDelegationTeamStatusSummary(
@@ -335,6 +372,12 @@ export function saveDelegationTeam(
 
   const registry = loadDelegationTeamRegistry({ configPath: options.configPath });
   const existing = registry.teams[teamId];
+  if (!existing && Object.keys(registry.teams).length >= MAX_DELEGATION_TEAMS) {
+    return {
+      ok: false,
+      message: `Delegation team limit reached; maximum is ${MAX_DELEGATION_TEAMS}.`,
+    };
+  }
   const now = (options.now?.() ?? new Date()).toISOString();
   const team: SavedDelegationTeamRecord = {
     id: teamId,
@@ -736,19 +779,19 @@ function sanitizeTeamDescription(value: unknown): string | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
-  const description = value.replace(CONTROL_CHAR_PATTERN, " ").trim();
+  const description = value.replace(CONTROL_CHAR_GLOBAL_PATTERN, " ").trim();
   if (!description || SECRET_LIKE_PATTERN.test(description)) {
     return undefined;
   }
   return description.slice(0, MAX_TEAM_DESCRIPTION_LENGTH);
 }
 
-function tightenDelegationTeamRegistryPermissions(path: string): void {
+function tightenDelegationTeamRegistryPermissions(path: string, fd: number): void {
   try {
     if (shouldTightenDelegationTeamParent(path, true)) {
       chmodSync(dirname(path), DELEGATION_TEAM_DIRECTORY_MODE);
     }
-    chmodSync(path, DELEGATION_TEAM_FILE_MODE);
+    fchmodSync(fd, DELEGATION_TEAM_FILE_MODE);
   } catch {
     // Best effort only; unreadable or foreign-owned files will be handled by the caller.
   }
