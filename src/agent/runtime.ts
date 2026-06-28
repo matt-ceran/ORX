@@ -29,6 +29,7 @@ export interface RunAgentTurnOptions {
   contextBudget?: Partial<AgentContextBudget>;
   diffState?: SessionDiffState;
   mcp?: ToolDispatchOptions["mcp"];
+  delegation?: ToolDispatchOptions["delegation"];
   ephemeralSystemMessages?: OpenRouterMessage[];
   callbacks?: AgentTurnCallbacks;
 }
@@ -67,7 +68,10 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
       config: options.config,
       messages: requestMessages,
       tools: enableTools
-        ? getNativeToolDefinitions({ includeMcpCallTool: options.mcp?.enabled === true })
+        ? getNativeToolDefinitions({
+            includeMcpCallTool: options.mcp?.enabled === true,
+            includeDelegateTaskTool: options.delegation?.enabled === true,
+          })
         : undefined,
     });
     let assistantText = "";
@@ -119,6 +123,7 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
         cwd: options.cwd,
         signal: options.signal,
         mcp: options.mcp,
+        delegation: options.delegation,
       });
       toolResults.push(toolResult);
       if (options.diffState) {

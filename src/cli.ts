@@ -23,6 +23,7 @@ import {
   renderDelegationTeamUse,
   renderOrchestratorStatus,
   renderSessionlessDelegationRefusal,
+  resolveDelegationAuditLogPath,
   resolveDelegationPolicyPath,
   resolveDelegationTeamRegistryPath,
   saveDelegationTeam,
@@ -245,6 +246,7 @@ export async function runCli(
   const profileConfigPath = resolveProfileConfigPath({ env, cwd: io.cwd });
   const delegationTeamConfigPath = resolveDelegationTeamRegistryPath({ env, cwd: io.cwd });
   const delegationPolicyPath = resolveDelegationPolicyPath({ env, cwd: io.cwd });
+  const delegationAuditLogPath = resolveDelegationAuditLogPath({ env, cwd: io.cwd });
   const loadedConfigResult = loadConfigWithProfile({
     env,
     cwd: io.cwd,
@@ -274,6 +276,7 @@ export async function runCli(
         profileConfigPath,
         delegationTeamConfigPath,
         delegationPolicyPath,
+        delegationAuditLogPath,
         renderOptions: { stream: io.stdout, theme: loadedConfig.config.theme },
       }),
     );
@@ -402,6 +405,7 @@ export async function runCli(
       profileConfigPath,
       delegationTeamConfigPath,
       delegationPolicyPath,
+      delegationAuditLogPath,
     });
   }
 
@@ -470,6 +474,7 @@ function runChatCommand(
     profileConfigPath?: string;
     delegationTeamConfigPath?: string;
     delegationPolicyPath?: string;
+    delegationAuditLogPath?: string;
   },
 ): Promise<number> {
   return runChat({
@@ -498,6 +503,7 @@ function runChatCommand(
     profileConfigPath: paths?.profileConfigPath,
     delegationTeamConfigPath: paths?.delegationTeamConfigPath,
     delegationPolicyPath: paths?.delegationPolicyPath,
+    delegationAuditLogPath: paths?.delegationAuditLogPath,
     braveSearchApiKey: env.BRAVE_SEARCH_API_KEY,
     hookEnv: env,
   });

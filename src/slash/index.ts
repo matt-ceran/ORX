@@ -313,6 +313,7 @@ export interface SlashCommandContext {
   profileConfigPath?: string;
   delegationTeamConfigPath?: string;
   delegationPolicyPath?: string;
+  delegationAuditLogPath?: string;
   recordActivatedPrompt?: (prompt: PluginPromptActivationProvenance) => void;
   recordActivatedRule?: (rule: PluginRuleActivationProvenance) => void;
   recordActivatedSkill?: (skill: PluginSkillActivationProvenance) => void;
@@ -1781,6 +1782,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       profileConfigPath: context.profileConfigPath,
       delegationTeamConfigPath: context.delegationTeamConfigPath,
       delegationPolicyPath: context.delegationPolicyPath,
+      delegationAuditLogPath: context.delegationAuditLogPath,
       delegationState: getDelegationState(context),
       renderOptions: { stream: context.io.stdout, theme: context.getConfig().theme },
     }),

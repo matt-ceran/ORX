@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, parse, relative, resolve, sep } from "node:path";
 
 export type DelegationPolicyCredentialMode = "none";
 export type DelegationPolicyResultPersistence = "none";
@@ -373,21 +373,28 @@ function validatePolicyInteger(
 }
 
 function assertNoSymlinkInParentPath(path: string): void {
-  let current = resolve(dirname(path));
-  while (!existsSync(current)) {
-    const next = dirname(current);
-    if (next === current) {
+  const parentDir = resolve(dirname(path));
+  const root = parse(parentDir).root;
+  const components = relative(root, parentDir).split(sep).filter(Boolean);
+  let current = root;
+
+  for (let index = 0; index < components.length; index += 1) {
+    current = join(current, components[index]);
+    if (!existsSync(current)) {
       return;
     }
-    current = next;
-  }
 
-  const stat = lstatSync(current);
-  if (stat.isSymbolicLink()) {
-    throw new DelegationPolicyError("Delegation policy parent path must not contain symlinks.");
-  }
-  if (!stat.isDirectory()) {
-    throw new DelegationPolicyError("Delegation policy parent path must be a directory.");
+    const stat = lstatSync(current);
+    const isTopLevelPosixComponent = root === sep && index === 0;
+    if (isTopLevelPosixComponent && stat.isSymbolicLink()) {
+      continue;
+    }
+    if (stat.isSymbolicLink()) {
+      throw new DelegationPolicyError("Delegation policy parent path must not contain symlinks.");
+    }
+    if (!stat.isDirectory()) {
+      throw new DelegationPolicyError("Delegation policy parent path must be a directory.");
+    }
   }
 }
 

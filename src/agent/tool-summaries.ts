@@ -108,6 +108,10 @@ function formatToolResultDetails(
     case "mcp_call":
       details.push(...formatMcpCallDetails(output));
       break;
+
+    case "delegate_task":
+      details.push(...formatDelegateTaskDetails(output));
+      break;
   }
 
   pushTruncation(details, "result", result.truncation);
@@ -238,6 +242,32 @@ function formatMcpCallDetails(output: JsonObject | undefined): string[] {
   }
   if (typeof output.resultHash === "string") {
     details.push(`result_hash=${output.resultHash}`);
+  }
+  return details;
+}
+
+function formatDelegateTaskDetails(output: JsonObject | undefined): string[] {
+  if (!output) {
+    return [];
+  }
+
+  const details: string[] = [];
+  if (typeof output.status === "string") {
+    details.push(`status=${output.status}`);
+  }
+  if (typeof output.delegate === "string") {
+    details.push(`delegate=${JSON.stringify(output.delegate)}`);
+  }
+  if (typeof output.networkAttempted === "boolean") {
+    details.push(`network=${output.networkAttempted ? "attempted" : "not_attempted"}`);
+  }
+  if (typeof output.taskHash === "string") {
+    details.push(`task_hash=${output.taskHash}`);
+  }
+  if (output.auditWritten === true) {
+    details.push("audit=written");
+  } else if (output.auditWritten === false) {
+    details.push("audit=not_written");
   }
   return details;
 }

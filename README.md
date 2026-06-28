@@ -100,6 +100,8 @@ Delegation/orchestration CLI commands are no-key and non-executing. `orx orchest
 
 Delegation execution policy is stored separately at `~/.orx/delegation/policy.json`; set `ORX_DELEGATION_POLICY_PATH` to isolate it. `orx delegates policy` shows the current disabled policy. `orx delegates policy set ...` can tune future execution limits such as max task cost, timeout, result bytes, max concurrent delegates, credential forwarding, result persistence, and result merge mode, but the only credential/persistence/merge modes currently accepted are the inert defaults. Setting policy does not call OpenRouter, spawn subprocesses, expose `delegate_task`, or enable delegation execution.
 
+The internal `delegate_task` runtime contract is implemented but still hidden from normal `ask` and `chat` model requests. If explicitly invoked by future runtime wiring, it validates delegate/task arguments against the disabled policy, returns a fail-closed result envelope, records only hashes and bounded metadata, and never sends task text to OpenRouter. Audit entries are written to `~/.orx/audit/delegation.jsonl`; set `ORX_DELEGATION_AUDIT_PATH` to isolate them. `/status` and `orx status` show the delegation audit path plus `delegate_task_runtime`, `delegate_task_model_exposure`, and `delegate_task_adapter` readiness.
+
 Saved disabled delegation teams can be managed outside chat:
 
 ```sh

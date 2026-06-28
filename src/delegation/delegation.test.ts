@@ -35,9 +35,11 @@ import {
   renderDelegationTeamList,
   renderDelegationTeamUse,
   renderOrchestratorStatus,
+  resolveDelegationAuditLogPath,
   resolveDelegationPolicyPath,
   renderSessionlessDelegationRefusal,
   resolveDelegationTeamRegistryPath,
+  runDelegateTask,
   saveDelegationExecutionPolicy,
   saveDelegationTeam,
   setOpenRouterController,
@@ -86,16 +88,18 @@ test("delegation state renders an inert empty scaffold", () => {
       "delegate_count: 0",
       "execution: disabled",
       "delegate_task: unavailable",
+      "delegate_task_schema: implemented_but_not_exposed",
+      "runtime_enforcement: policy_enforced_disabled",
+      "audit_log: configured",
       "model_exposure: none",
       "network_calls: none",
       "subprocesses: none",
       "state_scope: cli-saved-teams-available",
       "readiness_blockers:",
-      "  - delegate_task schema is intentionally not registered",
-      "  - delegate execution policy is not designed",
-      "  - budget, timeout, and result-truncation controls are not configured",
-      "  - credential forwarding and secret-redaction policy is not implemented",
-      "  - delegate result persistence and merge semantics are not implemented",
+      "  - delegate_task schema is not exposed to the model yet",
+      "  - OpenRouter delegate adapter is not implemented",
+      "  - live execution enablement remains disabled",
+      "  - delegated model output envelope and merge semantics are not implemented",
       "  - noninteractive CLI cannot attach a saved team to a live chat session",
     ].join("\n"),
   );
@@ -311,6 +315,197 @@ test("delegation execution policy refuses symlink parent directories", () => {
     );
     assert.throws(
       () => statSync(join(targetDir, "policy.json")),
+      /ENOENT/,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegation execution policy refuses nested symlink parent components", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-policy-nested-symlink-"));
+  const targetDir = join(cwd, "target");
+  const targetChildDir = join(targetDir, "child");
+  const linkDir = join(cwd, "link");
+  const configPath = join(linkDir, "child", "policy.json");
+
+  try {
+    mkdirSync(targetChildDir, { recursive: true });
+    symlinkSync(targetDir, linkDir, "dir");
+
+    assert.throws(
+      () => updateDelegationExecutionPolicy({ maxTaskCostUsd: 0.5 }, { configPath }),
+      /parent path must not contain symlinks/,
+    );
+    assert.throws(
+      () => statSync(join(targetChildDir, "policy.json")),
+      /ENOENT/,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegate_task returns a disabled envelope and hash-only audit entry", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-"));
+  const auditLogPath = join(cwd, "audit", "delegation.jsonl");
+  const policyConfigPath = join(cwd, "delegation", "policy.json");
+
+  try {
+    const withController = setOpenRouterController(undefined, "openrouter/fusion");
+    const state = addOpenRouterDelegate(
+      withController,
+      "reviewer",
+      "anthropic/claude-sonnet-4.5",
+    ).state;
+
+    const result = runDelegateTask(
+      {
+        delegate: "reviewer",
+        task: "Review this raw task without leaking it.",
+        context: "Contains sk-or-v1-secretvalue and should only be hashed.",
+        expected_output: "Return a concise finding list.",
+        timeout_ms: 5_000,
+        max_result_bytes: 2_048,
+        max_task_cost_usd: 0.125,
+      },
+      {
+        state,
+        policyConfigPath,
+        auditLogPath,
+        enabled: true,
+        now: () => new Date("2026-06-28T12:00:00.000Z"),
+      },
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "execution_disabled");
+    assert.equal(result.delegate, "reviewer");
+    assert.equal(result.provider, "openrouter");
+    assert.equal(result.model, "anthropic/claude-sonnet-4.5");
+    assert.equal(result.executionEnabled, false);
+    assert.equal(result.delegateTaskAvailable, false);
+    assert.equal(result.networkAttempted, false);
+    assert.equal(result.subprocesses, "none");
+    assert.equal(result.resultPersistence, "none");
+    assert.equal(result.resultMerge, "manual_summary");
+    assert.equal(result.modelExposure, "disabled_delegate_task_result");
+    assert.equal(result.requestedTimeoutMs, 5_000);
+    assert.equal(result.requestedMaxResultBytes, 2_048);
+    assert.equal(result.requestedMaxTaskCostUsd, 0.125);
+    assert.equal(result.auditWritten, true);
+    assert.ok(result.taskHash);
+    assert.ok(result.contextHash);
+    assert.ok(result.expectedOutputHash);
+
+    const serializedResult = JSON.stringify(result);
+    assert.doesNotMatch(serializedResult, /Review this raw task/);
+    assert.doesNotMatch(serializedResult, /sk-or-v1-secretvalue/);
+
+    assert.equal(statSync(join(cwd, "audit")).mode & 0o777, 0o700);
+    assert.equal(statSync(auditLogPath).mode & 0o777, 0o600);
+
+    const audit = readFileSync(auditLogPath, "utf8");
+    assert.match(audit, /"type":"delegation.task.attempt"/);
+    assert.match(audit, /"status":"execution_disabled"/);
+    assert.match(audit, new RegExp(result.taskHash));
+    assert.doesNotMatch(audit, /Review this raw task/);
+    assert.doesNotMatch(audit, /sk-or-v1-secretvalue/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegate_task enforces policy bounds before runtime execution", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-policy-"));
+  const auditLogPath = join(cwd, "audit", "delegation.jsonl");
+  const policyConfigPath = join(cwd, "delegation", "policy.json");
+
+  try {
+    const result = runDelegateTask(
+      {
+        task: "Stay inside policy.",
+        max_result_bytes: 999_999,
+      },
+      {
+        policyConfigPath,
+        auditLogPath,
+        enabled: true,
+      },
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "invalid_arguments");
+    assert.equal(result.error.code, "DELEGATE_TASK_POLICY_LIMIT_EXCEEDED");
+    assert.match(result.error.message, /max_result_bytes must be an integer between 1024 and 60000/);
+    assert.equal(result.networkAttempted, false);
+    assert.equal(result.auditWritten, true);
+    const audit = readFileSync(auditLogPath, "utf8");
+    assert.match(audit, /"argumentErrorCode":"DELEGATE_TASK_POLICY_LIMIT_EXCEEDED"/);
+    assert.doesNotMatch(audit, /Stay inside policy/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegate_task audit writes refuse symlink parent directories", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-symlink-"));
+  const targetDir = join(cwd, "target");
+  const linkDir = join(cwd, "link");
+  const auditLogPath = join(linkDir, "delegation.jsonl");
+
+  try {
+    mkdirSync(targetDir);
+    symlinkSync(targetDir, linkDir, "dir");
+
+    const result = runDelegateTask(
+      {
+        task: "Do not write through symlinks.",
+      },
+      {
+        auditLogPath,
+        enabled: true,
+      },
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.auditWritten, false);
+    assert.match(result.auditError ?? "", /parent path must not contain symlinks/);
+    assert.throws(
+      () => statSync(join(targetDir, "delegation.jsonl")),
+      /ENOENT/,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegate_task audit writes refuse nested symlink parent components", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-nested-symlink-"));
+  const targetDir = join(cwd, "target");
+  const targetChildDir = join(targetDir, "child");
+  const linkDir = join(cwd, "link");
+  const auditLogPath = join(linkDir, "child", "delegation.jsonl");
+
+  try {
+    mkdirSync(targetChildDir, { recursive: true });
+    symlinkSync(targetDir, linkDir, "dir");
+
+    const result = runDelegateTask(
+      {
+        task: "Do not write through nested symlinks.",
+      },
+      {
+        auditLogPath,
+        enabled: true,
+      },
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.auditWritten, false);
+    assert.match(result.auditError ?? "", /parent path must not contain symlinks/);
+    assert.throws(
+      () => statSync(join(targetChildDir, "delegation.jsonl")),
       /ENOENT/,
     );
   } finally {
@@ -632,6 +827,15 @@ test("delegation team ids and paths are sanitized", () => {
   assert.equal(validateDelegationTeamId("Review.Team_1"), "review.team_1");
   assert.throws(() => validateDelegationTeamId("1bad"), /Delegation team id must match/);
   assert.throws(() => validateDelegationTeamId("bad\u001b"), /Delegation team id must match/);
+  assert.equal(
+    resolveDelegationAuditLogPath({
+      cwd: "/tmp/work",
+      env: {
+        ORX_DELEGATION_AUDIT_PATH: "audit/delegation.jsonl",
+      },
+    }),
+    "/tmp/work/audit/delegation.jsonl",
+  );
   assert.equal(
     resolveDelegationTeamRegistryPath({
       cwd: "/tmp/work",

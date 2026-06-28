@@ -15,6 +15,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 export * from "./policy.js";
+export * from "./runtime.js";
 
 export type DelegationProvider = "openrouter";
 export type DelegationExecutionState = "disabled";
@@ -570,18 +571,20 @@ export function renderDelegationReadinessPlan(
     `delegate_count: ${normalized.delegates.length}`,
     "execution: disabled",
     "delegate_task: unavailable",
+    "delegate_task_schema: implemented_but_not_exposed",
+    "runtime_enforcement: policy_enforced_disabled",
+    "audit_log: configured",
     "model_exposure: none",
     "network_calls: none",
     "subprocesses: none",
     options.surface === "cli"
-      ? "state_scope: cli-saved-teams-available"
+    ? "state_scope: cli-saved-teams-available"
       : "state_scope: interactive-session-local",
     "readiness_blockers:",
-    "  - delegate_task schema is intentionally not registered",
-    "  - delegate execution policy is not designed",
-    "  - budget, timeout, and result-truncation controls are not configured",
-    "  - credential forwarding and secret-redaction policy is not implemented",
-    "  - delegate result persistence and merge semantics are not implemented",
+    "  - delegate_task schema is not exposed to the model yet",
+    "  - OpenRouter delegate adapter is not implemented",
+    "  - live execution enablement remains disabled",
+    "  - delegated model output envelope and merge semantics are not implemented",
   ];
 
   if (options.surface === "cli") {

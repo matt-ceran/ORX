@@ -15,6 +15,7 @@ import {
   type McpToolCallResult,
   type ResolveMcpHost,
 } from "../mcp/index.js";
+import { runDelegateTask, type DelegateTaskOptions } from "../delegation/index.js";
 import { resolveToolPath } from "../tools/path.js";
 import { truncateText } from "../tools/truncation.js";
 import type { TextTruncation } from "../tools/types.js";
@@ -26,6 +27,7 @@ export interface ToolDispatchOptions {
   maxResultBytes?: number;
   maxResultLines?: number;
   mcp?: McpModelToolOptions;
+  delegation?: DelegateTaskOptions;
 }
 
 export interface McpModelToolOptions {
@@ -75,6 +77,7 @@ export async function dispatchNativeToolCall(
         options.cwd,
         options.signal,
         options.mcp,
+        options.delegation,
       );
     } catch (error) {
       output = {
@@ -121,6 +124,7 @@ async function runNativeTool(
   cwd: string,
   signal: AbortSignal | undefined,
   mcp: McpModelToolOptions | undefined,
+  delegation: DelegateTaskOptions | undefined,
 ): Promise<unknown> {
   switch (name) {
     case "read_file":
@@ -187,6 +191,12 @@ async function runNativeTool(
 
     case "mcp_call":
       return runModelMcpCallTool(args, mcp, signal);
+
+    case "delegate_task":
+      return runDelegateTask(args, {
+        ...delegation,
+        enabled: delegation?.enabled === true,
+      });
 
     default:
       return {

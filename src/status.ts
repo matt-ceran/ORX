@@ -36,6 +36,7 @@ export interface StatusOptions {
   profileConfigPath?: string;
   delegationTeamConfigPath?: string;
   delegationPolicyPath?: string;
+  delegationAuditLogPath?: string;
   delegationState?: DelegationState;
   renderOptions?: TerminalRenderOptions;
 }
@@ -54,6 +55,7 @@ export function formatStatus({
   profileConfigPath,
   delegationTeamConfigPath,
   delegationPolicyPath,
+  delegationAuditLogPath,
   delegationState,
   renderOptions,
 }: StatusOptions): string {
@@ -193,6 +195,10 @@ export function formatStatus({
     `delegation_policy_credential_forwarding: ${delegationPolicy.credentialForwarding}`,
     `delegation_policy_result_persistence: ${delegationPolicy.resultPersistence}`,
     `delegation_policy_result_merge: ${delegationPolicy.resultMerge}`,
+    `delegation_audit_path: ${delegationAuditLogPath ?? "default"}`,
+    "delegate_task_runtime: policy_enforced_disabled",
+    "delegate_task_model_exposure: unavailable",
+    "delegate_task_adapter: unavailable",
     delegationStatus ? `orchestration_controller: ${delegationStatus.controller}` : undefined,
     delegationStatus ? "orchestration_execution: disabled" : undefined,
     delegationStatus ? `delegate_count: ${delegationStatus.delegateCount}` : undefined,

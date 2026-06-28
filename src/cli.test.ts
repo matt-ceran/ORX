@@ -53,6 +53,7 @@ test("help, version, and status work without an API key", async () => {
           ORX_PLUGIN_HOOKS_CONFIG_PATH: join(cwd, "plugins", "hooks.json"),
           ORX_PROFILE_CONFIG_PATH: join(cwd, "profiles.json"),
           ORX_DELEGATION_POLICY_PATH: join(cwd, "delegation", "policy.json"),
+          ORX_DELEGATION_AUDIT_PATH: join(cwd, "audit", "delegation.jsonl"),
         },
         status.io,
       ),
@@ -99,6 +100,10 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /delegation_policy_max_task_cost_usd: 0\.25/);
     assert.match(status.stdout(), /delegation_policy_timeout_ms: 120000/);
     assert.match(status.stdout(), /delegation_policy_result_merge: manual_summary/);
+    assert.match(status.stdout(), new RegExp(`delegation_audit_path: ${escapeRegExp(join(cwd, "audit", "delegation.jsonl"))}`));
+    assert.match(status.stdout(), /delegate_task_runtime: policy_enforced_disabled/);
+    assert.match(status.stdout(), /delegate_task_model_exposure: unavailable/);
+    assert.match(status.stdout(), /delegate_task_adapter: unavailable/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -125,7 +130,7 @@ test("cli delegation commands render readiness and refuse session-less mutation 
   assert.equal(await runCli(["node", "cli", "delegates", "plan"], {}, delegates.io), 0);
   assert.match(delegates.stdout(), /ORX delegates scaffold:/);
   assert.match(delegates.stdout(), /delegates: 0/);
-  assert.match(delegates.stdout(), /delegate_task schema is intentionally not registered/);
+  assert.match(delegates.stdout(), /delegate_task schema is not exposed to the model yet/);
   assert.equal(delegates.stderr(), "");
 
   const refusedController = createIo({ fetch });

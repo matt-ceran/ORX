@@ -50,6 +50,12 @@ test("native tool schemas expose the local coding tool surface", () => {
       .sort(),
     ["apply_patch", "git_diff", "list_files", "mcp_call", "read_file", "run_tests", "search_files", "shell"],
   );
+  assert.deepEqual(
+    getNativeToolDefinitions({ includeDelegateTaskTool: true })
+      .map((tool) => tool.function.name)
+      .sort(),
+    ["apply_patch", "delegate_task", "git_diff", "list_files", "read_file", "run_tests", "search_files", "shell"],
+  );
 });
 
 test("dispatchNativeToolCall returns bounded tool result messages", async () => {
@@ -156,7 +162,7 @@ test("dispatchNativeToolCall runs discovered test targets through run_tests", as
     assert.equal(output.report.source, "generic");
     assert.equal(output.report.passed, 1);
     assert.match(output.message, /passed/);
-    assert.match(formatToolResult(result), /\[tool\] run_tests ok duration=\d+ms status=ok target="script:test"/);
+    assert.match(formatToolResult(result), /\[tool\] run_tests ok duration=\d+(?:ms|\.\ds) status=ok target="script:test"/);
     assert.match(formatToolResult(result), /report=generic tests=1 passed=1/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -187,6 +193,66 @@ test("dispatchNativeToolCall keeps model MCP calls disabled unless enabled", asy
   const output = JSON.parse(envelope.output);
   assert.equal(output.ok, false);
   assert.equal(output.error.code, "MCP_MODEL_TOOLS_DISABLED");
+});
+
+test("dispatchNativeToolCall returns a disabled delegation envelope and redacted audit", async () => {
+  const cwd = createTempDir();
+  const auditLogPath = join(cwd, "audit", "delegation.jsonl");
+  const policyConfigPath = join(cwd, "delegation", "policy.json");
+  const result = await dispatchNativeToolCall(
+    {
+      id: "call_delegate",
+      type: "function",
+      function: {
+        name: "delegate_task",
+        arguments: JSON.stringify({
+          delegate: "reviewer",
+          task: "Review this without leaking sk-or-v1-secret",
+          context: "Bearer secret-value should not be audited",
+          max_result_bytes: 2048,
+        }),
+      },
+    },
+    {
+      cwd,
+      delegation: {
+        enabled: true,
+        auditLogPath,
+        policyConfigPath,
+        state: {
+          executionEnabled: false,
+          delegates: [
+            {
+              name: "reviewer",
+              provider: "openrouter",
+              model: "anthropic/claude-sonnet-4.5",
+              execution: "disabled",
+            },
+          ],
+        },
+      },
+    },
+  );
+
+  try {
+    assert.equal(result.ok, false);
+    assert.match(formatToolResult(result), /status=execution_disabled/);
+    assert.match(formatToolResult(result), /delegate="reviewer"/);
+    const envelope = JSON.parse(String(result.message.content));
+    const output = JSON.parse(envelope.output);
+    assert.equal(output.status, "execution_disabled");
+    assert.equal(output.networkAttempted, false);
+    assert.equal(output.subprocesses, "none");
+    assert.equal(output.auditWritten, true);
+    assert.match(output.taskHash, /^sha256:[a-f0-9]{64}$/);
+    assert.equal(output.task, undefined);
+    const audit = readFileSync(auditLogPath, "utf8");
+    assert.match(audit, /"type":"delegation.task.attempt"/);
+    assert.match(audit, /"taskHash":"sha256:[a-f0-9]{64}"/);
+    assert.doesNotMatch(audit, /sk-or-v1-secret|secret-value|Review this/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("dispatchNativeToolCall executes model MCP read tools with auth and redacted audit", async () => {
@@ -837,6 +903,56 @@ test("runAgentTurn exposes mcp_call to the model only when enabled", async () =>
     assert.equal(observedToolNames.length, 2);
     assert.doesNotMatch(observedToolNames[0].join(","), /mcp_call/);
     assert.match(observedToolNames[1].join(","), /mcp_call/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("runAgentTurn exposes delegate_task to the model only when delegation is enabled", async () => {
+  const cwd = createTempDir();
+  try {
+    const observedToolNames: string[][] = [];
+    const mockFetch: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body));
+      observedToolNames.push(
+        body.tools.map((tool: { function: { name: string } }) => tool.function.name).sort(),
+      );
+      return new Response(
+        streamFrom([
+          sse({
+            choices: [
+              {
+                delta: {
+                  content: "done",
+                },
+              },
+            ],
+          }),
+          "data: [DONE]\n\n",
+        ]),
+        { status: 200 },
+      );
+    };
+
+    await runAgentTurn({
+      apiKey: "test-key",
+      config: baseConfig,
+      messages: [{ role: "user", content: "hello" }],
+      cwd,
+      fetch: mockFetch,
+    });
+    await runAgentTurn({
+      apiKey: "test-key",
+      config: baseConfig,
+      messages: [{ role: "user", content: "hello" }],
+      cwd,
+      fetch: mockFetch,
+      delegation: { enabled: true },
+    });
+
+    assert.equal(observedToolNames.length, 2);
+    assert.doesNotMatch(observedToolNames[0].join(","), /delegate_task/);
+    assert.match(observedToolNames[1].join(","), /delegate_task/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

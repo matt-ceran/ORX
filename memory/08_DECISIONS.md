@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Delegate Task Runtime Is Hidden And Hash-Audited Until Adapter Work
+
+Decision: ORX may implement the internal `delegate_task` schema, dispatch path, disabled result envelope, and delegation audit log before adding a live OpenRouter delegate adapter. Normal `ask` and `chat` must not expose `delegate_task` to the model. Any explicit runtime invocation before adapter enablement must fail closed, enforce current policy bounds, avoid network calls and subprocesses, persist no delegate output, and audit only hashes/bounded metadata rather than raw task, context, expected output, credentials, or results.
+
+Reasoning: The next adapter needs a concrete contract and audit path, but creating a model-visible delegation tool before live enforcement is verified would be misleading and unsafe. A hidden, fail-closed, hash-audited runtime lets ORX test policy and trust-boundary mechanics now while preserving the existing no-execution/no-model-exposure delegation boundary.
+
 ## 2026-06-28: Delegation Execution Policy Is Stored Before Execution Exists
 
 Decision: ORX may persist a private local delegation execution policy at `~/.orx/delegation/policy.json`, with `ORX_DELEGATION_POLICY_PATH` for isolated runs, before adding any real delegate runtime. The policy may store future enforcement limits for max task cost, task timeout, result byte cap, max concurrent delegates, credential forwarding, result persistence, and result merge mode. Execution must remain disabled, `delegate_task` must remain unavailable, credential forwarding must stay `none`, result persistence must stay `none`, and result merge must stay `manual_summary` until a live adapter/enforcement slice explicitly changes those boundaries.

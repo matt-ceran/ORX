@@ -143,7 +143,7 @@ Status: in progress as of 2026-06-26. Slice 1 implemented a slash-only direct we
 - Allow the controller to be either an OpenRouter model or an external agent adapter such as Codex.
 - Add delegate adapters for OpenRouter models first, then Codex and Devin when the local/API surfaces are available.
 - Add slash commands for selecting the orchestrator, adding/removing/listing delegates, and saving/loading teams.
-- Expose delegation through an ORX-owned `delegate_task` tool so ORX enforces credentials, permissions, budgets, and result merging.
+- Expose delegation through an ORX-owned `delegate_task` tool so ORX enforces credentials, permissions, budgets, and result merging. Current staged status: the hidden schema, dispatch path, policy-bound fail-closed result envelope, and hash-only audit contract exist; live OpenRouter delegate execution and normal model exposure still do not.
 - Persist the active orchestration profile and delegate results in session metadata.
 
 Done when an ORX session can ask a selected controller to delegate subtasks to configured models or agent adapters and summarize their results back into the main thread.

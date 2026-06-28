@@ -764,13 +764,17 @@ test("orchestrator and delegate commands mutate inert local state without networ
   assert.match(harness.stdout(), /controller: openrouter openrouter\/fusion/);
   assert.match(harness.stdout(), /delegate_count: 1/);
   assert.match(harness.stdout(), /state_scope: interactive-session-local/);
-  assert.match(harness.stdout(), /delegate_task schema is intentionally not registered/);
+  assert.match(harness.stdout(), /delegate_task schema is not exposed to the model yet/);
   assert.match(harness.stdout(), /network_calls: none/);
   assert.match(harness.stdout(), /subprocesses: none/);
 
   assert.equal(handleSlashCommand("/status", harness.context), "continue");
   assert.match(harness.stdout(), /approval_policy: never/);
   assert.match(harness.stdout(), /sandbox_mode: danger-full-access/);
+  assert.match(harness.stdout(), /delegation_audit_path: default/);
+  assert.match(harness.stdout(), /delegate_task_runtime: policy_enforced_disabled/);
+  assert.match(harness.stdout(), /delegate_task_model_exposure: unavailable/);
+  assert.match(harness.stdout(), /delegate_task_adapter: unavailable/);
   assert.match(harness.stdout(), /orchestration_controller: openrouter:openrouter\/fusion/);
   assert.match(harness.stdout(), /orchestration_execution: disabled/);
   assert.match(harness.stdout(), /delegate_count: 1/);
@@ -3897,6 +3901,7 @@ function createSlashHarness(
     profileConfigPath?: string;
     delegationTeamConfigPath?: string;
     delegationPolicyPath?: string;
+    delegationAuditLogPath?: string;
     recordActivatedPrompt?: SlashCommandContext["recordActivatedPrompt"];
     recordActivatedRule?: SlashCommandContext["recordActivatedRule"];
     recordActivatedSkill?: SlashCommandContext["recordActivatedSkill"];
@@ -4014,6 +4019,7 @@ function createSlashHarness(
       profileConfigPath: options.profileConfigPath,
       delegationTeamConfigPath: options.delegationTeamConfigPath,
       delegationPolicyPath: options.delegationPolicyPath,
+      delegationAuditLogPath: options.delegationAuditLogPath,
       recordActivatedPrompt: options.recordActivatedPrompt,
       recordActivatedRule: options.recordActivatedRule,
       recordActivatedSkill: options.recordActivatedSkill,

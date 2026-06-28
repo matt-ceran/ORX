@@ -101,11 +101,12 @@ Completed:
 - Add Phase 11 delegation readiness parity: `orx orchestrator`, `orx delegate`, `orx delegates`, and read-only slash `plan/status` variants render scaffold status/blockers; mutating CLI forms validate arguments then refuse because CLI has no delegation session store, with execution/network/subprocess/model-visible `delegate_task` still unavailable.
 - Add Phase 11 saved disabled delegation teams: private `~/.orx/delegation/teams.json` registry with `ORX_DELEGATION_TEAMS_PATH`, `orx delegates teams|save|inspect|use|delete`, `orx delegate team ...`, `/delegates teams|save|inspect|use|delete`, `/delegate team ...`, slash load into session-local inert state, and no execution/network/subprocess/model-visible `delegate_task`.
 - Add Phase 11 inert delegation execution policy: private `~/.orx/delegation/policy.json` storage with `ORX_DELEGATION_POLICY_PATH`, `orx delegate policy`, `orx delegates policy`, `/delegate policy`, `/delegates policy`, policy limits for future cost/timeout/result bytes/concurrency, fixed inert credential/result modes, `/status` visibility, and no execution/network/subprocess/model-visible `delegate_task`.
+- Add Phase 11 disabled `delegate_task` runtime contract: optional hidden native schema, dispatch path, policy-bounded argument validation, sanitized disabled delegate resolution, fail-closed result envelope, hash-only audit JSONL at `~/.orx/audit/delegation.jsonl` with `ORX_DELEGATION_AUDIT_PATH`, status/readiness visibility, and no OpenRouter delegate call/subprocess/output persistence/model exposure in normal chat.
 
 Next:
 
 - Add managed OAuth/provider auth setup beyond the current env-only MCP bearer readiness path.
-- Add OpenRouter delegate adapter and ORX-owned `delegate_task` tool only after live policy enforcement, prompt/result envelopes, audit logging, and model-visible result merge boundaries are designed.
+- Add OpenRouter delegate adapter behind the existing policy, audit, and result-envelope contract; keep normal model-visible `delegate_task` exposure disabled until live execution enforcement and result merge boundaries are verified.
 - Add secret redaction and minimal env forwarding for future stdio/child-process MCP runners if ORX adds them beyond the current remote HTTP path.
 
 ## P4
