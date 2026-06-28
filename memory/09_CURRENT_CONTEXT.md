@@ -35,8 +35,9 @@ Urgent UX recovery additions from user testing:
 - Local user MCP catalog management commands are implemented through `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands. They write private local catalog files, preserve existing array/object/legacy `servers` declarations during edits, and avoid manual JSON editing for common remote MCP setup.
 - Built-in MCP provider presets are implemented through `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, `/mcp presets`, `/mcp presets inspect <preset>`, and `/mcp add-preset <preset>`. Templates now include `context7`, `microsoft-learn`, `github-readonly`, `sentry-readonly`, `figma`, `browser`, `cloudflare-docs`, and `cloudflare-api`, and inspect/install flows leave enablement, trust, grants, calls, and model exposure as separate explicit steps.
 - Reviewed remote MCP tool import is implemented through `orx mcp import-remote-tools <profile>` and `/mcp import-remote-tools <profile>`. It is limited to local `user:` catalog profiles, uses the existing enabled/trusted/unchanged guarded `tools/list` path, stores sanitized read-only non-billable declarations only, skips unsupported names, audits hashes only, and leaves newly changed profiles behind the pending schema-change retrust gate.
-- MCP auth readiness inspection is implemented through `orx mcp auth <profile>` and `/mcp auth <profile>`. It shows profile-specific and fallback bearer env names, set/unset status, effective readiness, profile hashes, and OAuth limitations without network calls or secret persistence.
+- MCP auth readiness inspection is implemented through `orx mcp auth <profile>` and `/mcp auth <profile>`. It shows profile-specific and fallback bearer env names, managed env-file path, set/unset status, effective readiness, profile hashes, and OAuth limitations without network calls or secret persistence.
 - MCP auth setup guidance is implemented through `orx mcp auth setup <profile>`, `orx mcp auth env <profile>`, `/mcp auth setup <profile>`, and `/mcp auth env <profile>`. It prints copyable placeholder exports only for auth-required profiles, shows no-auth profiles as not requiring setup, never displays token values, and performs no network calls, subprocess calls, or config writes beyond normal redacted audit metadata.
+- MCP managed auth env-file templates are implemented through `orx mcp auth init <profile>`, `orx mcp auth env-file <profile>`, `/mcp auth init <profile>`, and `/mcp auth env-file <profile>`. They create commented shell templates under `~/.orx/mcp/auth-env` or `ORX_MCP_AUTH_ENV_DIR`, use private modes, skip no-auth profiles, avoid overwriting existing files, and refuse symlink parent paths.
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` or the derived `/plugin:<plugin-id>:command:<slug>` alias as untrusted context. Manifest-defined executable command schemas are discoverable through `components.commandSchemas` and exposed as `/plugin:<plugin-id>:exec:<slug>` aliases that can only run referenced trusted current bins.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
@@ -87,6 +88,16 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added MCP auth env-file templates:
+
+- Added `orx mcp auth init <profile>` / `orx mcp auth env-file <profile>` and matching slash commands to create private commented shell env templates for bearer-based MCP profiles.
+- Auth status/setup output now shows the managed env-file path. The default directory is `~/.orx/mcp/auth-env`; `ORX_MCP_AUTH_ENV_DIR` isolates it for tests and scripted runs.
+- Templates use commented exports only, so sourcing an unedited file does not send placeholder bearer values. Existing files are never overwritten; loose existing files are permission-tightened to `0600`, and loose auth-env directories are tightened to `0700` with explicit reporting.
+- No-auth profiles skip file creation. The command makes no network calls, spawns no subprocesses, writes no config, stores no token values, audits only redacted metadata, and refuses symlink parent paths.
+- Verifier fix: existing auth-env directory permission tightening is now detected, rendered as `directory_permissions_tightened`, included in audit metadata, and covered by focused tests.
+- Verification: `npm run typecheck`, focused MCP/CLI/slash tests with 198 tests, `git diff --check`, isolated CLI dogfood for create/no-auth skip/symlink failure/directory-only permission tightening, full `npm test` with 473 tests, `npm run verify:global-install`, and independent verifier recheck with no findings.
+- Next likely work remains actual OAuth/keychain/provider credential flows beyond env-file templates, real-key policy-enabled delegation dogfood when `OPENROUTER_API_KEY` is available, final TTY ergonomics, broader provider/plugin preset polish, and release hardening.
 
 Added saved delegation team readiness previews:
 

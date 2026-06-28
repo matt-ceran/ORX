@@ -69,9 +69,11 @@ import {
   getMcpStatusSummary,
   hashMcpProfile,
   importRemoteMcpTools,
+  initializeMcpAuthEnvFile,
   installMcpProviderPreset,
   loadUserMcpProfileCatalog,
   listRemoteMcpTools,
+  renderMcpAuthEnvFileInitResult,
   renderMcpProviderPresetInspect,
   renderMcpProviderPresets,
   renderMcpProfileAuthReport,
@@ -1830,44 +1832,93 @@ function runMcpCommand(
   }
 
   if (subcommand === "auth") {
-    const authAction = isMcpAuthSetupAction(profileId) ? "setup" : "status";
-    const authProfileId = authAction === "setup" ? args[2] : profileId;
-    const expectedArgCount = authAction === "setup" ? 3 : 2;
+    const authAction = parseMcpAuthAction(profileId);
+    const authProfileId = authAction === "status" ? profileId : args[2];
+    const expectedArgCount = authAction === "status" ? 2 : 3;
     if (!authProfileId || args.length !== expectedArgCount) {
-      writeLine(io.stderr, "Usage: orx mcp auth <profile> | orx mcp auth setup <profile> | orx mcp auth env <profile>");
+      writeLine(io.stderr, "Usage: orx mcp auth <profile> | orx mcp auth setup <profile> | orx mcp auth env <profile> | orx mcp auth init <profile> | orx mcp auth env-file <profile>");
       return 1;
     }
 
     const report = getMcpProfileAuthReport(authProfileId, {
       ...registryOptions,
       env,
+      cwd: io.cwd,
     });
-    tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
-      type: authAction === "setup" ? "mcp.profile.auth_setup" : "mcp.profile.auth_status",
-      profileId: authProfileId,
-      ok: Boolean(report),
-      details: report
-        ? {
-            state: report.profile.state,
-            authRequired: report.profile.authRequired,
-            profileEnvName: report.profileEnvName,
-            profileEnvSet: report.profileEnvSet,
-            fallbackEnvName: report.fallbackEnvName,
-            fallbackEnvSet: report.fallbackEnvSet,
-            ready: report.authReady,
-            authRequiredToolCount: report.authRequiredToolCount,
-            profileHash: report.profileHash,
-            trustedProfileHash: report.trustedProfileHash,
-            schemaChangePending: report.schemaChangePending,
-          }
-        : undefined,
-    });
+    const auditType =
+      authAction === "setup"
+        ? "mcp.profile.auth_setup"
+        : authAction === "init"
+          ? "mcp.profile.auth_env_file"
+          : "mcp.profile.auth_status";
 
     if (!report) {
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: auditType,
+        profileId: authProfileId,
+        ok: false,
+      });
       writeLine(io.stderr, `Unknown MCP profile: ${authProfileId}`);
       return 1;
     }
 
+    const auditDetails = {
+      state: report.profile.state,
+      authRequired: report.profile.authRequired,
+      profileEnvName: report.profileEnvName,
+      profileEnvSet: report.profileEnvSet,
+      fallbackEnvName: report.fallbackEnvName,
+      fallbackEnvSet: report.fallbackEnvSet,
+      ready: report.authReady,
+      authRequiredToolCount: report.authRequiredToolCount,
+      managedEnvFilePath: report.managedEnvFilePath,
+      profileHash: report.profileHash,
+      trustedProfileHash: report.trustedProfileHash,
+      schemaChangePending: report.schemaChangePending,
+    };
+
+    if (authAction === "init") {
+      try {
+        const result = initializeMcpAuthEnvFile(report, { env, cwd: io.cwd });
+        tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+          type: auditType,
+          profileId: authProfileId,
+          ok: true,
+          details: {
+            ...auditDetails,
+            path: result.path,
+            created: result.created,
+            existing: result.existing,
+            stateChanged: result.stateChanged,
+            permissionsTightened: result.permissionsTightened,
+            directoryPermissionsTightened: result.directoryPermissionsTightened,
+            skipped: result.skipped,
+          },
+        });
+        writeLine(io.stdout, renderMcpAuthEnvFileInitResult(result));
+        return 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+          type: auditType,
+          profileId: authProfileId,
+          ok: false,
+          details: {
+            ...auditDetails,
+            message,
+          },
+        });
+        writeLine(io.stderr, message);
+        return 1;
+      }
+    }
+
+    tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+      type: auditType,
+      profileId: authProfileId,
+      ok: true,
+      details: auditDetails,
+    });
     writeLine(
       io.stdout,
       authAction === "setup"
@@ -2324,13 +2375,19 @@ function runMcpCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: orx mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
   return 1;
 }
 
-function isMcpAuthSetupAction(value: string | undefined): boolean {
-  return value === "setup" || value === "env";
+function parseMcpAuthAction(value: string | undefined): "status" | "setup" | "init" {
+  if (value === "setup" || value === "env") {
+    return "setup";
+  }
+  if (value === "init" || value === "env-file") {
+    return "init";
+  }
+  return "status";
 }
 
 function parseMcpPresetInspectArgs(

@@ -7,6 +7,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,7 +26,9 @@ import {
   formatMcpRemoteToolsResult,
   importRemoteMcpTools,
   installMcpProviderPreset,
+  initializeMcpAuthEnvFile,
   getMcpModelToolGrantRecord,
+  getMcpProfileAuthReport,
   getMcpToolGrantRecord,
   getMcpStatusSummary,
   getMcpProfileToolPolicyReport,
@@ -35,6 +38,7 @@ import {
   loadUserMcpProfileCatalog,
   loadMcpProfilesConfig,
   renderMcpProviderPresetInspect,
+  renderMcpAuthEnvFileInitResult,
   renderMcpProfileTools,
   renderMcpProviderPresets,
   renderUserMcpProfileCatalog,
@@ -2276,6 +2280,99 @@ test("mcp redaction handles bearer strings and sensitive object keys", () => {
       nested: [{ token: "[redacted]" }],
     },
   );
+});
+
+test("mcp auth env file init writes a private commented template without overwriting existing files", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-auth-env-file-"));
+  const authEnvDirectory = join(cwd, "mcp", "auth-env");
+  try {
+    const report = getMcpProfileAuthReport("openrouter", {
+      env: { ORX_MCP_AUTH_ENV_DIR: authEnvDirectory },
+      cwd,
+    });
+    assert.ok(report);
+
+    const result = initializeMcpAuthEnvFile(report, {
+      env: { ORX_MCP_AUTH_ENV_DIR: authEnvDirectory },
+      cwd,
+    });
+    assert.equal(result.created, true);
+    assert.equal(result.stateChanged, true);
+    assert.equal(result.permissionsTightened, false);
+    assert.equal(result.directoryPermissionsTightened, false);
+    assert.equal(result.path, join(authEnvDirectory, "openrouter.env"));
+    assert.equal(statSync(authEnvDirectory).mode & 0o777, 0o700);
+    assert.equal(statSync(result.path).mode & 0o777, 0o600);
+    const template = readFileSync(result.path, "utf8");
+    assert.match(template, /# export ORX_MCP_BEARER_OPENROUTER="<bearer-token>"/);
+    assert.match(template, /ORX does not read this file automatically/);
+    assert.doesNotMatch(template, /^export ORX_MCP_BEARER_OPENROUTER/m);
+    assert.doesNotMatch(template, /sk-or-v1|mcp-secret-token/);
+
+    const rendered = renderMcpAuthEnvFileInitResult(result);
+    assert.match(rendered, /MCP auth env file: openrouter/);
+    assert.match(rendered, /credential_mode: env_file_template/);
+    assert.match(rendered, /state_changed: yes/);
+    assert.match(rendered, /shell_source:/);
+    assert.doesNotMatch(rendered, /sk-or-v1|mcp-secret-token/);
+
+    writeFileSync(result.path, "# user managed content\nexport ORX_MCP_BEARER_OPENROUTER=\"filled-value\"\n", {
+      mode: 0o644,
+    });
+    chmodSync(result.path, 0o644);
+    const again = initializeMcpAuthEnvFile(report, {
+      env: { ORX_MCP_AUTH_ENV_DIR: authEnvDirectory },
+      cwd,
+    });
+    assert.equal(again.created, false);
+    assert.equal(again.existing, true);
+    assert.equal(again.stateChanged, true);
+    assert.equal(again.permissionsTightened, true);
+    assert.equal(again.directoryPermissionsTightened, false);
+    assert.match(readFileSync(result.path, "utf8"), /filled-value/);
+    assert.equal(statSync(result.path).mode & 0o777, 0o600);
+
+    chmodSync(authEnvDirectory, 0o755);
+    const directoryOnly = initializeMcpAuthEnvFile(report, {
+      env: { ORX_MCP_AUTH_ENV_DIR: authEnvDirectory },
+      cwd,
+    });
+    assert.equal(directoryOnly.created, false);
+    assert.equal(directoryOnly.existing, true);
+    assert.equal(directoryOnly.stateChanged, true);
+    assert.equal(directoryOnly.permissionsTightened, false);
+    assert.equal(directoryOnly.directoryPermissionsTightened, true);
+    assert.equal(statSync(authEnvDirectory).mode & 0o777, 0o700);
+    assert.equal(statSync(result.path).mode & 0o777, 0o600);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp auth env file init refuses symlink parent paths", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-auth-env-file-symlink-"));
+  try {
+    const targetDirectory = join(cwd, "target");
+    const linkDirectory = join(cwd, "link");
+    mkdirSync(targetDirectory, { recursive: true });
+    symlinkSync(targetDirectory, linkDirectory, "dir");
+
+    const report = getMcpProfileAuthReport("openrouter", {
+      env: { ORX_MCP_AUTH_ENV_DIR: join(linkDirectory, "auth-env") },
+      cwd,
+    });
+    assert.ok(report);
+    assert.throws(
+      () =>
+        initializeMcpAuthEnvFile(report, {
+          env: { ORX_MCP_AUTH_ENV_DIR: join(linkDirectory, "auth-env") },
+          cwd,
+        }),
+      /parent path must not contain symlinks/,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("mcp discovery does not fetch disabled profiles", async () => {

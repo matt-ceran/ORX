@@ -61,9 +61,11 @@ import {
   getMcpStatusSummary,
   hashMcpProfile,
   importRemoteMcpTools,
+  initializeMcpAuthEnvFile,
   installMcpProviderPreset,
   loadUserMcpProfileCatalog,
   listRemoteMcpTools,
+  renderMcpAuthEnvFileInitResult,
   renderMcpProviderPresetInspect,
   renderMcpProviderPresets,
   renderMcpProfileAuthReport,
@@ -419,7 +421,7 @@ const MCP_SUBCOMMAND_COMPLETIONS = [
   "revoke-model-tool",
 ] as const;
 const MCP_MODEL_SUBCOMMAND_COMPLETIONS = ["status", "enable", "disable"] as const;
-const MCP_AUTH_ACTION_COMPLETIONS = ["setup", "env"] as const;
+const MCP_AUTH_ACTION_COMPLETIONS = ["setup", "env", "init", "env-file"] as const;
 const MCP_PROFILE_COMPLETIONS = ["openrouter"] as const;
 const MCP_PROVIDER_PRESET_COMPLETIONS = [
   "browser",
@@ -1058,7 +1060,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|catalog|presets [inspect]|add-preset|add-profile|add-tool|model|inspect|auth|auth setup|auth env|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
+    usage: "/mcp [list|catalog|presets [inspect]|add-preset|add-profile|add-tool|model|inspect|auth|auth setup|auth env|auth init|auth env-file|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
     description: "Show and manage MCP profiles, local user catalogs, remote metadata, and tool grants",
     group: "Integrations",
     tier: "advanced",
@@ -1568,7 +1570,7 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       }
       if (
         firstArg === "auth" &&
-        isMcpAuthSetupAction(secondArg) &&
+        isMcpAuthActionWithProfile(secondArg) &&
         argIndex === 2
       ) {
         return [...MCP_PROFILE_COMPLETIONS];
@@ -1672,8 +1674,18 @@ function configValueCompletions(key: string | undefined): string[] {
   return [];
 }
 
-function isMcpAuthSetupAction(value: string | undefined): boolean {
-  return value === "setup" || value === "env";
+function isMcpAuthActionWithProfile(value: string | undefined): boolean {
+  return value === "setup" || value === "env" || value === "init" || value === "env-file";
+}
+
+function parseMcpAuthAction(value: string | undefined): "status" | "setup" | "init" {
+  if (value === "setup" || value === "env") {
+    return "setup";
+  }
+  if (value === "init" || value === "env-file") {
+    return "init";
+  }
+  return "status";
 }
 
 function isMcpProfileSubcommand(subcommand: string | undefined): boolean {
@@ -3529,44 +3541,93 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
   }
 
   if (subcommand === "auth") {
-    const authAction = isMcpAuthSetupAction(profileId) ? "setup" : "status";
-    const authProfileId = authAction === "setup" ? command.args[2] : profileId;
-    const expectedArgCount = authAction === "setup" ? 3 : 2;
+    const authAction = parseMcpAuthAction(profileId);
+    const authProfileId = authAction === "status" ? profileId : command.args[2];
+    const expectedArgCount = authAction === "status" ? 2 : 3;
     if (!authProfileId || command.args.length !== expectedArgCount) {
-      writeLine(context.io.stderr, "Usage: /mcp auth <profile> | /mcp auth setup <profile> | /mcp auth env <profile>");
+      writeLine(context.io.stderr, "Usage: /mcp auth <profile> | /mcp auth setup <profile> | /mcp auth env <profile> | /mcp auth init <profile> | /mcp auth env-file <profile>");
       return;
     }
 
+    const authEnv = context.mcpAuthEnv ?? context.env;
     const report = getMcpProfileAuthReport(authProfileId, {
       ...registryOptions,
-      env: context.mcpAuthEnv,
+      env: authEnv,
+      cwd: context.io.cwd,
     });
-    tryWriteMcpAuditEvent(context, {
-      type: authAction === "setup" ? "mcp.profile.auth_setup" : "mcp.profile.auth_status",
-      profileId: authProfileId,
-      ok: Boolean(report),
-      details: report
-        ? {
-            state: report.profile.state,
-            authRequired: report.profile.authRequired,
-            profileEnvName: report.profileEnvName,
-            profileEnvSet: report.profileEnvSet,
-            fallbackEnvName: report.fallbackEnvName,
-            fallbackEnvSet: report.fallbackEnvSet,
-            ready: report.authReady,
-            authRequiredToolCount: report.authRequiredToolCount,
-            profileHash: report.profileHash,
-            trustedProfileHash: report.trustedProfileHash,
-            schemaChangePending: report.schemaChangePending,
-          }
-        : undefined,
-    });
+    const auditType =
+      authAction === "setup"
+        ? "mcp.profile.auth_setup"
+        : authAction === "init"
+          ? "mcp.profile.auth_env_file"
+          : "mcp.profile.auth_status";
 
     if (!report) {
+      tryWriteMcpAuditEvent(context, {
+        type: auditType,
+        profileId: authProfileId,
+        ok: false,
+      });
       writeLine(context.io.stderr, `Unknown MCP profile: ${authProfileId}`);
       return;
     }
 
+    const auditDetails = {
+      state: report.profile.state,
+      authRequired: report.profile.authRequired,
+      profileEnvName: report.profileEnvName,
+      profileEnvSet: report.profileEnvSet,
+      fallbackEnvName: report.fallbackEnvName,
+      fallbackEnvSet: report.fallbackEnvSet,
+      ready: report.authReady,
+      authRequiredToolCount: report.authRequiredToolCount,
+      managedEnvFilePath: report.managedEnvFilePath,
+      profileHash: report.profileHash,
+      trustedProfileHash: report.trustedProfileHash,
+      schemaChangePending: report.schemaChangePending,
+    };
+
+    if (authAction === "init") {
+      try {
+        const result = initializeMcpAuthEnvFile(report, { env: authEnv, cwd: context.io.cwd });
+        tryWriteMcpAuditEvent(context, {
+          type: auditType,
+          profileId: authProfileId,
+          ok: true,
+          details: {
+            ...auditDetails,
+            path: result.path,
+            created: result.created,
+            existing: result.existing,
+            stateChanged: result.stateChanged,
+            permissionsTightened: result.permissionsTightened,
+            directoryPermissionsTightened: result.directoryPermissionsTightened,
+            skipped: result.skipped,
+          },
+        });
+        writeLine(context.io.stdout, renderMcpAuthEnvFileInitResult(result));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        tryWriteMcpAuditEvent(context, {
+          type: auditType,
+          profileId: authProfileId,
+          ok: false,
+          details: {
+            ...auditDetails,
+            message,
+          },
+        });
+        writeLine(context.io.stderr, message);
+      }
+      return;
+    }
+
+    tryWriteMcpAuditEvent(context, {
+      type: auditType,
+      profileId: authProfileId,
+      ok: true,
+      details: auditDetails,
+    });
     writeLine(
       context.io.stdout,
       authAction === "setup"
@@ -4048,7 +4109,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: /mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
 }
 

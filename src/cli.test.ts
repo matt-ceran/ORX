@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
@@ -838,9 +838,11 @@ test("cli mcp commands manage local profile and tool grant policy without an API
   const cwd = createTempDir();
   const mcpConfigPath = join(cwd, "mcp", "profiles.json");
   const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const authEnvDir = join(cwd, "mcp", "auth-env");
   const env = {
     ORX_MCP_CONFIG_PATH: mcpConfigPath,
     ORX_MCP_AUDIT_PATH: auditLogPath,
+    ORX_MCP_AUTH_ENV_DIR: authEnvDir,
   };
 
   try {
@@ -878,6 +880,7 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     assert.match(missingAuth.stdout(), /profile_env: ORX_MCP_BEARER_OPENROUTER status=unset/);
     assert.match(missingAuth.stdout(), /fallback_env: ORX_MCP_BEARER_TOKEN status=unset/);
     assert.match(missingAuth.stdout(), /effective_bearer: missing/);
+    assert.match(missingAuth.stdout(), new RegExp(`managed_env_file: ${escapeRegExp(join(authEnvDir, "openrouter.env"))}`));
     assert.match(missingAuth.stdout(), /storage: ORX does not persist MCP bearer token values/);
 
     const authSetup = createIo({ cwd });
@@ -888,6 +891,7 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     assert.match(authSetup.stdout(), /credential_mode: env_only_bearer/);
     assert.match(authSetup.stdout(), /preferred_env: ORX_MCP_BEARER_OPENROUTER status=unset/);
     assert.match(authSetup.stdout(), /fallback_env: ORX_MCP_BEARER_TOKEN status=unset/);
+    assert.match(authSetup.stdout(), new RegExp(`managed_env_file: ${escapeRegExp(join(authEnvDir, "openrouter.env"))}`));
     assert.match(authSetup.stdout(), /network_calls: none/);
     assert.match(authSetup.stdout(), /subprocesses: none/);
     assert.match(authSetup.stdout(), /config_writes: none/);
@@ -899,6 +903,68 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     assert.equal(await runCli(["node", "cli", "mcp", "auth", "env", "openrouter"], env, authEnvAlias.io), 0);
     assert.match(authEnvAlias.stdout(), /MCP auth setup: openrouter/);
     assert.match(authEnvAlias.stdout(), /bash_zsh: export ORX_MCP_BEARER_OPENROUTER="<bearer-token>"/);
+
+    const authInit = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "auth", "init", "openrouter"], env, authInit.io), 0);
+    assert.match(authInit.stdout(), /MCP auth env file: openrouter/);
+    assert.match(authInit.stdout(), /state_changed: yes/);
+    assert.match(authInit.stdout(), /file_created: yes/);
+    assert.match(authInit.stdout(), /directory_permissions_tightened: no/);
+    assert.match(authInit.stdout(), /credential_mode: env_file_template/);
+    assert.match(authInit.stdout(), /token_value: not written; edit the commented export locally/);
+    assert.match(authInit.stdout(), /network_calls: none/);
+    assert.match(authInit.stdout(), /subprocesses: none/);
+    assert.match(authInit.stdout(), /config_writes: auth_env_file_only/);
+    assert.match(authInit.stdout(), /bash_zsh: source /);
+    const authEnvPath = join(authEnvDir, "openrouter.env");
+    assert.equal(statSync(authEnvDir).mode & 0o777, 0o700);
+    assert.equal(statSync(authEnvPath).mode & 0o777, 0o600);
+    const authEnvTemplate = readFileSync(authEnvPath, "utf8");
+    assert.match(authEnvTemplate, /# export ORX_MCP_BEARER_OPENROUTER="<bearer-token>"/);
+    assert.doesNotMatch(authEnvTemplate, /^export ORX_MCP_BEARER_OPENROUTER/m);
+    assert.doesNotMatch(authEnvTemplate, /mcp-secret-token|sk-or-v1/);
+
+    writeFileSync(authEnvPath, "# user filled this later\nexport ORX_MCP_BEARER_OPENROUTER=\"filled-value\"\n", {
+      mode: 0o644,
+    });
+    chmodSync(authEnvPath, 0o644);
+    const authInitAgain = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "auth", "env-file", "openrouter"], env, authInitAgain.io), 0);
+    assert.match(authInitAgain.stdout(), /state_changed: yes/);
+    assert.match(authInitAgain.stdout(), /file_created: no/);
+    assert.match(authInitAgain.stdout(), /existing_file: yes/);
+    assert.match(authInitAgain.stdout(), /permissions_tightened: yes/);
+    assert.match(authInitAgain.stdout(), /directory_permissions_tightened: no/);
+    assert.match(readFileSync(authEnvPath, "utf8"), /filled-value/);
+    assert.equal(statSync(authEnvPath).mode & 0o777, 0o600);
+
+    chmodSync(authEnvDir, 0o755);
+    const authInitDirectoryOnly = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "auth", "env-file", "openrouter"], env, authInitDirectoryOnly.io),
+      0,
+    );
+    assert.match(authInitDirectoryOnly.stdout(), /state_changed: yes/);
+    assert.match(authInitDirectoryOnly.stdout(), /file_created: no/);
+    assert.match(authInitDirectoryOnly.stdout(), /existing_file: yes/);
+    assert.match(authInitDirectoryOnly.stdout(), /permissions_tightened: no/);
+    assert.match(authInitDirectoryOnly.stdout(), /directory_permissions_tightened: yes/);
+    assert.equal(statSync(authEnvDir).mode & 0o777, 0o700);
+    assert.equal(statSync(authEnvPath).mode & 0o777, 0o600);
+    const authEnvFileEvents = readFileSync(auditLogPath, "utf8")
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { type: string; details?: Record<string, unknown> });
+    assert.ok(
+      authEnvFileEvents.some(
+        (event) =>
+          event.type === "mcp.profile.auth_env_file" &&
+          event.details?.stateChanged === true &&
+          event.details?.permissionsTightened === false &&
+          event.details?.directoryPermissionsTightened === true,
+      ),
+    );
 
     const configuredAuth = createIo({ cwd });
     assert.equal(
@@ -1005,6 +1071,39 @@ test("cli mcp commands manage local profile and tool grant policy without an API
   }
 });
 
+test("cli mcp auth init audits failed env-file writes without network or secrets", async () => {
+  const cwd = createTempDir();
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const targetDir = join(cwd, "target");
+  const linkDir = join(cwd, "link");
+  mkdirSync(targetDir, { recursive: true });
+  symlinkSync(targetDir, linkDir, "dir");
+  const env = {
+    ORX_MCP_AUDIT_PATH: auditLogPath,
+    ORX_MCP_AUTH_ENV_DIR: join(linkDir, "auth-env"),
+  };
+
+  try {
+    const failed = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "auth", "init", "openrouter"], env, failed.io), 1);
+    assert.match(failed.stderr(), /MCP auth env file parent path must not contain symlinks/);
+    assert.doesNotMatch(failed.stderr(), /sk-or-v1|mcp-secret-token/);
+
+    const events = readFileSync(auditLogPath, "utf8")
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { type: string; ok: boolean; details?: Record<string, unknown> });
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, "mcp.profile.auth_env_file");
+    assert.equal(events[0].ok, false);
+    assert.match(String(events[0].details?.message), /parent path must not contain symlinks/);
+    assert.doesNotMatch(JSON.stringify(events[0]), /sk-or-v1|mcp-secret-token/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("cli mcp commands use user MCP profile catalog", async () => {
   const cwd = createTempDir();
   const mcpConfigPath = join(cwd, "mcp", "profiles.json");
@@ -1101,9 +1200,11 @@ test("cli mcp provider presets install local catalog profiles", async () => {
   const cwd = createTempDir();
   const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
   const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const authEnvDir = join(cwd, "mcp", "auth-env");
   const env = {
     ORX_MCP_PROFILE_CATALOG_PATH: profileCatalogPath,
     ORX_MCP_AUDIT_PATH: auditLogPath,
+    ORX_MCP_AUTH_ENV_DIR: authEnvDir,
   };
 
   try {
@@ -1182,6 +1283,17 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(noAuthSetup.stdout(), /network_calls: none/);
     assert.doesNotMatch(noAuthSetup.stdout(), /<bearer-token>/);
 
+    const noAuthInit = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "mcp", "auth", "init", "user:docs"], env, noAuthInit.io), 0);
+    assert.match(noAuthInit.stdout(), /MCP auth env file: user:docs/);
+    assert.match(noAuthInit.stdout(), /auth_required: no/);
+    assert.match(noAuthInit.stdout(), /auth_status: not_required/);
+    assert.match(noAuthInit.stdout(), /state_changed: no/);
+    assert.match(noAuthInit.stdout(), /skipped: yes/);
+    assert.match(noAuthInit.stdout(), /shell_source: not required/);
+    assert.doesNotMatch(noAuthInit.stdout(), /<bearer-token>/);
+    assert.equal(existsSync(join(authEnvDir, "user_docs.env")), false);
+
     const events = readFileSync(auditLogPath, "utf8")
       .trim()
       .split("\n")
@@ -1199,6 +1311,14 @@ test("cli mcp provider presets install local catalog profiles", async () => {
       events.some(
         (event) =>
           event.type === "mcp.profile.auth_setup" &&
+          event.profileId === "user:docs" &&
+          event.details?.ready === true,
+      ),
+    );
+    assert.ok(
+      events.some(
+        (event) =>
+          event.type === "mcp.profile.auth_env_file" &&
           event.profileId === "user:docs" &&
           event.details?.ready === true,
       ),

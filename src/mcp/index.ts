@@ -10,8 +10,11 @@ export {
 } from "./call.js";
 export {
   getMcpProfileAuthReport,
+  initializeMcpAuthEnvFile,
+  renderMcpAuthEnvFileInitResult,
   renderMcpProfileAuthReport,
   renderMcpProfileAuthSetup,
+  type McpAuthEnvFileInitResult,
   type McpProfileAuthReport,
   type McpProfileAuthReportOptions,
 } from "./auth.js";
