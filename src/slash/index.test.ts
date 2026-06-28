@@ -72,6 +72,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.match(output, /\/status\s+Show current chat status/);
   assert.match(output, /\/theme \[default\|mono\|vivid\]\s+Show or set the TTY color theme/);
   assert.match(output, /\/profile \[list\|save\|use\|inspect\|delete\]\s+Manage saved local config profiles/);
+  assert.match(output, /\/tests \[list\|run <target-id>\]\s+Discover or run native test targets \(aliases: \/test\)/);
   assert.match(output, /\/model <id-or-search>\s+Resolve and switch OpenRouter model \(aliases: \/m\)/);
   assert.match(output, /\/quit\s+Leave chat \(aliases: \/q, \/exit\)/);
   assert.doesNotMatch(output, /Advanced chat commands:/);
@@ -82,7 +83,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.doesNotMatch(output, /^Chat commands:/m);
 
   const commandLines = output.split("\n").filter((line) => line.startsWith("  /"));
-  assert.ok(commandLines.length <= 14, `expected concise common help, got ${commandLines.length}`);
+  assert.ok(commandLines.length <= 15, `expected concise common help, got ${commandLines.length}`);
 });
 
 test("help all shows common commands first plus advanced surfaces", () => {
@@ -106,6 +107,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/orchestrator \[openrouter <model>\|clear\]/);
   assert.match(output, /\/delegate <add\|remove\|clear>/);
   assert.match(output, /\/delegates/);
+  assert.match(output, /\/tests \[list\|run <target-id>\]/);
   assert.match(output, /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog\|list\|commands\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
@@ -201,6 +203,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/bins r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/hooks t"), [["trust "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/hooks r"), [["run "], "r"]);
+  assert.deepEqual(completeSlashCommandLine("/tests r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/prompts a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/rules a"), [["activate "], "a"]);
@@ -220,6 +223,41 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/model claude"), [[], "/model claude"]);
   assert.deepEqual(completeSlashCommandLine("/plugins enable "), [[], "/plugins enable "]);
   assert.deepEqual(completeSlashCommandLine("plain text"), [[], "plain text"]);
+});
+
+test("tests slash command lists and runs package scripts", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-slash-tests-"));
+  try {
+    writeFileSync(
+      join(cwd, "package.json"),
+      JSON.stringify({
+        scripts: {
+          test: "node ./slash-test.mjs",
+          "test:unit": "node ./slash-test.mjs unit",
+        },
+      }),
+    );
+    writeFileSync(
+      join(cwd, "slash-test.mjs"),
+      "console.log(`slash-test ${process.argv.slice(2).join(',')}`);\n",
+    );
+
+    const harness = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/tests list", harness.context), "continue");
+    assert.match(harness.stdout(), /Test Targets/);
+    assert.match(harness.stdout(), /id=script:test:unit/);
+
+    assert.equal(
+      await handleSlashCommand("/test run script:test:unit -- --flag", harness.context),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Test run: script:test:unit/);
+    assert.match(harness.stdout(), /status: ok/);
+    assert.match(harness.stdout(), /slash-test unit,--flag/);
+    assert.equal(harness.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("commands slash command renders the deterministic plain palette in non-tty output", () => {

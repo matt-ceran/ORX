@@ -64,6 +64,14 @@ Implemented under `src/tools/`:
 
 The tools remain standalone and testable. Phase 6 now exposes them to models through `src/agent/` with OpenRouter-compatible schemas, argument sanitation, and bounded JSON result envelopes.
 
+Implemented under `src/testing/`:
+
+- package-script test target discovery for safe `test*` scripts
+- direct Node test file fallback when no `test` package script exists
+- explicit operator commands `orx tests list|run` and `/tests list|run`
+
+The test adapter is currently operator-invoked, not model-autonomous. Runs use the shared process runner with shell disabled, bounded output, timeout coverage, and sanitized extra arguments. `/status` and `orx status` show discovered target counts and the default target.
+
 ## MCP And Third-Party Tool Policy
 
 - Keep core local coding tools native: file reads, file writes, search, shell, patches, and local git.

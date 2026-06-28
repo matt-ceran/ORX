@@ -15,6 +15,7 @@ import {
 } from "./plugins/index.js";
 import { getProfileStatusSummary } from "./profiles/index.js";
 import { createTerminalRenderer, type TerminalRenderOptions } from "./terminal/render.js";
+import { getTestAdapterSummary } from "./testing/index.js";
 
 export interface StatusOptions {
   cwd: string;
@@ -69,6 +70,7 @@ export function formatStatus({
     configPath: pluginHooksConfigPath,
   });
   const profileStatus = getProfileStatusSummary({ configPath: profileConfigPath });
+  const testStatus = getTestAdapterSummary(cwd);
   const delegationStatus =
     delegationState === undefined ? undefined : getDelegationStatusSummary(delegationState);
   const activeMcpProfiles =
@@ -89,6 +91,10 @@ export function formatStatus({
     "shell_access: enabled",
     "network_tools: enabled",
     "destructive_command_warnings: disabled",
+    `test_targets: ${testStatus.targetCount}${testStatus.truncated ? " (truncated)" : ""}`,
+    `test_default_target: ${testStatus.defaultTargetId ?? "none"}`,
+    `test_package_scripts: ${testStatus.packageScriptCount}`,
+    `test_node_targets: ${testStatus.nodeTestTargetCount}`,
     `mcp_active_profiles: ${activeMcpProfiles}`,
     `mcp_active_servers: ${mcpStatus.serverCount}`,
     `mcp_auth_bearing_servers: ${mcpStatus.authBearingServerCount}`,

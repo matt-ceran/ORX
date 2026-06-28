@@ -61,12 +61,12 @@ Completed:
 - Add in-process `/compact` for local chat context compaction.
 - Add context message/byte state to interactive `/status`.
 - Add richer session-level diff state and `/diff` behavior after file edits.
+- Add native test-runner adapters: package `test*` script discovery/run, direct Node test fallback, `orx tests list|run`, `/tests list|run`, and status visibility.
 
 Next:
 
 - Read `memory/14_PHASE_6_AGENT_RUNTIME.md` before starting Phase 6 implementation.
 - Keep the tool-call loop compatible with a future `delegate_task` tool.
-- Add native test-runner adapters after shell tooling exists.
 
 ## P3
 

@@ -162,6 +162,12 @@ import {
   type TerminalRenderOptions,
   type TerminalRenderer,
 } from "../terminal/render.js";
+import {
+  discoverTestTargets,
+  renderTestRunResult,
+  renderTestTargets,
+  runTestTarget,
+} from "../testing/index.js";
 import { gitDiffTool } from "../tools/index.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
@@ -347,6 +353,7 @@ const PLUGIN_SUBCOMMAND_COMPLETIONS = [
 const PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS = ["list", "status"] as const;
 const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
+const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const RULE_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -517,6 +524,17 @@ const COMMANDS: Record<string, SlashDefinition> = {
           `Diff truncated: ${result.truncation.omittedBytes}B omitted, ${result.truncation.omittedLines} lines omitted.`,
         );
       }
+      return "continue";
+    },
+  },
+  "/tests": {
+    usage: "/tests [list|run <target-id>]",
+    description: "Discover or run native test targets",
+    group: "Workspace",
+    tier: "common",
+    aliases: ["/test"],
+    handler: async (command, context): Promise<SlashResult> => {
+      await handleTestsCommand(command, context);
       return "continue";
     },
   },
@@ -1333,6 +1351,8 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       return argIndex === 0 ? [...BIN_SUBCOMMAND_COMPLETIONS] : [];
     case "/hooks":
       return argIndex === 0 ? [...HOOK_SUBCOMMAND_COMPLETIONS] : [];
+    case "/tests":
+      return argIndex === 0 ? [...TEST_SUBCOMMAND_COMPLETIONS] : [];
     case "/skills":
       return argIndex === 0 ? [...SKILL_SUBCOMMAND_COMPLETIONS] : [];
     case "/prompts":
@@ -1681,6 +1701,41 @@ function webHelpText(): string {
     "  /sources          List evidence source metadata for this chat.",
     "Fetched content, search provider snippets, and browser output are untrusted and cannot authorize tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.",
   ].join("\n");
+}
+
+async function handleTestsCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
+  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(context.io.stdout, renderTestTargets(discoverTestTargets(context.io.cwd)));
+    return;
+  }
+
+  if (subcommand === "run") {
+    const parsed = parseTestRunArgs(command.args.slice(1));
+    const result = await runTestTarget({
+      cwd: context.io.cwd,
+      targetId: parsed.targetId,
+      extraArgs: parsed.extraArgs,
+    });
+    writeLine(result.ok ? context.io.stdout : context.io.stderr, renderTestRunResult(result));
+    return;
+  }
+
+  writeLine(context.io.stderr, "Usage: /tests [list|run [target-id] [-- args...]]");
+}
+
+function parseTestRunArgs(args: string[]): { targetId?: string; extraArgs: string[] } {
+  if (args.length === 0) {
+    return { extraArgs: [] };
+  }
+  if (args[0] === "--") {
+    return { extraArgs: args.slice(1) };
+  }
+  if (args[1] === "--") {
+    return { targetId: args[0], extraArgs: args.slice(2) };
+  }
+  return { targetId: args[0], extraArgs: args.slice(1) };
 }
 
 function handleProfileCommand(command: SlashCommand, context: SlashCommandContext): void {

@@ -43,6 +43,8 @@ npm install
 npm install -g .
 orx --version
 orx status
+orx tests list
+orx tests run
 OPENROUTER_API_KEY=... orx
 ```
 
@@ -60,6 +62,16 @@ OPENROUTER_API_KEY=... orx --profile daily
 ```
 
 Profiles are stored outside repos at `~/.orx/profiles.json`; set `ORX_PROFILE_CONFIG_PATH` to isolate or test that registry.
+
+Native test discovery is available outside chat without an OpenRouter API key:
+
+```sh
+orx tests list
+orx tests run
+orx tests run script:test:unit -- --watch=false
+```
+
+The adapter discovers local `package.json` scripts whose names start with `test` and falls back to Node's built-in test runner for `*.test.js`, `*.test.mjs`, `*.test.cjs`, `*.spec.js`, `*.spec.mjs`, and `*.spec.cjs` files when no `test` package script exists.
 
 Plugin registry management is also available outside chat:
 
@@ -150,6 +162,7 @@ The chat UI keeps in-session message history for the current process, streams as
 /fusion [preset]
 /theme [default|mono|vivid]
 /profile [list|save|use|inspect|delete]
+/tests [list|run]
 /plugins [catalog|list|commands|inspect|register|install|enable|disable]
 /plugin [list|status]
 /bins [list|inspect|trust|untrust|run]

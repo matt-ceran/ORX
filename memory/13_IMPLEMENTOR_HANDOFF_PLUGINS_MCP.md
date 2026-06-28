@@ -192,9 +192,11 @@ Acceptance:
 
 Goal: make ORX substantially stronger at coding without bloating MCP surface.
 
+Current status as of 2026-06-28: first native test adapter slice is implemented. ORX can discover safe package `test*` scripts, fall back to direct Node test/spec files when no package `test` script exists, show target/default counts in `/status` and `orx status`, and run targets through explicit `orx tests run` / `/tests run` with shell disabled, bounded output, timeouts, and sanitized extra arguments. Vitest/Jest/Playwright-specific parsing, model-visible `run_tests`, and richer report formats remain future work.
+
 Implement native or profile-scoped integrations:
 
-- Test adapters after shell tooling: package scripts, Node test runner, Vitest, Jest, Playwright.
+- Extend test adapters after the initial package-script/Node slice: Vitest, Jest, Playwright, richer target/report formats, and eventual model-visible `run_tests`.
 - tree-sitter repo maps and symbol slices.
 - ast-grep syntax-aware search and codemod previews.
 - LSP/SCIP spike for diagnostics, references, hover, go-to-definition.

@@ -97,6 +97,12 @@ import {
 import type { BrowserSnapshotDriver } from "./research/index.js";
 import { resolveSessionDirectory } from "./sessions/index.js";
 import { formatStatus } from "./status.js";
+import {
+  discoverTestTargets,
+  renderTestRunResult,
+  renderTestTargets,
+  runTestTarget,
+} from "./testing/index.js";
 import { runChat } from "./tui/chat.js";
 
 interface PackageJson {
@@ -250,6 +256,10 @@ export async function runCli(
     );
   }
 
+  if (first === "tests" || first === "test") {
+    return runTestsCommand(args.slice(1), io);
+  }
+
   const apiKeyError = validateApiKey(loadedConfig);
   if (apiKeyError) {
     writeLine(io.stderr, apiKeyError);
@@ -319,6 +329,7 @@ function helpText(): string {
     "  plugins       List catalog entries, command aliases, inspect, install, enable, or disable plugins",
     "  bins          List, inspect, trust, untrust, or run plugin bins",
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
+    "  tests         Discover or run native test targets",
     "  status        Show runtime status and config defaults",
     "  help          Show this help message",
     "  version       Show the current version",
@@ -434,6 +445,29 @@ async function runGenerationCommand(args: string[], apiKey: string, io: CliIo): 
   }
 }
 
+async function runTestsCommand(args: string[], io: CliIo): Promise<number> {
+  const subcommand = args[0]?.toLowerCase() ?? "list";
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(io.stdout, renderTestTargets(discoverTestTargets(io.cwd)));
+    return 0;
+  }
+
+  if (subcommand === "run") {
+    const parsed = parseTestRunArgs(args.slice(1));
+    const result = await runTestTarget({
+      cwd: io.cwd,
+      targetId: parsed.targetId,
+      extraArgs: parsed.extraArgs,
+    });
+    writeLine(result.ok ? io.stdout : io.stderr, renderTestRunResult(result));
+    return result.ok ? 0 : 1;
+  }
+
+  writeLine(io.stderr, "Usage: orx tests [list|run [target-id] [-- args...]]");
+  return 1;
+}
+
 function runProfileCommand(
   args: string[],
   config: OrxConfig,
@@ -532,6 +566,19 @@ function runProfileCommand(
 
   writeLine(io.stderr, "Usage: orx profile [list|save <id>|use <id>|inspect <id>|delete <id>]");
   return 1;
+}
+
+function parseTestRunArgs(args: string[]): { targetId?: string; extraArgs: string[] } {
+  if (args.length === 0) {
+    return { extraArgs: [] };
+  }
+  if (args[0] === "--") {
+    return { extraArgs: args.slice(1) };
+  }
+  if (args[1] === "--") {
+    return { targetId: args[0], extraArgs: args.slice(2) };
+  }
+  return { targetId: args[0], extraArgs: args.slice(1) };
 }
 
 function runPluginsCommand(

@@ -27,6 +27,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /plugins\s+List catalog entries, command aliases, inspect, install, enable, or disable plugins/);
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
+    assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
   }
@@ -83,8 +84,52 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /plugin_enabled_bins: 0/);
     assert.match(status.stdout(), /plugin_enabled_mcp: 0/);
     assert.match(status.stdout(), /plugin_enabled_skills: 0/);
+    assert.match(status.stdout(), /test_targets: 0/);
+    assert.match(status.stdout(), /test_default_target: none/);
     assert.match(status.stdout(), /active_profile: none/);
     assert.match(status.stdout(), /profile_count: 0/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli tests commands list and run package scripts without an API key", async () => {
+  const cwd = createTempDir();
+  try {
+    writeFileSync(
+      join(cwd, "package.json"),
+      JSON.stringify({
+        scripts: {
+          test: "node ./cli-test.mjs",
+          "test:unit": "node ./cli-test.mjs unit",
+        },
+      }),
+    );
+    writeFileSync(
+      join(cwd, "cli-test.mjs"),
+      "console.log(`cli-test ${process.argv.slice(2).join(',')}`);\n",
+    );
+
+    const listed = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "tests", "list"], {}, listed.io), 0);
+    assert.match(listed.stdout(), /Test Targets/);
+    assert.match(listed.stdout(), /id=script:test/);
+    assert.match(listed.stdout(), /id=script:test:unit/);
+    assert.equal(listed.stderr(), "");
+
+    const ran = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "tests", "run", "script:test:unit", "--", "--flag"], {}, ran.io),
+      0,
+    );
+    assert.match(ran.stdout(), /Test run: script:test:unit/);
+    assert.match(ran.stdout(), /status: ok/);
+    assert.match(ran.stdout(), /cli-test unit,--flag/);
+    assert.equal(ran.stderr(), "");
+
+    const unknown = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "tests", "unknown"], {}, unknown.io), 1);
+    assert.match(unknown.stderr(), /Usage: orx tests/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
