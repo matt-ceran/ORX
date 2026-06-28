@@ -764,7 +764,7 @@ test("orchestrator and delegate commands mutate inert local state without networ
   assert.match(harness.stdout(), /controller: openrouter openrouter\/fusion/);
   assert.match(harness.stdout(), /delegate_count: 1/);
   assert.match(harness.stdout(), /state_scope: interactive-session-local/);
-  assert.match(harness.stdout(), /delegate_task schema is not exposed to the model yet/);
+  assert.match(harness.stdout(), /delegation execution policy must be enabled before model exposure/);
   assert.match(harness.stdout(), /network_calls: none/);
   assert.match(harness.stdout(), /subprocesses: none/);
 
@@ -774,7 +774,7 @@ test("orchestrator and delegate commands mutate inert local state without networ
   assert.match(harness.stdout(), /delegation_audit_path: default/);
   assert.match(harness.stdout(), /delegate_task_runtime: policy_enforced_disabled/);
   assert.match(harness.stdout(), /delegate_task_model_exposure: unavailable/);
-  assert.match(harness.stdout(), /delegate_task_adapter: unavailable/);
+  assert.match(harness.stdout(), /delegate_task_adapter: openrouter_available/);
   assert.match(harness.stdout(), /orchestration_controller: openrouter:openrouter\/fusion/);
   assert.match(harness.stdout(), /orchestration_execution: disabled/);
   assert.match(harness.stdout(), /delegate_count: 1/);
@@ -855,7 +855,7 @@ test("delegates slash commands save and load disabled local teams", () => {
   }
 });
 
-test("delegation policy slash commands persist inert execution limits without network", () => {
+test("delegation policy slash commands persist execution limits without network", () => {
   let fetchCalls = 0;
   const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-policy-slash-"));
   const policyPath = join(cwd, "delegation", "policy.json");
@@ -895,6 +895,20 @@ test("delegation policy slash commands persist inert execution limits without ne
     assert.match(harness.stdout(), /credential_forwarding: none/);
     assert.match(harness.stdout(), /result_persistence: none/);
     assert.match(harness.stdout(), /result_merge: manual_summary/);
+
+    assert.equal(
+      handleSlashCommand("/delegate add reviewer openrouter openrouter/auto", harness.context),
+      "continue",
+    );
+    assert.equal(handleSlashCommand("/delegate policy set --execution enabled", harness.context), "continue");
+    const stdoutStart = harness.stdout().length;
+    assert.equal(handleSlashCommand("/delegate plan", harness.context), "continue");
+    const planOutput = harness.stdout().slice(stdoutStart);
+    assert.match(planOutput, /execution: enabled/);
+    assert.match(planOutput, /delegate_task: available_in_chat/);
+    assert.match(planOutput, /readiness_blockers:\n  none/);
+    assert.doesNotMatch(planOutput, /delegation execution policy must be enabled/);
+    assert.doesNotMatch(planOutput, /at least one chat-session delegate is required/);
 
     assert.equal(
       handleSlashCommand("/delegate policy set --credentials env", harness.context),

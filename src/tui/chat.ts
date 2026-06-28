@@ -12,6 +12,7 @@ import {
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
 import {
   createEmptyDelegationState,
+  loadDelegationExecutionPolicy,
   normalizeDelegationState,
   type DelegationState,
 } from "../delegation/index.js";
@@ -396,6 +397,11 @@ export async function runChat({
       let needsAssistantPrefix = useTtyScreen;
 
       try {
+        const delegationPolicy = loadDelegationExecutionPolicy({
+          configPath: delegationPolicyPath,
+        });
+        const delegationRuntimeEnabled =
+          delegationPolicy.executionEnabled && delegationState.delegates.length > 0;
         const result = await runAgentTurn(
           {
             apiKey,
@@ -414,6 +420,17 @@ export async function runChat({
                   configPath: mcpConfigPath,
                   profileCatalogPath: mcpProfileCatalogPath,
                   pluginRegistryPath,
+                }
+              : undefined,
+            delegation: delegationRuntimeEnabled
+              ? {
+                  enabled: true,
+                  state: delegationState,
+                  policyConfigPath: delegationPolicyPath,
+                  auditLogPath: delegationAuditLogPath,
+                  apiKey,
+                  fetch: io.fetch,
+                  signal: activeAbort.signal,
                 }
               : undefined,
             ephemeralSystemMessages: compactPluginContextMessages(pluginRegistryPath),

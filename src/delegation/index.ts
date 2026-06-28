@@ -48,6 +48,9 @@ export interface DelegationStatusSummary {
 
 export interface DelegationReadinessRenderOptions {
   surface?: "interactive" | "cli";
+  policy?: {
+    executionEnabled?: boolean;
+  };
 }
 
 export interface DelegationTeamsPathOptions {
@@ -563,35 +566,42 @@ export function renderDelegationReadinessPlan(
   options: DelegationReadinessRenderOptions = {},
 ): string {
   const normalized = normalizeDelegationState(state);
+  const policyEnabled = options.policy?.executionEnabled === true;
+  const hasDelegate = normalized.delegates.length > 0;
+  const chatReady = options.surface !== "cli" && policyEnabled && hasDelegate;
+  const blockers: string[] = [];
+  if (!policyEnabled) {
+    blockers.push("delegation execution policy must be enabled before model exposure");
+  }
+  if (!hasDelegate) {
+    blockers.push("at least one chat-session delegate is required before model exposure");
+  }
+  if (options.surface === "cli") {
+    blockers.push("noninteractive CLI cannot attach a saved team to a live chat session");
+  }
   const lines = [
     "ORX delegation readiness:",
     normalized.controller
       ? `controller: openrouter ${normalized.controller.model}`
       : "controller: none",
     `delegate_count: ${normalized.delegates.length}`,
-    "execution: disabled",
-    "delegate_task: unavailable",
-    "delegate_task_schema: implemented_but_not_exposed",
-    "runtime_enforcement: policy_enforced_disabled",
+    `execution: ${policyEnabled ? "enabled" : "disabled"}`,
+    `delegate_task: ${chatReady ? "available_in_chat" : "unavailable"}`,
+    "delegate_task_schema: policy_gated",
+    "runtime_enforcement: policy_gated_openrouter_adapter",
     "audit_log: configured",
-    "model_exposure: none",
-    "network_calls: none",
+    `model_exposure: ${chatReady ? "available_in_chat" : "available_when_policy_and_delegate_are_enabled"}`,
+    `network_calls: ${policyEnabled ? "openrouter_delegate_only_when_enabled" : "none"}`,
     "subprocesses: none",
     options.surface === "cli"
     ? "state_scope: cli-saved-teams-available"
       : "state_scope: interactive-session-local",
     "readiness_blockers:",
-    "  - delegate_task schema is not exposed to the model yet",
-    "  - OpenRouter delegate adapter is not implemented",
-    "  - live execution enablement remains disabled",
-    "  - delegated model output envelope and merge semantics are not implemented",
+    blockers.length === 0 ? "  none" : blockers.map((blocker) => `  - ${blocker}`),
+    "readiness_notes:",
+    "  - delegated model output is untrusted and must be manually summarized",
   ];
-
-  if (options.surface === "cli") {
-    lines.push("  - noninteractive CLI cannot attach a saved team to a live chat session");
-  }
-
-  return lines.join("\n");
+  return lines.flat().join("\n");
 }
 
 export function renderSessionlessDelegationRefusal(action: string): string {

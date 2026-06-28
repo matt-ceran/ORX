@@ -30,7 +30,7 @@ export interface DelegationPolicyIoOptions {
 
 export interface DelegationExecutionPolicy {
   version: 1;
-  executionEnabled: false;
+  executionEnabled: boolean;
   maxTaskCostUsd: number;
   taskTimeoutMs: number;
   maxResultBytes: number;
@@ -42,6 +42,7 @@ export interface DelegationExecutionPolicy {
 }
 
 export interface DelegationExecutionPolicyPatch {
+  executionEnabled?: boolean;
   maxTaskCostUsd?: number;
   taskTimeoutMs?: number;
   maxResultBytes?: number;
@@ -186,7 +187,9 @@ export function updateDelegationExecutionPolicy(
   return {
     ok: true,
     policy: next,
-    message: "Delegation execution policy saved. Execution remains disabled.",
+    message: next.executionEnabled
+      ? "Delegation execution policy saved. Execution is enabled for configured delegates."
+      : "Delegation execution policy saved. Execution is disabled.",
   };
 }
 
@@ -198,8 +201,8 @@ export function renderDelegationExecutionPolicy(
   return [
     "ORX delegation execution policy:",
     path ? `  policy_path: ${path}` : undefined,
-    "  execution: disabled",
-    "  delegate_task: unavailable",
+    `  execution: ${normalized.executionEnabled ? "enabled" : "disabled"}`,
+    `  delegate_task: ${normalized.executionEnabled ? "available_when_chat_has_delegate" : "unavailable"}`,
     `  max_task_cost_usd: ${formatPolicyCost(normalized.maxTaskCostUsd)}`,
     `  task_timeout_ms: ${normalized.taskTimeoutMs}`,
     `  max_result_bytes: ${normalized.maxResultBytes}`,
@@ -208,9 +211,9 @@ export function renderDelegationExecutionPolicy(
     `  result_persistence: ${normalized.resultPersistence}`,
     `  result_merge: ${normalized.resultMerge}`,
     `  updated_at: ${normalized.updatedAt ?? "default"}`,
-    "  network_calls: none",
+    `  network_calls: ${normalized.executionEnabled ? "openrouter_delegate_only" : "none"}`,
     "  subprocesses: none",
-    "  enforcement: pending_delegate_task_adapter",
+    "  enforcement: policy_gated_openrouter_adapter",
   ].filter((line): line is string => typeof line === "string").join("\n");
 }
 
@@ -218,7 +221,7 @@ export function sanitizeDelegationExecutionPolicy(value: unknown): DelegationExe
   const record = isRecord(value) ? value : {};
   return {
     version: POLICY_VERSION,
-    executionEnabled: false,
+    executionEnabled: record.executionEnabled === true,
     maxTaskCostUsd: sanitizeCost(record.maxTaskCostUsd, DEFAULT_DELEGATION_POLICY.maxTaskCostUsd),
     taskTimeoutMs: sanitizeInteger(
       record.taskTimeoutMs,
@@ -252,6 +255,12 @@ export function validateDelegationPolicyPatch(
   patch: DelegationExecutionPolicyPatch,
 ): DelegationExecutionPolicyPatch {
   const result: DelegationExecutionPolicyPatch = {};
+  if (patch.executionEnabled !== undefined) {
+    if (typeof patch.executionEnabled !== "boolean") {
+      throw new DelegationPolicyError("Execution must be enabled or disabled.");
+    }
+    result.executionEnabled = patch.executionEnabled;
+  }
   if (patch.maxTaskCostUsd !== undefined) {
     result.maxTaskCostUsd = validatePolicyCost(patch.maxTaskCostUsd);
   }
@@ -307,6 +316,22 @@ export function parseDelegationExecutionPolicySetArgs(
       continue;
     }
 
+    if (arg === "--execution") {
+      patch.executionEnabled = parsePolicyExecutionArg(args, index, arg);
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--enable-execution" || arg === "--enable") {
+      patch.executionEnabled = true;
+      continue;
+    }
+
+    if (arg === "--disable-execution" || arg === "--disable") {
+      patch.executionEnabled = false;
+      continue;
+    }
+
     if (arg === "--timeout-ms" || arg === "--task-timeout-ms") {
       patch.taskTimeoutMs = parsePolicyIntegerArg(args, index, arg);
       index += 1;
@@ -351,6 +376,20 @@ export function parseDelegationExecutionPolicySetArgs(
   }
 
   return validateDelegationPolicyPatch(patch);
+}
+
+function parsePolicyExecutionArg(args: string[], index: number, option: string): boolean {
+  const value = args[index + 1];
+  if (!value || value.startsWith("--")) {
+    throw new DelegationPolicyError(`Missing value for ${option}.`);
+  }
+  if (value === "enabled" || value === "on" || value === "true") {
+    return true;
+  }
+  if (value === "disabled" || value === "off" || value === "false") {
+    return false;
+  }
+  throw new DelegationPolicyError(`${option} must be enabled or disabled.`);
 }
 
 function validatePolicyCost(value: number): number {

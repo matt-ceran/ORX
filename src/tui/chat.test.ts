@@ -1328,6 +1328,60 @@ test("chat persists delegation scaffold state and restores it on resume", async 
   }
 });
 
+test("chat exposes delegate_task only after delegation policy is enabled", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-delegation-enabled-sessions-"));
+  const cwd = mkdtempSync(join(tmpdir(), "orx-chat-delegation-enabled-cwd-"));
+  const policyPath = join(cwd, "delegation", "policy.json");
+  const auditLogPath = join(cwd, "audit", "delegation.jsonl");
+  const requests: Array<Record<string, unknown>> = [];
+
+  try {
+    const capture = createIo({
+      stdin: Readable.from([
+        "/delegate add reviewer openrouter anthropic/claude-sonnet-4.5\n",
+        "/delegate policy set --execution enabled --max-result-bytes 4096\n",
+        "Use the reviewer when useful.\n",
+        "/exit\n",
+      ]),
+      cwd,
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        requests.push(body);
+        return new Response(
+          streamFrom([
+            sse({ choices: [{ delta: { content: "Delegation tool was visible." } }] }),
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    assert.equal(
+      await runChat({
+        apiKey: "test-key",
+        loadedConfig: baseLoadedConfig(),
+        io: capture.io,
+        sessionDirectory,
+        delegationPolicyPath: policyPath,
+        delegationAuditLogPath: auditLogPath,
+      }),
+      0,
+    );
+
+    assert.equal(requests.length, 1);
+    const tools = requests[0].tools as Array<{ function?: { name?: string } }>;
+    assert.ok(Array.isArray(tools));
+    assert.ok(tools.some((tool) => tool.function?.name === "delegate_task"));
+    assert.match(capture.stdout(), /Delegation execution policy saved\. Execution is enabled/);
+    assert.match(capture.stdout(), /assistant: Delegation tool was visible\./);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 test("chat prunes activated skill context after plugin disable", async () => {
   const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
   const registryPath = join(sessionDirectory, "plugins", "registry.json");

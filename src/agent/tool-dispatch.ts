@@ -196,6 +196,7 @@ async function runNativeTool(
       return runDelegateTask(args, {
         ...delegation,
         enabled: delegation?.enabled === true,
+        signal: delegation?.signal ?? signal,
       });
 
     default:

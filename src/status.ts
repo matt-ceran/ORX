@@ -93,6 +93,11 @@ export function formatStatus({
   const testStatus = getTestAdapterSummary(cwd);
   const delegationStatus =
     delegationState === undefined ? undefined : getDelegationStatusSummary(delegationState);
+  const delegationPolicyExecution = delegationPolicy.executionEnabled ? "enabled" : "disabled";
+  const delegateTaskModelExposure =
+    delegationPolicy.executionEnabled && (delegationStatus?.delegateCount ?? 0) > 0
+      ? "available_in_chat"
+      : "unavailable";
   const activeMcpProfiles =
     mcpStatus.activeProfileIds.length > 0 ? mcpStatus.activeProfileIds.join(",") : "none";
   const lines = [
@@ -187,7 +192,7 @@ export function formatStatus({
     `delegation_team_registry_path: ${delegationTeamConfigPath ?? "default"}`,
     `delegation_team_count: ${delegationTeamStatus.count}`,
     `delegation_policy_path: ${delegationPolicyPath ?? "default"}`,
-    "delegation_policy_execution: disabled",
+    `delegation_policy_execution: ${delegationPolicyExecution}`,
     `delegation_policy_max_task_cost_usd: ${delegationPolicy.maxTaskCostUsd}`,
     `delegation_policy_timeout_ms: ${delegationPolicy.taskTimeoutMs}`,
     `delegation_policy_max_result_bytes: ${delegationPolicy.maxResultBytes}`,
@@ -196,13 +201,15 @@ export function formatStatus({
     `delegation_policy_result_persistence: ${delegationPolicy.resultPersistence}`,
     `delegation_policy_result_merge: ${delegationPolicy.resultMerge}`,
     `delegation_audit_path: ${delegationAuditLogPath ?? "default"}`,
-    "delegate_task_runtime: policy_enforced_disabled",
-    "delegate_task_model_exposure: unavailable",
-    "delegate_task_adapter: unavailable",
+    `delegate_task_runtime: ${
+      delegationPolicy.executionEnabled ? "policy_gated_openrouter_adapter" : "policy_enforced_disabled"
+    }`,
+    `delegate_task_model_exposure: ${delegateTaskModelExposure}`,
+    "delegate_task_adapter: openrouter_available",
     delegationStatus ? `orchestration_controller: ${delegationStatus.controller}` : undefined,
-    delegationStatus ? "orchestration_execution: disabled" : undefined,
+    delegationStatus ? `orchestration_execution: ${delegationPolicyExecution}` : undefined,
     delegationStatus ? `delegate_count: ${delegationStatus.delegateCount}` : undefined,
-    delegationStatus ? "delegate_task: unavailable" : undefined,
+    delegationStatus ? `delegate_task: ${delegateTaskModelExposure === "available_in_chat" ? "available_in_chat" : "unavailable"}` : undefined,
     ...mcpStatus.profiles.map(
       (profile) =>
         `mcp_profile: ${formatMcpProfile(profile, mcpStatus.profileHashes[profile.id], {

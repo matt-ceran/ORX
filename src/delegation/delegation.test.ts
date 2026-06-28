@@ -88,25 +88,45 @@ test("delegation state renders an inert empty scaffold", () => {
       "delegate_count: 0",
       "execution: disabled",
       "delegate_task: unavailable",
-      "delegate_task_schema: implemented_but_not_exposed",
-      "runtime_enforcement: policy_enforced_disabled",
+      "delegate_task_schema: policy_gated",
+      "runtime_enforcement: policy_gated_openrouter_adapter",
       "audit_log: configured",
-      "model_exposure: none",
+      "model_exposure: available_when_policy_and_delegate_are_enabled",
       "network_calls: none",
       "subprocesses: none",
       "state_scope: cli-saved-teams-available",
       "readiness_blockers:",
-      "  - delegate_task schema is not exposed to the model yet",
-      "  - OpenRouter delegate adapter is not implemented",
-      "  - live execution enablement remains disabled",
-      "  - delegated model output envelope and merge semantics are not implemented",
+      "  - delegation execution policy must be enabled before model exposure",
+      "  - at least one chat-session delegate is required before model exposure",
       "  - noninteractive CLI cannot attach a saved team to a live chat session",
+      "readiness_notes:",
+      "  - delegated model output is untrusted and must be manually summarized",
     ].join("\n"),
   );
   assert.match(
     renderSessionlessDelegationRefusal("delegate add reviewer openrouter openrouter/auto"),
     /state_changed: no/,
   );
+});
+
+test("delegation readiness reflects policy-enabled chat delegates", () => {
+  const state = addOpenRouterDelegate(
+    createEmptyDelegationState(),
+    "reviewer",
+    "anthropic/claude-sonnet-4.5",
+  ).state;
+
+  const rendered = renderDelegationReadinessPlan(state, {
+    policy: { executionEnabled: true },
+  });
+
+  assert.match(rendered, /execution: enabled/);
+  assert.match(rendered, /delegate_task: available_in_chat/);
+  assert.match(rendered, /model_exposure: available_in_chat/);
+  assert.match(rendered, /network_calls: openrouter_delegate_only_when_enabled/);
+  assert.match(rendered, /readiness_blockers:\n  none/);
+  assert.doesNotMatch(rendered, /delegation execution policy must be enabled/);
+  assert.doesNotMatch(rendered, /at least one chat-session delegate is required/);
 });
 
 test("controller and delegates mutate only local inert state", () => {
@@ -163,7 +183,7 @@ test("delegation execution policy defaults, renders, and resolves isolated paths
     assert.match(rendered, /delegate_task: unavailable/);
     assert.match(rendered, /network_calls: none/);
     assert.match(rendered, /subprocesses: none/);
-    assert.match(rendered, /enforcement: pending_delegate_task_adapter/);
+    assert.match(rendered, /enforcement: policy_gated_openrouter_adapter/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -199,13 +219,16 @@ test("delegation execution policy saves private inert limits and validates patch
       resultPersistence: "none",
       resultMerge: "manual_summary",
     });
+    assert.deepEqual(parseDelegationExecutionPolicySetArgs(["--execution", "enabled"]), {
+      executionEnabled: true,
+    });
 
     const result = updateDelegationExecutionPolicy(parsed, {
       configPath,
       now: () => new Date("2026-06-28T12:00:00.000Z"),
     });
     assert.equal(result.ok, true);
-    assert.match(result.message, /Execution remains disabled/);
+    assert.match(result.message, /Execution is disabled/);
     assert.equal(statSync(join(cwd, "delegation")).mode & 0o777, 0o700);
     assert.equal(statSync(configPath).mode & 0o777, 0o600);
     assert.doesNotMatch(readFileSync(configPath, "utf8"), /OPENROUTER_API_KEY|sk-or-v1/);
@@ -285,7 +308,7 @@ test("delegation execution policy sanitizes malformed persisted values and refus
     rmSync(configPath);
 
     const sanitized = loadDelegationExecutionPolicy({ configPath: targetPath });
-    assert.equal(sanitized.executionEnabled, false);
+    assert.equal(sanitized.executionEnabled, true);
     assert.equal(sanitized.maxTaskCostUsd, 0.25);
     assert.equal(sanitized.taskTimeoutMs, 120_000);
     assert.equal(sanitized.maxResultBytes, 60_000);
@@ -346,7 +369,7 @@ test("delegation execution policy refuses nested symlink parent components", () 
   }
 });
 
-test("delegate_task returns a disabled envelope and hash-only audit entry", () => {
+test("delegate_task returns a disabled envelope and hash-only audit entry", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-"));
   const auditLogPath = join(cwd, "audit", "delegation.jsonl");
   const policyConfigPath = join(cwd, "delegation", "policy.json");
@@ -359,7 +382,7 @@ test("delegate_task returns a disabled envelope and hash-only audit entry", () =
       "anthropic/claude-sonnet-4.5",
     ).state;
 
-    const result = runDelegateTask(
+    const result = await runDelegateTask(
       {
         delegate: "reviewer",
         task: "Review this raw task without leaking it.",
@@ -416,13 +439,140 @@ test("delegate_task returns a disabled envelope and hash-only audit entry", () =
   }
 });
 
-test("delegate_task enforces policy bounds before runtime execution", () => {
+test("delegate_task runs the OpenRouter adapter when policy is enabled", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-live-"));
+  const auditLogPath = join(cwd, "audit", "delegation.jsonl");
+  const policyConfigPath = join(cwd, "delegation", "policy.json");
+  let requestCount = 0;
+  let requestBody = "";
+
+  try {
+    updateDelegationExecutionPolicy(
+      {
+        executionEnabled: true,
+        maxResultBytes: 4_096,
+        taskTimeoutMs: 30_000,
+      },
+      {
+        configPath: policyConfigPath,
+        now: () => new Date("2026-06-28T12:00:00.000Z"),
+      },
+    );
+    const state = addOpenRouterDelegate(
+      createEmptyDelegationState(),
+      "reviewer",
+      "anthropic/claude-sonnet-4.5",
+    ).state;
+
+    const result = await runDelegateTask(
+      {
+        delegate: "reviewer",
+        task: "Review the CLI flow and return one concise finding.",
+        expected_output: "One short finding.",
+        max_result_bytes: 4_096,
+      },
+      {
+        state,
+        policyConfigPath,
+        auditLogPath,
+        enabled: true,
+        apiKey: "sk-or-v1-test",
+        fetch: async (_input, init) => {
+          requestCount += 1;
+          requestBody = String(init?.body);
+          return new Response(
+            streamFrom([
+              'data: {"model":"anthropic/claude-sonnet-4.5","choices":[{"delta":{"content":"Finding: adapter path is bounded."},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}\n\n',
+              "data: [DONE]\n\n",
+            ]),
+            { status: 200, headers: { "content-type": "text/event-stream" } },
+          );
+        },
+        now: () => new Date("2026-06-28T12:00:01.000Z"),
+      },
+    );
+
+    assert.equal(requestCount, 1);
+    assert.match(requestBody, /"model":"anthropic\/claude-sonnet-4\.5"/);
+    assert.doesNotMatch(requestBody, /"tools"/);
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "completed");
+    assert.equal(result.executionEnabled, true);
+    assert.equal(result.delegateTaskAvailable, true);
+    assert.equal(result.networkAttempted, true);
+    assert.equal(result.modelExposure, "untrusted_delegate_task_result");
+    assert.match(result.result, /^UNTRUSTED DELEGATE OUTPUT/);
+    assert.match(result.result, /Finding: adapter path is bounded\./);
+    assert.match(result.resultHash, /^sha256:[a-f0-9]{64}$/);
+    assert.equal(result.resultTruncated, false);
+    assert.deepEqual(result.usage, {
+      promptTokens: 11,
+      completionTokens: 7,
+      totalTokens: 18,
+    });
+
+    const audit = readFileSync(auditLogPath, "utf8");
+    assert.match(audit, /"status":"completed"/);
+    assert.equal(JSON.parse(audit).ok, true);
+    assert.match(audit, /"networkAttempted":true/);
+    assert.match(audit, /"resultHash":"sha256:[a-f0-9]{64}"/);
+    assert.doesNotMatch(audit, /Review the CLI flow|adapter path is bounded/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegate_task refuses secret-like live payloads before network", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-secret-"));
+  const auditLogPath = join(cwd, "audit", "delegation.jsonl");
+  const policyConfigPath = join(cwd, "delegation", "policy.json");
+  let requestCount = 0;
+
+  try {
+    updateDelegationExecutionPolicy({ executionEnabled: true }, { configPath: policyConfigPath });
+    const state = addOpenRouterDelegate(createEmptyDelegationState(), "reviewer", "openrouter/auto").state;
+
+    const result = await runDelegateTask(
+      {
+        delegate: "reviewer",
+        task: "Review this Authorization: Bearer abcdefgh12345678 before sending.",
+      },
+      {
+        state,
+        policyConfigPath,
+        auditLogPath,
+        enabled: true,
+        apiKey: "sk-or-v1-test",
+        fetch: async () => {
+          requestCount += 1;
+          return new Response(streamFrom(["data: [DONE]\n\n"]), {
+            status: 200,
+            headers: { "content-type": "text/event-stream" },
+          });
+        },
+      },
+    );
+
+    assert.equal(requestCount, 0);
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "invalid_arguments");
+    assert.equal(result.error.code, "DELEGATE_TASK_SECRET_LIKE_INPUT");
+    assert.equal(result.networkAttempted, false);
+    const audit = readFileSync(auditLogPath, "utf8");
+    assert.match(audit, /"errorCode":"DELEGATE_TASK_SECRET_LIKE_INPUT"/);
+    assert.doesNotMatch(audit, /abcdefgh12345678/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegate_task enforces policy bounds before runtime execution", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-policy-"));
   const auditLogPath = join(cwd, "audit", "delegation.jsonl");
   const policyConfigPath = join(cwd, "delegation", "policy.json");
 
   try {
-    const result = runDelegateTask(
+    const result = await runDelegateTask(
       {
         task: "Stay inside policy.",
         max_result_bytes: 999_999,
@@ -448,7 +598,7 @@ test("delegate_task enforces policy bounds before runtime execution", () => {
   }
 });
 
-test("delegate_task audit writes refuse symlink parent directories", () => {
+test("delegate_task audit writes refuse symlink parent directories", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-symlink-"));
   const targetDir = join(cwd, "target");
   const linkDir = join(cwd, "link");
@@ -458,7 +608,7 @@ test("delegate_task audit writes refuse symlink parent directories", () => {
     mkdirSync(targetDir);
     symlinkSync(targetDir, linkDir, "dir");
 
-    const result = runDelegateTask(
+    const result = await runDelegateTask(
       {
         task: "Do not write through symlinks.",
       },
@@ -480,7 +630,7 @@ test("delegate_task audit writes refuse symlink parent directories", () => {
   }
 });
 
-test("delegate_task audit writes refuse nested symlink parent components", () => {
+test("delegate_task audit writes refuse nested symlink parent components", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-nested-symlink-"));
   const targetDir = join(cwd, "target");
   const targetChildDir = join(targetDir, "child");
@@ -491,7 +641,7 @@ test("delegate_task audit writes refuse nested symlink parent components", () =>
     mkdirSync(targetChildDir, { recursive: true });
     symlinkSync(targetDir, linkDir, "dir");
 
-    const result = runDelegateTask(
+    const result = await runDelegateTask(
       {
         task: "Do not write through nested symlinks.",
       },
@@ -846,3 +996,15 @@ test("delegation team ids and paths are sanitized", () => {
     "/tmp/work/delegation/teams.json",
   );
 });
+
+function streamFrom(chunks: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+      }
+      controller.close();
+    },
+  });
+}

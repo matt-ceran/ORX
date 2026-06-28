@@ -2761,7 +2761,12 @@ function handleOrchestratorCommand(command: SlashCommand, context: SlashCommandC
   }
 
   if (subcommand === "plan" || subcommand === "readiness") {
-    writeLine(context.io.stdout, renderDelegationReadinessPlan(getDelegationState(context)));
+    writeLine(
+      context.io.stdout,
+      renderDelegationReadinessPlan(getDelegationState(context), {
+        policy: loadDelegationExecutionPolicy({ configPath: context.delegationPolicyPath }),
+      }),
+    );
     return;
   }
 
@@ -2816,7 +2821,12 @@ function handleDelegatesCommand(command: SlashCommand, context: SlashCommandCont
   }
 
   if (subcommand === "plan" || subcommand === "readiness") {
-    writeLine(context.io.stdout, renderDelegationReadinessPlan(getDelegationState(context)));
+    writeLine(
+      context.io.stdout,
+      renderDelegationReadinessPlan(getDelegationState(context), {
+        policy: loadDelegationExecutionPolicy({ configPath: context.delegationPolicyPath }),
+      }),
+    );
     return;
   }
 
@@ -2965,11 +2975,11 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
         "  /delegate remove <name>",
         "  /delegate clear",
         "  /delegate policy",
-        "  /delegate policy set --max-cost-usd <n> --timeout-ms <ms>",
+        "  /delegate policy set --execution enabled|disabled --max-cost-usd <n> --timeout-ms <ms>",
         "  /delegate team save <id>",
         "  /delegate team use <id>",
         "  /delegates",
-        "Execution is disabled; delegate_task is unavailable in this scaffold.",
+        "Execution is policy-gated; delegate_task is available in chat only after policy is enabled and a delegate is configured.",
       ].join("\n"),
     );
     return;
@@ -2981,7 +2991,12 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
   }
 
   if (subcommand === "plan" || subcommand === "readiness") {
-    writeLine(context.io.stdout, renderDelegationReadinessPlan(getDelegationState(context)));
+    writeLine(
+      context.io.stdout,
+      renderDelegationReadinessPlan(getDelegationState(context), {
+        policy: loadDelegationExecutionPolicy({ configPath: context.delegationPolicyPath }),
+      }),
+    );
     return;
   }
 
@@ -3108,7 +3123,7 @@ function handleDelegationPolicySlashCommand(
 
   writeLine(
     context.io.stderr,
-    `Usage: ${usagePrefix} [status|set --max-cost-usd <n> --timeout-ms <ms> --max-result-bytes <bytes> --max-concurrent <n> --credentials none --result-persistence none --result-merge manual_summary]`,
+    `Usage: ${usagePrefix} [status|set --execution enabled|disabled --max-cost-usd <n> --timeout-ms <ms> --max-result-bytes <bytes> --max-concurrent <n> --credentials none --result-persistence none --result-merge manual_summary]`,
   );
 }
 

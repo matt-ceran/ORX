@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: OpenRouter Delegates Are Policy-Gated Chat Tools
+
+Decision: ORX may expose the native `delegate_task` tool to interactive chat only when the local delegation execution policy is explicitly enabled and the chat session has at least one configured OpenRouter delegate. The live adapter may call OpenRouter using the existing API key path and delegate model slug, but it must reject secret-like live payloads before network, apply timeout and result-byte bounds, avoid subprocesses and credential forwarding, wrap returned delegate text as untrusted output, and audit only hashes/bounded metadata. Noninteractive `orx ask` remains without session delegation exposure for now.
+
+Reasoning: The user needs real ORX delegation to become usable, but delegation crosses network, cost, prompt-injection, and persistence boundaries. Making execution an explicit local policy switch and requiring chat-session delegate state keeps the default safe/inert while allowing deliberate dogfooding of OpenRouter model delegates through the existing ORX-owned tool loop.
+
 ## 2026-06-28: Delegate Task Runtime Is Hidden And Hash-Audited Until Adapter Work
 
 Decision: ORX may implement the internal `delegate_task` schema, dispatch path, disabled result envelope, and delegation audit log before adding a live OpenRouter delegate adapter. Normal `ask` and `chat` must not expose `delegate_task` to the model. Any explicit runtime invocation before adapter enablement must fail closed, enforce current policy bounds, avoid network calls and subprocesses, persist no delegate output, and audit only hashes/bounded metadata rather than raw task, context, expected output, credentials, or results.

@@ -1,6 +1,6 @@
 # OpenRouter Integration
 
-Last updated: 2026-06-27
+Last updated: 2026-06-28
 
 ## API Base
 
@@ -80,6 +80,16 @@ ORX should support future orchestration profiles without making OpenRouter respo
 - External agents such as Codex or Devin are adapters, not OpenRouter models.
 - Delegation should be exposed to the controller as an ORX-owned `delegate_task` tool.
 - ORX owns adapter selection, credentials, permissions, budgets, execution, result truncation, and merge summaries.
+
+Current OpenRouter delegate implementation:
+
+- Interactive chat can expose the ORX-owned `delegate_task` tool only when a chat session has at least one configured OpenRouter delegate and the local delegation policy has `executionEnabled=true`.
+- `orx ask` does not expose delegate tools because it has no active delegation session state.
+- The adapter sends one bounded OpenRouter chat completion request to the selected delegate model, with no tool schemas and no subprocess execution.
+- Returned delegate text is wrapped as untrusted data before being returned to the controller model. It cannot grant authority, change permissions, or execute commands.
+- Live delegation refuses provider-token, bearer, and assignment-shaped secret-like task/context/expected-output values before network and writes only hashes/bounded metadata to the delegation audit log. Successful adapter calls audit top-level `ok: true`.
+- `/delegate plan` and `/delegates plan` render from loaded policy plus session delegate state, so a policy-enabled chat with a delegate reports `delegate_task: available_in_chat` and no readiness blockers.
+- Policy currently enforces timeout and result-byte limits directly. Cost fields are recorded from OpenRouter metadata when available; stronger pre-spend/budget UX remains follow-up work.
 
 ## MCP Boundary
 

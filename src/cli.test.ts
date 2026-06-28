@@ -103,7 +103,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), new RegExp(`delegation_audit_path: ${escapeRegExp(join(cwd, "audit", "delegation.jsonl"))}`));
     assert.match(status.stdout(), /delegate_task_runtime: policy_enforced_disabled/);
     assert.match(status.stdout(), /delegate_task_model_exposure: unavailable/);
-    assert.match(status.stdout(), /delegate_task_adapter: unavailable/);
+    assert.match(status.stdout(), /delegate_task_adapter: openrouter_available/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -130,7 +130,7 @@ test("cli delegation commands render readiness and refuse session-less mutation 
   assert.equal(await runCli(["node", "cli", "delegates", "plan"], {}, delegates.io), 0);
   assert.match(delegates.stdout(), /ORX delegates scaffold:/);
   assert.match(delegates.stdout(), /delegates: 0/);
-  assert.match(delegates.stdout(), /delegate_task schema is not exposed to the model yet/);
+  assert.match(delegates.stdout(), /delegation execution policy must be enabled before model exposure/);
   assert.equal(delegates.stderr(), "");
 
   const refusedController = createIo({ fetch });

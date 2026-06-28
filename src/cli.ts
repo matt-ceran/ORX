@@ -350,7 +350,7 @@ export async function runCli(
   }
 
   if (first === "orchestrator") {
-    return runOrchestratorCommand(args.slice(1), io);
+    return runOrchestratorCommand(args.slice(1), io, delegationPolicyPath);
   }
 
   if (first === "delegate") {
@@ -611,14 +611,21 @@ function runCodeSymbolsCommand(args: string[], io: CliIo): number {
   return 0;
 }
 
-function runOrchestratorCommand(args: string[], io: CliIo): number {
+function runOrchestratorCommand(args: string[], io: CliIo, delegationPolicyPath: string): number {
   const subcommand = args[0]?.toLowerCase() ?? "status";
   const emptyState = createEmptyDelegationState();
 
   if (subcommand === "status" || subcommand === "plan" || subcommand === "readiness") {
     writeLine(
       io.stdout,
-      [renderOrchestratorStatus(emptyState), "", renderDelegationReadinessPlan(emptyState, { surface: "cli" })].join("\n"),
+      [
+        renderOrchestratorStatus(emptyState),
+        "",
+        renderDelegationReadinessPlan(emptyState, {
+          surface: "cli",
+          policy: loadDelegationExecutionPolicy({ configPath: delegationPolicyPath }),
+        }),
+      ].join("\n"),
     );
     return 0;
   }
@@ -671,7 +678,14 @@ function runDelegateCommand(
   if (subcommand === "status" || subcommand === "list" || subcommand === "plan" || subcommand === "readiness") {
     writeLine(
       io.stdout,
-      [renderDelegates(emptyState), "", renderDelegationReadinessPlan(emptyState, { surface: "cli" })].join("\n"),
+      [
+        renderDelegates(emptyState),
+        "",
+        renderDelegationReadinessPlan(emptyState, {
+          surface: "cli",
+          policy: loadDelegationExecutionPolicy({ configPath: delegationPolicyPath }),
+        }),
+      ].join("\n"),
     );
     return 0;
   }
@@ -755,7 +769,14 @@ function runDelegatesCommand(
   if (subcommand === "list" || subcommand === "status") {
     writeLine(
       io.stdout,
-      [renderDelegates(emptyState), "", renderDelegationReadinessPlan(emptyState, { surface: "cli" })].join("\n"),
+      [
+        renderDelegates(emptyState),
+        "",
+        renderDelegationReadinessPlan(emptyState, {
+          surface: "cli",
+          policy: loadDelegationExecutionPolicy({ configPath: delegationPolicyPath }),
+        }),
+      ].join("\n"),
     );
     return 0;
   }
@@ -763,7 +784,14 @@ function runDelegatesCommand(
   if (subcommand === "plan" || subcommand === "readiness") {
     writeLine(
       io.stdout,
-      [renderDelegates(emptyState), "", renderDelegationReadinessPlan(emptyState, { surface: "cli" })].join("\n"),
+      [
+        renderDelegates(emptyState),
+        "",
+        renderDelegationReadinessPlan(emptyState, {
+          surface: "cli",
+          policy: loadDelegationExecutionPolicy({ configPath: delegationPolicyPath }),
+        }),
+      ].join("\n"),
     );
     return 0;
   }
@@ -946,7 +974,7 @@ function runDelegationPolicyCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx delegates policy [status|set --max-cost-usd <n> --timeout-ms <ms> --max-result-bytes <bytes> --max-concurrent <n> --credentials none --result-persistence none --result-merge manual_summary]",
+    "Usage: orx delegates policy [status|set --execution enabled|disabled --max-cost-usd <n> --timeout-ms <ms> --max-result-bytes <bytes> --max-concurrent <n> --credentials none --result-persistence none --result-merge manual_summary]",
   );
   return 1;
 }

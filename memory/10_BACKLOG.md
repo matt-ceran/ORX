@@ -102,11 +102,12 @@ Completed:
 - Add Phase 11 saved disabled delegation teams: private `~/.orx/delegation/teams.json` registry with `ORX_DELEGATION_TEAMS_PATH`, `orx delegates teams|save|inspect|use|delete`, `orx delegate team ...`, `/delegates teams|save|inspect|use|delete`, `/delegate team ...`, slash load into session-local inert state, and no execution/network/subprocess/model-visible `delegate_task`.
 - Add Phase 11 inert delegation execution policy: private `~/.orx/delegation/policy.json` storage with `ORX_DELEGATION_POLICY_PATH`, `orx delegate policy`, `orx delegates policy`, `/delegate policy`, `/delegates policy`, policy limits for future cost/timeout/result bytes/concurrency, fixed inert credential/result modes, `/status` visibility, and no execution/network/subprocess/model-visible `delegate_task`.
 - Add Phase 11 disabled `delegate_task` runtime contract: optional hidden native schema, dispatch path, policy-bounded argument validation, sanitized disabled delegate resolution, fail-closed result envelope, hash-only audit JSONL at `~/.orx/audit/delegation.jsonl` with `ORX_DELEGATION_AUDIT_PATH`, status/readiness visibility, and no OpenRouter delegate call/subprocess/output persistence/model exposure in normal chat.
+- Add policy-gated OpenRouter delegate adapter: explicit `--execution enabled|disabled`, chat-only `delegate_task` exposure when policy plus delegate state are present, OpenRouter streaming delegate calls, untrusted result wrapping, secret-like live payload refusal, hash-only audit metadata, and no subprocess or credential forwarding.
 
 Next:
 
 - Add managed OAuth/provider auth setup beyond the current env-only MCP bearer readiness path.
-- Add OpenRouter delegate adapter behind the existing policy, audit, and result-envelope contract; keep normal model-visible `delegate_task` exposure disabled until live execution enforcement and result merge boundaries are verified.
+- Dogfood policy-enabled OpenRouter delegation with a real key using isolated policy/audit paths, then tighten observed-cost/budget reporting, result merge controls, and delegate team/profile ergonomics.
 - Add secret redaction and minimal env forwarding for future stdio/child-process MCP runners if ORX adds them beyond the current remote HTTP path.
 
 ## P4
@@ -175,7 +176,7 @@ Next:
 - Add research profiles: `research-web`, `research-crawl`, `research-scholar`, `research-docs`, `research-browser`, `research-rag`, and `research-memory`.
 - Extend citation support later with style selection and richer paper/PDF identifiers after scholarly/document source adapters exist.
 - Extend saved orchestration teams with active execution policy selection only after model-visible `delegate_task` boundaries, live policy enforcement, result merge, and audit semantics are implemented.
-- Add OpenRouter delegate adapter.
+- Add stronger live delegated-task budget UX, observed-cost reporting, and result merge controls.
 - Add Codex delegate adapter.
 - Add Devin delegate adapter through MCP/API when credentials are configured.
 - Add live budget, permission, timeout, and result-truncation enforcement for delegated tasks.
