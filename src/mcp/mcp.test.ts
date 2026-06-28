@@ -226,12 +226,70 @@ test("plugin MCP profile hash changes when cached component declarations change"
   }
 });
 
-test("plugin MCP discovery is render-only and never contacts plugin endpoints", async () => {
-  let fetchCalls = 0;
+test("plugin MCP discovery contacts enabled trusted remote-http endpoints without executing tools", async () => {
+  const seenRequests: Array<{ url: string; method?: string; body?: string }> = [];
   const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-mcp-discovery-"));
   const registryPath = join(cwd, "plugins", "registry.json");
   const configPath = join(cwd, "mcp", "profiles.json");
   const manifestPath = writePluginWithMcpProfile(cwd);
+  const profileId = "plugin:acme.mcp-plugin@1.0.0:context7";
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.mcp-plugin@1.0.0", true, { registryPath });
+    setMcpProfilePersistentState(profileId, "enabled", {
+      configPath,
+      pluginRegistryPath: registryPath,
+    });
+
+    const result = await discoverMcpProfile(profileId, {
+      configPath,
+      pluginRegistryPath: registryPath,
+      fetch: async (input, init) => {
+        seenRequests.push({
+          url: String(input),
+          method: init?.method,
+          body: String(init?.body),
+        });
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-discovery-1",
+            result: {
+              protocolVersion: "2025-03-26",
+              capabilities: {
+                tools: {},
+              },
+              serverInfo: {
+                name: "context7",
+                version: "test",
+              },
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    assert.equal(seenRequests.length, 1);
+    assert.equal(seenRequests[0].url, "https://mcp.context7.example/mcp");
+    assert.equal(seenRequests[0].method, "POST");
+    assert.match(seenRequests[0].body ?? "", /"method":"initialize"/);
+    assert.equal(result.status, "ok");
+    assert.equal(result.networkAttempted, true);
+    assert.equal(result.serverInfo?.name, "context7");
+    assert.match(formatMcpDiscoveryResult(result), /tool_execution: not implemented/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugin MCP discovery blocks guarded plugin URLs before fetch", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-mcp-discovery-blocked-"));
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const manifestPath = writePluginWithMcpProfile(cwd, "http://127.0.0.1/mcp");
   const profileId = "plugin:acme.mcp-plugin@1.0.0:context7";
 
   try {
@@ -252,9 +310,43 @@ test("plugin MCP discovery is render-only and never contacts plugin endpoints", 
     });
 
     assert.equal(fetchCalls, 0);
-    assert.equal(result.status, "plugin_discovery_disabled");
+    assert.equal(result.status, "blocked_url");
     assert.equal(result.networkAttempted, false);
-    assert.match(formatMcpDiscoveryResult(result), /render-only/);
+    assert.match(formatMcpDiscoveryResult(result), /Blocked local or private IPv4 address/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugin MCP discovery vets DNS before native endpoint requests", async () => {
+  const resolvedHosts: string[] = [];
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-mcp-discovery-dns-"));
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const manifestPath = writePluginWithMcpProfile(cwd);
+  const profileId = "plugin:acme.mcp-plugin@1.0.0:context7";
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.mcp-plugin@1.0.0", true, { registryPath });
+    setMcpProfilePersistentState(profileId, "enabled", {
+      configPath,
+      pluginRegistryPath: registryPath,
+    });
+
+    const result = await discoverMcpProfile(profileId, {
+      configPath,
+      pluginRegistryPath: registryPath,
+      resolveHost: async (hostname) => {
+        resolvedHosts.push(hostname);
+        return [{ address: "127.0.0.1", family: 4 }];
+      },
+    });
+
+    assert.deepEqual(resolvedHosts, ["mcp.context7.example"]);
+    assert.equal(result.status, "network_error");
+    assert.equal(result.networkAttempted, true);
+    assert.match(result.error ?? "", /Blocked resolved local or private IP address: 127\.0\.0\.1/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -937,7 +1029,10 @@ test("mcp discovery bounds long thrown network errors", async () => {
   }
 });
 
-function writePluginWithMcpProfile(cwd: string): string {
+function writePluginWithMcpProfile(
+  cwd: string,
+  url = "https://mcp.context7.example/mcp",
+): string {
   const pluginDirectory = join(cwd, "plugin");
   const manifestPath = join(pluginDirectory, "orx-plugin.json");
   mkdirSync(pluginDirectory, { recursive: true });
@@ -949,7 +1044,7 @@ function writePluginWithMcpProfile(cwd: string): string {
           name: "Context7 docs",
           transport: {
             kind: "remote-http",
-            url: "https://mcp.context7.example/mcp",
+            url,
           },
           authRequired: false,
           tools: [

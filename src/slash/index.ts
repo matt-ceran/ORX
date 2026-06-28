@@ -37,6 +37,7 @@ import {
   setMcpProfilePersistentState,
   writeMcpAuditEvent,
   type McpAuditEvent,
+  type ResolveMcpHost,
 } from "../mcp/index.js";
 import {
   formatOpenRouterCredits,
@@ -195,6 +196,8 @@ export interface SlashCommandContext {
   io: SlashIo;
   loadedConfig: LoadedConfig;
   fetch?: typeof fetch;
+  mcpDiscoveryFetch?: typeof fetch;
+  mcpResolveHost?: ResolveMcpHost;
   webFetch?: typeof fetch;
   webSearchFetch?: typeof fetch;
   browserSnapshot?: BrowserSnapshotDriver;
@@ -2242,7 +2245,8 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
     const result = await discoverMcpProfile(profileId, {
       configPath: context.mcpConfigPath,
       pluginRegistryPath: context.pluginRegistryPath,
-      fetch: context.fetch,
+      fetch: context.mcpDiscoveryFetch,
+      resolveHost: context.mcpResolveHost,
     });
     tryWriteMcpAuditEvent(context, {
       type: "mcp.profile.discovery_attempt",

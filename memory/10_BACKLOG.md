@@ -116,10 +116,11 @@ Next:
   - Add plugin markdown prompt-command activation: enabled-plugin-only `components.commands` discovery from cached manifests, metadata-only `/prompts list`, explicit `/prompts activate <id>`, activated prompt provenance in sessions, and untrusted prompt system messages while executable plugin commands remain inactive.
   - Add plugin markdown rule activation: enabled-plugin-only `components.rules` discovery from cached manifests, metadata-only `/rules list`, explicit `/rules activate <id>`, activated rule provenance in sessions, and untrusted advisory rule system messages while executable plugin surfaces remain inactive.
   - Add inert plugin manifest metadata: sanitized homepage/docs/license/trust tier/auth/privacy/runtime fields, `/plugins inspect` risk/requirements rendering, summary trust/auth state, and secret/control-character rejection while metadata remains display-only.
-  - Add render-only plugin MCP presets: enabled-plugin-only cached `components.mcpServers` JSON discovery, namespaced `plugin:<plugin-id>:<server-id>` profiles, MCP policy/status/inspect/tools visibility, profile hashes with plugin provenance, and no plugin endpoint discovery/tool execution.
+  - Add render-only plugin MCP presets: enabled-plugin-only cached `components.mcpServers` JSON discovery, namespaced `plugin:<plugin-id>:<server-id>` profiles, MCP policy/status/inspect/tools visibility, profile hashes with plugin provenance, and no plugin tool runtime; later work adds guarded endpoint discovery.
   - Add render-only plugin hook discovery and hash trust: enabled-plugin-only cached `components.hooks` JSON discovery, namespaced `plugin:<plugin-id>:<hook-id>` hooks, `orx hooks` and `/hooks` list/inspect/trust/untrust, private trusted hash state, status counts for definitions/trusted/pending, and no hook execution.
   - Add trusted hook manual runtime: `orx hooks run <id>` and `/hooks run <id>` execute only trusted current hook hashes from the cached plugin root/safe relative cwd, copy declared hook cwd directories into the cache, forward only declared env names, apply timeout/output caps, redact forwarded env values, fail closed on audit-write failures, and audit to private JSONL.
   - Add automatic trusted plugin lifecycle hook dispatch: trusted current hook hashes run on `session_start`, `user_prompt_submit`, `pre_tool_use`, `post_tool_use`, `pre_compact`, `post_compact`, and `stop`, while untrusted/pending hooks are skipped and failures are visible/audited.
+  - Add trusted plugin MCP endpoint discovery: enabled/trusted/unchanged plugin `remote-http` profiles can run a guarded DNS-vetted `/mcp discover` initialize handshake without listing/executing tools or exposing them to the model loop.
 
 - Extend browser automation beyond static DNS-bound document snapshots when a safe browser-network/proxy design can preserve SSRF protections.
 - Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
@@ -127,7 +128,7 @@ Next:
 - Add MCP presets: `openrouter`, `context7`, `github-readonly`, `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
 - Extend the plugin system beyond the local registry/CLI/cache/catalog substrate with remote source fetching, lockfile pins for remote sources, richer metadata, and namespacing.
 - Add executable slash command design after the prompt/rule metadata, explicit activation surfaces, and trusted lifecycle hook runtime.
-- Add plugin MCP endpoint discovery and tool execution only after explicit runtime trust, network, secret-forwarding, and audit policy is designed.
+- Add plugin MCP tool listing/execution only after explicit runtime trust, network, secret-forwarding, and audit policy is designed.
 - Extend plugin metadata further only where needed for remote source UX, marketplace/catalog trust, or executable surface policy decisions.
 - Add `/plugins` command for list/install/enable/disable/inspect.
 - Add tree-sitter and ast-grep code intelligence for repo maps, symbol slices, syntax-aware search, and codemod previews.

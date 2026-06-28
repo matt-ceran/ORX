@@ -4,6 +4,8 @@ export {
   type McpDiscoveryOptions,
   type McpDiscoveryResult,
   type McpDiscoveryStatus,
+  type ResolveMcpHost,
+  type ResolvedMcpHostAddress,
 } from "./discovery.js";
 export {
   OPENROUTER_MCP_PROFILE,

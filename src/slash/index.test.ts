@@ -1043,7 +1043,7 @@ test("mcp slash command reports disabled OpenRouter profile without network and 
   const harness = createSlashHarness({
     mcpAuditLogPath: auditLogPath,
     mcpConfigPath: configPath,
-    fetch: async () => {
+    mcpDiscoveryFetch: async () => {
       fetchCalls += 1;
       throw new Error("fetch should not be called");
     },
@@ -1377,7 +1377,10 @@ test("mcp discover calls fetch for enabled trusted profile and does not execute 
   const harness = createSlashHarness({
     mcpAuditLogPath: auditLogPath,
     mcpConfigPath: configPath,
-    fetch: async (input, init) => {
+    fetch: async () => {
+      throw new Error("general fetch should not be used for MCP discovery");
+    },
+    mcpDiscoveryFetch: async (input, init) => {
       seenRequests.push(`${String(input)} ${init?.method ?? ""} ${String(init?.body)}`);
       return new Response(
         JSON.stringify({
@@ -1441,7 +1444,7 @@ test("mcp discover blocks pending schema change without network", async () => {
   const harness = createSlashHarness({
     mcpAuditLogPath: auditLogPath,
     mcpConfigPath: configPath,
-    fetch: async () => {
+    mcpDiscoveryFetch: async () => {
       fetchCalls += 1;
       throw new Error("fetch should not be called");
     },
@@ -1468,7 +1471,7 @@ test("mcp discover auth-required result and audit do not leak API-like secrets",
   const harness = createSlashHarness({
     mcpAuditLogPath: auditLogPath,
     mcpConfigPath: configPath,
-    fetch: async () => new Response("Bearer sk-or-v1-secret", { status: 403 }),
+    mcpDiscoveryFetch: async () => new Response("Bearer sk-or-v1-secret", { status: 403 }),
   });
 
   try {
@@ -1616,7 +1619,7 @@ test("plugins register, list, inspect, enable, and disable without network or ex
   }
 });
 
-test("mcp slash commands show plugin-provided presets without endpoint discovery", async () => {
+test("mcp slash commands discover trusted plugin-provided remote-http presets", async () => {
   let fetchCalls = 0;
   const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-mcp-slash-"));
   const registryPath = join(cwd, "registry", "plugins.json");
@@ -1626,9 +1629,25 @@ test("mcp slash commands show plugin-provided presets without endpoint discovery
   const harness = createSlashHarness({
     pluginRegistryPath: registryPath,
     mcpConfigPath: configPath,
-    fetch: async () => {
+    mcpDiscoveryFetch: async () => {
       fetchCalls += 1;
-      throw new Error("fetch should not be called");
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: "orx-discovery-1",
+          result: {
+            protocolVersion: "2025-03-26",
+            capabilities: {
+              tools: {},
+            },
+            serverInfo: {
+              name: "plugin-docs",
+              version: "test",
+            },
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
     },
   });
 
@@ -1656,9 +1675,10 @@ test("mcp slash commands show plugin-provided presets without endpoint discovery
     assert.match(harness.stdout(), /MCP profile plugin:acme\.mcp-slash-plugin@1\.0\.0:docs enabled/);
 
     assert.equal(await handleSlashCommand(`/mcp discover ${profileId}`, harness.context), "continue");
-    assert.equal(fetchCalls, 0);
-    assert.match(harness.stdout(), /status: plugin_discovery_disabled/);
-    assert.match(harness.stdout(), /render-only/);
+    assert.equal(fetchCalls, 1);
+    assert.match(harness.stdout(), /status: ok/);
+    assert.match(harness.stdout(), /server_name: plugin-docs/);
+    assert.match(harness.stdout(), /tool_execution: not implemented/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -2538,6 +2558,8 @@ function createSlashHarness(
     recordActivatedSkill?: SlashCommandContext["recordActivatedSkill"];
     resumeSession?: SlashCommandContext["resumeSession"];
     fetch?: typeof fetch;
+    mcpDiscoveryFetch?: typeof fetch;
+    mcpResolveHost?: SlashCommandContext["mcpResolveHost"];
     webFetch?: typeof fetch;
     webSearchFetch?: typeof fetch;
     browserSnapshot?: SlashCommandContext["browserSnapshot"];
@@ -2588,6 +2610,8 @@ function createSlashHarness(
       },
       loadedConfig,
       fetch: options.fetch,
+      mcpDiscoveryFetch: options.mcpDiscoveryFetch,
+      mcpResolveHost: options.mcpResolveHost,
       webFetch: options.webFetch,
       webSearchFetch: options.webSearchFetch,
       browserSnapshot: options.browserSnapshot,

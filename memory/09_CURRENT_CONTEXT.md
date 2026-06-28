@@ -28,7 +28,7 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` as untrusted context; executable plugin commands remain inactive.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
-- Enabled plugin `components.mcpServers` JSON can contribute render-only MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, and `/status`; `/mcp discover` refuses plugin-sourced profiles and no plugin MCP tools execute.
+- Enabled plugin `components.mcpServers` JSON can contribute MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp enable`, `/mcp discover`, and `/status`; trusted unchanged `remote-http` plugin profiles can be discovered through guarded DNS-vetted initialize handshakes, but no plugin MCP tools execute.
 - Enabled plugin `components.hooks` JSON can contribute hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run manually through `hooks run` / `/hooks run` or automatically on matching lifecycle events with minimal env/cwd and JSONL audit logging.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
@@ -65,6 +65,16 @@ Current files:
 
 ## Latest Work
 
+Implemented trusted plugin MCP endpoint discovery:
+
+- `/mcp discover <profile>` now supports plugin-provided `remote-http` MCP profiles after the profile is enabled, has a trusted current hash, and has no pending schema change.
+- Plugin discovery uses the same explicit profile trust gates as built-in MCP discovery, plus URL guarding before any network attempt.
+- Production MCP discovery now uses a Node-native guarded POST transport: DNS is resolved and vetted before connecting, local/private/reserved/metadata results are rejected, requests are bound to a vetted address, responses are byte-bounded, and injected `fetch` is reserved for tests.
+- Discovery performs only a minimal JSON-RPC `initialize` handshake. It reports server/protocol/capability summary, auth-required, blocked URL, DNS/network, and schema states, and it still renders `tool_execution: not implemented`.
+- Slash command wiring now separates MCP discovery test hooks from the general OpenRouter fetch hook, so live `/mcp discover` does not accidentally use generic `globalThis.fetch`.
+- Focused verification: `npm run typecheck` and `npm run build && node --test dist/mcp/mcp.test.js dist/slash/index.test.js` pass with 99 tests.
+- Next likely plugin work: plugin MCP tool listing/execution policy or executable plugin slash-command design.
+
 Implemented automatic trusted plugin lifecycle hook dispatch:
 
 - Added `runTrustedPluginHooksForEvent` for event-scoped hook execution that discovers enabled cached hooks, runs only operator-trusted current hashes, and skips untrusted or pending-hash hooks without spawning them.
@@ -74,7 +84,7 @@ Implemented automatic trusted plugin lifecycle hook dispatch:
 - Moved readline creation until after `session_start` hooks complete so finite/non-TTY input streams cannot be consumed before the chat loop starts.
 - `/status` now shows `plugin_hook_runtime: manual_and_lifecycle`, and `plugin_enabled_hooks` reflects trusted current hook hashes.
 - Focused verification: `npm run typecheck`, `npm run build`, and build-backed focused CLI/plugin/slash/chat tests pass with 155 tests after verifier fixes. Full `npm test` passes with 318 tests.
-- Next likely plugin work: executable plugin slash-command design or plugin MCP endpoint discovery/runtime trust policy.
+- Next likely plugin work: executable plugin slash-command design or plugin MCP tool listing/execution policy.
 
 Implemented trusted plugin hook manual runtime:
 
@@ -86,16 +96,16 @@ Implemented trusted plugin hook manual runtime:
 - Declared hook cwd directories are copied into the ORX-owned cache during install, including when the hooks JSON file itself is nested inside the cwd, so trusted hooks continue to run from cached plugin state after the original source checkout is removed. Successful hook commands whose audit event cannot be persisted are treated as failed runs.
 - That slice exposed hook audit/status fields before later lifecycle dispatch updated the runtime to `manual_and_lifecycle`.
 - Verification: `npm run typecheck`, `npm run build && node --test dist/plugins/hooks.test.js dist/plugins/registry.test.js dist/cli.test.js dist/slash/index.test.js dist/tools/tools.test.js` with 136 focused tests, `git diff --check`, and `npm test` with 315 tests pass. Verifier rechecked audit-failure and nested hook-cwd cache probes with no remaining findings.
-- That slice's next likely lifecycle work is now complete; current next likely plugin work is executable plugin slash-command design or plugin MCP endpoint discovery/runtime trust policy.
+- That slice's next likely lifecycle work is now complete; current next likely plugin work is executable plugin slash-command design or plugin MCP tool listing/execution policy.
 
 Implemented render-only plugin MCP presets routed through MCP policy:
 
 - Added `src/plugins/mcp-presets.ts` for bounded discovery of enabled-plugin `components.mcpServers` JSON from the ORX-owned cached manifest path only.
 - Plugin MCP presets are namespaced as `plugin:<plugin-id>:<server-id>`, include plugin manifest/component provenance in MCP profile hashes, and flow through `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp enable`, and `/status`.
-- Plugin-sourced profiles default disabled and remain non-executable. `/mcp discover` returns `plugin_discovery_disabled` without contacting plugin-declared endpoints.
+- Plugin-sourced profiles default disabled and remained non-executable. At this older checkpoint, `/mcp discover` did not contact plugin-declared endpoints; later trusted guarded plugin endpoint discovery superseded that limitation while keeping tool execution inactive.
 - `/status` now shows `plugin_mcp_presets` while `plugin_enabled_mcp` remains `0` for executable/plugin-server runtime.
 - Focused verification: `npm run typecheck` and `npm run build && node --test dist/plugins/registry.test.js dist/mcp/mcp.test.js dist/cli.test.js dist/slash/index.test.js dist/tui/chat.test.js` pass with 156 tests.
-- Next likely plugin work: executable slash-command design or hook hash-trust; plugin MCP endpoint discovery/tool execution still needs a separate runtime trust policy.
+- That slice's next likely hook-trust and endpoint-discovery work is now complete; current next likely plugin work is executable slash-command design or plugin MCP tool listing/execution policy.
 
 Implemented inert plugin metadata fields:
 

@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Plugin MCP Discovery Uses Profile Trust And Guarded Transport
+
+Decision: Enabled plugin MCP profiles may be discovered with `/mcp discover <profile>` only after the profile is enabled, has a trusted current profile hash, has no pending schema change, and uses `remote-http`. Discovery uses ORX's URL guard plus a production Node transport that resolves and vets DNS results before connecting and binds the request to a public resolved address while preserving the original host for HTTP/SNI behavior. Discovery performs only the minimal JSON-RPC initialize handshake, reports auth/network/schema states, audits the result, and does not list, execute, or expose plugin MCP tools to the model loop.
+
+Reasoning: Plugin MCP endpoints are remote supply-chain and prompt-injection surface, but operators need a real readiness check before tool execution exists. Reusing profile hash trust plus guarded DNS-vetted network behavior makes endpoint discovery explicit and auditable while keeping tool execution as a separate future policy decision.
+
 ## 2026-06-28: Trusted Hooks May Run On Explicit Lifecycle Events
 
 Decision: ORX may automatically run enabled plugin hooks on `session_start`, `user_prompt_submit`, `pre_tool_use`, `post_tool_use`, `pre_compact`, `post_compact`, and `stop` only when the cached hook definition matches an operator-trusted current hash. Lifecycle hooks reuse the manual hook runtime: cached plugin cwd confinement, minimal declared env forwarding, timeout/output caps, redaction, private JSONL audit events, and fail-closed audit persistence. Untrusted and pending-hash hooks are skipped. Hook failures are visible on stderr and audited, but they do not silently mutate session state or implicitly authorize plugin/MCP/binary execution.
@@ -24,7 +30,7 @@ Reasoning: Hooks are a high-risk executable surface because they run around sess
 
 ## 2026-06-27: Plugin MCP Presets Are Policy Metadata Before Runtime
 
-Decision: Enabled ORX plugins may contribute MCP preset declarations from cached `components.mcpServers` JSON, and ORX may show those profiles through `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp enable`, and `/status` using namespaced ids and profile hashes that include plugin manifest/component provenance. Plugin-sourced profiles remain render-only: `/mcp discover` refuses to contact plugin-declared endpoints, and no plugin MCP tools are exposed to the model loop or executable runtime.
+Decision: Enabled ORX plugins may contribute MCP preset declarations from cached `components.mcpServers` JSON, and ORX may show those profiles through `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp enable`, and `/status` using namespaced ids and profile hashes that include plugin manifest/component provenance. At this checkpoint, plugin-sourced profiles remained render-only: `/mcp discover` refused to contact plugin-declared endpoints, and no plugin MCP tools were exposed to the model loop or executable runtime. Plugin endpoint discovery was later enabled by the 2026-06-28 guarded-discovery decision; plugin MCP tool execution remains inactive.
 
 Reasoning: Plugin MCP declarations are useful integration metadata, but plugin-controlled endpoint URLs, transports, schemas, and tool descriptions are supply-chain and prompt-injection surface. Routing declarations through the existing MCP policy vocabulary gives operators visibility into auth, transport, risk, tool policy, trust hashes, and schema changes without letting a plugin install or enable event create network calls or executable tools.
 
