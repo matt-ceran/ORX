@@ -1,3 +1,7 @@
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+
 export type DelegationProvider = "openrouter";
 export type DelegationExecutionState = "disabled";
 
@@ -31,6 +35,40 @@ export interface DelegationReadinessRenderOptions {
   surface?: "interactive" | "cli";
 }
 
+export interface DelegationTeamsPathOptions {
+  env?: NodeJS.ProcessEnv;
+  cwd?: string;
+  configPath?: string;
+}
+
+export interface DelegationTeamRegistryIoOptions {
+  configPath?: string;
+}
+
+export interface SavedDelegationTeamRecord {
+  id: string;
+  delegation: DelegationState;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DelegationTeamRegistryFile {
+  version: 1;
+  teams: Record<string, SavedDelegationTeamRecord>;
+}
+
+export interface DelegationTeamStatusSummary {
+  count: number;
+  teams: SavedDelegationTeamRecord[];
+}
+
+export interface DelegationTeamStateChange {
+  ok: boolean;
+  team?: SavedDelegationTeamRecord;
+  message: string;
+}
+
 export class DelegationStateError extends Error {
   constructor(message: string) {
     super(message);
@@ -39,12 +77,19 @@ export class DelegationStateError extends Error {
 }
 
 const SAFE_DELEGATE_NAME_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/;
+const SAFE_DELEGATION_TEAM_ID_PATTERN = /^[a-z][a-z0-9._-]{0,63}$/;
 const SAFE_OPENROUTER_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/[A-Za-z0-9][A-Za-z0-9._:+-]{0,127}$/;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F-\x9F]/;
 const SECRET_LIKE_PATTERN =
   /\b(?:sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/i;
 const MAX_MODEL_LENGTH = 160;
 const MAX_DELEGATES = 16;
+const MAX_TEAM_DESCRIPTION_LENGTH = 240;
+const MAX_DELEGATION_TEAMS = 64;
+const MAX_DELEGATION_TEAM_REGISTRY_BYTES = 256 * 1024;
+const DELEGATION_TEAM_REGISTRY_VERSION = 1;
+const DELEGATION_TEAM_DIRECTORY_MODE = 0o700;
+const DELEGATION_TEAM_FILE_MODE = 0o600;
 
 export function createEmptyDelegationState(): DelegationState {
   return {
@@ -170,6 +215,257 @@ export function compactDelegationStateForStorage(
   return normalized;
 }
 
+export function defaultDelegationTeamsPath(): string {
+  return join(homedir(), ".orx", "delegation", "teams.json");
+}
+
+export function resolveDelegationTeamsPath(options: DelegationTeamsPathOptions = {}): string {
+  const explicitPath =
+    options.configPath ??
+    options.env?.ORX_DELEGATION_TEAMS_PATH ??
+    options.env?.ORX_DELEGATION_CONFIG_PATH;
+  if (!explicitPath) {
+    return defaultDelegationTeamsPath();
+  }
+
+  return resolve(options.cwd ?? process.cwd(), explicitPath);
+}
+
+export const resolveDelegationTeamRegistryPath = resolveDelegationTeamsPath;
+
+export function emptyDelegationTeamRegistry(): DelegationTeamRegistryFile {
+  return {
+    version: DELEGATION_TEAM_REGISTRY_VERSION,
+    teams: {},
+  };
+}
+
+export function loadDelegationTeamRegistry(
+  options: DelegationTeamRegistryIoOptions = {},
+): DelegationTeamRegistryFile {
+  const path = options.configPath ?? defaultDelegationTeamsPath();
+  if (!existsSync(path)) {
+    return emptyDelegationTeamRegistry();
+  }
+
+  try {
+    tightenDelegationTeamRegistryPermissions(path);
+    const stat = lstatSync(path);
+    if (!stat.isFile() || stat.size > MAX_DELEGATION_TEAM_REGISTRY_BYTES) {
+      return emptyDelegationTeamRegistry();
+    }
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+    return sanitizeDelegationTeamRegistry(parsed);
+  } catch {
+    return emptyDelegationTeamRegistry();
+  }
+}
+
+export function saveDelegationTeamRegistry(
+  registry: DelegationTeamRegistryFile,
+  options: DelegationTeamRegistryIoOptions = {},
+): void {
+  const path = options.configPath ?? defaultDelegationTeamsPath();
+  const sanitized = sanitizeDelegationTeamRegistry(registry);
+  const parentDir = dirname(path);
+  const parentExisted = existsSync(parentDir);
+  mkdirSync(parentDir, {
+    recursive: true,
+    mode: DELEGATION_TEAM_DIRECTORY_MODE,
+  });
+  if (shouldTightenDelegationTeamParent(path, parentExisted)) {
+    chmodSync(parentDir, DELEGATION_TEAM_DIRECTORY_MODE);
+  }
+  writeFileSync(path, `${JSON.stringify(sanitized, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: DELEGATION_TEAM_FILE_MODE,
+  });
+  chmodSync(path, DELEGATION_TEAM_FILE_MODE);
+}
+
+export function getDelegationTeamStatusSummary(
+  options: DelegationTeamRegistryIoOptions = {},
+): DelegationTeamStatusSummary {
+  const registry = loadDelegationTeamRegistry({ configPath: options.configPath });
+  const teams = Object.values(registry.teams).sort((left, right) =>
+    left.id.localeCompare(right.id),
+  );
+
+  return {
+    count: teams.length,
+    teams,
+  };
+}
+
+export function findSavedDelegationTeam(
+  id: string,
+  options: DelegationTeamRegistryIoOptions = {},
+): SavedDelegationTeamRecord | undefined {
+  const teamId = normalizeDelegationTeamId(id);
+  if (!teamId) {
+    return undefined;
+  }
+
+  return loadDelegationTeamRegistry({ configPath: options.configPath }).teams[teamId];
+}
+
+export function saveDelegationTeam(
+  id: string,
+  state: DelegationState | undefined,
+  options: DelegationTeamRegistryIoOptions & {
+    description?: string;
+    now?: () => Date;
+  } = {},
+): DelegationTeamStateChange {
+  const teamId = normalizeDelegationTeamId(id);
+  if (!teamId) {
+    return {
+      ok: false,
+      message: "Invalid delegation team id. Use lowercase letters, numbers, dot, underscore, or dash; start with a letter.",
+    };
+  }
+
+  const delegation = compactDelegationStateForStorage(state);
+  if (!delegation) {
+    return {
+      ok: false,
+      message: "Delegation team is empty. Set a controller or delegate before saving.",
+    };
+  }
+
+  const registry = loadDelegationTeamRegistry({ configPath: options.configPath });
+  const existing = registry.teams[teamId];
+  const now = (options.now?.() ?? new Date()).toISOString();
+  const team: SavedDelegationTeamRecord = {
+    id: teamId,
+    delegation,
+    ...(sanitizeTeamDescription(options.description) ?? existing?.description
+      ? { description: sanitizeTeamDescription(options.description) ?? existing?.description }
+      : {}),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  };
+
+  registry.teams[teamId] = team;
+  saveDelegationTeamRegistry(registry, { configPath: options.configPath });
+
+  return {
+    ok: true,
+    team,
+    message: `Delegation team ${teamId} saved. Execution remains disabled.`,
+  };
+}
+
+export function deleteSavedDelegationTeam(
+  id: string,
+  options: DelegationTeamRegistryIoOptions = {},
+): DelegationTeamStateChange {
+  const teamId = normalizeDelegationTeamId(id);
+  if (!teamId) {
+    return {
+      ok: false,
+      message: "Invalid delegation team id. Use lowercase letters, numbers, dot, underscore, or dash; start with a letter.",
+    };
+  }
+
+  const registry = loadDelegationTeamRegistry({ configPath: options.configPath });
+  const team = registry.teams[teamId];
+  if (!team) {
+    return {
+      ok: false,
+      message: `Unknown delegation team: ${teamId}`,
+    };
+  }
+
+  delete registry.teams[teamId];
+  saveDelegationTeamRegistry(registry, { configPath: options.configPath });
+
+  return {
+    ok: true,
+    team,
+    message: `Delegation team ${teamId} deleted.`,
+  };
+}
+
+export function renderDelegationTeamList(
+  summary: DelegationTeamStatusSummary,
+  path?: string,
+): string {
+  const lines = [
+    "ORX delegation teams:",
+    path ? `  registry_path: ${path}` : undefined,
+    `  saved_teams: ${summary.count}`,
+    "  execution: disabled",
+    "  delegate_task: unavailable",
+  ];
+
+  if (summary.teams.length === 0) {
+    lines.push("  none");
+    return lines.filter((line): line is string => Boolean(line)).join("\n");
+  }
+
+  for (const team of summary.teams) {
+    lines.push(
+      `  ${team.id} controller=${formatControllerForLine(team.delegation)} delegates=${team.delegation.delegates.length} updated=${team.updatedAt}`,
+    );
+  }
+
+  return lines.filter((line): line is string => Boolean(line)).join("\n");
+}
+
+export function renderDelegationTeamInspect(team: SavedDelegationTeamRecord): string {
+  const lines = [
+    `ORX delegation team: ${team.id}`,
+    team.description ? `description: ${team.description}` : undefined,
+    team.delegation.controller
+      ? `controller: openrouter ${team.delegation.controller.model}`
+      : "controller: none",
+    `delegates: ${team.delegation.delegates.length}`,
+    "execution: disabled",
+    "delegate_task: unavailable",
+    "model_exposure: none",
+    "network_calls: none",
+    `created_at: ${team.createdAt}`,
+    `updated_at: ${team.updatedAt}`,
+  ].filter((line): line is string => Boolean(line));
+
+  for (const delegate of team.delegation.delegates) {
+    lines.push(
+      `  - ${delegate.name}: provider=openrouter model=${delegate.model} execution=disabled`,
+    );
+  }
+
+  return lines.join("\n");
+}
+
+export function renderDelegationTeamUse(
+  team: SavedDelegationTeamRecord,
+  options: { surface: "cli" | "interactive" },
+): string {
+  const lines =
+    options.surface === "cli"
+      ? [
+          `Delegation team ${team.id} inspected for use.`,
+          "state_changed: no",
+          "reason: noninteractive CLI has no active delegation session",
+          "Use /delegates use <id> or /delegate team use <id> inside chat to load it into session-local scaffold metadata.",
+        ]
+      : [
+          `Delegation team ${team.id} loaded into this chat session.`,
+          "state_changed: yes",
+        ];
+
+  return [
+    ...lines,
+    "execution: disabled",
+    "delegate_task: unavailable",
+    "network_calls: none",
+    "subprocesses: none",
+    "",
+    renderDelegationTeamInspect(team),
+  ].join("\n");
+}
+
 export function getDelegationStatusSummary(
   state: DelegationState | undefined,
 ): DelegationStatusSummary {
@@ -233,7 +529,7 @@ export function renderDelegationReadinessPlan(
     "network_calls: none",
     "subprocesses: none",
     options.surface === "cli"
-      ? "state_scope: cli-sessionless-readonly"
+      ? "state_scope: cli-saved-teams-available"
       : "state_scope: interactive-session-local",
     "readiness_blockers:",
     "  - delegate_task schema is intentionally not registered",
@@ -244,7 +540,7 @@ export function renderDelegationReadinessPlan(
   ];
 
   if (options.surface === "cli") {
-    lines.push("  - noninteractive CLI has no delegation state store");
+    lines.push("  - noninteractive CLI cannot attach a saved team to a live chat session");
   }
 
   return lines.join("\n");
@@ -255,7 +551,7 @@ export function renderSessionlessDelegationRefusal(action: string): string {
     "ORX delegation scaffold:",
     "status: refused",
     `action: ${action}`,
-    "reason: noninteractive CLI has no delegation session state store",
+    "reason: noninteractive CLI has no active delegation chat session",
     "state_changed: no",
     "execution: disabled",
     "delegate_task: unavailable",
@@ -307,6 +603,22 @@ export function validateOpenRouterModel(rawModel: string): string {
   return model;
 }
 
+export function validateDelegationTeamId(rawId: string): string {
+  const teamId = normalizeDelegationTeamId(rawId);
+  if (!teamId) {
+    throw new DelegationStateError(
+      "Delegation team id must match [a-z][a-z0-9._-]{0,63}.",
+    );
+  }
+  if (CONTROL_CHAR_PATTERN.test(rawId)) {
+    throw new DelegationStateError("Delegation team id must not contain control characters.");
+  }
+  if (SECRET_LIKE_PATTERN.test(rawId)) {
+    throw new DelegationStateError("Delegation team id must not contain secret-like values.");
+  }
+  return teamId;
+}
+
 function sanitizeController(value: unknown): OrchestrationControllerConfig | undefined {
   if (!isRecord(value) || value.provider !== "openrouter" || value.execution !== "disabled") {
     return undefined;
@@ -342,6 +654,112 @@ function sanitizeDelegate(value: unknown): DelegateConfig | undefined {
 
 function normalizeInput(value: string): string {
   return value.trim();
+}
+
+function normalizeDelegationTeamId(value: string): string | undefined {
+  const teamId = normalizeInput(value).toLowerCase();
+  if (CONTROL_CHAR_PATTERN.test(value) || SECRET_LIKE_PATTERN.test(value)) {
+    return undefined;
+  }
+  return SAFE_DELEGATION_TEAM_ID_PATTERN.test(teamId) ? teamId : undefined;
+}
+
+function sanitizeDelegationTeamRegistry(value: unknown): DelegationTeamRegistryFile {
+  if (!isRecord(value) || value.version !== DELEGATION_TEAM_REGISTRY_VERSION || !isRecord(value.teams)) {
+    return emptyDelegationTeamRegistry();
+  }
+
+  const teams: Record<string, SavedDelegationTeamRecord> = {};
+  for (const [rawId, rawTeam] of Object.entries(value.teams)) {
+    if (Object.keys(teams).length >= MAX_DELEGATION_TEAMS) {
+      break;
+    }
+    const team = sanitizeDelegationTeam(rawId, rawTeam);
+    if (team) {
+      teams[team.id] = team;
+    }
+  }
+
+  return {
+    version: DELEGATION_TEAM_REGISTRY_VERSION,
+    teams,
+  };
+}
+
+function sanitizeDelegationTeam(
+  rawId: string,
+  value: unknown,
+): SavedDelegationTeamRecord | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const teamId = normalizeDelegationTeamId(stringOrEmpty(value.id) || rawId);
+  if (!teamId || normalizeDelegationTeamId(rawId) !== teamId) {
+    return undefined;
+  }
+
+  const delegation = compactDelegationStateForStorage(value.delegation);
+  if (!delegation) {
+    return undefined;
+  }
+
+  const createdAt = sanitizeTimestamp(value.createdAt);
+  const updatedAt = sanitizeTimestamp(value.updatedAt);
+  if (!createdAt || !updatedAt) {
+    return undefined;
+  }
+
+  const description = sanitizeTeamDescription(value.description);
+
+  return {
+    id: teamId,
+    delegation,
+    ...(description ? { description } : {}),
+    createdAt,
+    updatedAt,
+  };
+}
+
+function sanitizeTimestamp(value: unknown): string | undefined {
+  if (typeof value !== "string" || CONTROL_CHAR_PATTERN.test(value) || value.length > 40) {
+    return undefined;
+  }
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    return undefined;
+  }
+  return timestamp.toISOString();
+}
+
+function sanitizeTeamDescription(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const description = value.replace(CONTROL_CHAR_PATTERN, " ").trim();
+  if (!description || SECRET_LIKE_PATTERN.test(description)) {
+    return undefined;
+  }
+  return description.slice(0, MAX_TEAM_DESCRIPTION_LENGTH);
+}
+
+function tightenDelegationTeamRegistryPermissions(path: string): void {
+  try {
+    if (shouldTightenDelegationTeamParent(path, true)) {
+      chmodSync(dirname(path), DELEGATION_TEAM_DIRECTORY_MODE);
+    }
+    chmodSync(path, DELEGATION_TEAM_FILE_MODE);
+  } catch {
+    // Best effort only; unreadable or foreign-owned files will be handled by the caller.
+  }
+}
+
+function shouldTightenDelegationTeamParent(path: string, parentExisted: boolean): boolean {
+  return !parentExisted || resolve(path) === resolve(defaultDelegationTeamsPath());
+}
+
+function formatControllerForLine(state: DelegationState): string {
+  return state.controller ? `openrouter:${state.controller.model}` : "none";
 }
 
 function sortDelegates(delegates: DelegateConfig[]): DelegateConfig[] {

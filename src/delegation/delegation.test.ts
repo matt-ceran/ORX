@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   DelegationStateError,
   addOpenRouterDelegate,
@@ -7,15 +10,25 @@ import {
   clearDelegates,
   compactDelegationStateForStorage,
   createEmptyDelegationState,
+  deleteSavedDelegationTeam,
+  findSavedDelegationTeam,
+  getDelegationTeamStatusSummary,
+  loadDelegationTeamRegistry,
   getDelegationStatusSummary,
   normalizeDelegationState,
   removeDelegate,
   renderDelegates,
   renderDelegationReadinessPlan,
+  renderDelegationTeamInspect,
+  renderDelegationTeamList,
+  renderDelegationTeamUse,
   renderOrchestratorStatus,
   renderSessionlessDelegationRefusal,
+  resolveDelegationTeamRegistryPath,
+  saveDelegationTeam,
   setOpenRouterController,
   validateDelegateName,
+  validateDelegationTeamId,
   validateOpenRouterModel,
 } from "./index.js";
 
@@ -60,14 +73,14 @@ test("delegation state renders an inert empty scaffold", () => {
       "model_exposure: none",
       "network_calls: none",
       "subprocesses: none",
-      "state_scope: cli-sessionless-readonly",
+      "state_scope: cli-saved-teams-available",
       "readiness_blockers:",
       "  - delegate_task schema is intentionally not registered",
       "  - delegate execution policy is not designed",
       "  - budget, timeout, and result-truncation controls are not configured",
       "  - credential forwarding and secret-redaction policy is not implemented",
       "  - delegate result persistence and merge semantics are not implemented",
-      "  - noninteractive CLI has no delegation state store",
+      "  - noninteractive CLI cannot attach a saved team to a live chat session",
     ].join("\n"),
   );
   assert.match(
@@ -203,4 +216,122 @@ test("persisted delegation state is sanitized and compacted", () => {
   ]);
   assert.equal(compactDelegationStateForStorage(createEmptyDelegationState()), undefined);
   assert.deepEqual(compactDelegationStateForStorage(normalized), normalized);
+});
+
+test("delegation team registry saves private disabled teams", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-teams-"));
+  const configPath = join(cwd, "delegation", "teams.json");
+
+  try {
+    const withController = setOpenRouterController(undefined, "openrouter/fusion");
+    const state = addOpenRouterDelegate(
+      withController,
+      "reviewer",
+      "anthropic/claude-sonnet-4.5",
+    ).state;
+
+    const saved = saveDelegationTeam("Review-Team", state, {
+      configPath,
+      now: () => new Date("2026-06-28T12:00:00.000Z"),
+    });
+
+    assert.equal(saved.ok, true);
+    assert.equal(saved.team?.id, "review-team");
+    assert.equal(saved.team?.delegation.executionEnabled, false);
+    assert.equal(saved.team?.delegation.controller?.execution, "disabled");
+    assert.equal(saved.team?.delegation.delegates[0].execution, "disabled");
+    assert.match(saved.message, /Execution remains disabled/);
+    assert.equal(statSync(join(cwd, "delegation")).mode & 0o777, 0o700);
+    assert.equal(statSync(configPath).mode & 0o777, 0o600);
+    assert.doesNotMatch(readFileSync(configPath, "utf8"), /api_key|OPENROUTER_API_KEY/);
+
+    const found = findSavedDelegationTeam("review-team", { configPath });
+    assert.ok(found);
+    assert.equal(found.delegation.controller?.model, "openrouter/fusion");
+    assert.match(renderDelegationTeamList(getDelegationTeamStatusSummary({ configPath })), /saved_teams: 1/);
+    assert.match(renderDelegationTeamInspect(found), /delegate_task: unavailable/);
+    assert.match(renderDelegationTeamUse(found, { surface: "cli" }), /state_changed: no/);
+
+    const deleted = deleteSavedDelegationTeam("review-team", { configPath });
+    assert.equal(deleted.ok, true);
+    assert.equal(getDelegationTeamStatusSummary({ configPath }).count, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegation team registry sanitizes stored records and bounds count", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-teams-"));
+  const configPath = join(cwd, "teams.json");
+
+  try {
+    const teams: Record<string, unknown> = {};
+    for (let index = 0; index < 80; index += 1) {
+      const id = `team${String(index).padStart(2, "0")}`;
+      teams[id] = {
+        id,
+        delegation: {
+          controller: {
+            provider: "openrouter",
+            model: "openrouter/auto",
+            execution: "disabled",
+          },
+          delegates: [
+            {
+              name: "valid",
+              provider: "openrouter",
+              model: "openrouter/fusion",
+              execution: "disabled",
+            },
+            {
+              name: "runner",
+              provider: "openrouter",
+              model: "openrouter/auto",
+              execution: "enabled",
+            },
+          ],
+          executionEnabled: true,
+        },
+        description: "safe metadata",
+        createdAt: "2026-06-28T12:00:00.000Z",
+        updatedAt: "2026-06-28T12:00:00.000Z",
+      };
+    }
+    teams["bad id"] = {
+      id: "bad id",
+      delegation: {
+        delegates: [],
+      },
+      createdAt: "2026-06-28T12:00:00.000Z",
+      updatedAt: "2026-06-28T12:00:00.000Z",
+    };
+    writeFileSync(configPath, JSON.stringify({ version: 1, teams }, null, 2));
+
+    const loaded = loadDelegationTeamRegistry({ configPath });
+    assert.equal(Object.keys(loaded.teams).length, 64);
+    assert.equal(loaded.teams.team00.delegation.executionEnabled, false);
+    assert.deepEqual(
+      loaded.teams.team00.delegation.delegates.map((delegate) => delegate.name),
+      ["valid"],
+    );
+    assert.equal(loaded.teams.team00.createdAt, "2026-06-28T12:00:00.000Z");
+    assert.equal(loaded.teams["bad id"], undefined);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegation team ids and paths are sanitized", () => {
+  assert.equal(validateDelegationTeamId("Review.Team_1"), "review.team_1");
+  assert.throws(() => validateDelegationTeamId("1bad"), /Delegation team id must match/);
+  assert.throws(() => validateDelegationTeamId("bad\u001b"), /Delegation team id must match/);
+  assert.equal(
+    resolveDelegationTeamRegistryPath({
+      cwd: "/tmp/work",
+      env: {
+        ORX_DELEGATION_TEAMS_PATH: "delegation/teams.json",
+      },
+    }),
+    "/tmp/work/delegation/teams.json",
+  );
 });

@@ -19,10 +19,17 @@ import {
   clearController,
   clearDelegates,
   createEmptyDelegationState,
+  deleteSavedDelegationTeam,
+  findSavedDelegationTeam,
+  getDelegationTeamStatusSummary,
   removeDelegate,
   renderDelegates,
   renderDelegationReadinessPlan,
+  renderDelegationTeamInspect,
+  renderDelegationTeamList,
+  renderDelegationTeamUse,
   renderOrchestratorStatus,
+  saveDelegationTeam,
   setOpenRouterController,
   type DelegationState,
 } from "../delegation/index.js";
@@ -299,6 +306,7 @@ export interface SlashCommandContext {
   pluginHooksConfigPath?: string;
   pluginRegistryPath?: string;
   profileConfigPath?: string;
+  delegationTeamConfigPath?: string;
   recordActivatedPrompt?: (prompt: PluginPromptActivationProvenance) => void;
   recordActivatedRule?: (rule: PluginRuleActivationProvenance) => void;
   recordActivatedSkill?: (skill: PluginSkillActivationProvenance) => void;
@@ -450,9 +458,26 @@ const PROFILE_SUBCOMMAND_COMPLETIONS = [
   "delete",
 ] as const;
 const ORCHESTRATOR_SUBCOMMAND_COMPLETIONS = ["status", "plan", "openrouter", "clear"] as const;
-const DELEGATE_SUBCOMMAND_COMPLETIONS = ["help", "status", "plan", "add", "remove", "clear"] as const;
+const DELEGATE_SUBCOMMAND_COMPLETIONS = ["help", "status", "plan", "add", "remove", "clear", "team"] as const;
 const DELEGATE_ADAPTER_COMPLETIONS = ["openrouter"] as const;
-const DELEGATES_SUBCOMMAND_COMPLETIONS = ["list", "status", "plan"] as const;
+const DELEGATES_SUBCOMMAND_COMPLETIONS = [
+  "list",
+  "status",
+  "plan",
+  "teams",
+  "save",
+  "use",
+  "inspect",
+  "delete",
+] as const;
+const DELEGATION_TEAM_SUBCOMMAND_COMPLETIONS = [
+  "list",
+  "status",
+  "save",
+  "use",
+  "inspect",
+  "delete",
+] as const;
 const RESUME_SELECTOR_COMPLETIONS = ["latest"] as const;
 const COMMON_GROUP_ORDER: SlashCommandGroup[] = [
   "Core",
@@ -1080,8 +1105,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/delegate": {
-    usage: "/delegate [help|status|plan|add|remove|clear]",
-    description: "Register or remove inert OpenRouter delegates",
+    usage: "/delegate [help|status|plan|add|remove|clear|team]",
+    description: "Register inert OpenRouter delegates or manage saved teams",
     group: "Orchestration",
     tier: "advanced",
     handler: (command, context): SlashResult => {
@@ -1090,23 +1115,12 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/delegates": {
-    usage: "/delegates [list|status|plan]",
-    description: "List inert delegates or delegation readiness",
+    usage: "/delegates [list|status|plan|teams|save|use|inspect|delete]",
+    description: "List inert delegates or manage saved disabled teams",
     group: "Orchestration",
     tier: "advanced",
     handler: (command, context): SlashResult => {
-      const subcommand = command.args[0]?.toLowerCase() ?? "list";
-      if (subcommand === "list" || subcommand === "status") {
-        writeLine(context.io.stdout, renderDelegates(getDelegationState(context)));
-        return "continue";
-      }
-
-      if (subcommand === "plan" || subcommand === "readiness") {
-        writeLine(context.io.stdout, renderDelegationReadinessPlan(getDelegationState(context)));
-        return "continue";
-      }
-
-      writeLine(context.io.stderr, "Usage: /delegates [list|status|plan]");
+      handleDelegatesCommand(command, context);
       return "continue";
     },
   },
@@ -1546,6 +1560,9 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       if (argIndex === 0) {
         return [...DELEGATE_SUBCOMMAND_COMPLETIONS];
       }
+      if ((firstArg === "team" || firstArg === "teams") && argIndex === 1) {
+        return [...DELEGATION_TEAM_SUBCOMMAND_COMPLETIONS];
+      }
       if (firstArg === "add" && argIndex === 2) {
         return [...DELEGATE_ADAPTER_COMPLETIONS];
       }
@@ -1554,7 +1571,13 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       }
       return [];
     case "/delegates":
-      return argIndex === 0 ? [...DELEGATES_SUBCOMMAND_COMPLETIONS] : [];
+      if (argIndex === 0) {
+        return [...DELEGATES_SUBCOMMAND_COMPLETIONS];
+      }
+      if ((firstArg === "teams" || firstArg === "team") && argIndex === 1) {
+        return [...DELEGATION_TEAM_SUBCOMMAND_COMPLETIONS];
+      }
+      return [];
     case "/resume":
       return argIndex === 0 ? [...RESUME_SELECTOR_COMPLETIONS] : [];
     default:
@@ -1739,6 +1762,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       pluginHooksConfigPath: context.pluginHooksConfigPath,
       pluginRegistryPath: context.pluginRegistryPath,
       profileConfigPath: context.profileConfigPath,
+      delegationTeamConfigPath: context.delegationTeamConfigPath,
       delegationState: getDelegationState(context),
       renderOptions: { stream: context.io.stdout, theme: context.getConfig().theme },
     }),
@@ -2758,6 +2782,150 @@ function handleOrchestratorCommand(command: SlashCommand, context: SlashCommandC
   writeLine(context.io.stderr, "Usage: /orchestrator [status|plan|openrouter <model>|clear]");
 }
 
+function handleDelegatesCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+  const teamArgs = subcommand === "teams" || subcommand === "team" || subcommand === "saved"
+    ? command.args.slice(1)
+    : command.args;
+  const teamSubcommand = teamArgs[0]?.toLowerCase() ?? "list";
+  const teamId = teamArgs[1];
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(context.io.stdout, renderDelegates(getDelegationState(context)));
+    return;
+  }
+
+  if (subcommand === "plan" || subcommand === "readiness") {
+    writeLine(context.io.stdout, renderDelegationReadinessPlan(getDelegationState(context)));
+    return;
+  }
+
+  if (subcommand === "teams" || subcommand === "team" || subcommand === "saved") {
+    handleDelegationTeamSlashCommand(teamArgs, context);
+    return;
+  }
+
+  if (isDelegationTeamSlashCommand(subcommand)) {
+    handleDelegationTeamSlashCommand(command.args, context);
+    return;
+  }
+
+  writeLine(
+    context.io.stderr,
+    "Usage: /delegates [list|status|plan|teams|save <id>|use <id>|inspect <id>|delete <id>]",
+  );
+
+  function handleDelegationTeamSlashCommand(
+    args: string[],
+    slashContext: SlashCommandContext,
+  ): void {
+    if (teamSubcommand === "list" || teamSubcommand === "status" || teamSubcommand === "teams") {
+      writeLine(
+        slashContext.io.stdout,
+        renderDelegationTeamList(
+          getDelegationTeamStatusSummary({
+            configPath: slashContext.delegationTeamConfigPath,
+          }),
+          slashContext.delegationTeamConfigPath,
+        ),
+      );
+      return;
+    }
+
+    if (teamSubcommand === "save") {
+      if (!teamId || args.length !== 2) {
+        writeLine(slashContext.io.stderr, "Usage: /delegates save <id>");
+        return;
+      }
+
+      try {
+        const result = saveDelegationTeam(teamId, getDelegationState(slashContext), {
+          configPath: slashContext.delegationTeamConfigPath,
+        });
+        if (!result.ok) {
+          writeLine(slashContext.io.stderr, result.message);
+          return;
+        }
+        writeLine(slashContext.io.stdout, result.message);
+      } catch (error) {
+        writeLine(slashContext.io.stderr, `Unable to save delegation team${formatErrorCode(error)}.`);
+      }
+      return;
+    }
+
+    if (teamSubcommand === "inspect" || teamSubcommand === "show" || teamSubcommand === "info") {
+      if (!teamId || args.length !== 2) {
+        writeLine(slashContext.io.stderr, `Usage: /delegates ${teamSubcommand} <id>`);
+        return;
+      }
+
+      const team = findSavedDelegationTeam(teamId, {
+        configPath: slashContext.delegationTeamConfigPath,
+      });
+      if (!team) {
+        writeLine(
+          slashContext.io.stderr,
+          `Unknown delegation team: ${formatDelegationTeamIdForMessage(teamId)}`,
+        );
+        return;
+      }
+
+      writeLine(slashContext.io.stdout, renderDelegationTeamInspect(team));
+      return;
+    }
+
+    if (teamSubcommand === "use" || teamSubcommand === "load") {
+      if (!teamId || args.length !== 2) {
+        writeLine(slashContext.io.stderr, `Usage: /delegates ${teamSubcommand} <id>`);
+        return;
+      }
+
+      const team = findSavedDelegationTeam(teamId, {
+        configPath: slashContext.delegationTeamConfigPath,
+      });
+      if (!team) {
+        writeLine(
+          slashContext.io.stderr,
+          `Unknown delegation team: ${formatDelegationTeamIdForMessage(teamId)}`,
+        );
+        return;
+      }
+
+      if (!setDelegationState(slashContext, team.delegation)) {
+        return;
+      }
+      writeLine(slashContext.io.stdout, renderDelegationTeamUse(team, { surface: "interactive" }));
+      return;
+    }
+
+    if (teamSubcommand === "delete" || teamSubcommand === "remove" || teamSubcommand === "rm") {
+      if (!teamId || args.length !== 2) {
+        writeLine(slashContext.io.stderr, `Usage: /delegates ${teamSubcommand} <id>`);
+        return;
+      }
+
+      try {
+        const result = deleteSavedDelegationTeam(teamId, {
+          configPath: slashContext.delegationTeamConfigPath,
+        });
+        if (!result.ok) {
+          writeLine(slashContext.io.stderr, result.message);
+          return;
+        }
+        writeLine(slashContext.io.stdout, result.message);
+      } catch (error) {
+        writeLine(slashContext.io.stderr, `Unable to delete delegation team${formatErrorCode(error)}.`);
+      }
+      return;
+    }
+
+    writeLine(
+      slashContext.io.stderr,
+      "Usage: /delegates teams [list|save <id>|use <id>|inspect <id>|delete <id>]",
+    );
+  }
+}
+
 function handleDelegateCommand(command: SlashCommand, context: SlashCommandContext): void {
   const subcommand = command.args[0]?.toLowerCase();
 
@@ -2771,6 +2939,8 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
         "  /delegate add <name> openrouter <model>",
         "  /delegate remove <name>",
         "  /delegate clear",
+        "  /delegate team save <id>",
+        "  /delegate team use <id>",
         "  /delegates",
         "Execution is disabled; delegate_task is unavailable in this scaffold.",
       ].join("\n"),
@@ -2785,6 +2955,17 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
 
   if (subcommand === "plan" || subcommand === "readiness") {
     writeLine(context.io.stdout, renderDelegationReadinessPlan(getDelegationState(context)));
+    return;
+  }
+
+  if (subcommand === "team" || subcommand === "teams" || subcommand === "saved") {
+    handleDelegatesCommand(
+      {
+        ...command,
+        args: command.args.slice(1),
+      },
+      context,
+    );
     return;
   }
 
@@ -2847,7 +3028,7 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
     return;
   }
 
-  writeLine(context.io.stderr, "Usage: /delegate [help|status|plan|add|remove|clear]");
+  writeLine(context.io.stderr, "Usage: /delegate [help|status|plan|add|remove|clear|team]");
 }
 
 async function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
@@ -3960,6 +4141,24 @@ function formatErrorCode(error: unknown): string {
 
 function formatProfileIdForMessage(profileId: string): string {
   return profileId.replace(HELP_CONTROL_PATTERN, "").trim().toLowerCase().slice(0, 80);
+}
+
+function formatDelegationTeamIdForMessage(teamId: string): string {
+  return teamId.replace(HELP_CONTROL_PATTERN, "").trim().toLowerCase().slice(0, 80);
+}
+
+function isDelegationTeamSlashCommand(subcommand: string): boolean {
+  return (
+    subcommand === "save" ||
+    subcommand === "use" ||
+    subcommand === "load" ||
+    subcommand === "inspect" ||
+    subcommand === "show" ||
+    subcommand === "info" ||
+    subcommand === "delete" ||
+    subcommand === "remove" ||
+    subcommand === "rm"
+  );
 }
 
 function tryWriteMcpAuditEvent(context: SlashCommandContext, event: McpAuditEvent): void {

@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Save Delegation Teams As Disabled Local Metadata Only
+
+Decision: ORX saved delegation teams should be private local operator state containing only sanitized disabled controller/delegate metadata and minimal timestamps/display metadata. Loading a team in chat may update session-local scaffold metadata, but it must not enable execution, register a model-visible `delegate_task`, call OpenRouter delegates, spawn subprocesses, persist delegate outputs, or define result merge semantics.
+
+Reasoning: The user wants reusable teams before execution policy exists. Keeping saved teams bounded, local, and inert lets ORX improve configuration ergonomics without crossing the harder boundaries around budgets, timeouts, credentials, result truncation, output trust, and merge/persistence policy.
+
 ## 2026-06-28: Plugin Review Is A Read-Only Local Audit Surface
 
 Decision: ORX may provide `orx plugins review` and `/plugins review`, with `doctor` and `audit` aliases, to summarize installed/enabled plugin state, local catalog pin drift, bin and hook trust state, plugin MCP profiles, plugin command aliases, omissions, and concrete next commands. Review must be local and read-only: it must not fetch, install, enable, trust, grant, execute plugin surfaces, mutate registry/cache/catalog/trust files, or tighten existing file permissions.

@@ -1,7 +1,7 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -107,8 +107,8 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/cite <source-id>/);
   assert.match(output, /\/bibliography/);
   assert.match(output, /\/orchestrator \[status\|plan\|openrouter <model>\|clear\]/);
-  assert.match(output, /\/delegate \[help\|status\|plan\|add\|remove\|clear\]/);
-  assert.match(output, /\/delegates \[list\|status\|plan\]/);
+  assert.match(output, /\/delegate \[help\|status\|plan\|add\|remove\|clear\|team\]/);
+  assert.match(output, /\/delegates \[list\|status\|plan\|teams\|save\|use\|inspect\|delete\]/);
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
@@ -210,7 +210,16 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/plugins d"), [["doctor ", "disable "], "d"]);
   assert.deepEqual(completeSlashCommandLine("/orchestrator p"), [["plan "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/delegate p"), [["plan "], "p"]);
+  assert.deepEqual(completeSlashCommandLine("/delegate team s"), [
+    ["status ", "save "],
+    "s",
+  ]);
   assert.deepEqual(completeSlashCommandLine("/delegates p"), [["plan "], "p"]);
+  assert.deepEqual(completeSlashCommandLine("/delegates t"), [["teams "], "t"]);
+  assert.deepEqual(completeSlashCommandLine("/delegates teams s"), [
+    ["status ", "save "],
+    "s",
+  ]);
   assert.deepEqual(completeSlashCommandLine("/plugins catalog check-"), [["check-updates "], "check-"]);
   assert.deepEqual(completeSlashCommandLine("/plugins catalog u"), [
     ["updates ", "update ", "upgrade ", "update-check "],
@@ -778,6 +787,66 @@ test("orchestrator and delegate commands mutate inert local state without networ
   assert.equal(harness.delegation().controller, undefined);
   assert.equal(fetchCalls, 0);
   assert.equal(harness.stderr(), "");
+});
+
+test("delegates slash commands save and load disabled local teams", () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-teams-slash-"));
+  const teamsPath = join(cwd, "delegation", "teams.json");
+  const harness = createSlashHarness({
+    delegationTeamConfigPath: teamsPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("delegation team slash commands should not call OpenRouter.");
+    },
+  });
+
+  try {
+    assert.equal(
+      handleSlashCommand("/orchestrator openrouter openrouter/fusion", harness.context),
+      "continue",
+    );
+    assert.equal(
+      handleSlashCommand(
+        "/delegate add reviewer openrouter anthropic/claude-sonnet-4.5",
+        harness.context,
+      ),
+      "continue",
+    );
+
+    assert.equal(handleSlashCommand("/delegate team save Review-Team", harness.context), "continue");
+    assert.match(harness.stdout(), /Delegation team review-team saved/);
+    assert.equal(statSync(join(cwd, "delegation")).mode & 0o777, 0o700);
+    assert.equal(statSync(teamsPath).mode & 0o777, 0o600);
+    assert.doesNotMatch(readFileSync(teamsPath, "utf8"), /test-key|OPENROUTER_API_KEY/);
+
+    assert.equal(handleSlashCommand("/delegates teams", harness.context), "continue");
+    assert.match(harness.stdout(), /saved_teams: 1/);
+    assert.match(harness.stdout(), /review-team controller=openrouter:openrouter\/fusion delegates=1/);
+
+    assert.equal(handleSlashCommand("/delegate clear", harness.context), "continue");
+    assert.equal(handleSlashCommand("/orchestrator clear", harness.context), "continue");
+    assert.equal(harness.delegation().controller, undefined);
+    assert.equal(harness.delegation().delegates.length, 0);
+
+    assert.equal(handleSlashCommand("/delegate team use review-team", harness.context), "continue");
+    assert.match(harness.stdout(), /Delegation team review-team loaded into this chat session/);
+    assert.match(harness.stdout(), /state_changed: yes/);
+    assert.equal(harness.delegation().controller?.model, "openrouter/fusion");
+    assert.equal(harness.delegation().delegates[0].name, "reviewer");
+    assert.equal(harness.delegation().executionEnabled, false);
+
+    assert.equal(handleSlashCommand("/delegates inspect review-team", harness.context), "continue");
+    assert.match(harness.stdout(), /ORX delegation team: review-team/);
+    assert.match(harness.stdout(), /delegate_task: unavailable/);
+
+    assert.equal(handleSlashCommand("/delegates delete review-team", harness.context), "continue");
+    assert.match(harness.stdout(), /Delegation team review-team deleted/);
+    assert.equal(fetchCalls, 0);
+    assert.equal(harness.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("delegation slash commands reject unsafe values without mutating state", () => {
@@ -3765,6 +3834,7 @@ function createSlashHarness(
     pluginHooksConfigPath?: string;
     pluginRegistryPath?: string;
     profileConfigPath?: string;
+    delegationTeamConfigPath?: string;
     recordActivatedPrompt?: SlashCommandContext["recordActivatedPrompt"];
     recordActivatedRule?: SlashCommandContext["recordActivatedRule"];
     recordActivatedSkill?: SlashCommandContext["recordActivatedSkill"];
@@ -3880,6 +3950,7 @@ function createSlashHarness(
       pluginHooksConfigPath: options.pluginHooksConfigPath,
       pluginRegistryPath: options.pluginRegistryPath,
       profileConfigPath: options.profileConfigPath,
+      delegationTeamConfigPath: options.delegationTeamConfigPath,
       recordActivatedPrompt: options.recordActivatedPrompt,
       recordActivatedRule: options.recordActivatedRule,
       recordActivatedSkill: options.recordActivatedSkill,

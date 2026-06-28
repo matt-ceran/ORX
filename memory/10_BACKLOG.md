@@ -99,11 +99,12 @@ Completed:
 - Add `/status`, `/mcp list`, and `/mcp inspect` visibility for MCP policy-allowed, policy-denied, configured default-denied, and risky declared tool counts.
 - Add Phase 11 orchestration/delegation command scaffold: inert session-local OpenRouter controller/delegate metadata, `/orchestrator`, `/delegate`, `/delegates`, interactive `/status` visibility, session persistence/resume, count-bounded sanitized state, and no `delegate_task` execution/tool exposure.
 - Add Phase 11 delegation readiness parity: `orx orchestrator`, `orx delegate`, `orx delegates`, and read-only slash `plan/status` variants render scaffold status/blockers; mutating CLI forms validate arguments then refuse because CLI has no delegation session store, with execution/network/subprocess/model-visible `delegate_task` still unavailable.
+- Add Phase 11 saved disabled delegation teams: private `~/.orx/delegation/teams.json` registry with `ORX_DELEGATION_TEAMS_PATH`, `orx delegates teams|save|inspect|use|delete`, `orx delegate team ...`, `/delegates teams|save|inspect|use|delete`, `/delegate team ...`, slash load into session-local inert state, and no execution/network/subprocess/model-visible `delegate_task`.
 
 Next:
 
 - Add managed OAuth/provider auth setup beyond the current env-only MCP bearer readiness path.
-- Add OpenRouter delegate adapter and ORX-owned `delegate_task` tool only after budget, timeout, credential, and result-truncation policy is designed.
+- Add OpenRouter delegate adapter and ORX-owned `delegate_task` tool only after budget, timeout, credential, result-truncation, result-merge, and execution policy is designed.
 - Add secret redaction and minimal env forwarding for future stdio/child-process MCP runners if ORX adds them beyond the current remote HTTP path.
 
 ## P4
@@ -171,7 +172,7 @@ Next:
 - Add cloud/devops profiles only as explicit opt-ins with account/project/region visible in `/status`.
 - Add research profiles: `research-web`, `research-crawl`, `research-scholar`, `research-docs`, `research-browser`, `research-rag`, and `research-memory`.
 - Extend citation support later with style selection and richer paper/PDF identifiers after scholarly/document source adapters exist.
-- Extend orchestration profiles with `/team` save/load and execution policy.
+- Extend saved orchestration teams with execution policy only after budget, timeout, credential, result-truncation, result-merge, and model-visible `delegate_task` boundaries are designed.
 - Add OpenRouter delegate adapter.
 - Add Codex delegate adapter.
 - Add Devin delegate adapter through MCP/API when credentials are configured.

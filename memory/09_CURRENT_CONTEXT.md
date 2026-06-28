@@ -48,6 +48,7 @@ Urgent UX recovery additions from user testing:
 - Native test target commands are implemented through `orx tests list|run`, `/tests list|run`, `/test`, package `test*` script discovery, direct Node test/spec fallback, framework/reporter metadata, compact report summary parsing, bounded shell-disabled execution, and status counts. The same adapter is exposed to the model loop through the native `run_tests` tool.
 - Dependency-free local code maps and symbol indexes are implemented through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `/map`, `/code map`, `/code symbols`, and `/symbols`; output is local-only/no-key and includes bounded language, key-file, entrypoint, JavaScript/TypeScript import/export, and exported-symbol summaries.
 - Delegation readiness rendering is implemented through noninteractive `orx orchestrator`, `orx delegate`, `orx delegates`, and read-only slash `plan/status` variants. CLI status/readiness is session-less and no-key; mutating CLI forms validate arguments then refuse, while slash mutations remain session-local only. Execution/network/subprocess/model-visible `delegate_task` exposure remain unavailable.
+- Saved disabled delegation teams are implemented through private local `~/.orx/delegation/teams.json` storage with `ORX_DELEGATION_TEAMS_PATH`, plus `orx delegates teams|save|inspect|use|delete`, `/delegates teams|save|inspect|use|delete`, and `/delegate team ...`. Saved records contain only normalized disabled controller/delegates plus metadata; CLI `use` is read-only because there is no active chat session, while slash `use` loads inert metadata into the current session.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -83,11 +84,22 @@ Current files:
 
 ## Latest Work
 
+Implemented bounded saved delegation teams for the inert Phase 11 scaffold:
+
+- Added a private local saved-team registry at `~/.orx/delegation/teams.json`, with `ORX_DELEGATION_TEAMS_PATH` for tests and isolated runs, `0600` files, `0700` default/private parents, a 64-team bound, and oversized/invalid registry fail-closed loading.
+- Saved team ids are sanitized and normalized. Saved records store only normalized disabled OpenRouter controller/delegate metadata plus timestamps/optional display metadata; persisted state is forced to `executionEnabled=false`, delegates remain capped at 16, and secret-like/control-character values are rejected or omitted.
+- Added CLI management through `orx delegates teams`, `orx delegates save <id> --controller <model> [--delegate <name> <model>...]`, `inspect`, `use`, and `delete`; `orx delegate team ...` is also available. CLI save creates/updates teams from explicit safe args, but CLI `use` is intentionally read-only because there is no active chat session state.
+- Added slash management through `/delegates teams|save|inspect|use|delete` and `/delegate team ...`; slash `save` captures the current inert session-local scaffold, and slash `use` loads saved disabled metadata into the current chat session.
+- `/status` now reports `delegation_team_registry_path` and `delegation_team_count` alongside the existing disabled orchestration fields.
+- Execution remains unavailable: no OpenRouter delegate calls, network calls, subprocess agents, enabled execution state, model-visible `delegate_task`, budget policy, result persistence, or merge semantics were added.
+- Verification so far: `npm run typecheck`, `npm run build`, `git diff --check`, focused build-backed `dist/delegation/delegation.test.js`, `dist/cli.test.js`, and `dist/slash/index.test.js` pass with 131 tests, full build-backed `npm test` passes with 434 tests, and a built-CLI dogfood pass for save/list/inspect/use/delete against an isolated `ORX_DELEGATION_TEAMS_PATH` registry succeeds.
+- Next likely delegation work: design budget, timeout, credential, result-truncation, result-merge, and execution policy before adding any OpenRouter delegate adapter or ORX-owned `delegate_task` tool.
+
 Implemented noninteractive delegation CLI parity/readiness:
 
 - Added `orx orchestrator`, `orx delegate`, and `orx delegates` as no-key noninteractive parity for the existing slash scaffold, and added read-only slash `plan/status` variants that use the same readiness renderer.
 - The CLI renders inert scaffold status plus readiness blockers for future execution: missing `delegate_task` schema registration, delegate execution policy, budget/timeout/result truncation, credential/secret-forwarding policy, result merge/persistence, and CLI state storage.
-- Mutating forms such as `orx orchestrator openrouter <model>`, `orx orchestrator clear`, `orx delegate add <name> openrouter <model>`, `orx delegate remove <name>`, and `orx delegate clear` validate safe arguments and then refuse because noninteractive CLI has no delegation session state store.
+- Mutating forms such as `orx orchestrator openrouter <model>`, `orx orchestrator clear`, `orx delegate add <name> openrouter <model>`, `orx delegate remove <name>`, and `orx delegate clear` validate safe arguments and then refuse because noninteractive CLI has no active delegation chat session.
 - The command path remains read-only: no OpenRouter calls, subprocess agents, network calls, persisted delegation state, or model-visible `delegate_task` exposure.
 - Verification: `npm run typecheck`, `git diff --check`, focused delegation/CLI/slash tests with 126 tests, full build-backed `npm test` with 429 tests, built-CLI dogfood for read-only status plus session-less mutation refusal, and independent verifier pass.
 - Next likely delegation work: design budget, timeout, credential, result-truncation, result-merge, and persistent orchestration profile policy before adding any OpenRouter delegate adapter or ORX-owned `delegate_task` tool.

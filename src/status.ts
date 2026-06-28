@@ -1,7 +1,11 @@
 import { formatConfigSources } from "./config/index.js";
 import type { LoadedConfig } from "./config/types.js";
 import { DEFAULT_THEME } from "./constants.js";
-import { getDelegationStatusSummary, type DelegationState } from "./delegation/index.js";
+import {
+  getDelegationStatusSummary,
+  getDelegationTeamStatusSummary,
+  type DelegationState,
+} from "./delegation/index.js";
 import { getMcpStatusSummary, formatMcpProfile } from "./mcp/index.js";
 import {
   getEnabledPluginPromptSummary,
@@ -29,6 +33,7 @@ export interface StatusOptions {
   pluginHooksConfigPath?: string;
   pluginRegistryPath?: string;
   profileConfigPath?: string;
+  delegationTeamConfigPath?: string;
   delegationState?: DelegationState;
   renderOptions?: TerminalRenderOptions;
 }
@@ -45,6 +50,7 @@ export function formatStatus({
   pluginHooksConfigPath,
   pluginRegistryPath,
   profileConfigPath,
+  delegationTeamConfigPath,
   delegationState,
   renderOptions,
 }: StatusOptions): string {
@@ -73,6 +79,9 @@ export function formatStatus({
     configPath: pluginHooksConfigPath,
   });
   const profileStatus = getProfileStatusSummary({ configPath: profileConfigPath });
+  const delegationTeamStatus = getDelegationTeamStatusSummary({
+    configPath: delegationTeamConfigPath,
+  });
   const testStatus = getTestAdapterSummary(cwd);
   const delegationStatus =
     delegationState === undefined ? undefined : getDelegationStatusSummary(delegationState);
@@ -167,6 +176,8 @@ export function formatStatus({
       pluginRuleStatus.truncated ? " (truncated)" : ""
     }`,
     `profile_count: ${profileStatus.count}`,
+    `delegation_team_registry_path: ${delegationTeamConfigPath ?? "default"}`,
+    `delegation_team_count: ${delegationTeamStatus.count}`,
     delegationStatus ? `orchestration_controller: ${delegationStatus.controller}` : undefined,
     delegationStatus ? "orchestration_execution: disabled" : undefined,
     delegationStatus ? `delegate_count: ${delegationStatus.delegateCount}` : undefined,

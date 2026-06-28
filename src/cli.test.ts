@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
@@ -31,8 +31,8 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
     assert.match(help.stdout(), /code\s+Render local code maps or symbol indexes/);
     assert.match(help.stdout(), /orchestrator\s+Show delegation scaffold readiness/);
-    assert.match(help.stdout(), /delegate\s+Show\/refuse inert delegate scaffold changes outside chat/);
-    assert.match(help.stdout(), /delegates\s+Show inert delegate scaffold readiness/);
+    assert.match(help.stdout(), /delegate\s+Show\/refuse inert delegate scaffold changes or manage saved teams/);
+    assert.match(help.stdout(), /delegates\s+Show inert delegate readiness or manage saved disabled teams/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
   }
@@ -109,11 +109,11 @@ test("cli delegation commands render readiness and refuse session-less mutation 
   assert.match(orchestrator.stdout(), /ORX orchestrator scaffold:/);
   assert.match(orchestrator.stdout(), /controller: none/);
   assert.match(orchestrator.stdout(), /ORX delegation readiness:/);
-  assert.match(orchestrator.stdout(), /state_scope: cli-sessionless-readonly/);
+  assert.match(orchestrator.stdout(), /state_scope: cli-saved-teams-available/);
   assert.match(orchestrator.stdout(), /delegate_task: unavailable/);
   assert.match(orchestrator.stdout(), /network_calls: none/);
   assert.match(orchestrator.stdout(), /subprocesses: none/);
-  assert.match(orchestrator.stdout(), /noninteractive CLI has no delegation state store/);
+  assert.match(orchestrator.stdout(), /noninteractive CLI cannot attach a saved team to a live chat session/);
   assert.equal(orchestrator.stderr(), "");
 
   const delegates = createIo({ fetch });
@@ -167,6 +167,86 @@ test("cli delegation commands render readiness and refuse session-less mutation 
   );
   assert.equal(unsafe.stdout(), "");
   assert.match(unsafe.stderr(), /Delegate name must match/);
+});
+
+test("cli delegation team commands manage a private disabled registry without an API key", async () => {
+  let fetchCalls = 0;
+  const fetch = async (): Promise<Response> => {
+    fetchCalls += 1;
+    throw new Error("delegation team CLI must not make network calls");
+  };
+  const cwd = createTempDir();
+  const teamsPath = join(cwd, "delegation", "teams.json");
+  const env = {
+    ORX_DELEGATION_TEAMS_PATH: teamsPath,
+  };
+
+  try {
+    const empty = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "delegates", "teams"], env, empty.io), 0);
+    assert.match(empty.stdout(), /ORX delegation teams:/);
+    assert.match(empty.stdout(), /saved_teams: 0/);
+    assert.equal(empty.stderr(), "");
+
+    const saved = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(
+        [
+          "node",
+          "cli",
+          "delegates",
+          "save",
+          "Review-Team",
+          "--controller",
+          "openrouter/fusion",
+          "--delegate",
+          "reviewer",
+          "anthropic/claude-sonnet-4.5",
+        ],
+        env,
+        saved.io,
+      ),
+      0,
+    );
+    assert.match(saved.stdout(), /Delegation team review-team saved/);
+    assert.match(saved.stdout(), /Execution remains disabled/);
+    assert.equal(statSync(join(cwd, "delegation")).mode & 0o777, 0o700);
+    assert.equal(statSync(teamsPath).mode & 0o777, 0o600);
+    assert.doesNotMatch(readFileSync(teamsPath, "utf8"), /OPENROUTER_API_KEY|api_key/);
+
+    const listed = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "delegates", "teams", "list"], env, listed.io), 0);
+    assert.match(listed.stdout(), /saved_teams: 1/);
+    assert.match(listed.stdout(), /review-team controller=openrouter:openrouter\/fusion delegates=1/);
+
+    const inspected = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(["node", "cli", "delegates", "inspect", "review-team"], env, inspected.io),
+      0,
+    );
+    assert.match(inspected.stdout(), /ORX delegation team: review-team/);
+    assert.match(inspected.stdout(), /delegate_task: unavailable/);
+    assert.match(
+      inspected.stdout(),
+      /reviewer: provider=openrouter model=anthropic\/claude-sonnet-4\.5 execution=disabled/,
+    );
+
+    const used = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "delegates", "use", "review-team"], env, used.io), 0);
+    assert.match(used.stdout(), /state_changed: no/);
+    assert.match(used.stdout(), /noninteractive CLI has no active delegation session/);
+    assert.match(used.stdout(), /execution: disabled/);
+
+    const deleted = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(["node", "cli", "delegates", "delete", "review-team"], env, deleted.io),
+      0,
+    );
+    assert.match(deleted.stdout(), /Delegation team review-team deleted/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("cli tests commands list and run package scripts without an API key", async () => {
