@@ -1,11 +1,19 @@
 #!/usr/bin/env node
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BIN_NAME } from "./constants.js";
 import { formatToolCallStart, formatToolResult, runAgentTurn } from "./agent/index.js";
 import { createCodeMap, createCodeSymbolIndex, renderCodeMap, renderCodeSymbols } from "./code-map/index.js";
-import { loadConfig, validateApiKey } from "./config/index.js";
+import {
+  formatConfigSources,
+  loadConfig,
+  resolveLocalConfigPath,
+  resolveUserConfigPath,
+  setConfigValue,
+  validateApiKey,
+  type ConfigEditScope,
+} from "./config/index.js";
 import type { LoadedConfig, OrxConfig, OrxMode } from "./config/types.js";
 import {
   addOpenRouterDelegate,
@@ -304,6 +312,10 @@ export async function runCli(
     return 0;
   }
 
+  if (first === "config") {
+    return runConfigCommand(args.slice(1), loadedConfig, io, env);
+  }
+
   if (first === "profile" || first === "profiles") {
     return runProfileCommand(args.slice(1), loadedConfig.config, io, profileConfigPath);
   }
@@ -451,6 +463,7 @@ function helpText(): string {
     "  models [q]    List live OpenRouter models with an optional filter",
     "  credits       Show live OpenRouter credits",
     "  generation <id>  Show OpenRouter generation metadata",
+    "  config        Show or edit local ORX configuration",
     "  profile       List, inspect, save, or delete local ORX profiles",
     "  mcp           List, edit, inspect, enable, disable, and grant MCP tool policy",
     "  plugins       List catalog entries, scaffold, validate, install, enable, or disable plugins",
@@ -1045,6 +1058,141 @@ function isDelegationTeamCommand(subcommand: string): boolean {
     subcommand === "remove" ||
     subcommand === "rm"
   );
+}
+
+function runConfigCommand(
+  args: string[],
+  loadedConfig: LoadedConfig,
+  io: CliIo,
+  env: NodeJS.ProcessEnv,
+): number {
+  const subcommand = args[0]?.toLowerCase() ?? "show";
+
+  if (subcommand === "show" || subcommand === "status" || subcommand === "list") {
+    writeLine(io.stdout, renderConfigShow(loadedConfig, io, env));
+    return 0;
+  }
+
+  if (subcommand === "path" || subcommand === "paths") {
+    writeLine(io.stdout, renderConfigPaths(loadedConfig, io, env));
+    return 0;
+  }
+
+  if (subcommand === "set") {
+    const parsed = parseConfigSetArgs(args.slice(1));
+    if (typeof parsed === "string") {
+      writeLine(io.stderr, parsed);
+      return 1;
+    }
+    try {
+      const result = setConfigValue(parsed.key, parsed.value, {
+        env,
+        cwd: io.cwd,
+        scope: parsed.scope,
+      });
+      writeLine(
+        io.stdout,
+        [
+          "ORX config updated",
+          `  key: ${result.key}`,
+          `  value: ${result.value}`,
+          `  scope: ${result.scope}`,
+          `  path: ${result.path}`,
+          "  api_key: unchanged",
+          "  network_calls: none",
+          "  subprocesses: none",
+          "  restart_required: no; next invocation uses the saved config",
+        ].join("\n"),
+      );
+      return 0;
+    } catch (error) {
+      writeLine(
+        io.stderr,
+        `Unable to update config: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
+  }
+
+  writeLine(io.stderr, "Usage: orx config [show|path|set <key> <value> [--user|--local]]");
+  return 1;
+}
+
+function renderConfigShow(
+  loadedConfig: LoadedConfig,
+  io: CliIo,
+  env: NodeJS.ProcessEnv,
+): string {
+  const config = loadedConfig.config;
+  return [
+    "ORX config",
+    `  config_source: ${formatConfigSources(loadedConfig.loadedFiles)}`,
+    `  local_config_path: ${resolveLocalConfigPath({ cwd: io.cwd })}`,
+    `  user_config_path: ${resolveUserConfigPath({ env, cwd: io.cwd })}`,
+    `  mode: ${config.mode}`,
+    `  model: ${config.model}`,
+    `  fusion_preset: ${config.fusionPreset ?? "none"}`,
+    `  theme: ${config.theme ?? "default"}`,
+    `  active_profile: ${config.activeProfile ?? "none"}`,
+    `  api_key: ${loadedConfig.apiKeyPresent ? "present" : "missing"}`,
+    `  api_key_source: ${loadedConfig.apiKeySource}`,
+    `  approval_policy: ${config.permissions.approvalPolicy}`,
+    `  sandbox_mode: ${config.permissions.sandboxMode}`,
+    "  editable_keys: model, mode, fusion_preset, theme, approval_policy, sandbox_mode",
+    "  api_key_storage: use OPENROUTER_API_KEY or edit config manually; config set refuses secrets",
+  ].join("\n");
+}
+
+function renderConfigPaths(
+  loadedConfig: LoadedConfig,
+  io: CliIo,
+  env: NodeJS.ProcessEnv,
+): string {
+  const localPath = resolveLocalConfigPath({ cwd: io.cwd });
+  const userPath = resolveUserConfigPath({ env, cwd: io.cwd });
+  return [
+    "ORX config paths",
+    `  effective_sources: ${formatConfigSources(loadedConfig.loadedFiles)}`,
+    `  local: ${localPath} exists=${existsSync(localPath) ? "yes" : "no"}`,
+    `  user: ${userPath} exists=${existsSync(userPath) ? "yes" : "no"}`,
+    `  user_env_override: ${env.ORX_CONFIG_PATH ? "ORX_CONFIG_PATH" : "none"}`,
+    "  edit_default: user",
+    "  edit_user: orx config set <key> <value>",
+    "  edit_local: orx config set <key> <value> --local",
+  ].join("\n");
+}
+
+function parseConfigSetArgs(args: string[]):
+  | {
+      key: string;
+      value: string;
+      scope: ConfigEditScope;
+    }
+  | string {
+  let scope: ConfigEditScope = "user";
+  const rest: string[] = [];
+
+  for (const arg of args) {
+    if (arg === "--user") {
+      scope = "user";
+      continue;
+    }
+    if (arg === "--local") {
+      scope = "local";
+      continue;
+    }
+    rest.push(arg);
+  }
+
+  if (rest.length !== 2) {
+    return "Usage: orx config set <key> <value> [--user|--local]";
+  }
+
+  return {
+    key: rest[0],
+    value: rest[1],
+    scope,
+  };
 }
 
 function runProfileCommand(

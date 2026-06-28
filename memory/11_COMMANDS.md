@@ -47,6 +47,9 @@ npm run dev -- --help
 npm run dev -- --version
 npm run dev -- status
 npm run dev -- doctor
+npm run dev -- config show
+npm run dev -- config path
+npm run dev -- config set theme vivid
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello from ORX"
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello" --model anthropic/claude-sonnet-4.5
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello" --mode fusion --fusion general-budget
@@ -74,6 +77,8 @@ printf '/mode fusion\n/fusion general-budget\n/theme vivid\n/profile save daily\
 ```
 
 If `.orx/config.toml` contains the API key, the `OPENROUTER_API_KEY=...` prefix is not needed. The `.orx/` directory is ignored and must remain uncommitted.
+
+`orx config show` renders the effective local/user config with API-key values redacted. `orx config path` shows the local and user config paths, including `ORX_CONFIG_PATH` overrides. `orx config set <key> <value> [--user|--local]` edits supported non-secret keys only: `model`, `mode`, `fusion_preset`, `theme`, `approval_policy`, and `sandbox_mode`. It defaults to the user config path, writes private files, does not call network/subprocesses, and refuses API-key storage through CLI args; use `OPENROUTER_API_KEY` or manual config editing for keys.
 
 Optional TTY theme config:
 

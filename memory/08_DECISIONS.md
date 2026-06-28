@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Refuse API-Key Storage Through Config CLI Args
+
+Decision: `orx config set` should edit only non-secret setup fields and refuse `api_key` and secret-like values through CLI arguments. Operators should use `OPENROUTER_API_KEY` or deliberate manual config editing for API keys.
+
+Reasoning: CLI arguments are commonly captured by shell history and process listings. ORX can make model, routing, theme, and permission posture comfortable to edit without normalizing a risky secret-entry path.
+
 ## 2026-06-28: Delegate Cost Caps Are Reported From Observed Metadata
 
 Decision: ORX should treat delegated-task `maxTaskCostUsd` as an operator cap that can be validated before the call and checked against OpenRouter generation metadata after the call. Until a provider-supported pre-spend strategy exists, ORX must make this boundary visible by returning and auditing effective cap, observed cost, cost-limit status, and overage flags instead of implying that cost was prevented before generation.

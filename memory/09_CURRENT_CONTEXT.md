@@ -86,6 +86,15 @@ Current files:
 
 ## Latest Work
 
+Added first-class config inspection/editing:
+
+- Added `orx config show`, `orx config path`, and `orx config set <key> <value> [--user|--local]` before API-key validation.
+- Supported editable keys are non-secret setup fields: `model`, `mode`, `fusion_preset`, `theme`, `approval_policy`, and `sandbox_mode`.
+- `ORX_CONFIG_PATH` now overrides the user config path for isolated runs while preserving repo-local `.orx/config.toml` discovery. `config set` defaults to the user config path, writes private created files, refuses direct config-path and user-controlled parent symlinks, allows normal system temp roots, and refuses API-key storage through CLI arguments.
+- `config show` renders effective config with API-key values redacted and `config path` shows local/user paths plus the active override.
+- Verifier fixes: `config --local` from subdirectories now edits the discovered ancestor local config rather than creating a nested config, user-controlled parent-symlink writes fail closed, and explicit `/tmp/...` isolated config paths with missing parents remain usable.
+- Verification: `git diff --check`, `npm run typecheck`, focused config/CLI source tests, full `npm test` with 467 tests, `npm run verify:global-install`, isolated source dogfood for `config show/path/set` plus status reflection, and independent verifier recheck pass.
+
 Added a top-level no-network readiness doctor:
 
 - Added `orx doctor` as an API-key-optional setup overview across runtime config, profile count, test targets, MCP profile policy, plugin review counts, saved delegation teams, and delegation execution policy.

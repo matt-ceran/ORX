@@ -45,6 +45,8 @@ npm install -g .
 orx --version
 orx status
 orx doctor
+orx config show
+orx config set theme vivid
 orx tests list
 orx tests run
 orx code map
@@ -61,7 +63,7 @@ OPENROUTER_API_KEY=... orx
 
 The npm `prepare` lifecycle builds `dist/cli.js` for local source installs. `orx` with no command starts interactive chat from the current directory; use `orx help` or `orx --help` for help output.
 
-Config is discovered from repo-local `.orx/config.toml` development defaults and `~/.orx/config.toml`. `OPENROUTER_API_KEY` takes precedence for API key detection. The `status` command reports whether a key is present without printing it.
+Config is discovered from repo-local `.orx/config.toml` development defaults and `~/.orx/config.toml`. `OPENROUTER_API_KEY` takes precedence for API key detection. The `status` command reports whether a key is present without printing it. `orx config show` renders the effective config with API-key values redacted, `orx config path` shows the local/user config paths, and `orx config set <key> <value> [--local]` edits supported non-secret keys: `model`, `mode`, `fusion_preset`, `theme`, `approval_policy`, and `sandbox_mode`. Config edits default to the user config path, honor `ORX_CONFIG_PATH` for isolated runs, use private file modes for created files, and refuse API-key storage through CLI arguments.
 
 `orx doctor` is a no-network readiness overview for day-to-day setup checks. It summarizes chat API-key readiness, runtime defaults, MCP profile state, plugin review counts, saved delegation teams, delegation policy state, and concrete next commands without calling OpenRouter, remote MCP servers, plugin bins, or plugin hooks. Use `orx status`, `orx mcp status`, `orx plugins doctor`, and `orx delegates plan` for deeper detail.
 

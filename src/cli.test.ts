@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
@@ -24,6 +24,7 @@ test("help, version, and status work without an API key", async () => {
     assert.equal(await runCli(["node", "cli", helpArg], {}, help.io), 0);
     assert.match(help.stdout(), /Commands:/);
     assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
+    assert.match(help.stdout(), /config\s+Show or edit local ORX configuration/);
     assert.match(help.stdout(), /mcp\s+List, edit, inspect, enable, disable, and grant MCP tool policy/);
     assert.match(help.stdout(), /plugins\s+List catalog entries, scaffold, validate, install, enable, or disable plugins/);
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
@@ -201,6 +202,111 @@ test("cli doctor does not treat saved delegation teams as active chat delegates"
     assert.equal(doctor.stderr(), "");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli config commands show paths and edit non-secret settings without an API key", async () => {
+  const cwd = createTempDir();
+  const configPath = join(cwd, "user-config.toml");
+  const env = {
+    ORX_CONFIG_PATH: configPath,
+  };
+  let fetchCalls = 0;
+  const fetch = async (): Promise<Response> => {
+    fetchCalls += 1;
+    throw new Error("config commands must not call fetch");
+  };
+
+  try {
+    const show = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "config"], env, show.io), 0);
+    assert.match(show.stdout(), /ORX config/);
+    assert.match(show.stdout(), /config_source: built-in defaults/);
+    assert.match(show.stdout(), /api_key: missing/);
+    assert.match(show.stdout(), /editable_keys: model, mode, fusion_preset, theme, approval_policy, sandbox_mode/);
+    assert.doesNotMatch(show.stdout(), /sk-or-v1/);
+    assert.equal(show.stderr(), "");
+
+    const paths = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "config", "path"], env, paths.io), 0);
+    assert.match(paths.stdout(), new RegExp(`user: ${escapeRegExp(configPath)} exists=no`));
+    assert.match(paths.stdout(), /user_env_override: ORX_CONFIG_PATH/);
+    assert.match(paths.stdout(), /edit_default: user/);
+    assert.equal(paths.stderr(), "");
+
+    const theme = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "config", "set", "theme", "vivid"], env, theme.io), 0);
+    assert.match(theme.stdout(), /ORX config updated/);
+    assert.match(theme.stdout(), /key: theme/);
+    assert.match(theme.stdout(), /api_key: unchanged/);
+
+    const mode = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "config", "set", "mode", "fusion"], env, mode.io), 0);
+    const model = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(["node", "cli", "config", "set", "model", "openrouter/fusion"], env, model.io),
+      0,
+    );
+    const fusion = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(["node", "cli", "config", "set", "fusion-preset", "general-budget"], env, fusion.io),
+      0,
+    );
+
+    const status = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "status"], env, status.io), 0);
+    assert.match(status.stdout(), /mode: fusion/);
+    assert.match(status.stdout(), /model: openrouter\/fusion/);
+    assert.match(status.stdout(), /fusion_preset: general-budget/);
+    assert.match(status.stdout(), /theme: vivid/);
+
+    const stored = readFileSync(configPath, "utf8");
+    assert.match(stored, /theme = "vivid"/);
+    assert.match(stored, /mode = "fusion"/);
+    assert.match(stored, /model = "openrouter\/fusion"/);
+    assert.match(stored, /fusion_preset = "general-budget"/);
+    assert.doesNotMatch(stored, /api_key/);
+
+    const secret = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(["node", "cli", "config", "set", "api_key", "sk-or-v1-secret"], env, secret.io),
+      1,
+    );
+    assert.equal(secret.stdout(), "");
+    assert.match(secret.stderr(), /Refusing to store API keys/);
+    assert.doesNotMatch(secret.stderr(), /sk-or-v1-secret/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli config --local edits the discovered ancestor local config from subdirectories", async () => {
+  const root = createTempDir();
+  const cwd = join(root, "nested", "project");
+  const localConfigPath = join(root, ".orx", "config.toml");
+  const nestedConfigPath = join(cwd, ".orx", "config.toml");
+
+  try {
+    mkdirSync(join(root, ".orx"), { recursive: true });
+    mkdirSync(cwd, { recursive: true });
+    writeFileSync(localConfigPath, ['theme = "default"', ""].join("\n"));
+
+    const paths = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "config", "path"], {}, paths.io), 0);
+    assert.match(paths.stdout(), new RegExp(`effective_sources: ${escapeRegExp(localConfigPath)}`));
+    assert.match(paths.stdout(), new RegExp(`local: ${escapeRegExp(localConfigPath)} exists=yes`));
+
+    const set = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "config", "set", "theme", "mono", "--local"], {}, set.io),
+      0,
+    );
+    assert.match(set.stdout(), new RegExp(`path: ${escapeRegExp(localConfigPath)}`));
+    assert.match(readFileSync(localConfigPath, "utf8"), /theme = "mono"/);
+    assert.equal(existsSync(nestedConfigPath), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
