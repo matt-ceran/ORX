@@ -93,6 +93,8 @@ Acceptance:
 
 Goal: create the ORX plugin substrate without enabling risky components by default.
 
+Current status as of 2026-06-27: local registry, cache, catalog install-by-id, skills/prompts/rules loaders, and inert manifest metadata are implemented. Plugin manifests can include sanitized display-only homepage/docs/license/trust tier/auth/privacy/runtime metadata rendered by `/plugins inspect`; executable plugin commands, hooks, bins, and plugin MCP remain inactive.
+
 Implement:
 
 - `src/plugins/manifest`: parse ORX plugin manifests and compatibility manifests where practical.

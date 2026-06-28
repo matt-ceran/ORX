@@ -27,6 +27,7 @@ Urgent UX recovery additions from user testing:
 - Plugin catalog support is local-only: `orx plugins catalog`, `/plugins catalog`, and `plugins install <catalog-id>` read sanitized entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH` and do not fetch remote sources.
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` as untrusted context; executable plugin commands remain inactive.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
+- Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -61,6 +62,15 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented inert plugin metadata fields:
+
+- Added optional manifest `metadata` fields for homepage, documentation, license, trust tier, auth requirements, privacy/data-access notes, and runtime requirements.
+- Metadata is strictly sanitized: URLs reject credentials/query/fragment, env names stay names-only, arrays are bounded, and known metadata fields reject secret-like values and terminal control characters.
+- `/plugins inspect` now renders trust tier, auth, privacy, and runtime requirements; plugin summaries include trust tier/auth state while executable surfaces remain inactive.
+- Updated README and tooling memory for display-only metadata.
+- Focused verification: `npm run typecheck` and `npm run build && node --test dist/plugins/registry.test.js dist/cli.test.js dist/slash/index.test.js` pass with 101 tests.
+- Next likely plugin work: plugin-provided MCP preset wiring or executable slash-command design/hook trust, both still gated by explicit policy.
 
 Implemented plugin markdown prompt-command activation:
 

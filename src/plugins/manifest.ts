@@ -12,6 +12,7 @@ export type PluginComponentKey =
   | "assets"
   | "docs";
 export type PluginPermissionKey = "filesystem" | "network" | "env" | "mcp";
+export type PluginTrustTier = "local" | "community" | "verified" | "experimental" | "untrusted";
 
 export interface PluginSource {
   type: PluginSourceType;
@@ -28,8 +29,39 @@ export interface PluginManifest {
   description: string;
   publisher: string;
   source: PluginSource;
+  metadata?: PluginManifestMetadata;
   components: Partial<Record<PluginComponentKey, string>>;
   permissions: Record<PluginPermissionKey, string[]>;
+}
+
+export interface PluginAuthMetadata {
+  required?: boolean;
+  methods?: string[];
+  env?: string[];
+  notes?: string;
+}
+
+export interface PluginPrivacyMetadata {
+  dataAccess?: string[];
+  networkAccess?: string[];
+  notes?: string;
+}
+
+export interface PluginRuntimeMetadata {
+  node?: string;
+  platforms?: string[];
+  tools?: string[];
+  notes?: string;
+}
+
+export interface PluginManifestMetadata {
+  homepage?: string;
+  documentation?: string;
+  license?: string;
+  trustTier?: PluginTrustTier;
+  auth?: PluginAuthMetadata;
+  privacy?: PluginPrivacyMetadata;
+  runtime?: PluginRuntimeMetadata;
 }
 
 export class PluginManifestError extends Error {
@@ -50,12 +82,19 @@ const COMPONENT_KEYS: PluginComponentKey[] = [
   "docs",
 ];
 const PERMISSION_KEYS: PluginPermissionKey[] = ["filesystem", "network", "env", "mcp"];
+const TRUST_TIERS: PluginTrustTier[] = [
+  "local",
+  "community",
+  "verified",
+  "experimental",
+  "untrusted",
+];
 const ID_PART_PATTERN = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/;
 const ENV_PERMISSION_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const RESOLVED_COMMIT_PATTERN = /^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/;
 const SECRET_LIKE_PATTERN =
-  /\b(?:sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/;
+  /\b(?:bearer\s+[A-Za-z0-9._~+/=-]{8,}|authorization:\s*bearer\s+[A-Za-z0-9._~+/=-]{8,}|(?:access[_-]?token|api[_-]?key|token|key|secret)\s*[=:]\s*[A-Za-z0-9._~+/=-]{4,}|sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/i;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
 
 export function readPluginManifestFile(path: string): PluginManifest {
@@ -82,6 +121,7 @@ export function sanitizePluginManifest(value: unknown): PluginManifest {
     description: requiredBoundedString(value.description, "description", 1, 500),
     publisher: requiredIdPart(value.publisher, "publisher"),
     source: sanitizeSource(value.source),
+    metadata: sanitizePluginMetadata(value.metadata),
     components: sanitizeComponents(value.components),
     permissions: sanitizePermissions(value.permissions),
   };
@@ -132,6 +172,87 @@ function sanitizeSource(value: unknown): PluginSource {
   }
 
   return source;
+}
+
+function sanitizePluginMetadata(value: unknown): PluginManifestMetadata | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (!isPlainObject(value)) {
+    throw new PluginManifestError("Invalid plugin manifest: metadata must be an object.");
+  }
+
+  const metadata: PluginManifestMetadata = {};
+  metadata.homepage = optionalMetadataUrl(value.homepage, "metadata.homepage");
+  metadata.documentation = optionalMetadataUrl(value.documentation, "metadata.documentation");
+  metadata.license = optionalBoundedString(value.license, "metadata.license", 1, 80);
+  metadata.trustTier = optionalTrustTier(value.trustTier, "metadata.trustTier");
+  metadata.auth = sanitizeAuthMetadata(value.auth);
+  metadata.privacy = sanitizePrivacyMetadata(value.privacy);
+  metadata.runtime = sanitizeRuntimeMetadata(value.runtime);
+
+  return hasDefinedValues(metadata) ? metadata : undefined;
+}
+
+function sanitizeAuthMetadata(value: unknown): PluginAuthMetadata | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (!isPlainObject(value)) {
+    throw new PluginManifestError("Invalid plugin manifest: metadata.auth must be an object.");
+  }
+
+  const auth: PluginAuthMetadata = {};
+  auth.required = optionalBoolean(value.required, "metadata.auth.required");
+  auth.methods = optionalStringArray(value.methods, "metadata.auth.methods", 8, 80);
+  auth.env = optionalEnvArray(value.env, "metadata.auth.env", 32);
+  auth.notes = optionalBoundedString(value.notes, "metadata.auth.notes", 1, 500);
+  return hasDefinedValues(auth) ? auth : undefined;
+}
+
+function sanitizePrivacyMetadata(value: unknown): PluginPrivacyMetadata | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (!isPlainObject(value)) {
+    throw new PluginManifestError("Invalid plugin manifest: metadata.privacy must be an object.");
+  }
+
+  const privacy: PluginPrivacyMetadata = {};
+  privacy.dataAccess = optionalStringArray(
+    value.dataAccess,
+    "metadata.privacy.dataAccess",
+    16,
+    120,
+  );
+  privacy.networkAccess = optionalStringArray(
+    value.networkAccess,
+    "metadata.privacy.networkAccess",
+    16,
+    120,
+  );
+  privacy.notes = optionalBoundedString(value.notes, "metadata.privacy.notes", 1, 500);
+  return hasDefinedValues(privacy) ? privacy : undefined;
+}
+
+function sanitizeRuntimeMetadata(value: unknown): PluginRuntimeMetadata | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (!isPlainObject(value)) {
+    throw new PluginManifestError("Invalid plugin manifest: metadata.runtime must be an object.");
+  }
+
+  const runtime: PluginRuntimeMetadata = {};
+  runtime.node = optionalBoundedString(value.node, "metadata.runtime.node", 1, 80);
+  runtime.platforms = optionalStringArray(value.platforms, "metadata.runtime.platforms", 8, 80);
+  runtime.tools = optionalStringArray(value.tools, "metadata.runtime.tools", 16, 80);
+  runtime.notes = optionalBoundedString(value.notes, "metadata.runtime.notes", 1, 500);
+  return hasDefinedValues(runtime) ? runtime : undefined;
 }
 
 function sanitizeComponents(value: unknown): Partial<Record<PluginComponentKey, string>> {
@@ -278,6 +399,112 @@ function optionalBoundedString(
   }
 
   return requiredBoundedString(value, field, minimum, maximum);
+}
+
+function optionalBoolean(value: unknown, field: string): boolean | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (typeof value !== "boolean") {
+    throw new PluginManifestError(`Invalid plugin manifest: ${field} must be a boolean.`);
+  }
+
+  return value;
+}
+
+function optionalTrustTier(value: unknown, field: string): PluginTrustTier | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (typeof value !== "string" || !TRUST_TIERS.includes(value as PluginTrustTier)) {
+    throw new PluginManifestError(
+      `Invalid plugin manifest: ${field} must be one of ${TRUST_TIERS.join(", ")}.`,
+    );
+  }
+
+  return value as PluginTrustTier;
+}
+
+function optionalStringArray(
+  value: unknown,
+  field: string,
+  maximumEntries: number,
+  maximumLength: number,
+): string[] | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new PluginManifestError(`Invalid plugin manifest: ${field} must be an array.`);
+  }
+
+  if (value.length > maximumEntries) {
+    throw new PluginManifestError(
+      `Invalid plugin manifest: ${field} has too many entries.`,
+    );
+  }
+
+  return value.map((entry, index) =>
+    requiredBoundedString(entry, `${field}[${index}]`, 1, maximumLength),
+  );
+}
+
+function optionalEnvArray(
+  value: unknown,
+  field: string,
+  maximumEntries: number,
+): string[] | undefined {
+  const values = optionalStringArray(value, field, maximumEntries, 128);
+  return values?.map((entry, index) => sanitizeEnvPermissionName(entry, `${field}[${index}]`));
+}
+
+function optionalMetadataUrl(value: unknown, field: string): string | undefined {
+  const text = optionalBoundedString(value, field, 1, 2048);
+  if (!text) {
+    return undefined;
+  }
+
+  validateMetadataUrl(text, field);
+  return text;
+}
+
+function validateMetadataUrl(value: string, field: string): void {
+  if (value.includes("?") || value.includes("#")) {
+    throw new PluginManifestError(
+      `Invalid plugin manifest: ${field} must not contain query strings or fragments.`,
+    );
+  }
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      throw new PluginManifestError(
+        `Invalid plugin manifest: ${field} must use http or https.`,
+      );
+    }
+    if (url.username || url.password) {
+      throw new PluginManifestError(
+        `Invalid plugin manifest: ${field} must not contain credentials.`,
+      );
+    }
+    if (url.search || url.hash) {
+      throw new PluginManifestError(
+        `Invalid plugin manifest: ${field} must not contain query strings or fragments.`,
+      );
+    }
+  } catch (error) {
+    if (error instanceof PluginManifestError) {
+      throw error;
+    }
+    throw new PluginManifestError(`Invalid plugin manifest: ${field} must be a valid URL.`);
+  }
+}
+
+function hasDefinedValues(value: object): boolean {
+  return Object.values(value).some((entry) => typeof entry !== "undefined");
 }
 
 function sanitizeRelativeComponentPath(value: unknown, field: string): string {

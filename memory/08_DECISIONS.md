@@ -40,6 +40,12 @@ Decision: ORX should discover plugin rules only from enabled plugins and expose 
 
 Reasoning: Plugin rules sound policy-like, but they are plugin-controlled text and cannot outrank ORX/operator instructions. Treating rules as advisory progressive-disclosure context prevents installed or fetched plugin content from changing permissions, enabling MCP/hooks/bins/executable commands, or silently altering instruction priority.
 
+## 2026-06-27: Plugin Manifest Metadata Is Display-Only Until Policy Uses It
+
+Decision: ORX plugin manifests may include sanitized metadata for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. ORX renders this metadata in `/plugins inspect` and summaries as operator-facing risk/requirements context only; it does not grant permissions, mark a plugin trusted, satisfy MCP schema trust, or activate hooks, bins, MCP servers, executable commands, or plugin code.
+
+Reasoning: Metadata improves operator visibility before remote/plugin execution exists, but it is still plugin-controlled. Keeping it display-only avoids confusing self-declared trust/auth/privacy claims with ORX-owned policy decisions.
+
 ## 2026-06-26: Keep Initial Web Fetch Slash-Only And Untrusted
 
 Decision: ORX's first web/research implementation should expose direct URL fetch/extract only through explicit operator slash commands (`/web fetch <url>` and `/fetch <url>`), not as a model-autonomous browsing tool. Fetched pages are stored as evidence source metadata plus a bounded user-role untrusted context message. A testable URL guard blocks localhost, loopback, private/link-local/shared/reserved/documentation/multicast IP ranges, IPv6 local ranges, obvious cloud metadata hosts/IPs, and embedded credentials before network. Production fetch must use ORX's DNS-vetted Node transport rather than the generic OpenRouter fetch hook: resolve every hostname, reject any blocked resolved address, and bind the request to a vetted address while preserving the original hostname for host/SNI/certificate validation. Redirects are followed only after each `Location` is rechecked by the same guard, canonical source URLs redact secret-like path/query data, fetch timeouts cover body reads, and terminal control characters are stripped before rendering or context insertion.

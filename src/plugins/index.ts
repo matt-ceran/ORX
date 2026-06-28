@@ -4,10 +4,15 @@ export {
   readPluginManifestFile,
   sanitizePluginManifest,
   type PluginComponentKey,
+  type PluginAuthMetadata,
   type PluginManifest,
+  type PluginManifestMetadata,
   type PluginPermissionKey,
+  type PluginPrivacyMetadata,
+  type PluginRuntimeMetadata,
   type PluginSource,
   type PluginSourceType,
+  type PluginTrustTier,
 } from "./manifest.js";
 export { canonicalJson, sha256 } from "./hash.js";
 export {

@@ -115,6 +115,7 @@ Next:
   - Add local plugin catalog groundwork: `~/.orx/plugins/catalog.json` with `ORX_PLUGIN_CATALOG_PATH`, sanitized local catalog entries, `orx plugins catalog`, `/plugins catalog`, and install-by-catalog-id resolution into the existing inert register/cache flow.
   - Add plugin markdown prompt-command activation: enabled-plugin-only `components.commands` discovery from cached manifests, metadata-only `/prompts list`, explicit `/prompts activate <id>`, activated prompt provenance in sessions, and untrusted prompt system messages while executable plugin commands remain inactive.
   - Add plugin markdown rule activation: enabled-plugin-only `components.rules` discovery from cached manifests, metadata-only `/rules list`, explicit `/rules activate <id>`, activated rule provenance in sessions, and untrusted advisory rule system messages while executable plugin surfaces remain inactive.
+  - Add inert plugin manifest metadata: sanitized homepage/docs/license/trust tier/auth/privacy/runtime fields, `/plugins inspect` risk/requirements rendering, summary trust/auth state, and secret/control-character rejection while metadata remains display-only.
 
 - Extend browser automation beyond static DNS-bound document snapshots when a safe browser-network/proxy design can preserve SSRF protections.
 - Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
@@ -124,7 +125,7 @@ Next:
 - Add executable slash command design after the prompt/rule metadata and explicit activation surfaces.
 - Add hook runtime with hash trust and `/status` visibility.
 - Add plugin-provided MCP server presets routed through ORX policy.
-- Add plugin metadata fields for source, integrity, permissions, auth/privacy, runtime requirements, trust tier, and component lists.
+- Extend plugin metadata further only where needed for remote source UX, marketplace/catalog trust, or executable surface policy decisions.
 - Add `/plugins` command for list/install/enable/disable/inspect.
 - Add `/hooks` or plugin hook inspection workflow.
 - Add tree-sitter and ast-grep code intelligence for repo maps, symbol slices, syntax-aware search, and codemod previews.

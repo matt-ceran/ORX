@@ -99,6 +99,7 @@ Current Phase 9 plugin scaffold:
 - Optional local plugin catalog metadata is read from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH`; catalog entries are sanitized, local-only, and can resolve `orx plugins install <catalog-id>` / `/plugins install <catalog-id>` to a manifest path without network access.
 - Registering a local manifest snapshots the sanitized manifest plus declared component paths into the ORX-owned cache before writing the registry record; unknown manifest fields and unreferenced local files are not copied.
 - Registering a local manifest computes a stable plugin id, manifest hash, lock-style integrity record, install time, source metadata, cached manifest path, original manifest path provenance, and bounded component hashes from the cached snapshot when files/directories are available.
+- Optional plugin manifest `metadata` fields for homepage, docs, license, trust tier, auth, privacy, and runtime requirements are sanitized and rendered as inert risk/requirements context in `/plugins inspect`; they do not grant permissions or enable executable surfaces.
 - Git source manifests must include a pinned `resolvedCommit`; floating refs can be recorded as context but cannot be the lock pin.
 - Manifest and loaded registry display fields reject secret-like values and terminal control characters before they can be stored or rendered.
 - Registering stores plugins disabled by default. `/plugins enable` and `/plugins disable` persist only an inert enabled flag.

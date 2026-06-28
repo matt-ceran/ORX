@@ -91,6 +91,8 @@ Catalog files are local JSON:
 }
 ```
 
+Plugin manifests may include optional inert `metadata` for risk display, such as `trustTier`, `homepage`, `documentation`, `license`, `auth`, `privacy`, and `runtime`. ORX sanitizes those fields for `/plugins inspect`; they do not grant permissions or activate executable surfaces.
+
 Send one non-interactive streaming request with:
 
 ```sh

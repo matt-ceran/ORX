@@ -36,6 +36,7 @@ export function renderPluginInspect(plugin: InstalledPluginRecord): string {
     `  installed: ${plugin.installed ? "yes" : "no"}`,
     `  enabled: ${plugin.enabled ? "yes" : "no"}`,
     "  trust: local registry marker only",
+    `  trust_tier: ${plugin.manifest.metadata?.trustTier ?? "unspecified"}`,
     `  manifest_hash: ${plugin.manifestHash}`,
     `  integrity: ${plugin.lock.integrity}`,
     `  registered_at: ${plugin.registeredAt}`,
@@ -66,6 +67,8 @@ export function renderPluginInspect(plugin: InstalledPluginRecord): string {
     `    network: ${formatPermissionValues(plugin.manifest.permissions.network)}`,
     `    env: ${formatPermissionValues(plugin.manifest.permissions.env)}`,
     `    mcp: ${formatPermissionValues(plugin.manifest.permissions.mcp)}`,
+    "  metadata:",
+    ...formatMetadataLines(plugin),
     "  executable_surfaces: hooks=inactive bins=inactive mcp=inactive commands=inactive",
     "  plugin_code_execution: disabled in this scaffold",
   ].join("\n");
@@ -79,6 +82,8 @@ export function formatPluginSummary(plugin: InstalledPluginRecord): string {
     `integrity=${plugin.lock.integrity}`,
     `manifest=${plugin.manifestHash}`,
     `source=${plugin.manifest.source.type}`,
+    `trust_tier=${plugin.manifest.metadata?.trustTier ?? "unspecified"}`,
+    `auth=${formatAuthSummary(plugin)}`,
     `components=${formatComponentKeys(plugin)}`,
     `permissions=${formatPermissionSummary(plugin)}`,
   ].join(" ");
@@ -114,4 +119,69 @@ function formatPermissionSummary(plugin: InstalledPluginRecord): string {
 
 function formatPermissionValues(values: string[]): string {
   return values.length > 0 ? values.join(",") : "none";
+}
+
+function formatMetadataLines(plugin: InstalledPluginRecord): string[] {
+  const metadata = plugin.manifest.metadata;
+  if (!metadata) {
+    return ["    none"];
+  }
+
+  const lines = [
+    `    homepage: ${metadata.homepage ?? "none"}`,
+    `    documentation: ${metadata.documentation ?? "none"}`,
+    `    license: ${metadata.license ?? "none"}`,
+    `    trust_tier: ${metadata.trustTier ?? "unspecified"}`,
+  ];
+
+  if (metadata.auth) {
+    lines.push(
+      `    auth_required: ${formatOptionalBoolean(metadata.auth.required)}`,
+      `    auth_methods: ${formatPermissionValues(metadata.auth.methods ?? [])}`,
+      `    auth_env: ${formatPermissionValues(metadata.auth.env ?? [])}`,
+      `    auth_notes: ${metadata.auth.notes ?? "none"}`,
+    );
+  } else {
+    lines.push("    auth_required: unspecified");
+  }
+
+  if (metadata.privacy) {
+    lines.push(
+      `    privacy_data_access: ${formatPermissionValues(metadata.privacy.dataAccess ?? [])}`,
+      `    privacy_network_access: ${formatPermissionValues(metadata.privacy.networkAccess ?? [])}`,
+      `    privacy_notes: ${metadata.privacy.notes ?? "none"}`,
+    );
+  }
+
+  if (metadata.runtime) {
+    lines.push(
+      `    runtime_node: ${metadata.runtime.node ?? "unspecified"}`,
+      `    runtime_platforms: ${formatPermissionValues(metadata.runtime.platforms ?? [])}`,
+      `    runtime_tools: ${formatPermissionValues(metadata.runtime.tools ?? [])}`,
+      `    runtime_notes: ${metadata.runtime.notes ?? "none"}`,
+    );
+  }
+
+  return lines;
+}
+
+function formatAuthSummary(plugin: InstalledPluginRecord): string {
+  const required = plugin.manifest.metadata?.auth?.required;
+  if (required === true) {
+    return "required";
+  }
+  if (required === false) {
+    return "not-required";
+  }
+  return "unspecified";
+}
+
+function formatOptionalBoolean(value: boolean | undefined): string {
+  if (value === true) {
+    return "yes";
+  }
+  if (value === false) {
+    return "no";
+  }
+  return "unspecified";
 }

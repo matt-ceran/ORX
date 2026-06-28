@@ -304,6 +304,107 @@ test("plugin manifest env permissions only store environment variable names", ()
   }
 });
 
+test("plugin manifest metadata is sanitized and rendered as inert risk context", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-metadata-"));
+  const registryPath = join(cwd, "registry.json");
+  const manifestPath = join(cwd, "plugin.json");
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      ...validManifest(),
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: ["API_KEY"],
+        mcp: [],
+      },
+      metadata: {
+        homepage: "https://example.test/orx-plugin",
+        documentation: "https://docs.example.test/orx-plugin",
+        license: "MIT",
+        trustTier: "community",
+        auth: {
+          required: true,
+          methods: ["api-key"],
+          env: ["API_KEY"],
+          notes: "Requires an operator-provided API key.",
+        },
+        privacy: {
+          dataAccess: ["repo-files"],
+          networkAccess: ["api.example.test"],
+          notes: "May send selected snippets after explicit operator action.",
+        },
+        runtime: {
+          node: ">=20",
+          platforms: ["darwin", "linux"],
+          tools: ["node"],
+          notes: "No executable surfaces are active in this scaffold.",
+        },
+      },
+    }),
+  );
+
+  try {
+    const result = registerPluginManifest(manifestPath, { registryPath });
+    assert.equal(result.ok, true);
+    assert.equal(result.plugin?.manifest.metadata?.trustTier, "community");
+    assert.equal(result.plugin?.manifest.metadata?.auth?.required, true);
+    assert.deepEqual(result.plugin?.manifest.permissions.env, ["API_KEY"]);
+    assert.deepEqual(result.plugin?.manifest.metadata?.auth?.env, ["API_KEY"]);
+
+    const plugin = loadPluginRegistry({ registryPath }).plugins["acme.demo-plugin@1.0.0"];
+    const rendered = renderPluginInspect(plugin);
+    assert.match(rendered, /trust_tier: community/);
+    assert.match(rendered, /auth_required: yes/);
+    assert.match(rendered, /auth_methods: api-key/);
+    assert.match(rendered, /auth_env: API_KEY/);
+    assert.match(rendered, /privacy_data_access: repo-files/);
+    assert.match(rendered, /runtime_node: >=20/);
+    assert.match(rendered, /runtime_tools: node/);
+    assert.match(rendered, /executable_surfaces: hooks=inactive bins=inactive mcp=inactive commands=inactive/);
+    assert.match(formatPluginIdForMessage("acme.demo-plugin@1.0.0"), /acme\.demo-plugin@1\.0\.0/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugin manifest metadata rejects secret-like values", () => {
+  const cases = [
+    "Use sk-or-v1-secret-value here.",
+    "Authorization: Bearer abcdefgh12345678",
+    "api_key=abcdefgh12345678",
+    "secret=abcdefgh12345678",
+    "token=abcdefgh12345678",
+  ];
+
+  for (const [index, secretLikeValue] of cases.entries()) {
+    const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-metadata-secret-"));
+    const registryPath = join(cwd, "registry.json");
+    const manifestPath = join(cwd, `bad-${index}.json`);
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        ...validManifest(),
+        metadata: {
+          auth: {
+            notes: secretLikeValue,
+          },
+        },
+      }),
+    );
+
+    try {
+      assert.throws(
+        () => registerPluginManifest(manifestPath, { registryPath }),
+        /metadata\.auth\.notes must not contain secret-like values/,
+      );
+      assert.equal(getPluginStatusSummary({ registryPath }).installedCount, 0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }
+});
+
 test("plugin manifest rejects terminal control characters", () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-control-char-"));
   const registryPath = join(cwd, "registry.json");
