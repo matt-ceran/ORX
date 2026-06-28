@@ -22,6 +22,7 @@ import {
   formatMcpToolCallResult,
   formatMcpDiscoveryResult,
   formatMcpRemoteToolsResult,
+  installMcpProviderPreset,
   getMcpModelToolGrantRecord,
   getMcpToolGrantRecord,
   getMcpStatusSummary,
@@ -31,6 +32,7 @@ import {
   loadUserMcpProfileCatalog,
   loadMcpProfilesConfig,
   renderMcpProfileTools,
+  renderMcpProviderPresets,
   renderUserMcpProfileCatalog,
   redactSecrets,
   removeUserMcpProfile,
@@ -305,6 +307,46 @@ test("user MCP catalog mutation helpers write private profiles and tools", () =>
     assert.equal(removedProfile.ok, true);
     loaded = loadUserMcpProfileCatalog({ profileCatalogPath });
     assert.equal(loaded.profiles.length, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("MCP provider presets install local user catalog profiles", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-provider-preset-"));
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+
+  try {
+    const rendered = renderMcpProviderPresets();
+    assert.match(rendered, /id=context7/);
+    assert.match(rendered, /id=github-readonly/);
+    assert.match(rendered, /id=microsoft-learn/);
+
+    const result = installMcpProviderPreset("microsoft-learn", {
+      profileCatalogPath,
+      profileId: "mslearn",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.profileId, "user:mslearn");
+    assert.equal(result.toolCount, 3);
+
+    const loaded = loadUserMcpProfileCatalog({ profileCatalogPath });
+    assert.equal(loaded.profiles.length, 1);
+    assert.equal(loaded.profiles[0].id, "user:mslearn");
+    assert.equal(loaded.profiles[0].state, "disabled");
+    assert.equal(loaded.profiles[0].transport.url, "https://learn.microsoft.com/api/mcp");
+    assert.deepEqual(
+      loaded.profiles[0].tools.map((tool) => `${tool.name}:${tool.risk}:${tool.authRequired}`),
+      [
+        "microsoft_code_sample_search:read:false",
+        "microsoft_docs_fetch:read:false",
+        "microsoft_docs_search:read:false",
+      ],
+    );
+
+    const unknown = installMcpProviderPreset("missing", { profileCatalogPath });
+    assert.equal(unknown.ok, false);
+    assert.match(unknown.message, /Unknown MCP provider preset/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

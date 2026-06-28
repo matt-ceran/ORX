@@ -111,6 +111,10 @@ orx hooks inspect plugin:acme.example@1.0.0:format
 orx hooks trust plugin:acme.example@1.0.0:format
 orx hooks run plugin:acme.example@1.0.0:format
 orx hooks untrust plugin:acme.example@1.0.0:format
+orx mcp presets
+orx mcp add-preset context7
+orx mcp add-preset microsoft-learn --id mslearn
+orx mcp add-preset github-readonly
 orx mcp catalog
 orx mcp add-profile context7 https://mcp.context7.example/mcp --name "Context7 docs" --auth-required
 orx mcp add-tool user:context7 resolve-library-id read --auth-required --free
@@ -164,7 +168,7 @@ Git catalog entries must be pinned to a full 40- or 64-character commit hash. Re
 
 Plugin manifests may include optional inert `metadata` for risk display, such as `trustTier`, `homepage`, `documentation`, `license`, `auth`, `privacy`, and `runtime`. ORX sanitizes those fields for `/plugins inspect`; they do not grant permissions or activate executable surfaces.
 
-Enabled plugins can declare MCP presets through `components.mcpServers`. ORX reads these declarations from the cached plugin snapshot, namespaces them as `plugin:<plugin-id>:<server-id>`, includes them in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp call`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`, and hashes plugin manifest/component provenance for schema-change visibility. User MCP profiles can also be declared locally in `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`; ORX namespaces them as `user:<profile-id>` and routes them through the same disabled-by-default enable/trust/hash/tool-grant gates as built-in and plugin profiles. `orx mcp catalog`, `orx mcp add-profile`, `orx mcp remove-profile`, `orx mcp add-tool`, and `orx mcp remove-tool` edit that local catalog without hand-writing JSON, using private `0700` directories and `0600` files. `orx mcp ...` also exposes local profile/policy inspection, profile enable/disable, per-tool grant/revoke, per-tool model grant/revoke, and explicit tool calls without requiring an OpenRouter chat API key. `/mcp discover` may contact enabled, trusted, unchanged `remote-http` endpoints through ORX's guarded DNS-vetted discovery transport, but it performs only the minimal initialize handshake. `/mcp remote-tools` can list and hash remote `tools/list` metadata through the same guards; tool schemas are rendered only as hashes/summaries. `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` call `tools/call` only for enabled/trusted/unchanged profiles when policy allows the declared tool and required bearer auth is supplied through `ORX_MCP_BEARER_<PROFILE>` or `ORX_MCP_BEARER_TOKEN`. For `user:context7`, the profile-specific env name is `ORX_MCP_BEARER_USER_CONTEXT7`. Billable/write/destructive MCP tools require explicit per-tool grants bound to the current trusted profile hash, and stale grants are visible and denied. In interactive chat, `/mcp model enable` exposes one model-visible native tool, `mcp_call`, for read-only non-billable declared MCP tools that also have active model-tool grants; `/mcp model disable` removes it again. One-shot `orx ask --mcp-tools` enables the same model-granted read-only bridge for that request only. Broad/billable/write model-loop MCP exposure remains inactive.
+Enabled plugins can declare MCP presets through `components.mcpServers`. ORX reads these declarations from the cached plugin snapshot, namespaces them as `plugin:<plugin-id>:<server-id>`, includes them in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp call`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`, and hashes plugin manifest/component provenance for schema-change visibility. User MCP profiles can also be declared locally in `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`; ORX namespaces them as `user:<profile-id>` and routes them through the same disabled-by-default enable/trust/hash/tool-grant gates as built-in and plugin profiles. `orx mcp presets` lists built-in provider templates, and `orx mcp add-preset <preset>` writes the selected template into the same private user catalog. Initial presets include `context7`, `microsoft-learn`, and `github-readonly`. `orx mcp catalog`, `orx mcp add-profile`, `orx mcp remove-profile`, `orx mcp add-tool`, and `orx mcp remove-tool` edit that local catalog without hand-writing JSON, using private `0700` directories and `0600` files. `orx mcp ...` also exposes local profile/policy inspection, profile enable/disable, per-tool grant/revoke, per-tool model grant/revoke, and explicit tool calls without requiring an OpenRouter chat API key. `/mcp discover` may contact enabled, trusted, unchanged `remote-http` endpoints through ORX's guarded DNS-vetted discovery transport, but it performs only the minimal initialize handshake. `/mcp remote-tools` can list and hash remote `tools/list` metadata through the same guards; tool schemas are rendered only as hashes/summaries. `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` call `tools/call` only for enabled/trusted/unchanged profiles when policy allows the declared tool and required bearer auth is supplied through `ORX_MCP_BEARER_<PROFILE>` or `ORX_MCP_BEARER_TOKEN`. For `user:context7`, the profile-specific env name is `ORX_MCP_BEARER_USER_CONTEXT7`. Billable/write/destructive MCP tools require explicit per-tool grants bound to the current trusted profile hash, and stale grants are visible and denied. In interactive chat, `/mcp model enable` exposes one model-visible native tool, `mcp_call`, for read-only non-billable declared MCP tools that also have active model-tool grants; `/mcp model disable` removes it again. One-shot `orx ask --mcp-tools` enables the same model-granted read-only bridge for that request only. Broad/billable/write model-loop MCP exposure remains inactive.
 
 Example user MCP profile catalog:
 
@@ -196,6 +200,8 @@ Example user MCP profile catalog:
 The same catalog can be edited through slash commands in chat:
 
 ```text
+/mcp presets
+/mcp add-preset context7
 /mcp catalog
 /mcp add-profile context7 https://mcp.context7.example/mcp --name "Context7 docs" --auth-required
 /mcp add-tool user:context7 resolve-library-id read --auth-required --free
@@ -222,6 +228,8 @@ OPENROUTER_API_KEY=... npm run dev -- ask "Say hello" --mode auto
 OPENROUTER_API_KEY=... npm run dev -- ask "Say hello" --mode fusion --fusion general-budget
 npm run dev -- mcp enable openrouter
 npm run dev -- mcp allow-model-tool openrouter models-list
+npm run dev -- mcp presets
+npm run dev -- mcp add-preset context7
 npm run dev -- mcp catalog
 npm run dev -- mcp add-profile context7 https://mcp.context7.example/mcp --name "Context7 docs" --auth-required
 npm run dev -- mcp add-tool user:context7 resolve-library-id read --auth-required --free
@@ -260,7 +268,7 @@ The chat UI keeps in-session message history for the current process, streams as
 /skills [list|status|activate]
 /prompts [list|status|activate]
 /rules [list|status|activate]
-/mcp [catalog|list|inspect|tools|enable|disable|add-profile|remove-profile|add-tool|remove-tool|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool|discover|remote-tools|call|model]
+/mcp [catalog|presets|add-preset|list|inspect|tools|enable|disable|add-profile|remove-profile|add-tool|remove-tool|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool|discover|remote-tools|call|model]
 /models
 /clear
 /new

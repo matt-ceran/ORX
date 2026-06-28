@@ -27,7 +27,9 @@ import {
   getMcpProfileToolPolicyReport,
   getMcpStatusSummary,
   hashMcpProfile,
+  installMcpProviderPreset,
   loadUserMcpProfileCatalog,
+  renderMcpProviderPresets,
   renderMcpProfileInspect,
   renderMcpProfileTools,
   renderMcpStatus,
@@ -805,6 +807,38 @@ function runMcpCommand(
     return 0;
   }
 
+  if (subcommand === "presets" || subcommand === "preset") {
+    if (args.length !== 1) {
+      writeLine(io.stderr, "Usage: orx mcp presets");
+      return 1;
+    }
+
+    writeLine(io.stdout, renderMcpProviderPresets());
+    return 0;
+  }
+
+  if (subcommand === "add-preset") {
+    const parsed = parseMcpAddPresetArgs(args);
+    if (typeof parsed === "string") {
+      writeLine(io.stderr, parsed);
+      return 1;
+    }
+
+    try {
+      const result = installMcpProviderPreset(parsed.presetId, {
+        profileCatalogPath: mcpProfileCatalogPath,
+        profileId: parsed.profileId,
+        url: parsed.url,
+        authRequired: parsed.authRequired,
+      });
+      writeLine(result.ok ? io.stdout : io.stderr, result.message);
+      return result.ok ? 0 : 1;
+    } catch (error) {
+      writeLine(io.stderr, `Unable to store MCP provider preset${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
   if (subcommand === "add-profile") {
     const parsed = parseMcpAddProfileArgs(args);
     if (typeof parsed === "string") {
@@ -1247,9 +1281,63 @@ function runMcpCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx mcp [list|catalog|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: orx mcp [list|catalog|presets|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
   return 1;
+}
+
+function parseMcpAddPresetArgs(args: string[]):
+  | {
+      presetId: string;
+      profileId?: string;
+      url?: string;
+      authRequired?: boolean;
+    }
+  | string {
+  const presetId = args[1];
+  if (!presetId) {
+    return "Usage: orx mcp add-preset <preset> [--id <profile-id>] [--url <url>] [--auth-required|--no-auth]";
+  }
+
+  const parsed: {
+    presetId: string;
+    profileId?: string;
+    url?: string;
+    authRequired?: boolean;
+  } = { presetId };
+  const rest = args.slice(2);
+  for (let index = 0; index < rest.length; index += 1) {
+    const flag = rest[index];
+    if (flag === "--id") {
+      const value = rest[index + 1];
+      if (!value) {
+        return "Usage: --id requires a value";
+      }
+      parsed.profileId = value;
+      index += 1;
+      continue;
+    }
+    if (flag === "--url") {
+      const value = rest[index + 1];
+      if (!value) {
+        return "Usage: --url requires a value";
+      }
+      parsed.url = value;
+      index += 1;
+      continue;
+    }
+    if (flag === "--auth-required") {
+      parsed.authRequired = true;
+      continue;
+    }
+    if (flag === "--no-auth") {
+      parsed.authRequired = false;
+      continue;
+    }
+    return "Unknown add-preset option.";
+  }
+
+  return parsed;
 }
 
 function parseMcpAddProfileArgs(args: string[]):

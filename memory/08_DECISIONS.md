@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: MCP Provider Presets Are Local Templates Only
+
+Decision: ORX may ship built-in MCP provider presets such as `context7`, `microsoft-learn`, and `github-readonly`, exposed through `orx mcp presets`, `orx mcp add-preset <preset>`, and matching `/mcp` commands. Installing a preset writes sanitized disabled declarations into the local user MCP catalog only. It must not enable a profile, trust a profile hash, grant tools, expose model MCP, fetch remote metadata, or bypass the existing guarded discovery/call/audit gates.
+
+Reasoning: Provider presets make real MCP setup comfortable without making provider metadata an authority boundary. Keeping presets as local declaration templates preserves the existing operator-owned flow: review the profile, enable/trust the current hash, inspect remote tools when needed, grant specific tools, and only then call tools or expose read-only model MCP.
+
 ## 2026-06-28: User MCP Catalog Editing Is Local Configuration Only
 
 Decision: ORX may provide `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands to edit the private local user MCP catalog. These commands write only local operator configuration, preserve existing declarations when possible, keep profiles disabled by default, and do not bypass profile enablement, trusted hashes, schema-change gates, tool grants, model-tool grants, bearer-auth policy, guarded transport, or audit logging.

@@ -112,7 +112,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
-  assert.match(output, /\/mcp \[list\|catalog\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(output, /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog\|list\|commands\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
@@ -127,7 +127,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|catalog\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -326,7 +326,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-  assert.match(alias.stdout(), /\/mcp \[list\|catalog\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(alias.stdout(), /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -2240,6 +2240,33 @@ test("mcp slash commands use user MCP profile catalog", async () => {
 
     assert.equal(await handleSlashCommand("/mcp remove-profile context7", harness.context), "continue");
     assert.match(harness.stdout(), /User MCP profile user:context7 removed/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp slash commands install provider presets", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-preset-slash-"));
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+  const harness = createSlashHarness({
+    mcpProfileCatalogPath: profileCatalogPath,
+  });
+
+  try {
+    assert.equal(await handleSlashCommand("/mcp presets", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP provider presets/);
+    assert.match(harness.stdout(), /id=context7/);
+
+    assert.equal(
+      await handleSlashCommand("/mcp add-preset microsoft-learn --id mslearn", harness.context),
+      "continue",
+    );
+    assert.match(harness.stdout(), /MCP provider preset microsoft-learn stored as user:mslearn/);
+
+    assert.equal(await handleSlashCommand("/mcp inspect user:mslearn", harness.context), "continue");
+    assert.match(harness.stdout(), /name: Microsoft Learn/);
+    assert.match(harness.stdout(), /microsoft_docs_search risk=read auth=no billable=no/);
+    assert.match(harness.stdout(), /microsoft_docs_fetch risk=read auth=no billable=no/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

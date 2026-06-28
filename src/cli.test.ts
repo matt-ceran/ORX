@@ -548,6 +548,42 @@ test("cli mcp commands use user MCP profile catalog", async () => {
   }
 });
 
+test("cli mcp provider presets install local catalog profiles", async () => {
+  const cwd = createTempDir();
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+  const env = {
+    ORX_MCP_PROFILE_CATALOG_PATH: profileCatalogPath,
+  };
+
+  try {
+    const listed = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "presets"], env, listed.io), 0);
+    assert.match(listed.stdout(), /MCP provider presets/);
+    assert.match(listed.stdout(), /id=context7/);
+    assert.match(listed.stdout(), /id=microsoft-learn/);
+
+    const added = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "mcp", "add-preset", "context7", "--id", "docs", "--no-auth"],
+        env,
+        added.io,
+      ),
+      0,
+    );
+    assert.match(added.stdout(), /MCP provider preset context7 stored as user:docs/);
+
+    const inspected = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "inspect", "user:docs"], env, inspected.io), 0);
+    assert.match(inspected.stdout(), /name: Context7 docs/);
+    assert.match(inspected.stdout(), /url: https:\/\/mcp\.context7\.com\/mcp/);
+    assert.match(inspected.stdout(), /resolve-library-id risk=read auth=no billable=no/);
+    assert.match(inspected.stdout(), /query-docs risk=read auth=no billable=no/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("cli mcp call executes allowed remote tools through dedicated auth and transport", async () => {
   let generalFetchCalls = 0;
   const seenRequests: Array<{ authorization: string | null; body: string }> = [];

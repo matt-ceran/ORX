@@ -116,6 +116,17 @@ export {
   type UserMcpToolInput,
 } from "./user-profiles.js";
 export {
+  MCP_PROVIDER_PRESETS,
+  findMcpProviderPreset,
+  installMcpProviderPreset,
+  listMcpProviderPresets,
+  renderMcpProviderPresets,
+  type InstallMcpProviderPresetOptions,
+  type InstallMcpProviderPresetResult,
+  type McpProviderPreset,
+  type McpProviderPresetTool,
+} from "./provider-presets.js";
+export {
   hashMcpProfile,
   hashMcpProfiles,
   mcpProfileHashInput,

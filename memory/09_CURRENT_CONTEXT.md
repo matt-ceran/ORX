@@ -28,6 +28,7 @@ Urgent UX recovery additions from user testing:
 - Plugin catalog support now handles both local manifest entries and pinned git source entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH`. `orx plugins install <catalog-id>` and `/plugins install <catalog-id>` clone git catalog sources into private temporary cache storage, checkout the exact pinned commit, normalize cached manifest provenance to that pin, and still register the plugin disabled/inert.
 - Local user MCP profile catalogs are implemented through `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. Declarations are namespaced as `user:<profile-id>`, currently support sanitized `remote-http` transports, appear in `/mcp`, `orx mcp`, `/status`, interactive chat, and `orx ask --mcp-tools`, and share the same enable/trusted-hash/schema-change/tool-grant/model-grant/auth/audit gates as built-in and plugin MCP profiles.
 - Local user MCP catalog management commands are implemented through `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands. They write private local catalog files, preserve existing array/object/legacy `servers` declarations during edits, and avoid manual JSON editing for common remote MCP setup.
+- Built-in MCP provider presets are implemented through `orx mcp presets`, `orx mcp add-preset <preset>`, `/mcp presets`, and `/mcp add-preset <preset>`. Initial templates include `context7`, `microsoft-learn`, and `github-readonly`, and install into the same local user catalog without enabling or trusting profiles.
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` or the derived `/plugin:<plugin-id>:command:<slug>` alias as untrusted context. Manifest-defined executable command schemas are discoverable through `components.commandSchemas` and exposed as `/plugin:<plugin-id>:exec:<slug>` aliases that can only run referenced trusted current bins.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
@@ -74,6 +75,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented MCP provider preset templates:
+
+- Added built-in provider presets for `context7`, `microsoft-learn`, and `github-readonly`.
+- Added `orx mcp presets`, `orx mcp add-preset <preset>`, `/mcp presets`, and `/mcp add-preset <preset>` so common remote MCP profiles can be added to the local user catalog without typing URLs/tool declarations manually.
+- Preset installs write only disabled local catalog declarations. They do not enable profiles, trust hashes, grant tools, expose model MCP, or bypass existing MCP call/discovery gates.
+- Verification: `npm run typecheck`, `git diff --check`, focused source tests for MCP/CLI/slash with 172 tests, full build-backed `npm test` with 401 tests, and an isolated CLI dogfood pass for `mcp presets`, `mcp add-preset context7 --id docs`, `mcp add-preset github-readonly`, catalog rendering, and inspect pass. Independent verifier found no blocking issues and ran extra edge probes for GitHub zero-tool install, disabled state, no grants, and unsafe override rejection.
+- Next likely plugin/MCP work: importing reviewed remote `tools/list` metadata into declared tools, prompt-injection boundary hardening for MCP/research outputs, richer catalog/marketplace UX, or plugin authoring docs.
 
 Implemented MCP user catalog management commands:
 
