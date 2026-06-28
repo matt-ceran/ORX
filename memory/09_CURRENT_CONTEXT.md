@@ -18,14 +18,14 @@ Urgent UX recovery additions from user testing:
 - The first bottom-oriented TTY composer/status notch pass is implemented.
 - TTY-only assistant/tool activity animation is implemented in the bottom status composer; continue polishing richer command discovery and input ergonomics.
 - TTY command discovery now has `/commands [query]` / `/palette [query]`, a compact TTY palette, and Tab completion for slash command names and aliases.
-- Tab completion now also covers deterministic slash subcommands/arguments for `/mode`, `/fusion`, `/web`, `/mcp`, `/plugins`, `/skills`, `/orchestrator`, `/delegate`, `/resume`, `/help`, and `/commands`.
+- Tab completion now also covers deterministic slash subcommands/arguments for `/mode`, `/fusion`, `/web`, `/mcp`, `/plugins`, `/plugin`, `/bins`, `/hooks`, `/skills`, `/orchestrator`, `/delegate`, `/resume`, `/help`, and `/commands`.
 - The TTY bottom status notch now uses compact model badges for OpenRouter routing shortcuts, rendering `openrouter/auto` as `auto` and `openrouter/fusion` as `fusion`; full model ids remain unchanged in config, request construction, plain status, and non-TTY output.
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
 - Plugin install/register now snapshots sanitized manifests plus declared components and declared hook cwd directories into ORX-owned plugin cache storage before registry persistence; enabled skill/hook discovery resolves from the cached manifest path, not the original source checkout.
 - Plugin catalog support is local-only: `orx plugins catalog`, `/plugins catalog`, and `plugins install <catalog-id>` read sanitized entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH` and do not fetch remote sources.
-- Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` as untrusted context; executable plugin commands remain inactive.
+- Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` or the derived `/plugin:<plugin-id>:command:<slug>` alias as untrusted context; custom manifest-defined executable command schemas remain inactive.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
 - Enabled plugin `components.mcpServers` JSON can contribute MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp call`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`; trusted unchanged `remote-http` plugin profiles can be discovered, list remote tool metadata, run explicit operator `tools/call`, and optionally expose model-granted read-only non-billable tools through session-local `/mcp model enable`.
@@ -34,6 +34,7 @@ Urgent UX recovery additions from user testing:
 - Model MCP exposure is implemented through `/mcp model enable|disable|status` for interactive chat and `orx ask --mcp-tools` for one-shot requests. ORX adds a single native model tool `mcp_call`, limited to read-only non-billable declared MCP tools with active `/mcp allow-model-tool` / `orx mcp allow-model-tool` grants; broad/billable/write/destructive model-loop MCP exposure remains inactive.
 - Enabled plugin `components.hooks` JSON can contribute hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run manually through `hooks run` / `/hooks run` or automatically on matching lifecycle events with minimal env/cwd and JSONL audit logging.
 - Enabled plugin `components.bins` directories can contribute explicit operator-run bins. Regular cached bin files appear as `plugin:<plugin-id>:bin:<file>` in `orx bins`, `/bins`, and `/status`; trusted bin hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run only through explicit `bins run` / `/bins run` with cached-plugin cwd, manifest-declared env, redacted/truncated output, and JSONL audit logs without raw argument lists.
+- Enabled plugin prompt commands and bins now produce namespaced aliases visible through `/plugin list`, `orx plugins commands`, and `/status`. `/plugin:<plugin-id>:command:<slug>` activates the matching prompt as untrusted context; `/plugin:<plugin-id>:bin:<file> [args...]` runs the matching bin through the same trusted-hash gates as `/bins run`.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -69,6 +70,14 @@ Current files:
 
 ## Latest Work
 
+Implemented namespaced plugin command aliases:
+
+- Added `src/plugins/command-aliases.ts` to derive `/plugin:<plugin-id>:command:<slug>` prompt aliases and `/plugin:<plugin-id>:bin:<file>` bin aliases from enabled cached plugin surfaces.
+- Added `/plugin list`, `/plugins commands`, and `orx plugins commands` to list aliases. `/status` and `orx status` now show command alias, prompt alias, bin alias, and trusted-bin-alias counts.
+- Dynamic slash dispatch now recognizes `/plugin:...` aliases. Prompt aliases call the existing untrusted prompt activation path; bin aliases call the existing trusted bin runtime and preserve bin hash/env/output/audit gates.
+- Verification: verifier found no issues after independent probes for prompt arg rejection, unknown alias handling, bin trust/stale mutation, env forwarding, audit arg redaction, and list/status counts. `npm run typecheck`, build-backed focused plugin/CLI/slash/TUI tests with 127 tests, `git diff --check`, full `npm test` with 364 tests, and `npm run dev -- status` pass.
+- Next likely plugin work: custom manifest-defined command schema design, or richer code-intelligence adapters.
+
 Implemented explicit plugin bin runtime:
 
 - Added `src/plugins/bins.ts` with enabled-plugin cached `components.bins` discovery, private `~/.orx/plugins/bins.json` trust state, private `~/.orx/audit/bins.jsonl` audit logs, and env overrides `ORX_PLUGIN_BINS_CONFIG_PATH` / `ORX_PLUGIN_BINS_AUDIT_PATH`.
@@ -85,7 +94,7 @@ Implemented persisted model MCP tool allowlists:
 - `mcp_call` now requires active model-tool grants in addition to session/ask opt-in, enabled/trusted/unchanged profiles, declared-tool policy, read-only non-billable risk, env-only bearer auth, guarded transport, redaction/truncation, and audit logging.
 - Status and MCP policy renderers show `model_tool_grants`, `stale_model_tool_grants`, per-tool `model_grant=active|stale`, and `model_policy=allowed|denied` when a model grant exists.
 - Verification: Zeno found no behavior/security issue; wording and `/mcp tools` model-policy clarity fixes were applied. `npm run typecheck`, focused MCP/agent/CLI/slash tests with 173 tests, full `npm test` with 355 tests, `git diff --check`, and `npm run dev -- status` pass.
-- Next likely MCP/plugin work: executable plugin slash-command aliases around trusted bins/prompts, or richer code-intelligence adapters.
+- Next likely MCP/plugin work: custom manifest-defined plugin command schema design, or richer code-intelligence adapters.
 
 Implemented session-local model MCP `mcp_call` runtime:
 
@@ -96,7 +105,7 @@ Implemented session-local model MCP `mcp_call` runtime:
 - Verification: verifier found only stale docs/memory wording; the wording was corrected. `npm run typecheck`, `git diff --check`, focused MCP/agent/slash/chat tests with 168 tests, full `npm test` with 350 tests, and `npm run dev -- status` pass.
 - Follow-up one-shot support: `orx ask --mcp-tools` now exposes the same read-only non-billable `mcp_call` bridge for one noninteractive request, with dedicated MCP transport injection in tests and no default exposure.
 - Verification for the ask opt-in: verifier found stale discovery/remote-tools/memory wording and requested an explicit plain-ask negative assertion; fixes were applied and verifier recheck reported no findings. `npm run typecheck`, `git diff --check`, focused CLI/agent/MCP/slash tests with 169 tests, full `npm test` with 351 tests, and `npm run dev -- status` pass.
-- Next likely MCP work: executable plugin slash commands/bins.
+- Next likely MCP work: persisted model allowlists or custom plugin command schemas.
 
 Implemented explicit operator MCP `tools/call` runtime:
 
@@ -106,7 +115,7 @@ Implemented explicit operator MCP `tools/call` runtime:
 - Result rendering is bounded, redacted, marked untrusted, and explicitly not exposed to the model loop. Audit events record status/policy/result hashes/content types without raw arguments, raw output, bearer tokens, or schemas.
 - Billable/write/destructive tools still require active profile-hash-bound grants; stale grants deny before network.
 - Verification: verifier recheck reported no findings. `npm run typecheck`, `git diff --check`, focused MCP/slash/CLI tests with 146 tests, full `npm test` with 344 tests, and `npm run dev -- status` pass.
-- That slice's next likely controlled model-loop exposure foundation and noninteractive opt-in are now implemented; remaining MCP work is persisted/per-profile model allowlists or executable plugin slash commands/bins.
+- That slice's next likely controlled model-loop exposure foundation and noninteractive opt-in are now implemented; remaining MCP work is persisted/per-profile model allowlists or custom plugin command schemas.
 
 Implemented MCP per-tool grant policy storage:
 
@@ -116,7 +125,7 @@ Implemented MCP per-tool grant policy storage:
 - Added grant counts to `/status`, `orx status`, and `/mcp tools`, plus redacted audit events for grant allow/revoke attempts.
 - At that checkpoint no MCP `tools/call`, remote execution, or model-loop exposure was added; explicit operator `tools/call` was implemented later while model-loop exposure remains absent.
 - Verification: verifier found and rechecked fixes for audit assignment redaction and grant-aware inspect output with no remaining findings; `npm run typecheck`, `git diff --check`, focused MCP/slash/CLI tests with 139 tests, full `npm test` with 337 tests, and `npm run dev -- status` pass.
-- Next likely MCP work: implement a guarded, audit-first `tools/call` runtime for explicitly granted read/billable tools, or design executable plugin slash commands/bins.
+- Next likely MCP work: implement a guarded, audit-first `tools/call` runtime for explicitly granted read/billable tools, or design custom plugin command schemas.
 
 Implemented read-only remote MCP `tools/list` metadata:
 

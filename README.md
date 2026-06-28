@@ -69,6 +69,7 @@ orx plugins catalog
 orx plugins install ./orx-plugin.json
 orx plugins install acme.example@1.0.0
 orx plugins inspect acme.example@1.0.0
+orx plugins commands
 orx plugins enable acme.example@1.0.0
 orx plugins disable acme.example@1.0.0
 orx bins list
@@ -83,7 +84,7 @@ orx hooks run plugin:acme.example@1.0.0:format
 orx hooks untrust plugin:acme.example@1.0.0:format
 ```
 
-Plugin install/register stores an inert local registry record plus an ORX-owned cache snapshot of the sanitized manifest, declared components, and declared hook cwd directories. By default the registry lives at `~/.orx/plugins/registry.json`, the cache at `~/.orx/plugins/cache`, the bin trust file at `~/.orx/plugins/bins.json`, the bin audit log at `~/.orx/audit/bins.jsonl`, the hook trust file at `~/.orx/plugins/hooks.json`, the hook audit log at `~/.orx/audit/hooks.jsonl`, and the optional local catalog at `~/.orx/plugins/catalog.json`; use `ORX_PLUGIN_REGISTRY_PATH`, `ORX_PLUGIN_CACHE_DIR`, `ORX_PLUGIN_BINS_CONFIG_PATH`, `ORX_PLUGIN_BINS_AUDIT_PATH`, `ORX_PLUGIN_HOOKS_CONFIG_PATH`, `ORX_PLUGIN_HOOKS_AUDIT_PATH`, and `ORX_PLUGIN_CATALOG_PATH` to isolate them. Enabling a plugin only enables its metadata, skills, prompt-command, rules, MCP preset, bin review/trust, and hook review/trust surfaces where supported. Trusted current bins run only through explicit operator `bins run` / `/bins run` commands. Trusted current hooks can run manually or on matching lifecycle events. Plugin-declared MCP tools run only after the resulting MCP profile is separately enabled/trusted and invoked through the explicit or read-only model MCP gates; executable plugin commands remain inactive.
+Plugin install/register stores an inert local registry record plus an ORX-owned cache snapshot of the sanitized manifest, declared components, and declared hook cwd directories. By default the registry lives at `~/.orx/plugins/registry.json`, the cache at `~/.orx/plugins/cache`, the bin trust file at `~/.orx/plugins/bins.json`, the bin audit log at `~/.orx/audit/bins.jsonl`, the hook trust file at `~/.orx/plugins/hooks.json`, the hook audit log at `~/.orx/audit/hooks.jsonl`, and the optional local catalog at `~/.orx/plugins/catalog.json`; use `ORX_PLUGIN_REGISTRY_PATH`, `ORX_PLUGIN_CACHE_DIR`, `ORX_PLUGIN_BINS_CONFIG_PATH`, `ORX_PLUGIN_BINS_AUDIT_PATH`, `ORX_PLUGIN_HOOKS_CONFIG_PATH`, `ORX_PLUGIN_HOOKS_AUDIT_PATH`, and `ORX_PLUGIN_CATALOG_PATH` to isolate them. Enabling a plugin only enables its metadata, skills, prompt-command, rules, MCP preset, bin review/trust, and hook review/trust surfaces where supported. Trusted current bins run only through explicit operator `bins run` / `/bins run` commands or their namespaced `/plugin:<plugin-id>:bin:<file>` aliases. Trusted current hooks can run manually or on matching lifecycle events. Plugin-declared MCP tools run only after the resulting MCP profile is separately enabled/trusted and invoked through the explicit or read-only model MCP gates; custom manifest-defined executable plugin commands remain inactive.
 
 Catalog files are local JSON:
 
@@ -108,6 +109,8 @@ Enabled plugins can declare MCP presets through `components.mcpServers`. ORX rea
 Enabled plugins can declare hook definitions through `components.hooks`. ORX reads those declarations from the cached plugin snapshot, namespaces them as `plugin:<plugin-id>:<hook-id>`, shows them through `orx hooks`, `/hooks`, and `/status`, and lets the operator persist a trusted hook hash. `orx hooks run <id>` and `/hooks run <id>` execute only trusted current hashes, run from the cached plugin root or declared relative cwd, forward only declared env names, truncate/redact output, and append JSONL audit events. Trusted current hooks also run automatically on matching `session_start`, `user_prompt_submit`, `pre_tool_use`, `post_tool_use`, `pre_compact`, `post_compact`, and `stop` lifecycle events. Hook failures are written to stderr and audited; successful hook commands whose audit event cannot be persisted are treated as failed runs. Changed hook hashes show as pending trust until re-trusted.
 
 Enabled plugins can declare executable bins through `components.bins`. ORX reads regular files directly under that cached directory, namespaces them as `plugin:<plugin-id>:bin:<file>`, shows them through `orx bins`, `/bins`, and `/status`, and lets the operator persist a trusted bin hash. `orx bins run <id> [args...]` and `/bins run <id> [args...]` execute only trusted current hashes from the cached plugin root, forward only manifest-declared env names, choose a Node/shebang/sh runner without making cached files globally executable, truncate/redact output, and append JSONL audit events without raw argument lists. Changed bin hashes show as pending trust until re-trusted.
+
+`/plugin list` and `orx plugins commands` list namespaced aliases derived from enabled plugin prompts and bins. `/plugin:<plugin-id>:command:<slug>` activates the matching markdown prompt as untrusted chat context, equivalent to `/prompts activate <id>`. `/plugin:<plugin-id>:bin:<file> [args...]` runs the matching bin through the same trusted-hash, env, output, and audit gates as `/bins run`.
 
 Send one non-interactive streaming request with:
 
@@ -147,7 +150,8 @@ The chat UI keeps in-session message history for the current process, streams as
 /fusion [preset]
 /theme [default|mono|vivid]
 /profile [list|save|use|inspect|delete]
-/plugins [catalog|list|inspect|register|install|enable|disable]
+/plugins [catalog|list|commands|inspect|register|install|enable|disable]
+/plugin [list|status]
 /bins [list|inspect|trust|untrust|run]
 /hooks [list|inspect|trust|untrust|run]
 /skills [list|status|activate]

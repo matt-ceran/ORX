@@ -8,6 +8,7 @@ import {
   getEnabledPluginRuleSummary,
   getEnabledPluginSkillSummary,
   getEnabledPluginMcpProfileSummary,
+  getEnabledPluginCommandAliasSummary,
   getPluginBinTrustSummary,
   getPluginHookTrustSummary,
   getPluginStatusSummary,
@@ -55,6 +56,10 @@ export function formatStatus({
   const pluginPromptStatus = getEnabledPluginPromptSummary({ registryPath: pluginRegistryPath });
   const pluginRuleStatus = getEnabledPluginRuleSummary({ registryPath: pluginRegistryPath });
   const pluginMcpStatus = getEnabledPluginMcpProfileSummary({ registryPath: pluginRegistryPath });
+  const pluginCommandAliasStatus = getEnabledPluginCommandAliasSummary({
+    registryPath: pluginRegistryPath,
+    binsConfigPath: pluginBinsConfigPath,
+  });
   const pluginBinTrustStatus = getPluginBinTrustSummary({
     registryPath: pluginRegistryPath,
     configPath: pluginBinsConfigPath,
@@ -106,6 +111,12 @@ export function formatStatus({
     `plugin_installed_count: ${pluginStatus.installedCount}`,
     `plugin_enabled_count: ${pluginStatus.enabledCount}`,
     `plugin_cache_path: ${pluginCacheDirectory ?? "default"}`,
+    `plugin_command_aliases: ${pluginCommandAliasStatus.aliasCount}${
+      pluginCommandAliasStatus.truncated ? " (truncated)" : ""
+    }`,
+    `plugin_prompt_aliases: ${pluginCommandAliasStatus.promptAliasCount}`,
+    `plugin_bin_aliases: ${pluginCommandAliasStatus.binAliasCount}`,
+    `plugin_trusted_bin_aliases: ${pluginCommandAliasStatus.trustedBinAliasCount}`,
     `plugin_bins_config_path: ${pluginBinsConfigPath ?? "default"}`,
     `plugin_bins_audit_path: ${pluginBinsAuditLogPath ?? "default"}`,
     `plugin_hooks_config_path: ${pluginHooksConfigPath ?? "default"}`,

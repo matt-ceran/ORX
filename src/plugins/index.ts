@@ -151,6 +151,20 @@ export {
   type PluginBinsTrustConfig,
 } from "./bins.js";
 export {
+  discoverEnabledPluginCommandAliases,
+  findPluginCommandAlias,
+  formatPluginCommandAliasForMessage,
+  getEnabledPluginCommandAliasSummary,
+  isPluginCommandAliasName,
+  renderPluginCommandAliases,
+  type PluginCommandAlias,
+  type PluginCommandAliasKind,
+  type PluginCommandAliasOptions,
+  type PluginCommandAliasesDiscovery,
+  type PluginCommandAliasState,
+  type PluginCommandAliasSummary,
+} from "./command-aliases.js";
+export {
   defaultPluginHooksAuditLogPath,
   defaultPluginHooksConfigPath,
   discoverEnabledPluginHooks,

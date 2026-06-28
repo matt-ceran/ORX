@@ -42,6 +42,7 @@ import {
   createEnabledPluginRulesSystemMessage,
   createEnabledPluginSkillsSystemMessage,
   discoverEnabledPluginBins,
+  discoverEnabledPluginCommandAliases,
   discoverEnabledPluginHooks,
   findDiscoveredBin,
   findDiscoveredHook,
@@ -57,6 +58,7 @@ import {
   renderPluginBinInspect,
   renderPluginBinRunResult,
   renderPluginBins,
+  renderPluginCommandAliases,
   renderPluginHookInspect,
   renderPluginHookLifecycleResult,
   renderPluginHookRunResult,
@@ -314,7 +316,7 @@ function helpText(): string {
     "  generation <id>  Show OpenRouter generation metadata",
     "  profile       List, inspect, save, or delete local ORX profiles",
     "  mcp           List, inspect, enable, disable, and grant MCP tool policy",
-    "  plugins       List catalog entries, inspect, register/install, enable, or disable plugins",
+    "  plugins       List catalog entries, command aliases, inspect, install, enable, or disable plugins",
     "  bins          List, inspect, trust, untrust, or run plugin bins",
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  status        Show runtime status and config defaults",
@@ -566,6 +568,19 @@ function runPluginsCommand(
     return 0;
   }
 
+  if (subcommand === "commands" || subcommand === "aliases") {
+    writeLine(
+      io.stdout,
+      renderPluginCommandAliases(
+        discoverEnabledPluginCommandAliases({
+          binsConfigPath: pluginBinsConfigPath,
+          registryPath: pluginRegistryPath,
+        }),
+      ),
+    );
+    return 0;
+  }
+
   if (subcommand === "inspect") {
     if (!pluginId || args.length !== 2) {
       writeLine(io.stderr, "Usage: orx plugins inspect <id>");
@@ -635,7 +650,7 @@ function runPluginsCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx plugins [catalog|list|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: orx plugins [catalog|list|commands|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
   return 1;
 }

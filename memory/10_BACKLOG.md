@@ -113,7 +113,7 @@ Next:
   - Add plugin management CLI ergonomics: `orx plugins list|inspect|register|install|enable|disable`, `/plugins install <manifest-path>` alias, no-API-key/no-fetch operation, sanitized unknown-plugin errors, override parent permission preservation, and tests preserving inert hooks/bins/MCP/plugin-command/code-execution surfaces.
   - Add ORX-owned local plugin install cache: `~/.orx/plugins/cache` with `ORX_PLUGIN_CACHE_DIR`, sanitized cached manifests, declared-component-only snapshots, cached lock manifest paths with original-path provenance, `/status` cache path visibility, and skill discovery from cache after source removal.
   - Add local plugin catalog groundwork: `~/.orx/plugins/catalog.json` with `ORX_PLUGIN_CATALOG_PATH`, sanitized local catalog entries, `orx plugins catalog`, `/plugins catalog`, and install-by-catalog-id resolution into the existing inert register/cache flow.
-  - Add plugin markdown prompt-command activation: enabled-plugin-only `components.commands` discovery from cached manifests, metadata-only `/prompts list`, explicit `/prompts activate <id>`, activated prompt provenance in sessions, and untrusted prompt system messages while executable plugin commands remain inactive.
+  - Add plugin markdown prompt-command activation: enabled-plugin-only `components.commands` discovery from cached manifests, metadata-only `/prompts list`, explicit `/prompts activate <id>`, activated prompt provenance in sessions, and untrusted prompt system messages; later derived aliases activate the same prompts while custom executable command schemas remain inactive.
   - Add plugin markdown rule activation: enabled-plugin-only `components.rules` discovery from cached manifests, metadata-only `/rules list`, explicit `/rules activate <id>`, activated rule provenance in sessions, and untrusted advisory rule system messages; later slices added separately trusted bin, hook, and MCP execution surfaces.
   - Add inert plugin manifest metadata: sanitized homepage/docs/license/trust tier/auth/privacy/runtime fields, `/plugins inspect` risk/requirements rendering, summary trust/auth state, and secret/control-character rejection while metadata remains display-only.
   - Add render-only plugin MCP presets: enabled-plugin-only cached `components.mcpServers` JSON discovery, namespaced `plugin:<plugin-id>:<server-id>` profiles, MCP policy/status/inspect/tools visibility, profile hashes with plugin provenance, and no plugin tool runtime; later work adds guarded endpoint discovery.
@@ -128,13 +128,14 @@ Next:
   - Add one-shot model MCP read-only opt-in: `orx ask --mcp-tools` exposes the same `mcp_call` bridge for one noninteractive request only.
   - Add persisted model MCP read-only allowlists: `/mcp allow-model-tool`, `/mcp revoke-model-tool`, and `orx mcp allow-model-tool|revoke-model-tool` store profile-hash-bound grants for model-visible read-only non-billable tools, with stale grants visible and denied.
   - Add explicit plugin bin runtime: `orx bins` and `/bins` list/inspect/trust/run/untrust enabled plugin `components.bins` files from the cached plugin snapshot, execute only trusted current hashes with manifest-declared env, and audit redacted bounded output without raw argument lists.
+  - Add namespaced plugin command aliases: `/plugin:<plugin-id>:command:<slug>` activates enabled prompt commands as untrusted context, `/plugin:<plugin-id>:bin:<file>` runs trusted current bins through the existing bin runtime, and `/plugin list` / `orx plugins commands` render aliases.
 
 - Extend browser automation beyond static DNS-bound document snapshots when a safe browser-network/proxy design can preserve SSRF protections.
 - Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
 - Follow `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md` for the full-stack plugin/MCP/research build order.
 - Add MCP presets: `openrouter`, `context7`, `github-readonly`, `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
 - Extend the plugin system beyond the local registry/CLI/cache/catalog substrate with remote source fetching, lockfile pins for remote sources, richer metadata, and namespacing.
-- Add executable slash command design after the prompt/rule metadata, explicit activation surfaces, and trusted lifecycle hook runtime.
+- Add custom manifest-defined executable slash command schema after the derived prompt/bin aliases, explicit activation surfaces, and trusted lifecycle hook runtime.
 - Extend model-loop MCP controls with clearer prompt-injection boundaries and optional operator grants for any future billable/write model exposure.
 - Extend plugin metadata further only where needed for remote source UX, marketplace/catalog trust, or executable surface policy decisions.
 - Add `/plugins` command for list/install/enable/disable/inspect.

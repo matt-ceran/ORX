@@ -107,7 +107,8 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/delegate <add\|remove\|clear>/);
   assert.match(output, /\/delegates/);
   assert.match(output, /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
-  assert.match(output, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(output, /\/plugins \[catalog\|list\|commands\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(output, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(output, /\/skills \[list\|status\|activate <id>\]/);
@@ -140,7 +141,8 @@ test("command palette renderer is a pure grouped listing surface", () => {
 
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
-  assert.match(palette, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disabl/);
+  assert.match(palette, /\/plugins \[catalog\|list\|commands\|inspect\|register\|install/);
+  assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
   assert.match(palette, /\/prompts \[list\|status\|activate <id>\]/);
@@ -152,12 +154,13 @@ test("command palette renderer is a pure grouped listing surface", () => {
 test("compact command palette renderer bounds TTY-oriented command discovery", () => {
   const palette = renderCompactCommandPalette("plugin", {
     width: 64,
-    limit: 5,
+    limit: 6,
     renderOptions: { color: false },
   });
 
-  assert.match(palette, /^Command palette matching "plugin" \(6\)/);
-  assert.match(palette, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disabl/);
+  assert.match(palette, /^Command palette matching "plugin" \(7\)/);
+  assert.match(palette, /\/plugins \[catalog\|list\|commands\|inspect\|register\|install/);
+  assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
   assert.match(palette, /\/prompts \[list\|status\|activate <id>\]/);
@@ -190,9 +193,10 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mcp model e"), [["enable "], "e"]);
   assert.deepEqual(completeSlashCommandLine("/mcp allow-m"), [["allow-model-tool "], "allow-m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp inspect o"), [["openrouter "], "o"]);
-  assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog "], "c"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog ", "commands "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/plugins en"), [["enable "], "en"]);
   assert.deepEqual(completeSlashCommandLine("/plugins i"), [["inspect ", "install "], "i"]);
+  assert.deepEqual(completeSlashCommandLine("/plugin s"), [["status "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/bins t"), [["trust "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/bins r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/hooks t"), [["trust "], "t"]);
@@ -224,7 +228,8 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.equal(handleSlashCommand("/commands plugin", harness.context), "continue");
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
-  assert.match(harness.stdout(), /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(harness.stdout(), /\/plugins \[catalog\|list\|commands\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(harness.stdout(), /\/plugin \[list\|status\]/);
   assert.match(harness.stdout(), /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(harness.stdout(), /\/skills \[list\|status\|activate <id>\]/);
   assert.match(harness.stdout(), /\/prompts \[list\|status\|activate <id>\]/);
@@ -2141,6 +2146,62 @@ test("bins slash command lists inspects trusts runs and untrusts bins", async ()
   }
 });
 
+test("plugin command aliases activate prompts and run trusted bins", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-command-aliases-slash-"));
+  const registryPath = join(cwd, "registry", "plugins.json");
+  const binsConfigPath = join(cwd, "bins", "trust.json");
+  const binsAuditLogPath = join(cwd, "audit", "bins.jsonl");
+  const manifestPath = writePluginCommandAliasFixture(cwd);
+  const promptAlias = "/plugin:acme.alias-slash-plugin@1.0.0:command:review-prompt";
+  const binAlias = "/plugin:acme.alias-slash-plugin@1.0.0:bin:hello";
+  const binId = "plugin:acme.alias-slash-plugin@1.0.0:bin:hello";
+  const activated: Array<{ id: string }> = [];
+  const harness = createSlashHarness({
+    pluginBinsAuditLogPath: binsAuditLogPath,
+    pluginBinsConfigPath: binsConfigPath,
+    pluginRegistryPath: registryPath,
+    recordActivatedPrompt: (prompt) => {
+      activated.push({ id: prompt.id });
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand(`/plugins install ${manifestPath}`, harness.context), "continue");
+    assert.equal(handleSlashCommand("/plugins enable acme.alias-slash-plugin@1.0.0", harness.context), "continue");
+
+    assert.equal(handleSlashCommand("/plugin list", harness.context), "continue");
+    assert.match(harness.stdout(), /Plugin Commands/);
+    assert.match(harness.stdout(), /alias=\/plugin:acme\.alias-slash-plugin@1\.0\.0:command:review-prompt/);
+    assert.match(harness.stdout(), /alias=\/plugin:acme\.alias-slash-plugin@1\.0\.0:bin:hello/);
+    assert.match(harness.stdout(), /state=untrusted/);
+
+    assert.equal(await handleSlashCommand(promptAlias, harness.context), "continue");
+    assert.equal(harness.messages().length, 1);
+    assert.equal(harness.messages()[0].role, "system");
+    assert.match(String(harness.messages()[0].content), /FULL ALIAS PROMPT BODY/);
+    assert.match(harness.stdout(), /Prompt activated: plugin:acme\.alias-slash-plugin@1\.0\.0:command:review-prompt/);
+    assert.deepEqual(activated, [{ id: "plugin:acme.alias-slash-plugin@1.0.0:command:review-prompt" }]);
+
+    assert.equal(await handleSlashCommand(`${binAlias} direct-arg`, harness.context), "continue");
+    assert.match(harness.stderr(), /status: untrusted/);
+    assert.doesNotMatch(harness.stderr(), /alias-bin=direct-arg/);
+
+    assert.equal(await handleSlashCommand(`/bins trust ${binId}`, harness.context), "continue");
+    assert.equal(await handleSlashCommand(`${binAlias} direct-arg`, harness.context), "continue");
+    assert.match(harness.stdout(), /Bin run: plugin:acme\.alias-slash-plugin@1\.0\.0:bin:hello/);
+    assert.match(harness.stdout(), /status: ok/);
+    assert.match(harness.stdout(), /stdout: "alias-bin=direct-arg\\n"/);
+
+    assert.equal(handleSlashCommand("/status", harness.context), "continue");
+    assert.match(harness.stdout(), /plugin_command_aliases: 2/);
+    assert.match(harness.stdout(), /plugin_prompt_aliases: 1/);
+    assert.match(harness.stdout(), /plugin_bin_aliases: 1/);
+    assert.match(harness.stdout(), /plugin_trusted_bin_aliases: 1/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("hooks slash command lists inspects trusts runs and untrusts hooks", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-hooks-slash-"));
   const registryPath = join(cwd, "registry", "plugins.json");
@@ -3310,6 +3371,50 @@ function writePluginBinFixture(cwd: string): string {
         path: ".",
       },
       components: {
+        bins: "./bin",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+  return manifestPath;
+}
+
+function writePluginCommandAliasFixture(cwd: string): string {
+  const pluginDirectory = join(cwd, "alias-plugin");
+  const manifestPath = join(pluginDirectory, "orx-plugin.json");
+  mkdirSync(join(pluginDirectory, "commands"), { recursive: true });
+  mkdirSync(join(pluginDirectory, "bin"), { recursive: true });
+  writeFileSync(
+    join(pluginDirectory, "commands", "review.md"),
+    [
+      "---",
+      "name: Review Prompt",
+      "description: Alias prompt metadata.",
+      "---",
+      "FULL ALIAS PROMPT BODY",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(join(pluginDirectory, "bin", "hello"), "printf 'alias-bin=%s\\n' \"$1\"\n");
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "alias-slash-plugin",
+      version: "1.0.0",
+      description: "Declares prompt and bin command aliases.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        commands: "./commands",
         bins: "./bin",
       },
       permissions: {

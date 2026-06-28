@@ -24,7 +24,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /Commands:/);
     assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
     assert.match(help.stdout(), /mcp\s+List, inspect, enable, disable, and grant MCP tool policy/);
-    assert.match(help.stdout(), /plugins\s+List catalog entries, inspect, register\/install, enable, or disable plugins/);
+    assert.match(help.stdout(), /plugins\s+List catalog entries, command aliases, inspect, install, enable, or disable plugins/);
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
@@ -68,6 +68,10 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /hash=sha256:[a-f0-9]{64}/);
     assert.match(status.stdout(), /plugin_installed_count: 0/);
     assert.match(status.stdout(), /plugin_enabled_count: 0/);
+    assert.match(status.stdout(), /plugin_command_aliases: 0/);
+    assert.match(status.stdout(), /plugin_prompt_aliases: 0/);
+    assert.match(status.stdout(), /plugin_bin_aliases: 0/);
+    assert.match(status.stdout(), /plugin_trusted_bin_aliases: 0/);
     assert.match(status.stdout(), /plugin_bin_runtime: explicit_trusted_operator_run/);
     assert.match(status.stdout(), /plugin_bin_definitions: 0/);
     assert.match(status.stdout(), /plugin_trusted_bins: 0/);
@@ -846,6 +850,13 @@ test("cli bins list inspect trust run and untrust without an API key or fetch", 
     assert.match(readFileSync(binsAuditLogPath, "utf8"), /"type":"plugin.bin.run"/);
     assert.doesNotMatch(readFileSync(binsAuditLogPath, "utf8"), /cli-bin-secret-12345/);
 
+    const pluginCommands = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "plugins", "commands"], env, pluginCommands.io), 0);
+    assert.match(pluginCommands.stdout(), /Plugin Commands/);
+    assert.match(pluginCommands.stdout(), /aliases: 1/);
+    assert.match(pluginCommands.stdout(), /alias=\/plugin:acme\.bin-cli-plugin@1\.0\.0:bin:hello/);
+    assert.match(pluginCommands.stdout(), /state=trusted/);
+
     const pluginList = createNoFetchIo();
     assert.equal(await runCli(["node", "cli", "plugins", "list"], env, pluginList.io), 0);
     assert.match(pluginList.stdout(), /enabled_bins: 1/);
@@ -856,6 +867,9 @@ test("cli bins list inspect trust run and untrust without an API key or fetch", 
     assert.match(status.stdout(), /plugin_trusted_bins: 1/);
     assert.match(status.stdout(), /plugin_bin_runtime: explicit_trusted_operator_run/);
     assert.match(status.stdout(), /plugin_enabled_bins: 1/);
+    assert.match(status.stdout(), /plugin_command_aliases: 1/);
+    assert.match(status.stdout(), /plugin_bin_aliases: 1/);
+    assert.match(status.stdout(), /plugin_trusted_bin_aliases: 1/);
 
     const untrusted = createNoFetchIo();
     assert.equal(await runCli(["node", "cli", "bins", "untrust", binId], env, untrusted.io), 0);

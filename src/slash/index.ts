@@ -68,24 +68,29 @@ import {
   activatePluginRule,
   activatePluginSkill,
   discoverEnabledPluginBins,
+  discoverEnabledPluginCommandAliases,
   discoverEnabledPluginHooks,
   discoverEnabledPluginPrompts,
   discoverEnabledPluginRules,
   discoverEnabledPluginSkills,
   findDiscoveredBin,
   findDiscoveredHook,
+  findPluginCommandAlias,
   findInstalledPlugin,
   formatBinIdForMessage,
   formatHookIdForMessage,
+  formatPluginCommandAliasForMessage,
   formatPluginIdForMessage,
   getPluginBinTrustSummary,
   getPluginHookTrustSummary,
   getPluginStatusSummary,
+  isPluginCommandAliasName,
   loadPluginCatalog,
   registerPluginManifest,
   renderPluginBinInspect,
   renderPluginBinRunResult,
   renderPluginBins,
+  renderPluginCommandAliases,
   renderPluginHookInspect,
   renderPluginHookRunResult,
   renderPluginHooks,
@@ -332,12 +337,14 @@ const PLUGIN_SUBCOMMAND_COMPLETIONS = [
   "catalog",
   "list",
   "status",
+  "commands",
   "inspect",
   "register",
   "install",
   "enable",
   "disable",
 ] as const;
+const PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS = ["list", "status"] as const;
 const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -829,12 +836,22 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/plugins": {
-    usage: "/plugins [catalog|list|inspect|register|install|enable|disable]",
+    usage: "/plugins [catalog|list|commands|inspect|register|install|enable|disable]",
     description: "Show catalog entries and update inert plugin registry state",
     group: "Integrations",
     tier: "advanced",
     handler: (command, context): SlashResult => {
       handlePluginsCommand(command, context);
+      return "continue";
+    },
+  },
+  "/plugin": {
+    usage: "/plugin [list|status]",
+    description: "List namespaced plugin command aliases",
+    group: "Integrations",
+    tier: "advanced",
+    handler: (command, context): SlashResult => {
+      handlePluginAliasListCommand(command, context);
       return "continue";
     },
   },
@@ -1033,6 +1050,10 @@ export function handleSlashCommand(
   const canonicalName = resolveSlashCommandName(command.name);
   const definition = COMMANDS[canonicalName];
   if (!definition) {
+    if (isPluginCommandAliasName(command.name)) {
+      return handlePluginCommandAlias(command, context);
+    }
+
     writeLine(
       context.io.stderr,
       `Unknown command: ${command.name}. Type /help <query> or /help all.`,
@@ -1306,6 +1327,8 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
         : [];
     case "/plugins":
       return argIndex === 0 ? [...PLUGIN_SUBCOMMAND_COMPLETIONS] : [];
+    case "/plugin":
+      return argIndex === 0 ? [...PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS] : [];
     case "/bins":
       return argIndex === 0 ? [...BIN_SUBCOMMAND_COMPLETIONS] : [];
     case "/hooks":
@@ -1899,6 +1922,19 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
     return;
   }
 
+  if (subcommand === "commands" || subcommand === "aliases") {
+    writeLine(
+      context.io.stdout,
+      renderPluginCommandAliases(
+        discoverEnabledPluginCommandAliases({
+          binsConfigPath: context.pluginBinsConfigPath,
+          registryPath: context.pluginRegistryPath,
+        }),
+      ),
+    );
+    return;
+  }
+
   if (subcommand === "inspect") {
     if (!pluginId || command.args.length !== 2) {
       writeLine(context.io.stderr, "Usage: /plugins inspect <id>");
@@ -1969,8 +2005,72 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
 
   writeLine(
     context.io.stderr,
-    "Usage: /plugins [catalog|list|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: /plugins [catalog|list|commands|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
+}
+
+function handlePluginAliasListCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+  if ((subcommand === "list" || subcommand === "status") && command.args.length <= 1) {
+    writeLine(
+      context.io.stdout,
+      renderPluginCommandAliases(
+        discoverEnabledPluginCommandAliases({
+          binsConfigPath: context.pluginBinsConfigPath,
+          registryPath: context.pluginRegistryPath,
+        }),
+      ),
+    );
+    return;
+  }
+
+  writeLine(context.io.stderr, "Usage: /plugin [list|status]");
+}
+
+async function handlePluginCommandAlias(
+  command: SlashCommand,
+  context: SlashCommandContext,
+): Promise<SlashResult> {
+  const alias = findPluginCommandAlias(command.name, {
+    binsConfigPath: context.pluginBinsConfigPath,
+    registryPath: context.pluginRegistryPath,
+  });
+  if (!alias) {
+    writeLine(
+      context.io.stderr,
+      `Unknown enabled plugin command: ${formatPluginCommandAliasForMessage(command.name)}. Use /plugin list.`,
+    );
+    return "continue";
+  }
+
+  if (alias.kind === "prompt") {
+    if (command.args.length > 0) {
+      writeLine(context.io.stderr, `Usage: ${alias.alias}`);
+      return "continue";
+    }
+
+    try {
+      const activation = activatePluginPrompt(alias.targetId, {
+        registryPath: context.pluginRegistryPath,
+      });
+      context.setMessages([...context.getMessages(), activation.systemMessage]);
+      context.recordActivatedPrompt?.(activation.provenance);
+      writeLine(context.io.stdout, renderPromptActivation(activation));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeLine(context.io.stderr, message);
+    }
+    return "continue";
+  }
+
+  const result = await runPluginBin(alias.targetId, command.args, {
+    auditLogPath: context.pluginBinsAuditLogPath,
+    configPath: context.pluginBinsConfigPath,
+    env: process.env,
+    registryPath: context.pluginRegistryPath,
+  });
+  writeLine(result.ok ? context.io.stdout : context.io.stderr, renderPluginBinRunResult(result));
+  return "continue";
 }
 
 async function handleBinsCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
