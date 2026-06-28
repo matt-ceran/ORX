@@ -58,14 +58,19 @@ import {
   activatePluginPrompt,
   activatePluginRule,
   activatePluginSkill,
+  discoverEnabledPluginHooks,
   discoverEnabledPluginPrompts,
   discoverEnabledPluginRules,
   discoverEnabledPluginSkills,
+  findDiscoveredHook,
   findInstalledPlugin,
+  formatHookIdForMessage,
   formatPluginIdForMessage,
   getPluginStatusSummary,
   loadPluginCatalog,
   registerPluginManifest,
+  renderPluginHookInspect,
+  renderPluginHooks,
   renderPluginCatalog,
   renderPluginInspect,
   renderPluginList,
@@ -77,6 +82,8 @@ import {
   renderSkillActivation,
   resolvePluginInstallTarget,
   setPluginEnabledState,
+  trustPluginHook,
+  untrustPluginHook,
   type PluginPromptActivationProvenance,
   type PluginRuleActivationProvenance,
   type PluginSkillActivationProvenance,
@@ -208,6 +215,7 @@ export interface SlashCommandContext {
   mcpConfigPath?: string;
   pluginCacheDirectory?: string;
   pluginCatalogPath?: string;
+  pluginHooksConfigPath?: string;
   pluginRegistryPath?: string;
   profileConfigPath?: string;
   recordActivatedPrompt?: (prompt: PluginPromptActivationProvenance) => void;
@@ -288,6 +296,7 @@ const PLUGIN_SUBCOMMAND_COMPLETIONS = [
   "enable",
   "disable",
 ] as const;
+const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const RULE_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -783,6 +792,16 @@ const COMMANDS: Record<string, SlashDefinition> = {
       return "continue";
     },
   },
+  "/hooks": {
+    usage: "/hooks [list|inspect|trust|untrust]",
+    description: "Review plugin hooks and manage hash trust",
+    group: "Integrations",
+    tier: "advanced",
+    handler: (command, context): SlashResult => {
+      handleHooksCommand(command, context);
+      return "continue";
+    },
+  },
   "/skills": {
     usage: "/skills [list|status|activate <id>]",
     description: "List enabled plugin skills or activate one for this chat",
@@ -1228,6 +1247,8 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
         : [];
     case "/plugins":
       return argIndex === 0 ? [...PLUGIN_SUBCOMMAND_COMPLETIONS] : [];
+    case "/hooks":
+      return argIndex === 0 ? [...HOOK_SUBCOMMAND_COMPLETIONS] : [];
     case "/skills":
       return argIndex === 0 ? [...SKILL_SUBCOMMAND_COMPLETIONS] : [];
     case "/prompts":
@@ -1418,6 +1439,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       loadedConfig,
       mcpConfigPath: context.mcpConfigPath,
       pluginCacheDirectory: context.pluginCacheDirectory,
+      pluginHooksConfigPath: context.pluginHooksConfigPath,
       pluginRegistryPath: context.pluginRegistryPath,
       profileConfigPath: context.profileConfigPath,
       delegationState: getDelegationState(context),
@@ -1869,6 +1891,83 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
     context.io.stderr,
     "Usage: /plugins [catalog|list|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
+}
+
+function handleHooksCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+  const hookId = command.args[1];
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(
+      context.io.stdout,
+      renderPluginHooks(discoverEnabledPluginHooks({ registryPath: context.pluginRegistryPath }), {
+        configPath: context.pluginHooksConfigPath,
+      }),
+    );
+    return;
+  }
+
+  if (subcommand === "inspect") {
+    if (!hookId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /hooks inspect <id>");
+      return;
+    }
+
+    const hook = findDiscoveredHook(hookId, { registryPath: context.pluginRegistryPath });
+    if (!hook) {
+      writeLine(context.io.stderr, `Unknown enabled plugin hook: ${formatHookIdForMessage(hookId)}`);
+      return;
+    }
+
+    writeLine(
+      context.io.stdout,
+      renderPluginHookInspect(hook, { configPath: context.pluginHooksConfigPath }),
+    );
+    return;
+  }
+
+  if (subcommand === "trust") {
+    if (!hookId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /hooks trust <id>");
+      return;
+    }
+
+    try {
+      const result = trustPluginHook(hookId, {
+        registryPath: context.pluginRegistryPath,
+        configPath: context.pluginHooksConfigPath,
+      });
+      if (!result.ok) {
+        writeLine(context.io.stderr, result.message);
+        return;
+      }
+      writeLine(context.io.stdout, result.message);
+    } catch (error) {
+      writeLine(context.io.stderr, `Unable to persist hook trust state${formatErrorCode(error)}.`);
+    }
+    return;
+  }
+
+  if (subcommand === "untrust" || subcommand === "revoke") {
+    if (!hookId || command.args.length !== 2) {
+      writeLine(context.io.stderr, `Usage: /hooks ${subcommand} <id>`);
+      return;
+    }
+
+    try {
+      const result = untrustPluginHook(hookId, { configPath: context.pluginHooksConfigPath });
+      if (!result.ok) {
+        writeLine(context.io.stderr, result.message);
+        return;
+      }
+      writeLine(context.io.stdout, result.message);
+    } catch (error) {
+      writeLine(context.io.stderr, `Unable to persist hook trust state${formatErrorCode(error)}.`);
+    }
+    return;
+  }
+
+  writeLine(context.io.stderr, "Usage: /hooks [list|inspect <id>|trust <id>|untrust <id>]");
 }
 
 function handleOrchestratorCommand(command: SlashCommand, context: SlashCommandContext): void {

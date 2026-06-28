@@ -117,6 +117,7 @@ Next:
   - Add plugin markdown rule activation: enabled-plugin-only `components.rules` discovery from cached manifests, metadata-only `/rules list`, explicit `/rules activate <id>`, activated rule provenance in sessions, and untrusted advisory rule system messages while executable plugin surfaces remain inactive.
   - Add inert plugin manifest metadata: sanitized homepage/docs/license/trust tier/auth/privacy/runtime fields, `/plugins inspect` risk/requirements rendering, summary trust/auth state, and secret/control-character rejection while metadata remains display-only.
   - Add render-only plugin MCP presets: enabled-plugin-only cached `components.mcpServers` JSON discovery, namespaced `plugin:<plugin-id>:<server-id>` profiles, MCP policy/status/inspect/tools visibility, profile hashes with plugin provenance, and no plugin endpoint discovery/tool execution.
+  - Add render-only plugin hook discovery and hash trust: enabled-plugin-only cached `components.hooks` JSON discovery, namespaced `plugin:<plugin-id>:<hook-id>` hooks, `orx hooks` and `/hooks` list/inspect/trust/untrust, private trusted hash state, status counts for definitions/trusted/pending, and no hook execution.
 
 - Extend browser automation beyond static DNS-bound document snapshots when a safe browser-network/proxy design can preserve SSRF protections.
 - Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
@@ -124,11 +125,10 @@ Next:
 - Add MCP presets: `openrouter`, `context7`, `github-readonly`, `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
 - Extend the plugin system beyond the local registry/CLI/cache/catalog substrate with remote source fetching, lockfile pins for remote sources, richer metadata, and namespacing.
 - Add executable slash command design after the prompt/rule metadata and explicit activation surfaces.
-- Add hook runtime with hash trust and `/status` visibility.
+- Add hook execution runtime that consumes trusted hook hashes with minimal env/cwd/audit policy.
 - Add plugin MCP endpoint discovery and tool execution only after explicit runtime trust, network, secret-forwarding, and audit policy is designed.
 - Extend plugin metadata further only where needed for remote source UX, marketplace/catalog trust, or executable surface policy decisions.
 - Add `/plugins` command for list/install/enable/disable/inspect.
-- Add `/hooks` or plugin hook inspection workflow.
 - Add tree-sitter and ast-grep code intelligence for repo maps, symbol slices, syntax-aware search, and codemod previews.
 - Add LSP/SCIP bridge research spike for diagnostics, references, hover, and go-to-definition.
 - Add Sourcegraph read-only profile for multi-repo search/navigation/history.

@@ -142,21 +142,23 @@ test("command palette renderer is a pure grouped listing surface", () => {
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
   assert.match(palette, /\/prompts \[list\|status\|activate <id>\]/);
   assert.match(palette, /\/rules \[list\|status\|activate <id>\]/);
+  assert.match(palette, /\/hooks \[list\|inspect\|trust\|untrust\]/);
   assert.doesNotMatch(palette, /\/model <id-or-search>/);
 });
 
 test("compact command palette renderer bounds TTY-oriented command discovery", () => {
   const palette = renderCompactCommandPalette("plugin", {
     width: 64,
-    limit: 4,
+    limit: 5,
     renderOptions: { color: false },
   });
 
-  assert.match(palette, /^Command palette matching "plugin" \(4\)/);
+  assert.match(palette, /^Command palette matching "plugin" \(5\)/);
   assert.match(palette, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disabl/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
   assert.match(palette, /\/prompts \[list\|status\|activate <id>\]/);
   assert.match(palette, /\/rules \[list\|status\|activate <id>\]/);
+  assert.match(palette, /\/hooks \[list\|inspect\|trust\|untrust\]/);
   assert.doesNotMatch(palette, /\/model <id-or-search>/);
   for (const line of palette.split("\n")) {
     assert.ok(line.length <= 64, `palette line exceeds width: ${line}`);
@@ -184,6 +186,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/plugins en"), [["enable "], "en"]);
   assert.deepEqual(completeSlashCommandLine("/plugins i"), [["inspect ", "install "], "i"]);
+  assert.deepEqual(completeSlashCommandLine("/hooks t"), [["trust "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/prompts a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/rules a"), [["activate "], "a"]);
@@ -1660,6 +1663,46 @@ test("mcp slash commands show plugin-provided presets without endpoint discovery
   }
 });
 
+test("hooks slash command lists inspects trusts and untrusts inactive hooks", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-hooks-slash-"));
+  const registryPath = join(cwd, "registry", "plugins.json");
+  const hooksConfigPath = join(cwd, "hooks", "trust.json");
+  const manifestPath = writePluginHookFixture(cwd);
+  const hookId = "plugin:acme.hook-slash-plugin@1.0.0:format";
+  const harness = createSlashHarness({
+    pluginHooksConfigPath: hooksConfigPath,
+    pluginRegistryPath: registryPath,
+  });
+
+  try {
+    assert.equal(await handleSlashCommand(`/plugins install ${manifestPath}`, harness.context), "continue");
+    assert.equal(handleSlashCommand("/plugins enable acme.hook-slash-plugin@1.0.0", harness.context), "continue");
+
+    assert.equal(handleSlashCommand("/hooks list", harness.context), "continue");
+    assert.match(harness.stdout(), /discovered_hooks: 1/);
+    assert.match(harness.stdout(), /trusted=no/);
+    assert.match(harness.stdout(), /execution=inactive/);
+
+    assert.equal(handleSlashCommand(`/hooks inspect ${hookId}`, harness.context), "continue");
+    assert.match(harness.stdout(), /Hook: plugin:acme\.hook-slash-plugin@1\.0\.0:format/);
+    assert.match(harness.stdout(), /command: npm run format/);
+    assert.match(harness.stdout(), /execution: inactive/);
+
+    assert.equal(handleSlashCommand(`/hooks trust ${hookId}`, harness.context), "continue");
+    assert.match(harness.stdout(), /Hook plugin:acme\.hook-slash-plugin@1\.0\.0:format trusted/);
+
+    assert.equal(handleSlashCommand("/status", harness.context), "continue");
+    assert.match(harness.stdout(), /plugin_hook_definitions: 1/);
+    assert.match(harness.stdout(), /plugin_trusted_hooks: 1/);
+    assert.match(harness.stdout(), /plugin_enabled_hooks: 0/);
+
+    assert.equal(handleSlashCommand(`/hooks untrust ${hookId}`, harness.context), "continue");
+    assert.match(harness.stdout(), /trust removed/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("plugins catalog lists and installs local catalog entries without network", async () => {
   let fetchCalls = 0;
   const cwd = mkdtempSync(join(tmpdir(), "orx-plugins-catalog-slash-"));
@@ -2469,6 +2512,7 @@ function createSlashHarness(
     mcpAuditLogPath?: string;
     mcpConfigPath?: string;
     pluginCatalogPath?: string;
+    pluginHooksConfigPath?: string;
     pluginRegistryPath?: string;
     profileConfigPath?: string;
     recordActivatedPrompt?: SlashCommandContext["recordActivatedPrompt"];
@@ -2563,6 +2607,7 @@ function createSlashHarness(
       mcpAuditLogPath: options.mcpAuditLogPath,
       mcpConfigPath: options.mcpConfigPath,
       pluginCatalogPath: options.pluginCatalogPath,
+      pluginHooksConfigPath: options.pluginHooksConfigPath,
       pluginRegistryPath: options.pluginRegistryPath,
       profileConfigPath: options.profileConfigPath,
       recordActivatedPrompt: options.recordActivatedPrompt,
@@ -2677,6 +2722,49 @@ function writePluginMcpPresetFixture(cwd: string): string {
         network: ["mcp.docs.example"],
         env: [],
         mcp: ["docs"],
+      },
+    }),
+  );
+  return manifestPath;
+}
+
+function writePluginHookFixture(cwd: string): string {
+  const pluginDirectory = join(cwd, "hook-plugin");
+  const manifestPath = join(pluginDirectory, "orx-plugin.json");
+  mkdirSync(pluginDirectory, { recursive: true });
+  writeFileSync(
+    join(pluginDirectory, "hooks.json"),
+    JSON.stringify({
+      hooks: {
+        format: {
+          event: "post_tool_use",
+          command: "npm run format",
+          env: ["CI"],
+          timeoutMs: 5000,
+        },
+      },
+    }),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "hook-slash-plugin",
+      version: "1.0.0",
+      description: "Declares a slash-visible hook.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        hooks: "./hooks.json",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: ["CI"],
+        mcp: [],
       },
     }),
   );

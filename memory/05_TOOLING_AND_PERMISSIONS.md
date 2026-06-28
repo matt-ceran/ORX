@@ -101,6 +101,7 @@ Current Phase 9 plugin scaffold:
 - Registering a local manifest computes a stable plugin id, manifest hash, lock-style integrity record, install time, source metadata, cached manifest path, original manifest path provenance, and bounded component hashes from the cached snapshot when files/directories are available.
 - Optional plugin manifest `metadata` fields for homepage, docs, license, trust tier, auth, privacy, and runtime requirements are sanitized and rendered as inert risk/requirements context in `/plugins inspect`; they do not grant permissions or enable executable surfaces.
 - Enabled plugins can declare render-only MCP presets through cached `components.mcpServers` JSON. ORX namespaces these profiles as `plugin:<plugin-id>:<server-id>`, includes plugin manifest/component hashes in the MCP profile hash, and shows them through `/mcp list`, `/mcp inspect`, `/mcp tools`, and `/status`; `/mcp discover` refuses plugin-sourced profiles and no plugin MCP tools are executable.
+- Enabled plugins can declare hook definitions through cached `components.hooks` JSON. ORX namespaces hooks as `plugin:<plugin-id>:<hook-id>`, computes hook hashes from sanitized declarations plus plugin provenance, stores trusted hook hashes in private operator state at `~/.orx/plugins/hooks.json` or `ORX_PLUGIN_HOOKS_CONFIG_PATH`, and shows discovered/trusted/pending counts in `/status`; trusted hooks still do not execute.
 - Git source manifests must include a pinned `resolvedCommit`; floating refs can be recorded as context but cannot be the lock pin.
 - Manifest and loaded registry display fields reject secret-like values and terminal control characters before they can be stored or rendered.
 - Registering stores plugins disabled by default. `/plugins enable` and `/plugins disable` persist only an inert enabled flag.
@@ -111,7 +112,7 @@ Current Phase 9 plugin scaffold:
 - Full rule markdown is loaded only through explicit `/rules activate <id>`, rejects secret-like values and terminal control characters before model/session use, then stores safe content as an untrusted system message and records provenance in session metadata.
 - Activated skill, prompt, and rule context is pruned from chat messages and session provenance when the backing plugin component is no longer enabled.
 - Skill, prompt, or rule content and metadata cannot authorize tool use, permission changes, MCP enablement, hooks, bins, executable plugin commands, or command execution.
-- Hooks, bins, executable plugin slash commands, plugin endpoint discovery, plugin MCP tool execution, and all plugin code execution are inactive in this scaffold even when a plugin is marked enabled.
+- Hook execution, bins, executable plugin slash commands, plugin endpoint discovery, plugin MCP tool execution, and all plugin code execution are inactive in this scaffold even when a plugin is marked enabled.
 - `/plugins inspect`, `/skills`, `/prompts`, `/rules`, and `/status` show this trust boundary explicitly; enabled hook/bin/MCP counts remain `0`.
 
 Current Phase 10 research scaffold:

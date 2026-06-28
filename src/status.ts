@@ -8,6 +8,7 @@ import {
   getEnabledPluginRuleSummary,
   getEnabledPluginSkillSummary,
   getEnabledPluginMcpProfileSummary,
+  getPluginHookTrustSummary,
   getPluginStatusSummary,
 } from "./plugins/index.js";
 import { getProfileStatusSummary } from "./profiles/index.js";
@@ -18,6 +19,7 @@ export interface StatusOptions {
   loadedConfig: LoadedConfig;
   mcpConfigPath?: string;
   pluginCacheDirectory?: string;
+  pluginHooksConfigPath?: string;
   pluginRegistryPath?: string;
   profileConfigPath?: string;
   delegationState?: DelegationState;
@@ -29,6 +31,7 @@ export function formatStatus({
   loadedConfig,
   mcpConfigPath,
   pluginCacheDirectory,
+  pluginHooksConfigPath,
   pluginRegistryPath,
   profileConfigPath,
   delegationState,
@@ -45,6 +48,10 @@ export function formatStatus({
   const pluginPromptStatus = getEnabledPluginPromptSummary({ registryPath: pluginRegistryPath });
   const pluginRuleStatus = getEnabledPluginRuleSummary({ registryPath: pluginRegistryPath });
   const pluginMcpStatus = getEnabledPluginMcpProfileSummary({ registryPath: pluginRegistryPath });
+  const pluginHookTrustStatus = getPluginHookTrustSummary({
+    registryPath: pluginRegistryPath,
+    configPath: pluginHooksConfigPath,
+  });
   const profileStatus = getProfileStatusSummary({ configPath: profileConfigPath });
   const delegationStatus =
     delegationState === undefined ? undefined : getDelegationStatusSummary(delegationState);
@@ -84,7 +91,13 @@ export function formatStatus({
     `plugin_installed_count: ${pluginStatus.installedCount}`,
     `plugin_enabled_count: ${pluginStatus.enabledCount}`,
     `plugin_cache_path: ${pluginCacheDirectory ?? "default"}`,
+    `plugin_hooks_config_path: ${pluginHooksConfigPath ?? "default"}`,
     `plugin_enabled_hooks: ${pluginStatus.enabledHookCount}`,
+    `plugin_hook_definitions: ${pluginHookTrustStatus.hookCount}${
+      pluginHookTrustStatus.truncated ? " (truncated)" : ""
+    }`,
+    `plugin_trusted_hooks: ${pluginHookTrustStatus.trustedCount}`,
+    `plugin_pending_hook_trust: ${pluginHookTrustStatus.pendingTrustCount}`,
     `plugin_enabled_bins: ${pluginStatus.enabledBinCount}`,
     `plugin_enabled_mcp: ${pluginStatus.enabledMcpCount}`,
     `plugin_mcp_presets: ${pluginMcpStatus.profileCount}${

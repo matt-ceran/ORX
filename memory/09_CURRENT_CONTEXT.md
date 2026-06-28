@@ -29,6 +29,7 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
 - Enabled plugin `components.mcpServers` JSON can contribute render-only MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, and `/status`; `/mcp discover` refuses plugin-sourced profiles and no plugin MCP tools execute.
+- Enabled plugin `components.hooks` JSON can contribute render-only hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and hook execution remains inactive.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -63,6 +64,15 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented render-only plugin hook discovery and hash trust:
+
+- Added `src/plugins/hooks.ts` for bounded discovery of enabled-plugin `components.hooks` JSON from the ORX-owned cached manifest path only.
+- Hook ids are namespaced as `plugin:<plugin-id>:<hook-id>` and hook hashes include sanitized hook declarations plus plugin manifest/component provenance.
+- Added private hook trust state under `~/.orx/plugins/hooks.json` with `ORX_PLUGIN_HOOKS_CONFIG_PATH`, `orx hooks list|inspect|trust|untrust`, `/hooks list|inspect|trust|untrust`, Tab completion, and `/status` hook definition/trusted/pending counts.
+- Trusted hooks still do not execute. `/status` keeps `plugin_enabled_hooks: 0` for runtime-enabled hooks while separately reporting hook definitions and trust state.
+- Focused verification: `npm run typecheck`, `git diff --check`, and `npm run build && node --test dist/plugins/hooks.test.js dist/plugins/registry.test.js dist/cli.test.js dist/slash/index.test.js dist/tui/chat.test.js` pass with 130 tests.
+- Next likely plugin work: executable slash-command design or a hook execution runtime that consumes trusted hook hashes with minimal env/cwd/audit policy.
 
 Implemented render-only plugin MCP presets routed through MCP policy:
 

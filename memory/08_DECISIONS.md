@@ -4,6 +4,12 @@ Last updated: 2026-06-27
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-27: Hook Hash Trust Comes Before Hook Execution
+
+Decision: Enabled ORX plugins may contribute hook definitions from cached `components.hooks` JSON, and ORX may show, inspect, trust, and untrust those definitions through `orx hooks`, `/hooks`, and `/status`. Trust records persist only hook id, trusted hook hash, and trustedAt in private operator state outside repositories. Hook execution remains unimplemented and inactive even when a hook is trusted.
+
+Reasoning: Hooks are a high-risk executable surface because they run around session and tool events. Operators need a stable review/trust workflow and visible pending hash changes before any runtime can safely invoke hooks. Keeping trust state separate from repo-controlled plugin manifests prevents repositories, fetched content, or model output from silently approving changed hook commands.
+
 ## 2026-06-27: Plugin MCP Presets Are Policy Metadata Before Runtime
 
 Decision: Enabled ORX plugins may contribute MCP preset declarations from cached `components.mcpServers` JSON, and ORX may show those profiles through `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp enable`, and `/status` using namespaced ids and profile hashes that include plugin manifest/component provenance. Plugin-sourced profiles remain render-only: `/mcp discover` refuses to contact plugin-declared endpoints, and no plugin MCP tools are exposed to the model loop or executable runtime.

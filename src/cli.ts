@@ -23,19 +23,27 @@ import {
   createEnabledPluginPromptsSystemMessage,
   createEnabledPluginRulesSystemMessage,
   createEnabledPluginSkillsSystemMessage,
+  discoverEnabledPluginHooks,
+  findDiscoveredHook,
   findInstalledPlugin,
+  formatHookIdForMessage,
   formatPluginIdForMessage,
   getPluginStatusSummary,
   loadPluginCatalog,
   registerPluginManifest,
+  renderPluginHookInspect,
+  renderPluginHooks,
   renderPluginCatalog,
   renderPluginInspect,
   renderPluginList,
   resolvePluginCacheDirectory,
   resolvePluginCatalogPath,
+  resolvePluginHooksConfigPath,
   resolvePluginInstallTarget,
   resolvePluginRegistryPath,
   setPluginEnabledState,
+  trustPluginHook,
+  untrustPluginHook,
 } from "./plugins/index.js";
 import {
   applySavedProfile,
@@ -114,6 +122,7 @@ export async function runCli(
     cwd: io.cwd,
     registryPath: pluginRegistryPath,
   });
+  const pluginHooksConfigPath = resolvePluginHooksConfigPath({ env, cwd: io.cwd });
   const pluginCatalogPath = resolvePluginCatalogPath({ env, cwd: io.cwd });
   const profileConfigPath = resolveProfileConfigPath({ env, cwd: io.cwd });
   const loadedConfigResult = loadConfigWithProfile({
@@ -136,6 +145,7 @@ export async function runCli(
         loadedConfig,
         mcpConfigPath,
         pluginCacheDirectory,
+        pluginHooksConfigPath,
         pluginRegistryPath,
         profileConfigPath,
         renderOptions: { stream: io.stdout, theme: loadedConfig.config.theme },
@@ -156,6 +166,10 @@ export async function runCli(
       pluginCacheDirectory,
       pluginCatalogPath,
     );
+  }
+
+  if (first === "hooks" || first === "hook") {
+    return runHooksCommand(args.slice(1), io, pluginRegistryPath, pluginHooksConfigPath);
   }
 
   const apiKeyError = validateApiKey(loadedConfig);
@@ -187,6 +201,7 @@ export async function runCli(
       mcpConfigPath,
       pluginCacheDirectory,
       pluginCatalogPath,
+      pluginHooksConfigPath,
       pluginRegistryPath,
       profileConfigPath,
     });
@@ -215,6 +230,7 @@ function helpText(): string {
     "  generation <id>  Show OpenRouter generation metadata",
     "  profile       List, inspect, save, or delete local ORX profiles",
     "  plugins       List catalog entries, inspect, register/install, enable, or disable plugins",
+    "  hooks         List, inspect, trust, or untrust plugin hook definitions",
     "  status        Show runtime status and config defaults",
     "  help          Show this help message",
     "  version       Show the current version",
@@ -239,6 +255,7 @@ function runChatCommand(
     mcpConfigPath?: string;
     pluginCacheDirectory?: string;
     pluginCatalogPath?: string;
+    pluginHooksConfigPath?: string;
     pluginRegistryPath?: string;
     profileConfigPath?: string;
   },
@@ -260,6 +277,7 @@ function runChatCommand(
     mcpConfigPath: paths?.mcpConfigPath,
     pluginCacheDirectory: paths?.pluginCacheDirectory,
     pluginCatalogPath: paths?.pluginCatalogPath,
+    pluginHooksConfigPath: paths?.pluginHooksConfigPath,
     pluginRegistryPath: paths?.pluginRegistryPath,
     profileConfigPath: paths?.profileConfigPath,
     braveSearchApiKey: env.BRAVE_SEARCH_API_KEY,
@@ -514,6 +532,88 @@ function runPluginsCommand(
     io.stderr,
     "Usage: orx plugins [catalog|list|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
+  return 1;
+}
+
+function runHooksCommand(
+  args: string[],
+  io: CliIo,
+  pluginRegistryPath: string,
+  pluginHooksConfigPath: string,
+): number {
+  const subcommand = args[0]?.toLowerCase() ?? "list";
+  const hookId = args[1];
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(
+      io.stdout,
+      renderPluginHooks(discoverEnabledPluginHooks({ registryPath: pluginRegistryPath }), {
+        configPath: pluginHooksConfigPath,
+      }),
+    );
+    return 0;
+  }
+
+  if (subcommand === "inspect") {
+    if (!hookId || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx hooks inspect <id>");
+      return 1;
+    }
+
+    const hook = findDiscoveredHook(hookId, { registryPath: pluginRegistryPath });
+    if (!hook) {
+      writeLine(io.stderr, `Unknown enabled plugin hook: ${formatHookIdForMessage(hookId)}`);
+      return 1;
+    }
+
+    writeLine(io.stdout, renderPluginHookInspect(hook, { configPath: pluginHooksConfigPath }));
+    return 0;
+  }
+
+  if (subcommand === "trust") {
+    if (!hookId || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx hooks trust <id>");
+      return 1;
+    }
+
+    try {
+      const result = trustPluginHook(hookId, {
+        registryPath: pluginRegistryPath,
+        configPath: pluginHooksConfigPath,
+      });
+      if (!result.ok) {
+        writeLine(io.stderr, result.message);
+        return 1;
+      }
+      writeLine(io.stdout, result.message);
+      return 0;
+    } catch (error) {
+      writeLine(io.stderr, `Unable to persist hook trust state${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
+  if (subcommand === "untrust" || subcommand === "revoke") {
+    if (!hookId || args.length !== 2) {
+      writeLine(io.stderr, `Usage: orx hooks ${subcommand} <id>`);
+      return 1;
+    }
+
+    try {
+      const result = untrustPluginHook(hookId, { configPath: pluginHooksConfigPath });
+      if (!result.ok) {
+        writeLine(io.stderr, result.message);
+        return 1;
+      }
+      writeLine(io.stdout, result.message);
+      return 0;
+    } catch (error) {
+      writeLine(io.stderr, `Unable to persist hook trust state${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
+  writeLine(io.stderr, "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>]");
   return 1;
 }
 

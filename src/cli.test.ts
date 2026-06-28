@@ -19,6 +19,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /Commands:/);
     assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
     assert.match(help.stdout(), /plugins\s+List catalog entries, inspect, register\/install, enable, or disable plugins/);
+    assert.match(help.stdout(), /hooks\s+List, inspect, trust, or untrust plugin hook definitions/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
   }
@@ -35,6 +36,7 @@ test("help, version, and status work without an API key", async () => {
         ["node", "cli", "status"],
         {
           ORX_MCP_CONFIG_PATH: join(cwd, "mcp", "profiles.json"),
+          ORX_PLUGIN_HOOKS_CONFIG_PATH: join(cwd, "plugins", "hooks.json"),
           ORX_PROFILE_CONFIG_PATH: join(cwd, "profiles.json"),
         },
         status.io,
@@ -56,6 +58,9 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /plugin_installed_count: 0/);
     assert.match(status.stdout(), /plugin_enabled_count: 0/);
     assert.match(status.stdout(), /plugin_enabled_hooks: 0/);
+    assert.match(status.stdout(), /plugin_hook_definitions: 0/);
+    assert.match(status.stdout(), /plugin_trusted_hooks: 0/);
+    assert.match(status.stdout(), /plugin_pending_hook_trust: 0/);
     assert.match(status.stdout(), /plugin_enabled_bins: 0/);
     assert.match(status.stdout(), /plugin_enabled_mcp: 0/);
     assert.match(status.stdout(), /plugin_enabled_skills: 0/);
@@ -380,6 +385,111 @@ test("cli plugins install list inspect enable and disable without an API key", a
     );
     assert.doesNotMatch(unsafeMissing.stderr(), /\u001b/);
     assert.match(unsafeMissing.stderr(), /Unknown plugin: \[invalid plugin id\]/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli hooks list inspect trust and untrust without an API key or execution", async () => {
+  const cwd = createTempDir();
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const hooksConfigPath = join(cwd, "hooks", "trust.json");
+  const manifestPath = join(cwd, "plugin", "orx-plugin.json");
+  let fetchCalls = 0;
+  mkdirSync(join(cwd, "plugin"), { recursive: true });
+  writeFileSync(
+    join(cwd, "plugin", "hooks.json"),
+    JSON.stringify({
+      hooks: {
+        format: {
+          event: "post_tool_use",
+          command: "npm run format",
+          env: ["CI"],
+          timeoutMs: 5000,
+        },
+      },
+    }),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "hook-cli-plugin",
+      version: "1.0.0",
+      description: "CLI hook plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        hooks: "./hooks.json",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: ["CI"],
+        mcp: [],
+      },
+    }),
+  );
+  const env = {
+    ORX_PLUGIN_HOOKS_CONFIG_PATH: hooksConfigPath,
+    ORX_PLUGIN_REGISTRY_PATH: registryPath,
+  };
+  const createNoFetchIo = () =>
+    createIo({
+      cwd,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("hook CLI commands should not call fetch");
+      },
+    });
+  const hookId = "plugin:acme.hook-cli-plugin@1.0.0:format";
+
+  try {
+    const installed = createNoFetchIo();
+    assert.equal(
+      await runCli(["node", "cli", "plugins", "install", manifestPath], env, installed.io),
+      0,
+    );
+    const enabled = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "enable", "acme.hook-cli-plugin@1.0.0"],
+        env,
+        enabled.io,
+      ),
+      0,
+    );
+
+    const listed = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "hooks", "list"], env, listed.io), 0);
+    assert.match(listed.stdout(), /discovered_hooks: 1/);
+    assert.match(listed.stdout(), /trusted=no/);
+    assert.match(listed.stdout(), /execution=inactive/);
+
+    const inspected = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "hooks", "inspect", hookId], env, inspected.io), 0);
+    assert.match(inspected.stdout(), /Hook: plugin:acme\.hook-cli-plugin@1\.0\.0:format/);
+    assert.match(inspected.stdout(), /command: npm run format/);
+    assert.match(inspected.stdout(), /execution: inactive/);
+
+    const trusted = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "hooks", "trust", hookId], env, trusted.io), 0);
+    assert.match(trusted.stdout(), /trusted at sha256:[a-f0-9]{64}/);
+    assert.match(readFileSync(hooksConfigPath, "utf8"), /plugin:acme\.hook-cli-plugin@1\.0\.0:format/);
+
+    const status = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "status"], env, status.io), 0);
+    assert.match(status.stdout(), /plugin_hook_definitions: 1/);
+    assert.match(status.stdout(), /plugin_trusted_hooks: 1/);
+    assert.match(status.stdout(), /plugin_enabled_hooks: 0/);
+
+    const untrusted = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "hooks", "untrust", hookId], env, untrusted.io), 0);
+    assert.match(untrusted.stdout(), /trust removed/);
     assert.equal(fetchCalls, 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
