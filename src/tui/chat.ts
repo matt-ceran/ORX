@@ -152,6 +152,7 @@ export async function runChat({
   let activatedRules: SessionActivatedRule[] = session.record.activatedRules ?? [];
   let evidenceSources: EvidenceSource[] = session.record.evidenceSources ?? [];
   let delegationState: DelegationState = normalizeDelegationState(session.record.delegation);
+  let modelMcpEnabled = false;
   const { useReadlineTerminal, useTtyScreen } = resolveChatTerminalModes(io.stdin, io.stdout);
 
   if (useTtyScreen) {
@@ -244,6 +245,10 @@ export async function runChat({
           getContextBudget: () => contextBudget,
           getDiffState: () => diffState,
           getSessionInfo: () => sessionInfo(session),
+          getModelMcpEnabled: () => modelMcpEnabled,
+          setModelMcpEnabled: (enabled) => {
+            modelMcpEnabled = enabled;
+          },
           setLatestCredits: (credits) => {
             latestCredits = credits;
           },
@@ -273,6 +278,7 @@ export async function runChat({
             activatedRules = [];
             evidenceSources = [];
             delegationState = createEmptyDelegationState();
+            modelMcpEnabled = false;
           },
           resumeSession: async (selector) => {
             const result = await resumeChatSession({
@@ -299,6 +305,7 @@ export async function runChat({
             activatedRules = cloneJson(record.activatedRules ?? []);
             evidenceSources = cloneJson(record.evidenceSources ?? []);
             delegationState = normalizeDelegationState(record.delegation);
+            modelMcpEnabled = false;
             resetSessionDiffState(diffState);
             session = {
               record,
@@ -372,6 +379,15 @@ export async function runChat({
             signal: activeAbort.signal,
             contextBudget,
             diffState,
+            mcp: modelMcpEnabled
+              ? {
+                  enabled: true,
+                  auditLogPath: mcpAuditLogPath,
+                  authEnv: hookEnv,
+                  configPath: mcpConfigPath,
+                  pluginRegistryPath,
+                }
+              : undefined,
             ephemeralSystemMessages: compactPluginContextMessages(pluginRegistryPath),
             callbacks: {
               onText(text) {

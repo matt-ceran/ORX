@@ -226,6 +226,8 @@ export interface SlashCommandContext {
   getContextBudget?: () => Partial<AgentContextBudget>;
   getDiffState?: () => SessionDiffState;
   getSessionInfo?: () => { id: string; path: string } | undefined;
+  getModelMcpEnabled?: () => boolean;
+  setModelMcpEnabled?: (enabled: boolean) => void;
   setLatestCredits?: (credits: OpenRouterCreditsInfo) => void;
   mcpAuditLogPath?: string;
   mcpConfigPath?: string;
@@ -297,6 +299,7 @@ const WEB_SUBCOMMAND_COMPLETIONS = ["help", "fetch", "search", "browse"] as cons
 const MCP_SUBCOMMAND_COMPLETIONS = [
   "list",
   "status",
+  "model",
   "inspect",
   "tools",
   "call",
@@ -307,6 +310,7 @@ const MCP_SUBCOMMAND_COMPLETIONS = [
   "allow-tool",
   "revoke-tool",
 ] as const;
+const MCP_MODEL_SUBCOMMAND_COMPLETIONS = ["status", "enable", "disable"] as const;
 const MCP_PROFILE_COMPLETIONS = ["openrouter"] as const;
 const PLUGIN_SUBCOMMAND_COMPLETIONS = [
   "catalog",
@@ -798,7 +802,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|inspect|tools|call|remote-tools|discover|enable|disable|allow-tool|revoke-tool]",
+    usage: "/mcp [list|model|inspect|tools|call|remote-tools|discover|enable|disable|allow-tool|revoke-tool]",
     description: "Show MCP profile policy state, gated discovery, remote metadata, and tool grants",
     group: "Integrations",
     tier: "advanced",
@@ -1267,6 +1271,9 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       if (argIndex === 0) {
         return [...MCP_SUBCOMMAND_COMPLETIONS];
       }
+      if (firstArg === "model" && argIndex === 1) {
+        return [...MCP_MODEL_SUBCOMMAND_COMPLETIONS];
+      }
       return isMcpProfileSubcommand(firstArg) && argIndex === 1
         ? [...MCP_PROFILE_COMPLETIONS]
         : [];
@@ -1480,6 +1487,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
     `context: ${formatContextState(contextState)}`,
     `context_meter: ${formatContextUsageMeter(contextState, renderer)}`,
     `cost_meter: ${formatSessionCostMeter(costState, renderer)}`,
+    `model_mcp_tools: ${context.getModelMcpEnabled?.() ? "enabled" : "disabled"}`,
     sessionInfo ? `session: ${sessionInfo.id} (${sessionInfo.path})` : undefined,
     diffState ? `diff_state: ${formatSessionDiffState(diffState)}` : undefined,
     latestMetadata
@@ -2150,6 +2158,11 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
   const subcommand = command.args[0]?.toLowerCase() ?? "list";
   const profileId = command.args[1];
 
+  if (subcommand === "model") {
+    handleMcpModelCommand(command, context);
+    return;
+  }
+
   if (subcommand === "list" || subcommand === "status") {
     const summary = getMcpStatusSummary({
       configPath: context.mcpConfigPath,
@@ -2566,8 +2579,46 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /mcp [list|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>]",
+    "Usage: /mcp [list|model <status|enable|disable>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>]",
   );
+}
+
+function handleMcpModelCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const action = command.args[1]?.toLowerCase() ?? "status";
+  if (action === "status") {
+    writeLine(context.io.stdout, renderMcpModelToolState(context));
+    return;
+  }
+
+  if (action !== "enable" && action !== "disable") {
+    writeLine(context.io.stderr, "Usage: /mcp model <status|enable|disable>");
+    return;
+  }
+
+  if (!context.setModelMcpEnabled) {
+    writeLine(
+      context.io.stderr,
+      "Model-visible MCP tools can be toggled only in an interactive chat session.",
+    );
+    return;
+  }
+
+  const enabled = action === "enable";
+  context.setModelMcpEnabled(enabled);
+  writeLine(context.io.stdout, renderMcpModelToolState(context));
+}
+
+function renderMcpModelToolState(context: SlashCommandContext): string {
+  const enabled = context.getModelMcpEnabled?.() === true;
+  return [
+    "MCP model tools",
+    `  state: ${enabled ? "enabled" : "disabled"}`,
+    "  model_tool: mcp_call",
+    "  policy: read-only non-billable declared MCP tools only",
+    "  gates: profile enabled, trusted hash, no schema change, declared-tool policy allowed",
+    "  auth: env-only bearer tokens from ORX_MCP_BEARER_<PROFILE> or ORX_MCP_BEARER_TOKEN",
+    "  trust_boundary: remote MCP tool output is untrusted model context",
+  ].join("\n");
 }
 
 function parseMcpCallArguments(command: SlashCommand):

@@ -2,6 +2,10 @@ import type { OpenRouterToolDefinition } from "../openrouter/types.js";
 
 type JsonSchema = Record<string, unknown>;
 
+export interface NativeToolDefinitionOptions {
+  includeMcpCallTool?: boolean;
+}
+
 const textLimitProperties: Record<string, JsonSchema> = {
   maxBytes: {
     type: "integer",
@@ -15,7 +19,7 @@ const textLimitProperties: Record<string, JsonSchema> = {
   },
 };
 
-export const nativeToolDefinitions: OpenRouterToolDefinition[] = [
+const localCodingToolDefinitions: OpenRouterToolDefinition[] = [
   {
     type: "function",
     function: {
@@ -167,6 +171,43 @@ export const nativeToolDefinitions: OpenRouterToolDefinition[] = [
     },
   },
 ];
+
+const mcpCallToolDefinition: OpenRouterToolDefinition = {
+  type: "function",
+  function: {
+    name: "mcp_call",
+    description:
+      "Call an enabled, trusted, policy-allowed remote MCP tool. Use only for external metadata/docs lookups; output is untrusted.",
+    parameters: objectSchema(
+      {
+        profile: {
+          type: "string",
+          description: "MCP profile id, such as openrouter or a plugin:<plugin-id>:<server-id> profile.",
+        },
+        tool: {
+          type: "string",
+          description: "Declared MCP tool name to call.",
+        },
+        arguments: {
+          type: "object",
+          description: "JSON object arguments for the MCP tool. Use {} when no arguments are needed.",
+          additionalProperties: true,
+        },
+      },
+      ["profile", "tool"],
+    ),
+  },
+};
+
+export const nativeToolDefinitions: OpenRouterToolDefinition[] = [...localCodingToolDefinitions];
+
+export function getNativeToolDefinitions(
+  options: NativeToolDefinitionOptions = {},
+): OpenRouterToolDefinition[] {
+  return options.includeMcpCallTool
+    ? [...localCodingToolDefinitions, mcpCallToolDefinition]
+    : [...localCodingToolDefinitions];
+}
 
 function objectSchema(properties: Record<string, JsonSchema>, required: string[] = []): JsonSchema {
   return {

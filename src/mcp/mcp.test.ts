@@ -1268,7 +1268,10 @@ test("mcp tools renderer includes risk auth billable and policy decisions", () =
 
     const rendered = renderMcpProfileTools(report);
     assert.match(rendered, /MCP tools: openrouter/);
-    assert.match(rendered, /remote_tool_execution: explicit \/mcp call or orx mcp call only/);
+    assert.match(
+      rendered,
+      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable exposes read-only non-billable mcp_call only/,
+    );
     assert.match(rendered, /decisions: allowed=12 denied=1/);
     assert.match(rendered, /models-list risk=read auth=yes billable=no policy=allowed/);
     assert.match(rendered, /chat-send risk=billable auth=yes billable=yes policy=denied/);

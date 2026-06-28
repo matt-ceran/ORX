@@ -28,9 +28,10 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` as untrusted context; executable plugin commands remain inactive.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
-- Enabled plugin `components.mcpServers` JSON can contribute MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp call`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`; trusted unchanged `remote-http` plugin profiles can be discovered, list remote tool metadata, and run explicit operator `tools/call` through guarded policy gates only. Plugin MCP tools are still not exposed to the model loop.
+- Enabled plugin `components.mcpServers` JSON can contribute MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp call`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`; trusted unchanged `remote-http` plugin profiles can be discovered, list remote tool metadata, run explicit operator `tools/call`, and optionally expose read-only non-billable tools to the model through session-local `/mcp model enable`.
 - MCP tool grants are implemented: `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` persist per-tool grants for billable/write/destructive declared tools only on enabled/trusted/unchanged profiles. Grants bind to the current trusted profile hash; stale grants are visible and denied before explicit calls can reach the network.
-- Explicit MCP `tools/call` is implemented for operator commands only: `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` require enabled/trusted/unchanged profiles, allowed declared-tool policy, env-only bearer auth for auth-bearing tools, guarded DNS-vetted transport, redacted/truncated untrusted output, and audit logs without raw arguments/output. MCP tools are still not exposed to the model loop.
+- Explicit MCP `tools/call` is implemented for operator commands: `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` require enabled/trusted/unchanged profiles, allowed declared-tool policy, env-only bearer auth for auth-bearing tools, guarded DNS-vetted transport, redacted/truncated untrusted output, and audit logs without raw arguments/output.
+- Session-local model MCP exposure is implemented through `/mcp model enable|disable|status`. When enabled in interactive chat, ORX adds a single native model tool `mcp_call`, limited to read-only non-billable declared MCP tools; broad/billable/write/destructive model-loop MCP exposure remains inactive.
 - Enabled plugin `components.hooks` JSON can contribute hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run manually through `hooks run` / `/hooks run` or automatically on matching lifecycle events with minimal env/cwd and JSONL audit logging.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
@@ -67,6 +68,15 @@ Current files:
 
 ## Latest Work
 
+Implemented session-local model MCP `mcp_call` runtime:
+
+- Added optional native model tool schema `mcp_call`, excluded from normal model requests unless `runAgentTurn` receives enabled MCP model options.
+- Added chat `/mcp model enable|disable|status` and `model_mcp_tools` in interactive `/status`; `/new` and `/resume` reset the session-local exposure to disabled.
+- `mcp_call` reuses the same enabled/trusted/unchanged profile gates, declared-tool policy, env-only bearer auth, guarded remote transport, redacted/truncated output, and audit event shape as explicit MCP calls.
+- Model-visible MCP calls are limited to read-only non-billable declared tools. Billable/write/destructive MCP tools are denied before network even when an explicit operator grant exists.
+- Verification: verifier found only stale docs/memory wording; the wording was corrected. `npm run typecheck`, `git diff --check`, focused MCP/agent/slash/chat tests with 168 tests, full `npm test` with 350 tests, and `npm run dev -- status` pass.
+- Next likely MCP work: persisted/per-profile model MCP allowlists, noninteractive `ask` opt-in, or executable plugin slash commands/bins.
+
 Implemented explicit operator MCP `tools/call` runtime:
 
 - Added `src/mcp/call.ts` for guarded `tools/call` requests on enabled/trusted/unchanged `remote-http` profiles when `evaluateMcpToolPolicy()` returns `allowed`.
@@ -75,7 +85,7 @@ Implemented explicit operator MCP `tools/call` runtime:
 - Result rendering is bounded, redacted, marked untrusted, and explicitly not exposed to the model loop. Audit events record status/policy/result hashes/content types without raw arguments, raw output, bearer tokens, or schemas.
 - Billable/write/destructive tools still require active profile-hash-bound grants; stale grants deny before network.
 - Verification: verifier recheck reported no findings. `npm run typecheck`, `git diff --check`, focused MCP/slash/CLI tests with 146 tests, full `npm test` with 344 tests, and `npm run dev -- status` pass.
-- Next likely MCP work: controlled model-loop exposure for an allowlisted subset of MCP tools, or executable plugin slash commands/bins.
+- That slice's next likely controlled model-loop exposure foundation is now implemented; remaining MCP work is persisted/per-profile model allowlists, noninteractive opt-in, or executable plugin slash commands/bins.
 
 Implemented MCP per-tool grant policy storage:
 

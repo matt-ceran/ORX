@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,6 +7,7 @@ import {
   COMPACTED_CONTEXT_PROVENANCE,
   createSessionDiffState,
   formatSessionDiffState,
+  getNativeToolDefinitions,
   formatToolCallStart,
   formatToolResult,
   nativeToolDefinitions,
@@ -15,6 +16,7 @@ import {
 } from "./index.js";
 import { dispatchNativeToolCall, type ToolDispatchResult } from "./tool-dispatch.js";
 import type { OrxConfig } from "../config/types.js";
+import { allowMcpToolGrant, setMcpProfilePersistentState } from "../mcp/index.js";
 import type { OpenRouterToolCall } from "../openrouter/types.js";
 import type { TextTruncation } from "../tools/types.js";
 
@@ -33,6 +35,16 @@ test("native tool schemas expose the local coding tool surface", () => {
   assert.deepEqual(
     nativeToolDefinitions.map((tool) => tool.function.name).sort(),
     ["apply_patch", "git_diff", "list_files", "read_file", "search_files", "shell"],
+  );
+  assert.deepEqual(
+    getNativeToolDefinitions().map((tool) => tool.function.name).sort(),
+    ["apply_patch", "git_diff", "list_files", "read_file", "search_files", "shell"],
+  );
+  assert.deepEqual(
+    getNativeToolDefinitions({ includeMcpCallTool: true })
+      .map((tool) => tool.function.name)
+      .sort(),
+    ["apply_patch", "git_diff", "list_files", "mcp_call", "read_file", "search_files", "shell"],
   );
 });
 
@@ -95,6 +107,169 @@ test("dispatchNativeToolCall reports invalid arguments as tool errors", async ()
   const output = JSON.parse(envelope.output);
   assert.equal(output.ok, false);
   assert.equal(output.error.code, "INVALID_TOOL_ARGUMENT_JSON");
+});
+
+test("dispatchNativeToolCall keeps model MCP calls disabled unless enabled", async () => {
+  const result = await dispatchNativeToolCall(
+    {
+      id: "call_mcp_disabled",
+      type: "function",
+      function: {
+        name: "mcp_call",
+        arguments: JSON.stringify({
+          profile: "openrouter",
+          tool: "models-list",
+          arguments: {},
+        }),
+      },
+    },
+    {
+      cwd: process.cwd(),
+    },
+  );
+
+  assert.equal(result.ok, false);
+  const envelope = JSON.parse(String(result.message.content));
+  const output = JSON.parse(envelope.output);
+  assert.equal(output.ok, false);
+  assert.equal(output.error.code, "MCP_MODEL_TOOLS_DISABLED");
+});
+
+test("dispatchNativeToolCall executes model MCP read tools with auth and redacted audit", async () => {
+  const cwd = createTempDir();
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  let seenAuthorization = "";
+  let seenBody = "";
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const result = await dispatchNativeToolCall(
+      {
+        id: "call_mcp_read",
+        type: "function",
+        function: {
+          name: "mcp_call",
+          arguments: JSON.stringify({
+            profile: "openrouter",
+            tool: "models-list",
+            arguments: { query: "claude" },
+          }),
+        },
+      },
+      {
+        cwd,
+        maxResultBytes: 20_000,
+        mcp: {
+          enabled: true,
+          auditLogPath,
+          authEnv: {
+            ORX_MCP_BEARER_OPENROUTER: "mcp-secret-token",
+          },
+          configPath,
+          fetch: async (_input, init) => {
+            seenAuthorization = new Headers(init?.headers).get("authorization") ?? "";
+            seenBody = String(init?.body);
+            return new Response(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: "orx-tools-call-1",
+                result: {
+                  content: [
+                    {
+                      type: "text",
+                      text: "model=claude token=remote-secret",
+                    },
+                  ],
+                },
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            );
+          },
+        },
+      },
+    );
+
+    assert.equal(result.ok, true);
+    assert.match(
+      formatToolResult(result),
+      /\[tool\] mcp_call ok duration=\d+ms status=ok policy=allowed network=attempted result_hash=sha256:[a-f0-9]{64}/,
+    );
+    assert.equal(seenAuthorization, "Bearer mcp-secret-token");
+    assert.match(seenBody, /"method":"tools\/call"/);
+    assert.match(seenBody, /"name":"models-list"/);
+    const envelope = JSON.parse(String(result.message.content));
+    const output = JSON.parse(envelope.output);
+    assert.equal(output.ok, true);
+    assert.equal(output.status, "ok");
+    assert.equal(output.modelExposure, "returned_to_model_as_untrusted_tool_result");
+    assert.match(output.content[0].text, /token=\[redacted\]/);
+    assert.doesNotMatch(envelope.output, /mcp-secret-token|remote-secret/);
+
+    const auditText = readFileSync(auditLogPath, "utf8");
+    assert.match(auditText, /"source":"model_loop"/);
+    assert.match(auditText, /"status":"ok"/);
+    assert.doesNotMatch(auditText, /mcp-secret-token|remote-secret|claude/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("dispatchNativeToolCall denies model MCP billable tools before network even when granted", async () => {
+  const cwd = createTempDir();
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  let networkCalls = 0;
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+    const grant = allowMcpToolGrant("openrouter", "chat-send", { configPath });
+    assert.equal(grant.ok, true);
+
+    const result = await dispatchNativeToolCall(
+      {
+        id: "call_mcp_billable",
+        type: "function",
+        function: {
+          name: "mcp_call",
+          arguments: JSON.stringify({
+            profile: "openrouter",
+            tool: "chat-send",
+            arguments: { prompt: "hi" },
+          }),
+        },
+      },
+      {
+        cwd,
+        maxResultBytes: 20_000,
+        mcp: {
+          enabled: true,
+          auditLogPath,
+          configPath,
+          fetch: async () => {
+            networkCalls += 1;
+            throw new Error("billable MCP model call should not reach network");
+          },
+        },
+      },
+    );
+
+    assert.equal(networkCalls, 0);
+    assert.equal(result.ok, false);
+    const envelope = JSON.parse(String(result.message.content));
+    const output = JSON.parse(envelope.output);
+    assert.equal(output.status, "model_policy_denied");
+    assert.equal(output.error.code, "MCP_MODEL_TOOL_DENIED");
+    assert.equal(output.toolRisk, "billable");
+    assert.equal(output.billable, true);
+
+    const auditText = readFileSync(auditLogPath, "utf8");
+    assert.match(auditText, /"status":"model_policy_denied"/);
+    assert.match(auditText, /"networkAttempted":false/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("tool call summaries keep large patch arguments compact", () => {
@@ -430,6 +605,56 @@ test("runAgentTurn executes model-requested tools and continues to final answer"
     assert.equal(requests.length, 2);
     assert.equal(result.messages.at(-1)?.role, "assistant");
     assert.equal(result.messages.at(-1)?.content, "Read sample.txt.");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("runAgentTurn exposes mcp_call to the model only when enabled", async () => {
+  const cwd = createTempDir();
+  try {
+    const observedToolNames: string[][] = [];
+    const mockFetch: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body));
+      observedToolNames.push(
+        body.tools.map((tool: { function: { name: string } }) => tool.function.name).sort(),
+      );
+      return new Response(
+        streamFrom([
+          sse({
+            choices: [
+              {
+                delta: {
+                  content: "done",
+                },
+              },
+            ],
+          }),
+          "data: [DONE]\n\n",
+        ]),
+        { status: 200 },
+      );
+    };
+
+    await runAgentTurn({
+      apiKey: "test-key",
+      config: baseConfig,
+      messages: [{ role: "user", content: "hello" }],
+      cwd,
+      fetch: mockFetch,
+    });
+    await runAgentTurn({
+      apiKey: "test-key",
+      config: baseConfig,
+      messages: [{ role: "user", content: "hello" }],
+      cwd,
+      fetch: mockFetch,
+      mcp: { enabled: true },
+    });
+
+    assert.equal(observedToolNames.length, 2);
+    assert.doesNotMatch(observedToolNames[0].join(","), /mcp_call/);
+    assert.match(observedToolNames[1].join(","), /mcp_call/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

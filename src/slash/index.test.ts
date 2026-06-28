@@ -106,7 +106,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/orchestrator \[openrouter <model>\|clear\]/);
   assert.match(output, /\/delegate <add\|remove\|clear>/);
   assert.match(output, /\/delegates/);
-  assert.match(output, /\/mcp \[list\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
+  assert.match(output, /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
   assert.match(output, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/skills \[list\|status\|activate <id>\]/);
   assert.match(output, /\/prompts \[list\|status\|activate <id>\]/);
@@ -118,7 +118,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -182,6 +182,8 @@ test("slash command completer suggests command names, aliases, and deterministic
   ]);
   assert.deepEqual(completeSlashCommandLine("/web b"), [["browse "], "b"]);
   assert.deepEqual(completeSlashCommandLine("/web h"), [["help "], "h"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp m"), [["model "], "m"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp model e"), [["enable "], "e"]);
   assert.deepEqual(completeSlashCommandLine("/mcp inspect o"), [["openrouter "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/plugins en"), [["enable "], "en"]);
@@ -224,7 +226,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-  assert.match(alias.stdout(), /\/mcp \[list\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
+  assert.match(alias.stdout(), /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -1137,7 +1139,7 @@ test("mcp inspect renders profile metadata and audits without network", async ()
     assert.match(harness.stdout(), /auth_status: required \(OAuth or dedicated expiring MCP key\)/);
     assert.match(
       harness.stdout(),
-      /remote_tool_execution: explicit \/mcp call or orx mcp call only; not exposed to the model loop/,
+      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable exposes read-only non-billable mcp_call only/,
     );
     assert.match(harness.stdout(), /normal_inference: direct OpenRouter REST API/);
     assert.match(harness.stdout(), /model-get risk=read auth=yes billable=no/);
@@ -1177,7 +1179,10 @@ test("mcp tools renders declared tool policy without network", async () => {
     assert.match(harness.stdout(), /decisions: allowed=0 denied=0 blocked_by_profile=13/);
     assert.match(harness.stdout(), /models-list risk=read auth=yes billable=no policy=blocked_by_profile/);
     assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes policy=blocked_by_profile/);
-    assert.match(harness.stdout(), /remote_tool_execution: explicit \/mcp call or orx mcp call only/);
+    assert.match(
+      harness.stdout(),
+      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable exposes read-only non-billable mcp_call only/,
+    );
 
     const events = readAuditEvents(auditLogPath);
     assert.equal(events.length, 1);
@@ -1190,6 +1195,27 @@ test("mcp tools renders declared tool policy without network", async () => {
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("mcp model toggles session-local model-visible MCP tools", async () => {
+  const harness = createSlashHarness();
+
+  assert.equal(await handleSlashCommand("/mcp model", harness.context), "continue");
+  assert.match(harness.stdout(), /MCP model tools/);
+  assert.match(harness.stdout(), /state: disabled/);
+  assert.match(harness.stdout(), /model_tool: mcp_call/);
+
+  assert.equal(await handleSlashCommand("/mcp model enable", harness.context), "continue");
+  assert.equal(harness.modelMcpEnabled(), true);
+  assert.match(harness.stdout(), /state: enabled/);
+  assert.match(harness.stdout(), /policy: read-only non-billable declared MCP tools only/);
+
+  assert.equal(handleSlashCommand("/status", harness.context), "continue");
+  assert.match(harness.stdout(), /model_mcp_tools: enabled/);
+
+  assert.equal(await handleSlashCommand("/mcp model disable", harness.context), "continue");
+  assert.equal(harness.modelMcpEnabled(), false);
+  assert.match(harness.stdout(), /state: disabled/);
 });
 
 test("mcp tools reports unknown profiles without network", async () => {
@@ -1992,7 +2018,10 @@ test("mcp slash commands discover trusted plugin-provided remote-http presets", 
     assert.equal(await handleSlashCommand(`/mcp inspect ${profileId}`, harness.context), "continue");
     assert.match(harness.stdout(), /source: plugin plugin=acme\.mcp-slash-plugin@1\.0\.0/);
     assert.match(harness.stdout(), /component_path=mcp.json/);
-    assert.match(harness.stdout(), /remote_tool_execution: explicit \/mcp call or orx mcp call only/);
+    assert.match(
+      harness.stdout(),
+      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable exposes read-only non-billable mcp_call only/,
+    );
 
     assert.equal(await handleSlashCommand(`/mcp tools ${profileId}`, harness.context), "continue");
     assert.match(harness.stdout(), /lookup-docs risk=read auth=no billable=no policy=blocked_by_profile/);
@@ -2889,6 +2918,7 @@ function createSlashHarness(
     mcpCallFetch?: typeof fetch;
     mcpAuthEnv?: NodeJS.ProcessEnv;
     mcpResolveHost?: SlashCommandContext["mcpResolveHost"];
+    modelMcpEnabled?: boolean;
     webFetch?: typeof fetch;
     webSearchFetch?: typeof fetch;
     browserSnapshot?: SlashCommandContext["browserSnapshot"];
@@ -2904,6 +2934,7 @@ function createSlashHarness(
   let messages = options.messages ?? [];
   let evidenceSources = options.evidenceSources ?? [];
   let delegationState: DelegationState = options.delegationState ?? emptyDelegationState();
+  let modelMcpEnabled = options.modelMcpEnabled ?? false;
   let metadata = options.metadata;
   let latestCredits: OpenRouterCreditsInfo | undefined;
   const costMeterState = options.costMeterState;
@@ -2975,6 +3006,10 @@ function createSlashHarness(
       getContextBudget: () => options.contextBudget ?? {},
       getDiffState: () => diffState,
       getSessionInfo: () => options.sessionInfo,
+      getModelMcpEnabled: () => modelMcpEnabled,
+      setModelMcpEnabled: (enabled: boolean) => {
+        modelMcpEnabled = enabled;
+      },
       setLatestCredits: (credits: OpenRouterCreditsInfo) => {
         latestCredits = credits;
       },
@@ -3003,6 +3038,7 @@ function createSlashHarness(
       metadata = nextMetadata;
     },
     diffState: () => diffState,
+    modelMcpEnabled: () => modelMcpEnabled,
     stdout: () => stdoutText,
     stderr: () => stderrText,
   };

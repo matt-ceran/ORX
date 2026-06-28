@@ -100,6 +100,10 @@ function formatToolResultDetails(
     case "shell":
       details.push(...formatShellDetails(output));
       break;
+
+    case "mcp_call":
+      details.push(...formatMcpCallDetails(output));
+      break;
   }
 
   pushTruncation(details, "result", result.truncation);
@@ -146,6 +150,27 @@ function formatShellDetails(output: JsonObject | undefined): string[] {
 
   pushTruncation(details, "stdout", getTruncation(output.stdoutTruncation));
   pushTruncation(details, "stderr", getTruncation(output.stderrTruncation));
+  return details;
+}
+
+function formatMcpCallDetails(output: JsonObject | undefined): string[] {
+  if (!output) {
+    return [];
+  }
+
+  const details: string[] = [];
+  if (typeof output.status === "string") {
+    details.push(`status=${output.status}`);
+  }
+  if (typeof output.policyDecision === "string") {
+    details.push(`policy=${output.policyDecision}`);
+  }
+  if (typeof output.networkAttempted === "boolean") {
+    details.push(`network=${output.networkAttempted ? "attempted" : "not_attempted"}`);
+  }
+  if (typeof output.resultHash === "string") {
+    details.push(`result_hash=${output.resultHash}`);
+  }
   return details;
 }
 

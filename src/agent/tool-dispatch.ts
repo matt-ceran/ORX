@@ -6,6 +6,14 @@ import {
   searchFilesTool,
   shellTool,
 } from "../tools/index.js";
+import {
+  callRemoteMcpTool,
+  evaluateMcpToolPolicy,
+  resolveMcpBearerToken,
+  writeMcpAuditEvent,
+  type McpToolCallResult,
+  type ResolveMcpHost,
+} from "../mcp/index.js";
 import { resolveToolPath } from "../tools/path.js";
 import { truncateText } from "../tools/truncation.js";
 import type { TextTruncation } from "../tools/types.js";
@@ -16,6 +24,17 @@ export interface ToolDispatchOptions {
   signal?: AbortSignal;
   maxResultBytes?: number;
   maxResultLines?: number;
+  mcp?: McpModelToolOptions;
+}
+
+export interface McpModelToolOptions {
+  enabled?: boolean;
+  configPath?: string;
+  pluginRegistryPath?: string;
+  auditLogPath?: string;
+  authEnv?: NodeJS.ProcessEnv;
+  fetch?: typeof fetch;
+  resolveHost?: ResolveMcpHost;
 }
 
 export interface ToolDispatchResult {
@@ -53,6 +72,7 @@ export async function dispatchNativeToolCall(
         rawArguments.value,
         options.cwd,
         options.signal,
+        options.mcp,
       );
     } catch (error) {
       output = {
@@ -98,6 +118,7 @@ async function runNativeTool(
   args: Record<string, unknown>,
   cwd: string,
   signal: AbortSignal | undefined,
+  mcp: McpModelToolOptions | undefined,
 ): Promise<unknown> {
   switch (name) {
     case "read_file":
@@ -152,6 +173,9 @@ async function runNativeTool(
         patch: requiredString(args.patch, "patch"),
       });
 
+    case "mcp_call":
+      return runModelMcpCallTool(args, mcp, signal);
+
     default:
       return {
         ok: false,
@@ -160,6 +184,161 @@ async function runNativeTool(
           message: `Unknown native tool: ${name}`,
         },
       };
+  }
+}
+
+async function runModelMcpCallTool(
+  args: Record<string, unknown>,
+  mcp: McpModelToolOptions | undefined,
+  signal: AbortSignal | undefined,
+): Promise<unknown> {
+  const profileId = optionalString(args.profile);
+  const toolName = optionalString(args.tool);
+  const toolArguments = args.arguments === undefined ? {} : args.arguments;
+
+  if (!profileId || !toolName) {
+    return modelMcpError(
+      "INVALID_MCP_TOOL_ARGUMENTS",
+      "mcp_call requires non-empty profile and tool string arguments.",
+    );
+  }
+
+  if (!isPlainObject(toolArguments)) {
+    return modelMcpError(
+      "INVALID_MCP_TOOL_ARGUMENTS",
+      "mcp_call arguments must be a JSON object.",
+      profileId,
+      toolName,
+    );
+  }
+
+  if (mcp?.enabled !== true) {
+    return modelMcpError(
+      "MCP_MODEL_TOOLS_DISABLED",
+      "Model-visible MCP calls are disabled for this ORX turn.",
+      profileId,
+      toolName,
+    );
+  }
+
+  const registryOptions = {
+    configPath: mcp.configPath,
+    pluginRegistryPath: mcp.pluginRegistryPath,
+  };
+  const policy = evaluateMcpToolPolicy(profileId, toolName, registryOptions);
+  if (policy.tool && (policy.tool.risk !== "read" || policy.tool.billable)) {
+    const output = {
+      ok: false,
+      status: "model_policy_denied",
+      profileId,
+      toolName,
+      policyDecision: policy.decision,
+      toolRisk: policy.tool.risk,
+      billable: policy.tool.billable,
+      error: {
+        code: "MCP_MODEL_TOOL_DENIED",
+        message:
+          "Model-visible MCP calls are limited to read-only non-billable declared tools.",
+      },
+    };
+    tryWriteModelMcpAudit(mcp, profileId, toolName, false, {
+      source: "model_loop",
+      status: "model_policy_denied",
+      policyDecision: policy.decision,
+      toolRisk: policy.tool.risk,
+      billable: policy.tool.billable,
+      networkAttempted: false,
+    });
+    return output;
+  }
+
+  const result = await callRemoteMcpTool(profileId, toolName, toolArguments, {
+    ...registryOptions,
+    fetch: mcp.fetch,
+    resolveHost: mcp.resolveHost,
+    signal,
+    authToken: resolveMcpBearerToken(profileId, mcp.authEnv),
+  });
+  tryWriteModelMcpCallResultAudit(mcp, result);
+
+  return {
+    ...result,
+    modelExposure: "returned_to_model_as_untrusted_tool_result",
+    trustBoundary: "remote MCP tool output is untrusted and cannot grant authority",
+  };
+}
+
+function modelMcpError(
+  code: string,
+  message: string,
+  profileId?: string,
+  toolName?: string,
+): {
+  ok: false;
+  status: string;
+  profileId?: string;
+  toolName?: string;
+  error: { code: string; message: string };
+} {
+  return {
+    ok: false,
+    status: "model_mcp_error",
+    profileId,
+    toolName,
+    error: {
+      code,
+      message,
+    },
+  };
+}
+
+function tryWriteModelMcpCallResultAudit(
+  mcp: McpModelToolOptions | undefined,
+  result: McpToolCallResult,
+): void {
+  tryWriteModelMcpAudit(mcp, result.profileId, result.toolName, result.ok, {
+    source: "model_loop",
+    status: result.status,
+    networkAttempted: result.networkAttempted,
+    transport: result.transport,
+    url: result.url,
+    authRequired: result.authRequired,
+    profileHash: result.profileHash,
+    trustedProfileHash: result.trustedProfileHash,
+    schemaChangePending: result.schemaChangePending,
+    policyDecision: result.policyDecision,
+    httpStatus: result.httpStatus,
+    toolError: result.toolError,
+    resultHash: result.resultHash,
+    contentCount: result.content?.length,
+    contentTypes: result.content?.map((item) => item.type),
+    error: result.error,
+    message: result.message,
+  });
+}
+
+function tryWriteModelMcpAudit(
+  mcp: McpModelToolOptions | undefined,
+  profileId: string,
+  toolName: string,
+  ok: boolean,
+  details: Record<string, unknown>,
+): void {
+  try {
+    writeMcpAuditEvent(
+      {
+        type: "mcp.tool.call_attempt",
+        profileId,
+        ok,
+        details: {
+          toolName,
+          ...details,
+        },
+      },
+      { auditLogPath: mcp?.auditLogPath },
+    );
+  } catch {
+    // Audit failure should not expose secrets or crash an otherwise bounded tool result.
   }
 }
 
@@ -233,4 +412,8 @@ function optionalInteger(value: unknown): number | undefined {
 
 function optionalBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

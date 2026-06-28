@@ -103,7 +103,8 @@ Current implementation checkpoint:
 - `/mcp discover <profile>` only attempts a minimal remote HTTP initialize handshake when the profile is enabled, trusted, has no pending schema change, and uses `remote-http`; OAuth/auth failures are reported as `auth_required`.
 - The declared OpenRouter MCP tools are `models-list`, `model-get`, `model-endpoints`, `providers-list`, `rankings-daily`, `app-rankings`, `credits-get`, `generation-get`, `benchmarks`, `docs-search`, `view-skill`, `ping`, and billable `chat-send`.
 - `/mcp remote-tools <profile>` can call guarded `tools/list` for enabled/trusted/unchanged remote HTTP profiles and render bounded untrusted metadata plus schema hashes.
-- `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` can call guarded `tools/call` only when the declared tool policy is allowed and required bearer auth is supplied through `ORX_MCP_BEARER_<PROFILE>` or `ORX_MCP_BEARER_TOKEN`. Remote output is redacted/truncated, audited without raw arguments/output, and not exposed to the model loop. Direct REST continues to power `/models`, `/credits`, `/generation`, `orx models`, `orx credits`, `orx generation`, and normal chat/ask inference.
+- `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` can call guarded `tools/call` only when the declared tool policy is allowed and required bearer auth is supplied through `ORX_MCP_BEARER_<PROFILE>` or `ORX_MCP_BEARER_TOKEN`. Remote output is redacted/truncated and audited without raw arguments/output.
+- Interactive `/mcp model enable` adds the ORX-owned `mcp_call` native model tool for the current chat session only. It is limited to read-only non-billable declared MCP tools and returns redacted bounded remote output as untrusted tool context. Direct REST continues to power `/models`, `/credits`, `/generation`, `orx models`, `orx credits`, `orx generation`, and normal OpenRouter inference.
 
 ## Cost Tracking
 

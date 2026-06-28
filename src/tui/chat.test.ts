@@ -140,6 +140,41 @@ test("chat diff command shows native working tree diff without a model request",
   }
 });
 
+test("chat model MCP toggle is session-local and resets on new chat", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  try {
+    const capture = createIo({
+      stdin: Readable.from([
+        "/mcp model enable\n",
+        "/status\n",
+        "/new\n",
+        "/status\n",
+        "/exit\n",
+      ]),
+      fetch: async () => {
+        throw new Error("chat model MCP toggle should not call OpenRouter.");
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      mcpConfigPath: join(sessionDirectory, "mcp", "profiles.json"),
+    });
+
+    assert.equal(exitCode, 0);
+    assert.match(capture.stdout(), /MCP model tools[\s\S]*state: enabled/);
+    assert.match(capture.stdout(), /model_mcp_tools: enabled/);
+    const afterNew = capture.stdout().slice(capture.stdout().indexOf("New chat started."));
+    assert.match(afterNew, /model_mcp_tools: disabled/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
 test("chat resumes a saved session and continues with restored transcript and routing", async () => {
   const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
   const savedCwd = mkdtempSync(join(tmpdir(), "orx-chat-resume-cwd-"));

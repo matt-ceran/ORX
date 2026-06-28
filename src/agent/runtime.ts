@@ -4,8 +4,12 @@ import { buildChatRequest } from "../openrouter/request.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata, OpenRouterToolCall } from "../openrouter/types.js";
 import { boundMessagesForContext, type AgentContextBudget } from "./context.js";
 import { recordToolResultForDiffState, type SessionDiffState } from "./diff-state.js";
-import { dispatchNativeToolCall, type ToolDispatchResult } from "./tool-dispatch.js";
-import { nativeToolDefinitions } from "./tool-schemas.js";
+import {
+  dispatchNativeToolCall,
+  type ToolDispatchOptions,
+  type ToolDispatchResult,
+} from "./tool-dispatch.js";
+import { getNativeToolDefinitions } from "./tool-schemas.js";
 
 export interface AgentTurnCallbacks {
   onText?: (text: string) => void;
@@ -24,6 +28,7 @@ export interface RunAgentTurnOptions {
   maxToolIterations?: number;
   contextBudget?: Partial<AgentContextBudget>;
   diffState?: SessionDiffState;
+  mcp?: ToolDispatchOptions["mcp"];
   ephemeralSystemMessages?: OpenRouterMessage[];
   callbacks?: AgentTurnCallbacks;
 }
@@ -61,7 +66,9 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
     const built = buildChatRequest({
       config: options.config,
       messages: requestMessages,
-      tools: enableTools ? nativeToolDefinitions : undefined,
+      tools: enableTools
+        ? getNativeToolDefinitions({ includeMcpCallTool: options.mcp?.enabled === true })
+        : undefined,
     });
     let assistantText = "";
     const result = await streamOpenRouterAsk(
@@ -111,6 +118,7 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
       const toolResult = await dispatchNativeToolCall(toolCall, {
         cwd: options.cwd,
         signal: options.signal,
+        mcp: options.mcp,
       });
       toolResults.push(toolResult);
       if (options.diffState) {
