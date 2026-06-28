@@ -99,7 +99,9 @@ import {
   installPlugin,
   isPluginCommandAliasName,
   loadPluginCatalog,
+  parsePluginCatalogAddLocalArgs,
   parsePluginScaffoldArgs,
+  removePluginCatalogEntry,
   renderPluginBinInspect,
   renderPluginBinRunResult,
   renderPluginBins,
@@ -126,6 +128,7 @@ import {
   trustPluginHook,
   untrustPluginBin,
   untrustPluginHook,
+  upsertLocalPluginCatalogEntry,
   validatePluginManifestInput,
   type PluginPromptActivationProvenance,
   type PluginRuleActivationProvenance,
@@ -379,6 +382,7 @@ const PLUGIN_SUBCOMMAND_COMPLETIONS = [
   "enable",
   "disable",
 ] as const;
+const PLUGIN_CATALOG_SUBCOMMAND_COMPLETIONS = ["list", "status", "add-local", "remove"] as const;
 const PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS = ["list", "status"] as const;
 const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
@@ -945,7 +949,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/plugins": {
-    usage: "/plugins [catalog|list|commands|scaffold|validate|inspect|register|install|enable|disable]",
+    usage: "/plugins [catalog [list|add-local|remove]|list|commands|scaffold|validate|inspect|register|install|enable|disable]",
     description: "Show catalog entries and update inert plugin registry state",
     group: "Integrations",
     tier: "advanced",
@@ -1441,7 +1445,13 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
         ? [...MCP_PROFILE_COMPLETIONS]
         : [];
     case "/plugins":
-      return argIndex === 0 ? [...PLUGIN_SUBCOMMAND_COMPLETIONS] : [];
+      if (argIndex === 0) {
+        return [...PLUGIN_SUBCOMMAND_COMPLETIONS];
+      }
+      if (firstArg === "catalog" && argIndex === 1) {
+        return [...PLUGIN_CATALOG_SUBCOMMAND_COMPLETIONS];
+      }
+      return [];
     case "/plugin":
       return argIndex === 0 ? [...PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS] : [];
     case "/bins":
@@ -2076,11 +2086,16 @@ async function handlePluginsCommand(
     return;
   }
 
-  if (subcommand === "catalog" || subcommand === "search") {
+  if (subcommand === "search") {
     writeLine(
       context.io.stdout,
       renderPluginCatalog(loadPluginCatalog({ catalogPath: context.pluginCatalogPath })),
     );
+    return;
+  }
+
+  if (subcommand === "catalog") {
+    handlePluginCatalogCommand(command.args.slice(1), context);
     return;
   }
 
@@ -2191,7 +2206,58 @@ async function handlePluginsCommand(
 
   writeLine(
     context.io.stderr,
-    "Usage: /plugins [catalog|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: /plugins [catalog [list|add-local|remove]|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+  );
+}
+
+function handlePluginCatalogCommand(
+  args: string[],
+  context: SlashCommandContext,
+): void {
+  const subcommand = args[0]?.toLowerCase() ?? "list";
+  if (subcommand === "list" || subcommand === "status" || subcommand === "search") {
+    writeLine(
+      context.io.stdout,
+      renderPluginCatalog(loadPluginCatalog({ catalogPath: context.pluginCatalogPath })),
+    );
+    return;
+  }
+
+  if (subcommand === "add" || subcommand === "add-local" || subcommand === "local") {
+    try {
+      const parsed = parsePluginCatalogAddLocalArgs(args.slice(1));
+      const result = upsertLocalPluginCatalogEntry(parsed, {
+        cwd: context.io.cwd,
+        catalogPath: context.pluginCatalogPath,
+      });
+      writeLine(context.io.stdout, result.message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeLine(context.io.stderr, message);
+    }
+    return;
+  }
+
+  if (subcommand === "remove" || subcommand === "rm" || subcommand === "delete") {
+    const id = args[1];
+    if (!id || args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /plugins catalog remove <id>");
+      return;
+    }
+
+    const result = removePluginCatalogEntry(id, { catalogPath: context.pluginCatalogPath });
+    if (!result.ok) {
+      writeLine(context.io.stderr, result.message);
+      return;
+    }
+
+    writeLine(context.io.stdout, result.message);
+    return;
+  }
+
+  writeLine(
+    context.io.stderr,
+    "Usage: /plugins catalog [list|add-local <manifest-path-or-directory>|remove <id>]",
   );
 }
 

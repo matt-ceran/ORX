@@ -72,7 +72,9 @@ import {
   getPluginStatusSummary,
   installPlugin,
   loadPluginCatalog,
+  parsePluginCatalogAddLocalArgs,
   parsePluginScaffoldArgs,
+  removePluginCatalogEntry,
   renderPluginBinInspect,
   renderPluginBinRunResult,
   renderPluginBins,
@@ -102,6 +104,7 @@ import {
   trustPluginHook,
   untrustPluginBin,
   untrustPluginHook,
+  upsertLocalPluginCatalogEntry,
   validatePluginManifestInput,
   type PluginHookEvent,
 } from "./plugins/index.js";
@@ -678,9 +681,13 @@ async function runPluginsCommand(
     return 0;
   }
 
-  if (subcommand === "catalog" || subcommand === "search") {
+  if (subcommand === "search") {
     writeLine(io.stdout, renderPluginCatalog(loadPluginCatalog({ catalogPath: pluginCatalogPath })));
     return 0;
+  }
+
+  if (subcommand === "catalog") {
+    return runPluginCatalogCommand(args.slice(1), io, pluginCatalogPath);
   }
 
   if (subcommand === "commands" || subcommand === "aliases") {
@@ -791,7 +798,58 @@ async function runPluginsCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx plugins [catalog|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: orx plugins [catalog [list|add-local|remove]|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+  );
+  return 1;
+}
+
+function runPluginCatalogCommand(
+  args: string[],
+  io: CliIo,
+  pluginCatalogPath: string,
+): number {
+  const subcommand = args[0]?.toLowerCase() ?? "list";
+  if (subcommand === "list" || subcommand === "status" || subcommand === "search") {
+    writeLine(io.stdout, renderPluginCatalog(loadPluginCatalog({ catalogPath: pluginCatalogPath })));
+    return 0;
+  }
+
+  if (subcommand === "add" || subcommand === "add-local" || subcommand === "local") {
+    try {
+      const parsed = parsePluginCatalogAddLocalArgs(args.slice(1));
+      const result = upsertLocalPluginCatalogEntry(parsed, {
+        cwd: io.cwd,
+        catalogPath: pluginCatalogPath,
+      });
+      writeLine(io.stdout, result.message);
+      return 0;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeLine(io.stderr, message);
+      return 1;
+    }
+  }
+
+  if (subcommand === "remove" || subcommand === "rm" || subcommand === "delete") {
+    const id = args[1];
+    if (!id || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx plugins catalog remove <id>");
+      return 1;
+    }
+
+    const result = removePluginCatalogEntry(id, { catalogPath: pluginCatalogPath });
+    if (!result.ok) {
+      writeLine(io.stderr, result.message);
+      return 1;
+    }
+
+    writeLine(io.stdout, result.message);
+    return 0;
+  }
+
+  writeLine(
+    io.stderr,
+    "Usage: orx plugins catalog [list|add-local <manifest-path-or-directory>|remove <id>]",
   );
   return 1;
 }

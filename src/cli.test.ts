@@ -1348,6 +1348,100 @@ test("cli plugins catalog lists and installs local catalog entries without fetch
   }
 });
 
+test("cli plugins catalog add-local and remove edit local catalog without fetch", async () => {
+  const cwd = createTempDir();
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const catalogPath = join(cwd, "catalog", "plugins.json");
+  const manifestPath = join(cwd, "plugin", "orx-plugin.json");
+  let fetchCalls = 0;
+  mkdirSync(join(cwd, "plugin"), { recursive: true });
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "catalog-editor-plugin",
+      version: "1.0.0",
+      description: "Catalog editor plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {},
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+  const env = {
+    ORX_PLUGIN_REGISTRY_PATH: registryPath,
+    ORX_PLUGIN_CATALOG_PATH: catalogPath,
+  };
+  const createNoFetchIo = () =>
+    createIo({
+      cwd,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("plugin catalog editor commands should not call fetch");
+      },
+    });
+
+  try {
+    const added = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        [
+          "node",
+          "cli",
+          "plugins",
+          "catalog",
+          "add-local",
+          "./plugin",
+          "--tag",
+          "local",
+          "--tags",
+          "authoring,local",
+        ],
+        env,
+        added.io,
+      ),
+      0,
+    );
+    assert.match(added.stdout(), /Catalog entry acme\.catalog-editor-plugin@1\.0\.0 added/);
+    assert.match(readFileSync(catalogPath, "utf8"), /acme\.catalog-editor-plugin@1\.0\.0/);
+
+    const catalog = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "plugins", "catalog", "list"], env, catalog.io), 0);
+    assert.match(catalog.stdout(), /entries: 1/);
+    assert.match(catalog.stdout(), /tags=authoring,local/);
+
+    const pluginList = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "plugins", "list"], env, pluginList.io), 0);
+    assert.match(pluginList.stdout(), /installed: 0/);
+
+    const removed = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "catalog", "remove", "acme.catalog-editor-plugin@1.0.0"],
+        env,
+        removed.io,
+      ),
+      0,
+    );
+    assert.match(removed.stdout(), /Catalog entry acme\.catalog-editor-plugin@1\.0\.0 removed/);
+
+    const empty = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "plugins", "catalog"], env, empty.io), 0);
+    assert.match(empty.stdout(), /entries: 0/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("cli plugins install supports pinned git catalog entries without fetch", async () => {
   const cwd = createTempDir();
   const repoPath = join(cwd, "repo");

@@ -1,13 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   loadPluginCatalog,
+  removePluginCatalogEntry,
   renderPluginCatalog,
   resolvePluginCatalogPath,
   resolvePluginInstallTarget,
+  upsertLocalPluginCatalogEntry,
 } from "./index.js";
 
 test("plugin catalog loads sanitized entries and resolves relative manifest paths", () => {
@@ -138,4 +140,90 @@ test("plugin catalog path supports environment overrides", () => {
     }),
     "/tmp/orx/plugins/catalog.json",
   );
+});
+
+test("plugin catalog local editor adds updates and removes private entries", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-catalog-edit-"));
+  const pluginDirectory = join(cwd, "catalog-editor");
+  const manifestPath = join(pluginDirectory, "orx-plugin.json");
+  const catalogPath = join(cwd, "private", "catalog.json");
+  mkdirSync(pluginDirectory, { recursive: true });
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "catalog-editor",
+      version: "0.1.0",
+      description: "Catalog editor plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {},
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+
+  try {
+    const added = upsertLocalPluginCatalogEntry(
+      {
+        manifestPath: pluginDirectory,
+        tags: ["local", "authoring", "local"],
+      },
+      { cwd, catalogPath },
+    );
+    assert.equal(added.ok, true);
+    assert.equal(added.action, "added");
+    assert.equal(added.entry?.id, "acme.catalog-editor@0.1.0");
+    assert.equal(added.entry?.manifestPath, manifestPath);
+    assert.match(added.message, /Catalog entry acme\.catalog-editor@0\.1\.0 added/);
+    assert.equal(statSync(join(cwd, "private")).mode & 0o777, 0o700);
+    assert.equal(statSync(catalogPath).mode & 0o777, 0o600);
+
+    const loaded = loadPluginCatalog({ catalogPath });
+    assert.equal(loaded.entries.length, 1);
+    assert.deepEqual(loaded.entries[0]?.tags, ["authoring", "local"]);
+
+    const updated = upsertLocalPluginCatalogEntry(
+      {
+        manifestPath,
+        description: "Updated catalog description.",
+      },
+      { cwd, catalogPath },
+    );
+    assert.equal(updated.action, "updated");
+    const afterUpdate = loadPluginCatalog({ catalogPath });
+    assert.equal(afterUpdate.entries[0]?.description, "Updated catalog description.");
+    assert.deepEqual(afterUpdate.entries[0]?.tags, ["authoring", "local"]);
+
+    assert.throws(
+      () =>
+        upsertLocalPluginCatalogEntry(
+          {
+            manifestPath,
+            tags: ["Bad Tag"],
+          },
+          { cwd, catalogPath },
+        ),
+      /Catalog tags must use lowercase letters/,
+    );
+
+    const removed = removePluginCatalogEntry("acme.catalog-editor@0.1.0", { catalogPath });
+    assert.equal(removed.ok, true);
+    assert.equal(removed.action, "removed");
+    assert.equal(loadPluginCatalog({ catalogPath }).entries.length, 0);
+
+    const missing = removePluginCatalogEntry("acme.catalog-editor@0.1.0", { catalogPath });
+    assert.equal(missing.ok, false);
+    assert.equal(missing.action, "missing");
+    assert.match(missing.message, /Unknown catalog entry/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });

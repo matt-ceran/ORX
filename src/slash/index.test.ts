@@ -113,7 +113,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
-  assert.match(output, /\/plugins \[catalog\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(output, /\/plugins \[catalog \[list\|add-local\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(output, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
@@ -147,7 +147,7 @@ test("command palette renderer is a pure grouped listing surface", () => {
 
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
-  assert.match(palette, /\/plugins \[catalog\|list\|commands\|scaffold\|validate\|inspect\|reg/);
+  assert.match(palette, /\/plugins \[catalog \[list\|add-local\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|reg/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -165,7 +165,7 @@ test("compact command palette renderer bounds TTY-oriented command discovery", (
   });
 
   assert.match(palette, /^Command palette matching "plugin" \(7\)/);
-  assert.match(palette, /\/plugins \[catalog\|list\|commands\|scaffold\|validate\|inspect\|reg/);
+  assert.match(palette, /\/plugins \[catalog \[list\|add-local\|remove\]\|list\|commands\|scaff/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -317,7 +317,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.equal(handleSlashCommand("/commands plugin", harness.context), "continue");
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
-  assert.match(harness.stdout(), /\/plugins \[catalog\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|add-local\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(harness.stdout(), /\/plugin \[list\|status\]/);
   assert.match(harness.stdout(), /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(harness.stdout(), /\/skills \[list\|status\|activate <id>\]/);
@@ -2640,6 +2640,80 @@ test("plugins catalog lists and installs local catalog entries without network",
     );
     assert.match(harness.stdout(), /Plugin acme\.catalog-slash-plugin@1\.0\.0 registered disabled/);
     assert.match(readFileSync(registryPath, "utf8"), /acme\.catalog-slash-plugin@1\.0\.0/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugins catalog add-local and remove edit local catalog without network", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugins-catalog-edit-slash-"));
+  const registryPath = join(cwd, "registry", "plugins.json");
+  const catalogPath = join(cwd, "catalog", "plugins.json");
+  const manifestPath = join(cwd, "plugin", "orx-plugin.json");
+  mkdirSync(join(cwd, "plugin"), { recursive: true });
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "catalog-edit-slash-plugin",
+      version: "1.0.0",
+      description: "Catalog edit slash plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {},
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+  const harness = createSlashHarness({
+    cwd,
+    pluginCatalogPath: catalogPath,
+    pluginRegistryPath: registryPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(
+      await handleSlashCommand(
+        "/plugins catalog add-local ./plugin --tag slash --tags authoring,slash",
+        harness.context,
+      ),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Catalog entry acme\.catalog-edit-slash-plugin@1\.0\.0 added/);
+    assert.match(readFileSync(catalogPath, "utf8"), /acme\.catalog-edit-slash-plugin@1\.0\.0/);
+
+    assert.equal(await handleSlashCommand("/plugins catalog list", harness.context), "continue");
+    assert.match(harness.stdout(), /entries: 1/);
+    assert.match(harness.stdout(), /tags=authoring,slash/);
+
+    assert.equal(await handleSlashCommand("/plugins list", harness.context), "continue");
+    assert.match(harness.stdout(), /installed: 0/);
+
+    assert.equal(
+      await handleSlashCommand(
+        "/plugins catalog remove acme.catalog-edit-slash-plugin@1.0.0",
+        harness.context,
+      ),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Catalog entry acme\.catalog-edit-slash-plugin@1\.0\.0 removed/);
+
+    assert.equal(await handleSlashCommand("/plugins catalog", harness.context), "continue");
+    assert.match(harness.stdout(), /entries: 0/);
+    assert.equal(harness.stderr(), "");
     assert.equal(fetchCalls, 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
