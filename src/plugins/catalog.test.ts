@@ -8,6 +8,7 @@ import {
   parsePluginCatalogAddGitArgs,
   removePluginCatalogEntry,
   renderPluginCatalog,
+  renderPluginCatalogInspect,
   resolvePluginCatalogPath,
   resolvePluginInstallTarget,
   upsertGitPluginCatalogEntry,
@@ -129,6 +130,39 @@ test("plugin catalog loads sanitized entries and resolves relative manifest path
     assert.equal(directTarget.kind, "manifest");
     assert.equal(directTarget.manifestPath, join(cwd, "plugin.json"));
     assert.equal(directTarget.catalogEntry, undefined);
+
+    const localInspect = renderPluginCatalogInspect(localEntry!, { catalogPath });
+    assert.match(localInspect, /Plugin Catalog Entry: acme\.demo-plugin@1\.0\.0/);
+    assert.match(localInspect, /source_type: local/);
+    assert.match(localInspect, /resolved_manifest_path:/);
+    assert.match(localInspect, /command: orx plugins install acme\.demo-plugin@1\.0\.0/);
+    assert.match(localInspect, /inspect_side_effects: none/);
+    assert.doesNotMatch(localInspect, /sk-or-v1-secret|\u001b|Bearer|token=/i);
+
+    const unsafeCatalogPath = join(cwd, "catalog\u001b[31m-red", "catalog.json");
+    const unsafeCatalogList = renderPluginCatalog({ ...catalog, path: unsafeCatalogPath });
+    const unsafeCatalogInspect = renderPluginCatalogInspect(localEntry!, {
+      catalogPath: unsafeCatalogPath,
+    });
+    assert.doesNotMatch(unsafeCatalogList, /\u001b|\[31m|sk-or-v1-secret|Bearer|token=/i);
+    assert.doesNotMatch(unsafeCatalogInspect, /\u001b|\[31m|sk-or-v1-secret|Bearer|token=/i);
+
+    const secretCatalogInspect = renderPluginCatalogInspect(
+      { ...localEntry!, manifestPath: "orx-plugin.json" },
+      {
+      catalogPath: join(cwd, "token=secret", "catalog.json"),
+      },
+    );
+    assert.match(secretCatalogInspect, /catalog_path: \[redacted path\]/);
+    assert.match(secretCatalogInspect, /resolved_manifest_path: \[redacted path\]/);
+
+    const gitInspect = renderPluginCatalogInspect(gitEntry!, { catalogPath });
+    assert.match(gitInspect, /Plugin Catalog Entry: acme\.git-plugin@1\.0\.0/);
+    assert.match(gitInspect, /source_type: git/);
+    assert.match(gitInspect, /repository: https:\/\/example\.test\/acme\/git-plugin\.git/);
+    assert.match(gitInspect, /resolved_commit: 0123456789abcdef0123456789abcdef01234567/);
+    assert.match(gitInspect, /install_resolution: clone_to_private_temp_checkout_and_register_disabled/);
+    assert.match(gitInspect, /install_enable_trust_grant_fetch_execute: separate_explicit_steps/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

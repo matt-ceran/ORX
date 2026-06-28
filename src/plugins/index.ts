@@ -25,11 +25,13 @@ export {
 export {
   defaultPluginCatalogPath,
   findPluginCatalogEntry,
+  formatPluginCatalogIdForMessage,
   loadPluginCatalog,
   parsePluginCatalogAddGitArgs,
   parsePluginCatalogAddLocalArgs,
   removePluginCatalogEntry,
   renderPluginCatalog,
+  renderPluginCatalogInspect,
   resolvePluginCatalogPath,
   resolvePluginInstallTarget,
   savePluginCatalog,

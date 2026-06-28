@@ -90,6 +90,8 @@ const RESOLVED_COMMIT_PATTERN = /^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/;
 const SCP_LIKE_GIT_PATTERN =
   /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[A-Za-z0-9._~/-]+(?:\.git)?$/;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
+const OUTPUT_CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/g;
+const ANSI_ESCAPE_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const SECRET_LIKE_PATTERN =
   /\b(?:bearer\s+[A-Za-z0-9._~+/=-]{8,}|authorization:\s*bearer|access[_-]?token|api[_-]?key|token=|key=|secret=|sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/i;
 
@@ -431,7 +433,7 @@ export function resolvePluginInstallTarget(
 export function renderPluginCatalog(catalog: PluginCatalog): string {
   const lines = [
     "Plugin Catalog",
-    `  path: ${catalog.path}`,
+    `  path: ${formatCatalogDisplayPath(catalog.path)}`,
     `  entries: ${catalog.entries.length}`,
   ];
 
@@ -458,6 +460,60 @@ export function renderPluginCatalog(catalog: PluginCatalog): string {
   }
 
   return lines.join("\n");
+}
+
+export function renderPluginCatalogInspect(
+  entry: PluginCatalogEntry,
+  options: { catalogPath?: string } = {},
+): string {
+  const catalogPath = options.catalogPath ?? defaultPluginCatalogPath();
+  const resolvedLocalManifestPath = entry.source
+    ? undefined
+    : resolveCatalogManifestPath(entry, catalogPath);
+  const lines = [
+    `Plugin Catalog Entry: ${entry.id}`,
+    `  catalog_path: ${formatCatalogDisplayPath(catalogPath)}`,
+    `  publisher: ${entry.publisher}`,
+    `  name: ${entry.name}`,
+    `  version: ${entry.version}`,
+    `  description: ${entry.description || "none"}`,
+    `  tags: ${entry.tags.length > 0 ? entry.tags.join(",") : "none"}`,
+    `  source_type: ${entry.source ? "git" : "local"}`,
+  ];
+
+  if (entry.source) {
+    lines.push(
+      "  git_source:",
+      `    repository: ${entry.source.repository}`,
+      `    ref: ${entry.source.ref ?? "none"}`,
+      `    resolved_commit: ${entry.source.resolvedCommit}`,
+      `    manifest_path: ${entry.source.manifestPath}`,
+      "    install_resolution: clone_to_private_temp_checkout_and_register_disabled",
+    );
+  } else {
+    lines.push(
+      "  local_source:",
+      `    manifest_path: ${entry.manifestPath ? formatCatalogDisplayPath(entry.manifestPath) : "none"}`,
+      `    resolved_manifest_path: ${formatCatalogDisplayPath(resolvedLocalManifestPath ?? "")}`,
+      "    install_resolution: read_local_manifest_and_register_disabled",
+    );
+  }
+
+  lines.push(
+    "  install:",
+    `    command: orx plugins install ${entry.id}`,
+    "    result_state: registered_disabled",
+    "  authority:",
+    "    catalog_entry: declaration_only",
+    "    inspect_side_effects: none",
+    "    install_enable_trust_grant_fetch_execute: separate_explicit_steps",
+  );
+
+  return lines.join("\n");
+}
+
+export function formatPluginCatalogIdForMessage(id: string): string {
+  return formatCatalogIdForMessage(id);
 }
 
 function emptyPluginCatalog(path: string): PluginCatalog {
@@ -658,6 +714,20 @@ function sanitizeCatalogGitManifestPathForWrite(value: string): string {
 function formatCatalogIdForMessage(id: string): string {
   const safeId = sanitizeCatalogId(id);
   return safeId && CATALOG_ID_PATTERN.test(safeId) ? safeId : "[invalid catalog id]";
+}
+
+function formatCatalogDisplayPath(value: string): string {
+  const withoutControls = value
+    .replace(ANSI_ESCAPE_PATTERN, "")
+    .replace(OUTPUT_CONTROL_CHAR_PATTERN, "")
+    .trim();
+  if (!withoutControls) {
+    return "[invalid path]";
+  }
+  if (SECRET_LIKE_PATTERN.test(withoutControls)) {
+    return "[redacted path]";
+  }
+  return withoutControls;
 }
 
 function resolveCatalogManifestPath(entry: PluginCatalogEntry, catalogPath: string): string {

@@ -6,7 +6,7 @@ Use this file for durable technical and product decisions. Add newest decisions 
 
 ## 2026-06-28: Plugin Catalog Editing Is Local Declaration Management
 
-Decision: ORX may provide `orx plugins catalog add-local|add-git|remove` and `/plugins catalog add-local|add-git|remove` to edit the private local plugin catalog, but these commands must only write operator-owned catalog declarations. They must not install, enable, trust, grant, fetch, execute, or write plugin registry/cache runtime state. Installing a catalog entry remains a separate explicit `plugins install <catalog-id>` step, and executable surfaces remain behind the existing enable plus hash-trust or MCP grant gates.
+Decision: ORX may provide `orx plugins catalog inspect|add-local|add-git|remove` and `/plugins catalog inspect|add-local|add-git|remove` to review and edit the private local plugin catalog, but these commands must only read or write operator-owned catalog declarations. They must not install, enable, trust, grant, fetch, execute, or write plugin registry/cache runtime state. Installing a catalog entry remains a separate explicit `plugins install <catalog-id>` step, and executable surfaces remain behind the existing enable plus hash-trust or MCP grant gates.
 
 Reasoning: A usable plugin authoring workflow needs more than manual JSON editing, especially after scaffold and validation. Keeping catalog editing as declaration management makes the workflow comfortable while preserving the supply-chain boundary: catalog presence is not installation, installation is not enablement, and enablement is not executable trust.
 

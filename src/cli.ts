@@ -63,9 +63,11 @@ import {
   discoverEnabledPluginHooks,
   findDiscoveredBin,
   findDiscoveredHook,
+  findPluginCatalogEntry,
   findInstalledPlugin,
   formatBinIdForMessage,
   formatHookIdForMessage,
+  formatPluginCatalogIdForMessage,
   formatPluginIdForMessage,
   getPluginBinTrustSummary,
   getPluginHookTrustSummary,
@@ -80,6 +82,7 @@ import {
   renderPluginBinRunResult,
   renderPluginBins,
   renderPluginCommandAliases,
+  renderPluginCatalogInspect,
   renderPluginScaffoldResult,
   renderPluginValidation,
   renderPluginHookInspect,
@@ -800,7 +803,7 @@ async function runPluginsCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx plugins [catalog [list|add-local|add-git|remove]|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: orx plugins [catalog [list|inspect|add-local|add-git|remove]|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
   return 1;
 }
@@ -813,6 +816,23 @@ function runPluginCatalogCommand(
   const subcommand = args[0]?.toLowerCase() ?? "list";
   if (subcommand === "list" || subcommand === "status" || subcommand === "search") {
     writeLine(io.stdout, renderPluginCatalog(loadPluginCatalog({ catalogPath: pluginCatalogPath })));
+    return 0;
+  }
+
+  if (subcommand === "inspect" || subcommand === "show" || subcommand === "info") {
+    const id = args[1];
+    if (!id || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx plugins catalog inspect <id>");
+      return 1;
+    }
+
+    const entry = findPluginCatalogEntry(id, { catalogPath: pluginCatalogPath });
+    if (!entry) {
+      writeLine(io.stderr, `Unknown catalog entry: ${formatPluginCatalogIdForMessage(id)}`);
+      return 1;
+    }
+
+    writeLine(io.stdout, renderPluginCatalogInspect(entry, { catalogPath: pluginCatalogPath }));
     return 0;
   }
 
@@ -864,7 +884,7 @@ function runPluginCatalogCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx plugins catalog [list|add-local <manifest-path-or-directory>|add-git <id> <repository> <resolved-commit>|remove <id>]",
+    "Usage: orx plugins catalog [list|inspect <id>|add-local <manifest-path-or-directory>|add-git <id> <repository> <resolved-commit>|remove <id>]",
   );
   return 1;
 }

@@ -113,7 +113,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
-  assert.match(output, /\/plugins \[catalog \[list\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(output, /\/plugins \[catalog \[list\|inspect\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(output, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
@@ -147,7 +147,7 @@ test("command palette renderer is a pure grouped listing surface", () => {
 
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
-  assert.match(palette, /\/plugins \[catalog \[list\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|reg/);
+  assert.match(palette, /\/plugins \[catalog \[list\|inspect\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|reg/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -165,7 +165,7 @@ test("compact command palette renderer bounds TTY-oriented command discovery", (
   });
 
   assert.match(palette, /^Command palette matching "plugin" \(7\)/);
-  assert.match(palette, /\/plugins \[catalog \[list\|add-local\|add-git\|remove\]\|list\|comman/);
+  assert.match(palette, /\/plugins \[catalog \[list\|inspect\|add-local\|add-git\|remove\]\|lis/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -317,7 +317,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.equal(handleSlashCommand("/commands plugin", harness.context), "continue");
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
-  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|inspect\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(harness.stdout(), /\/plugin \[list\|status\]/);
   assert.match(harness.stdout(), /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(harness.stdout(), /\/skills \[list\|status\|activate <id>\]/);
@@ -2704,6 +2704,20 @@ test("plugins catalog add-local and remove edit local catalog without network", 
 
     assert.equal(
       await handleSlashCommand(
+        "/plugins catalog inspect acme.catalog-edit-slash-plugin@1.0.0",
+        harness.context,
+      ),
+      "continue",
+    );
+    assert.match(
+      harness.stdout(),
+      /Plugin Catalog Entry: acme\.catalog-edit-slash-plugin@1\.0\.0/,
+    );
+    assert.match(harness.stdout(), /source_type: local/);
+    assert.match(harness.stdout(), /inspect_side_effects: none/);
+
+    assert.equal(
+      await handleSlashCommand(
         "/plugins catalog remove acme.catalog-edit-slash-plugin@1.0.0",
         harness.context,
       ),
@@ -2778,6 +2792,15 @@ test("plugins install supports pinned git catalog entries without fetch", async 
     assert.match(harness.stdout(), /source=git/);
     assert.match(harness.stdout(), new RegExp(commit.slice(0, 12)));
     assert.match(harness.stdout(), /tags=git/);
+
+    assert.equal(
+      await handleSlashCommand("/plugins catalog inspect acme.git-slash-plugin@1.0.0", harness.context),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Plugin Catalog Entry: acme\.git-slash-plugin@1\.0\.0/);
+    assert.match(harness.stdout(), /source_type: git/);
+    assert.match(harness.stdout(), new RegExp(commit));
+    assert.match(harness.stdout(), /inspect_side_effects: none/);
 
     assert.equal(
       await handleSlashCommand("/plugins install acme.git-slash-plugin@1.0.0", harness.context),

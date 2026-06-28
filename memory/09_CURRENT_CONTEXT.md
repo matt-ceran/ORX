@@ -28,7 +28,7 @@ Urgent UX recovery additions from user testing:
 - Plugin manifest validation is implemented through `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>`. It parses/sanitizes manifests, renders manifest/component hashes, permission counts, missing component warnings, and explicitly leaves registry/cache/trust/runtime state unchanged.
 - Plugin install/register now snapshots sanitized manifests plus declared components and declared hook cwd directories into ORX-owned plugin cache storage before registry persistence; enabled skill/hook discovery resolves from the cached manifest path, not the original source checkout.
 - Plugin catalog support now handles both local manifest entries and pinned git source entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH`. `orx plugins install <catalog-id>` and `/plugins install <catalog-id>` clone git catalog sources into private temporary cache storage, checkout the exact pinned commit, normalize cached manifest provenance to that pin, and still register the plugin disabled/inert.
-- Local plugin catalog editor commands are implemented through `orx plugins catalog add-local|add-git|remove` and `/plugins catalog add-local|add-git|remove`. They write private local catalog declarations only, preserving install/enable/trust/grant/fetch/execution as separate explicit steps.
+- Local plugin catalog inspect/editor commands are implemented through `orx plugins catalog inspect|add-local|add-git|remove` and `/plugins catalog inspect|add-local|add-git|remove`. They review or write private local catalog declarations only, preserving install/enable/trust/grant/fetch/execution as separate explicit steps.
 - Local user MCP profile catalogs are implemented through `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. Declarations are namespaced as `user:<profile-id>`, currently support sanitized `remote-http` transports, appear in `/mcp`, `orx mcp`, `/status`, interactive chat, and `orx ask --mcp-tools`, and share the same enable/trusted-hash/schema-change/tool-grant/model-grant/auth/audit gates as built-in and plugin MCP profiles.
 - Local user MCP catalog management commands are implemented through `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands. They write private local catalog files, preserve existing array/object/legacy `servers` declarations during edits, and avoid manual JSON editing for common remote MCP setup.
 - Built-in MCP provider presets are implemented through `orx mcp presets`, `orx mcp add-preset <preset>`, `/mcp presets`, and `/mcp add-preset <preset>`. Initial templates include `context7`, `microsoft-learn`, and `github-readonly`, and install into the same local user catalog without enabling or trusting profiles.
@@ -79,6 +79,13 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented no-side-effect plugin catalog inspect commands:
+
+- Added `orx plugins catalog inspect <id>` and `/plugins catalog inspect <id>` for local and pinned git catalog entries.
+- Inspect output renders sanitized catalog metadata, source type, local manifest resolution or git pin details, install guidance, and explicit side-effect boundaries.
+- Catalog inspect is declaration review only. It does not read plugin manifests, clone, fetch, install, enable, trust, grant, execute, or write registry/cache state.
+- Next likely plugin/MCP work: catalog update/provenance UX, broader provider preset packs, or stronger prompt-injection boundaries for search/browser/research surfaces.
 
 Implemented pinned git plugin catalog editor commands:
 

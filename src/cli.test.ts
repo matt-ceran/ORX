@@ -1422,6 +1422,20 @@ test("cli plugins catalog add-local and remove edit local catalog without fetch"
     assert.equal(await runCli(["node", "cli", "plugins", "list"], env, pluginList.io), 0);
     assert.match(pluginList.stdout(), /installed: 0/);
 
+    const inspected = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "catalog", "inspect", "acme.catalog-editor-plugin@1.0.0"],
+        env,
+        inspected.io,
+      ),
+      0,
+    );
+    assert.match(inspected.stdout(), /Plugin Catalog Entry: acme\.catalog-editor-plugin@1\.0\.0/);
+    assert.match(inspected.stdout(), /source_type: local/);
+    assert.match(inspected.stdout(), /inspect_side_effects: none/);
+    assert.match(inspected.stdout(), /command: orx plugins install acme\.catalog-editor-plugin@1\.0\.0/);
+
     const removed = createNoFetchIo();
     assert.equal(
       await runCli(
@@ -1515,6 +1529,20 @@ test("cli plugins install supports pinned git catalog entries without fetch", as
     assert.match(catalog.stdout(), /source=git/);
     assert.match(catalog.stdout(), new RegExp(commit.slice(0, 12)));
     assert.match(catalog.stdout(), /tags=git/);
+
+    const inspected = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "catalog", "inspect", "acme.git-cli-plugin@1.0.0"],
+        env,
+        inspected.io,
+      ),
+      0,
+    );
+    assert.match(inspected.stdout(), /Plugin Catalog Entry: acme\.git-cli-plugin@1\.0\.0/);
+    assert.match(inspected.stdout(), /source_type: git/);
+    assert.match(inspected.stdout(), new RegExp(commit));
+    assert.match(inspected.stdout(), /inspect_side_effects: none/);
 
     const capture = createNoFetchIo();
     assert.equal(
