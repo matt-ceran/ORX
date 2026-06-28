@@ -67,6 +67,7 @@ import {
   renderMcpProviderPresetInspect,
   renderMcpProviderPresets,
   renderMcpProfileAuthReport,
+  renderMcpProfileAuthSetup,
   renderMcpProfileInspect,
   renderMcpProfileTools,
   renderMcpStatus,
@@ -418,6 +419,7 @@ const MCP_SUBCOMMAND_COMPLETIONS = [
   "revoke-model-tool",
 ] as const;
 const MCP_MODEL_SUBCOMMAND_COMPLETIONS = ["status", "enable", "disable"] as const;
+const MCP_AUTH_ACTION_COMPLETIONS = ["setup", "env"] as const;
 const MCP_PROFILE_COMPLETIONS = ["openrouter"] as const;
 const MCP_PROVIDER_PRESET_COMPLETIONS = [
   "browser",
@@ -1056,7 +1058,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|catalog|presets [inspect]|add-preset|add-profile|add-tool|model|inspect|auth|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
+    usage: "/mcp [list|catalog|presets [inspect]|add-preset|add-profile|add-tool|model|inspect|auth|auth setup|auth env|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
     description: "Show and manage MCP profiles, local user catalogs, remote metadata, and tool grants",
     group: "Integrations",
     tier: "advanced",
@@ -1561,6 +1563,16 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       if (firstArg === "model" && argIndex === 1) {
         return [...MCP_MODEL_SUBCOMMAND_COMPLETIONS];
       }
+      if (firstArg === "auth" && argIndex === 1) {
+        return [...MCP_AUTH_ACTION_COMPLETIONS, ...MCP_PROFILE_COMPLETIONS];
+      }
+      if (
+        firstArg === "auth" &&
+        isMcpAuthSetupAction(secondArg) &&
+        argIndex === 2
+      ) {
+        return [...MCP_PROFILE_COMPLETIONS];
+      }
       if ((firstArg === "presets" || firstArg === "preset") && argIndex === 1) {
         return [...MCP_PROVIDER_PRESET_ACTION_COMPLETIONS];
       }
@@ -1658,6 +1670,10 @@ function configValueCompletions(key: string | undefined): string[] {
     return [...THEME_COMPLETIONS];
   }
   return [];
+}
+
+function isMcpAuthSetupAction(value: string | undefined): boolean {
+  return value === "setup" || value === "env";
 }
 
 function isMcpProfileSubcommand(subcommand: string | undefined): boolean {
@@ -3513,18 +3529,21 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
   }
 
   if (subcommand === "auth") {
-    if (!profileId || command.args.length !== 2) {
-      writeLine(context.io.stderr, "Usage: /mcp auth <profile>");
+    const authAction = isMcpAuthSetupAction(profileId) ? "setup" : "status";
+    const authProfileId = authAction === "setup" ? command.args[2] : profileId;
+    const expectedArgCount = authAction === "setup" ? 3 : 2;
+    if (!authProfileId || command.args.length !== expectedArgCount) {
+      writeLine(context.io.stderr, "Usage: /mcp auth <profile> | /mcp auth setup <profile> | /mcp auth env <profile>");
       return;
     }
 
-    const report = getMcpProfileAuthReport(profileId, {
+    const report = getMcpProfileAuthReport(authProfileId, {
       ...registryOptions,
       env: context.mcpAuthEnv,
     });
     tryWriteMcpAuditEvent(context, {
-      type: "mcp.profile.auth_status",
-      profileId,
+      type: authAction === "setup" ? "mcp.profile.auth_setup" : "mcp.profile.auth_status",
+      profileId: authProfileId,
       ok: Boolean(report),
       details: report
         ? {
@@ -3544,11 +3563,16 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
     });
 
     if (!report) {
-      writeLine(context.io.stderr, `Unknown MCP profile: ${profileId}`);
+      writeLine(context.io.stderr, `Unknown MCP profile: ${authProfileId}`);
       return;
     }
 
-    writeLine(context.io.stdout, renderMcpProfileAuthReport(report));
+    writeLine(
+      context.io.stdout,
+      authAction === "setup"
+        ? renderMcpProfileAuthSetup(report)
+        : renderMcpProfileAuthReport(report),
+    );
     return;
   }
 
@@ -4024,7 +4048,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|auth <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: /mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
 }
 

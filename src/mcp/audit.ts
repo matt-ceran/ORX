@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 export type McpAuditEventType =
   | "mcp.profile.status"
   | "mcp.profile.auth_status"
+  | "mcp.profile.auth_setup"
   | "mcp.profile.inspect"
   | "mcp.profile.tools"
   | "mcp.profile.remote_tools_attempt"

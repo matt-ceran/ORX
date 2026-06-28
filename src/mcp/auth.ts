@@ -85,6 +85,48 @@ export function renderMcpProfileAuthReport(report: McpProfileAuthReport): string
   ].filter((line): line is string => typeof line === "string").join("\n");
 }
 
+export function renderMcpProfileAuthSetup(report: McpProfileAuthReport): string {
+  const needsBearer = report.profile.authRequired || report.authRequiredToolCount > 0;
+  const authStatus = !needsBearer
+    ? "not_required"
+    : report.authReady
+      ? "configured"
+      : "missing";
+  const profileExport = `export ${report.profileEnvName}="<bearer-token>"`;
+  const fallbackExport = `export ${report.fallbackEnvName}="<bearer-token>"`;
+  const nextStep = !needsBearer
+    ? "no bearer token setup is required by current local declarations"
+    : report.authReady
+      ? `run orx mcp enable ${report.profile.id}, trust/grant as needed, then call tools explicitly`
+      : `export ${report.profileEnvName}, then run orx mcp auth ${report.profile.id}`;
+
+  return [
+    `MCP auth setup: ${report.profile.id}`,
+    `  auth_required: ${needsBearer ? "yes" : "no"}`,
+    `  auth_status: ${authStatus}`,
+    "  credential_mode: env_only_bearer",
+    "  storage: ORX does not persist MCP bearer token values",
+    "  network_calls: none",
+    "  subprocesses: none",
+    "  config_writes: none",
+    `  preferred_env: ${report.profileEnvName} status=${report.profileEnvSet ? "set" : "unset"}`,
+    `  fallback_env: ${report.fallbackEnvName} status=${report.fallbackEnvSet ? "set" : "unset"}`,
+    needsBearer
+      ? "  token_value: never shown; paste a provider-issued bearer or expiring MCP key into your shell only"
+      : "  token_value: not needed by current local declarations",
+    needsBearer ? "  shell_exports:" : "  shell_exports: not required",
+    needsBearer ? `    bash_zsh: ${profileExport}` : undefined,
+    needsBearer ? `    fish: set -gx ${report.profileEnvName} "<bearer-token>"` : undefined,
+    needsBearer ? `    powershell: $env:${report.profileEnvName} = "<bearer-token>"` : undefined,
+    needsBearer ? `    fallback_bash_zsh: ${fallbackExport}` : undefined,
+    needsBearer ? `  unset: unset ${report.profileEnvName}` : undefined,
+    needsBearer
+      ? "  note: prefer the profile-specific env var over the fallback when multiple MCP profiles are configured"
+      : "  note: add bearer setup only if this profile's local declarations later require auth",
+    `  next_step: ${nextStep}`,
+  ].filter((line): line is string => typeof line === "string").join("\n");
+}
+
 function hasEnvValue(env: NodeJS.ProcessEnv, name: string): boolean {
   return typeof env[name] === "string" && env[name]!.trim().length > 0;
 }

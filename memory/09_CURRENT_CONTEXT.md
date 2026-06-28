@@ -36,6 +36,7 @@ Urgent UX recovery additions from user testing:
 - Built-in MCP provider presets are implemented through `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, `/mcp presets`, `/mcp presets inspect <preset>`, and `/mcp add-preset <preset>`. Templates now include `context7`, `microsoft-learn`, `github-readonly`, `sentry-readonly`, `figma`, `browser`, `cloudflare-docs`, and `cloudflare-api`, and inspect/install flows leave enablement, trust, grants, calls, and model exposure as separate explicit steps.
 - Reviewed remote MCP tool import is implemented through `orx mcp import-remote-tools <profile>` and `/mcp import-remote-tools <profile>`. It is limited to local `user:` catalog profiles, uses the existing enabled/trusted/unchanged guarded `tools/list` path, stores sanitized read-only non-billable declarations only, skips unsupported names, audits hashes only, and leaves newly changed profiles behind the pending schema-change retrust gate.
 - MCP auth readiness inspection is implemented through `orx mcp auth <profile>` and `/mcp auth <profile>`. It shows profile-specific and fallback bearer env names, set/unset status, effective readiness, profile hashes, and OAuth limitations without network calls or secret persistence.
+- MCP auth setup guidance is implemented through `orx mcp auth setup <profile>`, `orx mcp auth env <profile>`, `/mcp auth setup <profile>`, and `/mcp auth env <profile>`. It prints copyable placeholder exports only for auth-required profiles, shows no-auth profiles as not requiring setup, never displays token values, and performs no network calls, subprocess calls, or config writes beyond normal redacted audit metadata.
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` or the derived `/plugin:<plugin-id>:command:<slug>` alias as untrusted context. Manifest-defined executable command schemas are discoverable through `components.commandSchemas` and exposed as `/plugin:<plugin-id>:exec:<slug>` aliases that can only run referenced trusted current bins.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
@@ -86,6 +87,16 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added MCP auth setup guidance:
+
+- Added `orx mcp auth setup <profile>` and `/mcp auth setup <profile>` with `env` aliases to render copyable bearer-token export placeholders for auth-required MCP profiles.
+- Existing `orx mcp auth <profile>` and `/mcp auth <profile>` status behavior remains unchanged.
+- Setup output reports auth status, profile-specific and fallback env names, storage/network/subprocess/config-write boundaries, unset guidance, and next steps without printing real env token values.
+- No-auth profiles render `shell_exports: not required` and do not print `<bearer-token>` snippets.
+- Setup commands write only the normal redacted MCP audit event metadata and do not call remote MCP endpoints, spawn subprocesses, or edit config/catalog/profile files.
+- Verification: `git diff --check`, `npm run typecheck`, focused MCP/CLI/slash tests with 195 tests, full `npm test` with 468 tests, `npm run verify:global-install`, isolated CLI/slash dogfood for required-auth and no-auth setup paths, and independent verifier review.
+- Next likely work remains final TTY ergonomics, real-key policy-enabled delegation dogfood, result merge controls, managed MCP auth beyond env bearer setup, broader provider/plugin preset polish, and release hardening.
 
 Added chat slash parity for safe config inspection/editing:
 
@@ -190,7 +201,7 @@ Implemented read-only plugin review/doctor/audit:
 - Review aggregates installed/enabled/disabled counts, local catalog pin drift, bin and hook trust state, plugin MCP profile counts, plugin command aliases, omissions/truncation, and concrete next commands.
 - Review uses read-only registry/trust loading and does not fetch, install, enable, trust, grant, execute plugin surfaces, mutate registry/cache/catalog/trust state, or tighten existing file permissions.
 - Verification: `npm run typecheck`, `git diff --check`, focused plugin/CLI/slash tests with 143 tests, full build-backed `npm test` with 428 tests, isolated built-CLI review/audit dogfood with mode checks, and independent verifier recheck pass.
-- Next likely plugin/MCP work: actual managed OAuth/provider auth setup beyond env-only bearer readiness, richer catalog provenance/signing or remote update discovery policy, broader provider/research/code-intelligence integrations, or final install/dogfood hardening.
+- Next likely plugin/MCP work: actual managed OAuth/provider auth beyond env-only bearer readiness/setup, richer catalog provenance/signing or remote update discovery policy, broader provider/research/code-intelligence integrations, or final install/dogfood hardening.
 
 Implemented explicit plugin catalog update apply:
 
@@ -199,7 +210,7 @@ Implemented explicit plugin catalog update apply:
 - Refusal cases for current, not-installed, local-only, source-mismatch, and unknown catalog entries do not mutate registry/cache/catalog runtime state and render no-side-effect guidance.
 - Update-check output now points to `orx plugins catalog update <id>` instead of reusing the broader install command.
 - Verification: `npm run typecheck`, `git diff --check`, focused plugin/CLI/slash/TUI source tests with 157 tests, full build-backed `npm test` with 426 tests, built-CLI temp pinned-git dogfood, and independent verifier pass.
-- Next likely plugin/MCP work: actual managed OAuth/provider auth setup beyond env-only bearer readiness, richer catalog provenance/signing or remote update discovery policy, broader provider/research integrations, or final install/dogfood hardening.
+- Next likely plugin/MCP work: actual managed OAuth/provider auth beyond env-only bearer readiness/setup, richer catalog provenance/signing or remote update discovery policy, broader provider/research integrations, or final install/dogfood hardening.
 
 Implemented MCP auth readiness inspection:
 
@@ -207,7 +218,7 @@ Implemented MCP auth readiness inspection:
 - Auth output shows profile state, auth requirement, profile-specific bearer env name, fallback bearer env status, effective readiness, auth-required tool count, profile hash/trust state, OAuth limitation, and a no-secret-persistence note.
 - Auth checks use the same `ORX_MCP_BEARER_<PROFILE>` / `ORX_MCP_BEARER_TOKEN` resolution as real MCP calls, but render only set/unset/configured state and audit neutral metadata without bearer values.
 - Verification: `npm run typecheck`, `git diff --check`, focused MCP/CLI/slash source tests with 186 tests, full build-backed `npm test` with 426 tests, isolated built-CLI auth/audit dogfood, and independent verifier recheck pass.
-- Next likely plugin/MCP work: actual managed OAuth/provider auth setup beyond env-only bearer readiness, richer catalog provenance/signing, broader research/browser integrations, or final install/dogfood hardening.
+- Next likely plugin/MCP work: actual managed OAuth/provider auth beyond env-only bearer readiness/setup, richer catalog provenance/signing, broader research/browser integrations, or final install/dogfood hardening.
 
 Expanded built-in MCP provider presets and tightened import risk preservation:
 

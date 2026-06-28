@@ -74,6 +74,7 @@ import {
   renderMcpProviderPresetInspect,
   renderMcpProviderPresets,
   renderMcpProfileAuthReport,
+  renderMcpProfileAuthSetup,
   renderMcpProfileInspect,
   renderMcpProfileTools,
   renderMcpStatus,
@@ -1786,18 +1787,21 @@ function runMcpCommand(
   }
 
   if (subcommand === "auth") {
-    if (!profileId || args.length !== 2) {
-      writeLine(io.stderr, "Usage: orx mcp auth <profile>");
+    const authAction = isMcpAuthSetupAction(profileId) ? "setup" : "status";
+    const authProfileId = authAction === "setup" ? args[2] : profileId;
+    const expectedArgCount = authAction === "setup" ? 3 : 2;
+    if (!authProfileId || args.length !== expectedArgCount) {
+      writeLine(io.stderr, "Usage: orx mcp auth <profile> | orx mcp auth setup <profile> | orx mcp auth env <profile>");
       return 1;
     }
 
-    const report = getMcpProfileAuthReport(profileId, {
+    const report = getMcpProfileAuthReport(authProfileId, {
       ...registryOptions,
       env,
     });
     tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
-      type: "mcp.profile.auth_status",
-      profileId,
+      type: authAction === "setup" ? "mcp.profile.auth_setup" : "mcp.profile.auth_status",
+      profileId: authProfileId,
       ok: Boolean(report),
       details: report
         ? {
@@ -1817,11 +1821,16 @@ function runMcpCommand(
     });
 
     if (!report) {
-      writeLine(io.stderr, `Unknown MCP profile: ${profileId}`);
+      writeLine(io.stderr, `Unknown MCP profile: ${authProfileId}`);
       return 1;
     }
 
-    writeLine(io.stdout, renderMcpProfileAuthReport(report));
+    writeLine(
+      io.stdout,
+      authAction === "setup"
+        ? renderMcpProfileAuthSetup(report)
+        : renderMcpProfileAuthReport(report),
+    );
     return 0;
   }
 
@@ -2272,9 +2281,13 @@ function runMcpCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: orx mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
   return 1;
+}
+
+function isMcpAuthSetupAction(value: string | undefined): boolean {
+  return value === "setup" || value === "env";
 }
 
 function parseMcpPresetInspectArgs(

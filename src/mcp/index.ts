@@ -11,6 +11,7 @@ export {
 export {
   getMcpProfileAuthReport,
   renderMcpProfileAuthReport,
+  renderMcpProfileAuthSetup,
   type McpProfileAuthReport,
   type McpProfileAuthReportOptions,
 } from "./auth.js";

@@ -822,6 +822,26 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     assert.match(missingAuth.stdout(), /effective_bearer: missing/);
     assert.match(missingAuth.stdout(), /storage: ORX does not persist MCP bearer token values/);
 
+    const authSetup = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "auth", "setup", "openrouter"], env, authSetup.io), 0);
+    assert.match(authSetup.stdout(), /MCP auth setup: openrouter/);
+    assert.match(authSetup.stdout(), /auth_required: yes/);
+    assert.match(authSetup.stdout(), /auth_status: missing/);
+    assert.match(authSetup.stdout(), /credential_mode: env_only_bearer/);
+    assert.match(authSetup.stdout(), /preferred_env: ORX_MCP_BEARER_OPENROUTER status=unset/);
+    assert.match(authSetup.stdout(), /fallback_env: ORX_MCP_BEARER_TOKEN status=unset/);
+    assert.match(authSetup.stdout(), /network_calls: none/);
+    assert.match(authSetup.stdout(), /subprocesses: none/);
+    assert.match(authSetup.stdout(), /config_writes: none/);
+    assert.match(authSetup.stdout(), /bash_zsh: export ORX_MCP_BEARER_OPENROUTER="<bearer-token>"/);
+    assert.match(authSetup.stdout(), /fallback_bash_zsh: export ORX_MCP_BEARER_TOKEN="<bearer-token>"/);
+    assert.doesNotMatch(authSetup.stdout(), /mcp-secret-token|sk-or-v1/);
+
+    const authEnvAlias = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "auth", "env", "openrouter"], env, authEnvAlias.io), 0);
+    assert.match(authEnvAlias.stdout(), /MCP auth setup: openrouter/);
+    assert.match(authEnvAlias.stdout(), /bash_zsh: export ORX_MCP_BEARER_OPENROUTER="<bearer-token>"/);
+
     const configuredAuth = createIo({ cwd });
     assert.equal(
       await runCli(
@@ -1094,6 +1114,16 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(noAuth.stdout(), /effective_bearer: missing/);
     assert.match(noAuth.stdout(), /next_step: no bearer token required by current local declarations/);
 
+    const noAuthSetup = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "auth", "setup", "user:docs"], env, noAuthSetup.io), 0);
+    assert.match(noAuthSetup.stdout(), /MCP auth setup: user:docs/);
+    assert.match(noAuthSetup.stdout(), /auth_required: no/);
+    assert.match(noAuthSetup.stdout(), /auth_status: not_required/);
+    assert.match(noAuthSetup.stdout(), /token_value: not needed by current local declarations/);
+    assert.match(noAuthSetup.stdout(), /shell_exports: not required/);
+    assert.match(noAuthSetup.stdout(), /network_calls: none/);
+    assert.doesNotMatch(noAuthSetup.stdout(), /<bearer-token>/);
+
     const events = readFileSync(auditLogPath, "utf8")
       .trim()
       .split("\n")
@@ -1103,6 +1133,14 @@ test("cli mcp provider presets install local catalog profiles", async () => {
       events.some(
         (event) =>
           event.type === "mcp.profile.auth_status" &&
+          event.profileId === "user:docs" &&
+          event.details?.ready === true,
+      ),
+    );
+    assert.ok(
+      events.some(
+        (event) =>
+          event.type === "mcp.profile.auth_setup" &&
           event.profileId === "user:docs" &&
           event.details?.ready === true,
       ),
