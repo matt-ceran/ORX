@@ -111,6 +111,13 @@ orx hooks inspect plugin:acme.example@1.0.0:format
 orx hooks trust plugin:acme.example@1.0.0:format
 orx hooks run plugin:acme.example@1.0.0:format
 orx hooks untrust plugin:acme.example@1.0.0:format
+orx mcp catalog
+orx mcp add-profile context7 https://mcp.context7.example/mcp --name "Context7 docs" --auth-required
+orx mcp add-tool user:context7 resolve-library-id read --auth-required --free
+orx mcp enable user:context7
+orx mcp inspect user:context7
+orx mcp remove-tool user:context7 resolve-library-id
+orx mcp remove-profile user:context7
 ```
 
 Plugin install/register stores an inert local registry record plus an ORX-owned cache snapshot of the sanitized manifest, declared components, and declared hook cwd directories. By default the registry lives at `~/.orx/plugins/registry.json`, the cache at `~/.orx/plugins/cache`, the bin trust file at `~/.orx/plugins/bins.json`, the bin audit log at `~/.orx/audit/bins.jsonl`, the hook trust file at `~/.orx/plugins/hooks.json`, the hook audit log at `~/.orx/audit/hooks.jsonl`, and the optional local catalog at `~/.orx/plugins/catalog.json`; use `ORX_PLUGIN_REGISTRY_PATH`, `ORX_PLUGIN_CACHE_DIR`, `ORX_PLUGIN_BINS_CONFIG_PATH`, `ORX_PLUGIN_BINS_AUDIT_PATH`, `ORX_PLUGIN_HOOKS_CONFIG_PATH`, `ORX_PLUGIN_HOOKS_AUDIT_PATH`, and `ORX_PLUGIN_CATALOG_PATH` to isolate them. Catalog installs can resolve local manifest paths or pinned git sources. Pinned git catalog installs clone into a private temporary source directory, checkout the exact `resolvedCommit`, normalize cached manifest provenance to that pin, and then reuse the same inert registry/cache path. Enabling a plugin only enables its metadata, skills, prompt-command, rules, MCP preset, command-schema, bin review/trust, and hook review/trust surfaces where supported. Trusted current bins run only through explicit operator `bins run` / `/bins run` commands or their namespaced `/plugin:<plugin-id>:bin:<file>` aliases. Manifest-defined executable command aliases run only through referenced trusted current bins and add bounded usage/max-argument metadata; they do not create a separate execution trust store. Trusted current hooks can run manually or on matching lifecycle events. Plugin-declared MCP tools run only after the resulting MCP profile is separately enabled/trusted and invoked through the explicit or read-only model MCP gates.
@@ -157,7 +164,7 @@ Git catalog entries must be pinned to a full 40- or 64-character commit hash. Re
 
 Plugin manifests may include optional inert `metadata` for risk display, such as `trustTier`, `homepage`, `documentation`, `license`, `auth`, `privacy`, and `runtime`. ORX sanitizes those fields for `/plugins inspect`; they do not grant permissions or activate executable surfaces.
 
-Enabled plugins can declare MCP presets through `components.mcpServers`. ORX reads these declarations from the cached plugin snapshot, namespaces them as `plugin:<plugin-id>:<server-id>`, includes them in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp call`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`, and hashes plugin manifest/component provenance for schema-change visibility. User MCP profiles can also be declared locally in `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`; ORX namespaces them as `user:<profile-id>` and routes them through the same disabled-by-default enable/trust/hash/tool-grant gates as built-in and plugin profiles. `orx mcp ...` also exposes local profile/policy inspection, profile enable/disable, per-tool grant/revoke, per-tool model grant/revoke, and explicit tool calls without requiring an OpenRouter chat API key. `/mcp discover` may contact enabled, trusted, unchanged `remote-http` endpoints through ORX's guarded DNS-vetted discovery transport, but it performs only the minimal initialize handshake. `/mcp remote-tools` can list and hash remote `tools/list` metadata through the same guards; tool schemas are rendered only as hashes/summaries. `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` call `tools/call` only for enabled/trusted/unchanged profiles when policy allows the declared tool and required bearer auth is supplied through `ORX_MCP_BEARER_<PROFILE>` or `ORX_MCP_BEARER_TOKEN`. For `user:context7`, the profile-specific env name is `ORX_MCP_BEARER_USER_CONTEXT7`. Billable/write/destructive MCP tools require explicit per-tool grants bound to the current trusted profile hash, and stale grants are visible and denied. In interactive chat, `/mcp model enable` exposes one model-visible native tool, `mcp_call`, for read-only non-billable declared MCP tools that also have active model-tool grants; `/mcp model disable` removes it again. One-shot `orx ask --mcp-tools` enables the same model-granted read-only bridge for that request only. Broad/billable/write model-loop MCP exposure remains inactive.
+Enabled plugins can declare MCP presets through `components.mcpServers`. ORX reads these declarations from the cached plugin snapshot, namespaces them as `plugin:<plugin-id>:<server-id>`, includes them in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp call`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`, and hashes plugin manifest/component provenance for schema-change visibility. User MCP profiles can also be declared locally in `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`; ORX namespaces them as `user:<profile-id>` and routes them through the same disabled-by-default enable/trust/hash/tool-grant gates as built-in and plugin profiles. `orx mcp catalog`, `orx mcp add-profile`, `orx mcp remove-profile`, `orx mcp add-tool`, and `orx mcp remove-tool` edit that local catalog without hand-writing JSON, using private `0700` directories and `0600` files. `orx mcp ...` also exposes local profile/policy inspection, profile enable/disable, per-tool grant/revoke, per-tool model grant/revoke, and explicit tool calls without requiring an OpenRouter chat API key. `/mcp discover` may contact enabled, trusted, unchanged `remote-http` endpoints through ORX's guarded DNS-vetted discovery transport, but it performs only the minimal initialize handshake. `/mcp remote-tools` can list and hash remote `tools/list` metadata through the same guards; tool schemas are rendered only as hashes/summaries. `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` call `tools/call` only for enabled/trusted/unchanged profiles when policy allows the declared tool and required bearer auth is supplied through `ORX_MCP_BEARER_<PROFILE>` or `ORX_MCP_BEARER_TOKEN`. For `user:context7`, the profile-specific env name is `ORX_MCP_BEARER_USER_CONTEXT7`. Billable/write/destructive MCP tools require explicit per-tool grants bound to the current trusted profile hash, and stale grants are visible and denied. In interactive chat, `/mcp model enable` exposes one model-visible native tool, `mcp_call`, for read-only non-billable declared MCP tools that also have active model-tool grants; `/mcp model disable` removes it again. One-shot `orx ask --mcp-tools` enables the same model-granted read-only bridge for that request only. Broad/billable/write model-loop MCP exposure remains inactive.
 
 Example user MCP profile catalog:
 
@@ -186,6 +193,15 @@ Example user MCP profile catalog:
 }
 ```
 
+The same catalog can be edited through slash commands in chat:
+
+```text
+/mcp catalog
+/mcp add-profile context7 https://mcp.context7.example/mcp --name "Context7 docs" --auth-required
+/mcp add-tool user:context7 resolve-library-id read --auth-required --free
+/mcp enable user:context7
+```
+
 Enabled plugins can declare hook definitions through `components.hooks`. ORX reads those declarations from the cached plugin snapshot, namespaces them as `plugin:<plugin-id>:<hook-id>`, shows them through `orx hooks`, `/hooks`, and `/status`, and lets the operator persist a trusted hook hash. `orx hooks run <id>` and `/hooks run <id>` execute only trusted current hashes, run from the cached plugin root or declared relative cwd, forward only declared env names, truncate/redact output, and append JSONL audit events. Trusted current hooks also run automatically on matching `session_start`, `user_prompt_submit`, `pre_tool_use`, `post_tool_use`, `pre_compact`, `post_compact`, and `stop` lifecycle events. Hook failures are written to stderr and audited; successful hook commands whose audit event cannot be persisted are treated as failed runs. Changed hook hashes show as pending trust until re-trusted.
 
 Enabled plugins can declare executable bins through `components.bins`. ORX reads regular files directly under that cached directory, namespaces them as `plugin:<plugin-id>:bin:<file>`, shows them through `orx bins`, `/bins`, and `/status`, and lets the operator persist a trusted bin hash. `orx bins run <id> [args...]` and `/bins run <id> [args...]` execute only trusted current hashes from the cached plugin root, forward only manifest-declared env names, choose a Node/shebang/sh runner without making cached files globally executable, truncate/redact output, and append JSONL audit events without raw argument lists. Changed bin hashes show as pending trust until re-trusted.
@@ -206,6 +222,9 @@ OPENROUTER_API_KEY=... npm run dev -- ask "Say hello" --mode auto
 OPENROUTER_API_KEY=... npm run dev -- ask "Say hello" --mode fusion --fusion general-budget
 npm run dev -- mcp enable openrouter
 npm run dev -- mcp allow-model-tool openrouter models-list
+npm run dev -- mcp catalog
+npm run dev -- mcp add-profile context7 https://mcp.context7.example/mcp --name "Context7 docs" --auth-required
+npm run dev -- mcp add-tool user:context7 resolve-library-id read --auth-required --free
 OPENROUTER_API_KEY=... ORX_MCP_BEARER_OPENROUTER=... npm run dev -- ask "Use OpenRouter MCP metadata" --mcp-tools
 ```
 
@@ -241,6 +260,7 @@ The chat UI keeps in-session message history for the current process, streams as
 /skills [list|status|activate]
 /prompts [list|status|activate]
 /rules [list|status|activate]
+/mcp [catalog|list|inspect|tools|enable|disable|add-profile|remove-profile|add-tool|remove-tool|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool|discover|remote-tools|call|model]
 /models
 /clear
 /new

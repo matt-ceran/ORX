@@ -31,11 +31,16 @@ import {
   loadUserMcpProfileCatalog,
   loadMcpProfilesConfig,
   renderMcpProfileTools,
+  renderUserMcpProfileCatalog,
   redactSecrets,
+  removeUserMcpProfile,
+  removeUserMcpProfileTool,
   revokeMcpModelToolGrant,
   revokeMcpToolGrant,
   saveMcpProfilesConfig,
   setMcpProfilePersistentState,
+  upsertUserMcpProfileTool,
+  upsertUserMcpRemoteProfile,
   writeMcpAuditEvent,
   type McpProfile,
 } from "./index.js";
@@ -244,6 +249,227 @@ test("user MCP profiles use persisted trust state and policy gates", () => {
     assert.equal(summary.policyAllowedToolCount, 1);
     assert.equal(summary.policyDeniedToolCount, 1);
     assert.equal(summary.configuredRiskyToolCount, 2);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("user MCP catalog mutation helpers write private profiles and tools", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-user-mcp-edit-"));
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+
+  try {
+    const profileResult = upsertUserMcpRemoteProfile(
+      "context7",
+      {
+        name: "Context7 docs",
+        url: "https://mcp.context7.example/mcp",
+        authRequired: true,
+        notes: "Local docs profile.",
+      },
+      { profileCatalogPath },
+    );
+    assert.equal(profileResult.ok, true);
+    assert.equal(profileResult.profileId, "user:context7");
+    assert.equal((statSync(dirname(profileCatalogPath)).mode & 0o777).toString(8), "700");
+    assert.equal((statSync(profileCatalogPath).mode & 0o777).toString(8), "600");
+
+    const toolResult = upsertUserMcpProfileTool(
+      "user:context7",
+      {
+        name: "resolve-library-id",
+        risk: "read",
+        authRequired: true,
+        billable: false,
+      },
+      { profileCatalogPath },
+    );
+    assert.equal(toolResult.ok, true);
+
+    let loaded = loadUserMcpProfileCatalog({ profileCatalogPath });
+    assert.equal(loaded.profiles.length, 1);
+    assert.match(renderUserMcpProfileCatalog(loaded), /profile=user:context7/);
+    assert.deepEqual(
+      loaded.profiles[0].tools.map((tool) => `${tool.name}:${tool.risk}:${tool.authRequired}`),
+      ["resolve-library-id:read:true"],
+    );
+
+    const removedTool = removeUserMcpProfileTool("context7", "resolve-library-id", {
+      profileCatalogPath,
+    });
+    assert.equal(removedTool.ok, true);
+    loaded = loadUserMcpProfileCatalog({ profileCatalogPath });
+    assert.equal(loaded.profiles[0].tools.length, 0);
+
+    const removedProfile = removeUserMcpProfile("context7", { profileCatalogPath });
+    assert.equal(removedProfile.ok, true);
+    loaded = loadUserMcpProfileCatalog({ profileCatalogPath });
+    assert.equal(loaded.profiles.length, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("user MCP catalog edits preserve existing servers-shape declarations", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-user-mcp-edit-servers-"));
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+
+  try {
+    mkdirSync(dirname(profileCatalogPath), { recursive: true });
+    writeFileSync(
+      profileCatalogPath,
+      JSON.stringify({
+        version: 1,
+        servers: {
+          existing: {
+            transport: {
+              kind: "remote-http",
+              url: "https://mcp.existing.example/mcp",
+            },
+            tools: [
+              {
+                name: "lookup",
+                risk: "read",
+                authRequired: false,
+                billable: false,
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    const result = upsertUserMcpRemoteProfile(
+      "context7",
+      {
+        url: "https://mcp.context7.example/mcp",
+      },
+      { profileCatalogPath },
+    );
+    assert.equal(result.ok, true);
+
+    const loaded = loadUserMcpProfileCatalog({ profileCatalogPath });
+    assert.deepEqual(
+      loaded.profiles.map((profile) => profile.id),
+      ["user:context7", "user:existing"],
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("user MCP catalog edits preserve existing array-shape declarations", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-user-mcp-edit-array-"));
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+
+  try {
+    mkdirSync(dirname(profileCatalogPath), { recursive: true });
+    writeFileSync(
+      profileCatalogPath,
+      JSON.stringify({
+        version: 1,
+        profiles: [
+          {
+            id: "existing",
+            transport: {
+              kind: "remote-http",
+              url: "https://mcp.existing.example/mcp",
+            },
+            tools: [
+              {
+                name: "lookup",
+                risk: "read",
+                authRequired: false,
+                billable: false,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const result = upsertUserMcpRemoteProfile(
+      "context7",
+      {
+        url: "https://mcp.context7.example/mcp",
+      },
+      { profileCatalogPath },
+    );
+    assert.equal(result.ok, true);
+
+    const loaded = loadUserMcpProfileCatalog({ profileCatalogPath });
+    assert.deepEqual(
+      loaded.profiles.map((profile) => profile.id),
+      ["user:context7", "user:existing"],
+    );
+    const saved = JSON.parse(readFileSync(profileCatalogPath, "utf8")) as {
+      profiles: Record<string, unknown>;
+    };
+    assert.equal(Array.isArray(saved.profiles), false);
+    assert.equal(typeof saved.profiles.existing, "object");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("user MCP catalog edits normalize saved declarations to supported fields", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-user-mcp-edit-normalize-"));
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+
+  try {
+    mkdirSync(dirname(profileCatalogPath), { recursive: true });
+    writeFileSync(
+      profileCatalogPath,
+      JSON.stringify({
+        version: 1,
+        profiles: {
+          context7: {
+            name: "Context7 docs",
+            transport: {
+              kind: "remote-http",
+              url: "https://mcp.context7.example/mcp",
+            },
+            authRequired: false,
+            customJunk: "drop me",
+            tools: [
+              {
+                name: "resolve-library-id",
+                risk: "read",
+                authRequired: false,
+                billable: false,
+                extra: "drop me too",
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    const result = upsertUserMcpProfileTool(
+      "context7",
+      {
+        name: "get-docs",
+        risk: "read",
+        authRequired: false,
+        billable: false,
+      },
+      { profileCatalogPath },
+    );
+    assert.equal(result.ok, true);
+
+    const saved = JSON.parse(readFileSync(profileCatalogPath, "utf8")) as {
+      profiles: Record<string, Record<string, unknown>>;
+    };
+    assert.equal(saved.profiles.context7.customJunk, undefined);
+    assert.deepEqual(
+      (saved.profiles.context7.tools as Array<Record<string, unknown>>).map((tool) =>
+        Object.keys(tool).sort(),
+      ),
+      [
+        ["authRequired", "billable", "name", "risk"],
+        ["authRequired", "billable", "name", "risk"],
+      ],
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: User MCP Catalog Editing Is Local Configuration Only
+
+Decision: ORX may provide `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands to edit the private local user MCP catalog. These commands write only local operator configuration, preserve existing declarations when possible, keep profiles disabled by default, and do not bypass profile enablement, trusted hashes, schema-change gates, tool grants, model-tool grants, bearer-auth policy, guarded transport, or audit logging.
+
+Reasoning: Manual JSON editing is a usability barrier for real MCP provider setup, but catalog editing should not become a new authority boundary. Treating editor commands as local declaration management keeps the workflow comfortable while preserving the existing MCP policy model where only enabled, trusted, unchanged profiles can be discovered, called, or exposed to the model.
+
 ## 2026-06-28: Local User MCP Catalogs Share The Profile Trust Model
 
 Decision: ORX may load local user MCP profile declarations from `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. User declarations are namespaced as `user:<profile-id>`, limited initially to `remote-http` transports, sanitized for safe IDs, tools, URLs, and secret-like values, disabled by default, and routed through the same enable, trusted-profile-hash, schema-change, per-tool grant, model-tool grant, guarded transport, bearer-auth, and audit gates as built-in and plugin MCP profiles.

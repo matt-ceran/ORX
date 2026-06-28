@@ -101,11 +101,19 @@ export {
 export {
   defaultMcpProfileCatalogPath,
   loadUserMcpProfileCatalog,
+  removeUserMcpProfile,
+  removeUserMcpProfileTool,
+  renderUserMcpProfileCatalog,
   resolveMcpProfileCatalogPath,
+  upsertUserMcpProfileTool,
+  upsertUserMcpRemoteProfile,
   type UserMcpProfileCatalogIoOptions,
   type UserMcpProfileCatalogLoadResult,
   type UserMcpProfileCatalogPathOptions,
   type UserMcpProfileOmission,
+  type UserMcpProfileCatalogMutationResult,
+  type UserMcpRemoteProfileInput,
+  type UserMcpToolInput,
 } from "./user-profiles.js";
 export {
   hashMcpProfile,

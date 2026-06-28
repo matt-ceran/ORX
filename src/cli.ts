@@ -27,17 +27,24 @@ import {
   getMcpProfileToolPolicyReport,
   getMcpStatusSummary,
   hashMcpProfile,
+  loadUserMcpProfileCatalog,
   renderMcpProfileInspect,
   renderMcpProfileTools,
   renderMcpStatus,
+  renderUserMcpProfileCatalog,
   resolveMcpConfigPath,
   resolveMcpProfileCatalogPath,
   resolveMcpBearerToken,
+  removeUserMcpProfile,
+  removeUserMcpProfileTool,
   revokeMcpModelToolGrant,
   revokeMcpToolGrant,
   setMcpProfilePersistentState,
+  upsertUserMcpProfileTool,
+  upsertUserMcpRemoteProfile,
   writeMcpAuditEvent,
   type McpAuditEvent,
+  type McpToolRisk,
 } from "./mcp/index.js";
 import {
   createEnabledPluginPromptsSystemMessage,
@@ -343,7 +350,7 @@ function helpText(): string {
     "  credits       Show live OpenRouter credits",
     "  generation <id>  Show OpenRouter generation metadata",
     "  profile       List, inspect, save, or delete local ORX profiles",
-    "  mcp           List, inspect, enable, disable, and grant MCP tool policy",
+    "  mcp           List, edit, inspect, enable, disable, and grant MCP tool policy",
     "  plugins       List catalog entries, command aliases, inspect, install, enable, or disable plugins",
     "  bins          List, inspect, trust, untrust, or run plugin bins",
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
@@ -783,6 +790,109 @@ function runMcpCommand(
     return 0;
   }
 
+  if (subcommand === "catalog" || subcommand === "user-catalog") {
+    if (args.length !== 1) {
+      writeLine(io.stderr, "Usage: orx mcp catalog");
+      return 1;
+    }
+
+    writeLine(
+      io.stdout,
+      renderUserMcpProfileCatalog(
+        loadUserMcpProfileCatalog({ profileCatalogPath: mcpProfileCatalogPath }),
+      ),
+    );
+    return 0;
+  }
+
+  if (subcommand === "add-profile") {
+    const parsed = parseMcpAddProfileArgs(args);
+    if (typeof parsed === "string") {
+      writeLine(io.stderr, parsed);
+      return 1;
+    }
+
+    try {
+      const result = upsertUserMcpRemoteProfile(
+        parsed.id,
+        {
+          name: parsed.name,
+          url: parsed.url,
+          authRequired: parsed.authRequired,
+          notes: parsed.notes,
+        },
+        { profileCatalogPath: mcpProfileCatalogPath },
+      );
+      writeLine(io.stdout, result.message);
+      return 0;
+    } catch (error) {
+      writeLine(io.stderr, `Unable to store user MCP profile${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
+  if (subcommand === "remove-profile") {
+    if (!profileId || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx mcp remove-profile <profile>");
+      return 1;
+    }
+
+    try {
+      const result = removeUserMcpProfile(profileId, {
+        profileCatalogPath: mcpProfileCatalogPath,
+      });
+      writeLine(result.ok ? io.stdout : io.stderr, result.message);
+      return result.ok ? 0 : 1;
+    } catch (error) {
+      writeLine(io.stderr, `Unable to remove user MCP profile${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
+  if (subcommand === "add-tool") {
+    const parsed = parseMcpAddToolArgs(args);
+    if (typeof parsed === "string") {
+      writeLine(io.stderr, parsed);
+      return 1;
+    }
+
+    try {
+      const result = upsertUserMcpProfileTool(
+        parsed.profileId,
+        {
+          name: parsed.toolName,
+          risk: parsed.risk,
+          authRequired: parsed.authRequired,
+          billable: parsed.billable,
+        },
+        { profileCatalogPath: mcpProfileCatalogPath },
+      );
+      writeLine(result.ok ? io.stdout : io.stderr, result.message);
+      return result.ok ? 0 : 1;
+    } catch (error) {
+      writeLine(io.stderr, `Unable to store user MCP tool${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
+  if (subcommand === "remove-tool") {
+    if (!profileId || !toolName || args.length !== 3) {
+      writeLine(io.stderr, "Usage: orx mcp remove-tool <profile> <tool>");
+      return 1;
+    }
+
+    try {
+      const result = removeUserMcpProfileTool(profileId, toolName, {
+        profileCatalogPath: mcpProfileCatalogPath,
+      });
+      writeLine(result.ok ? io.stdout : io.stderr, result.message);
+      return result.ok ? 0 : 1;
+    } catch (error) {
+      writeLine(io.stderr, `Unable to remove user MCP tool${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
   if (subcommand === "inspect") {
     if (!profileId || args.length !== 2) {
       writeLine(io.stderr, "Usage: orx mcp inspect <profile>");
@@ -1137,9 +1247,161 @@ function runMcpCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx mcp [list|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: orx mcp [list|catalog|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
   return 1;
+}
+
+function parseMcpAddProfileArgs(args: string[]):
+  | {
+      id: string;
+      url: string;
+      name?: string;
+      notes?: string;
+      authRequired?: boolean;
+    }
+  | string {
+  const id = args[1];
+  const url = args[2];
+  if (!id || !url) {
+    return "Usage: orx mcp add-profile <id> <url> [--name <name>] [--notes <text>] [--auth-required|--no-auth]";
+  }
+
+  const parsed: {
+    id: string;
+    url: string;
+    name?: string;
+    notes?: string;
+    authRequired?: boolean;
+  } = { id, url };
+  const rest = args.slice(3);
+  for (let index = 0; index < rest.length; index += 1) {
+    const flag = rest[index];
+    if (flag === "--name") {
+      const parsedValue = parseMcpTextOption(rest, index, "--name");
+      if (!parsedValue.ok) {
+        return parsedValue.message;
+      }
+      parsed.name = parsedValue.value;
+      index = parsedValue.index;
+      continue;
+    }
+    if (flag === "--notes") {
+      const parsedValue = parseMcpTextOption(rest, index, "--notes");
+      if (!parsedValue.ok) {
+        return parsedValue.message;
+      }
+      parsed.notes = parsedValue.value;
+      index = parsedValue.index;
+      continue;
+    }
+    if (flag === "--auth-required") {
+      parsed.authRequired = true;
+      continue;
+    }
+    if (flag === "--no-auth") {
+      parsed.authRequired = false;
+      continue;
+    }
+    return `Unknown add-profile option: ${flag}`;
+  }
+
+  return parsed;
+}
+
+function parseMcpTextOption(
+  args: string[],
+  index: number,
+  flag: string,
+): { ok: true; value: string; index: number } | { ok: false; message: string } {
+  let cursor = index + 1;
+  const values: string[] = [];
+  while (cursor < args.length && !args[cursor].startsWith("--")) {
+    values.push(args[cursor]);
+    cursor += 1;
+  }
+
+  if (values.length === 0) {
+    return {
+      ok: false,
+      message: `Usage: ${flag} requires a value`,
+    };
+  }
+
+  return {
+    ok: true,
+    value: stripWrappingQuotes(values.join(" ")),
+    index: cursor - 1,
+  };
+}
+
+function stripWrappingQuotes(value: string): string {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function parseMcpAddToolArgs(args: string[]):
+  | {
+      profileId: string;
+      toolName: string;
+      risk: McpToolRisk;
+      authRequired?: boolean;
+      billable?: boolean;
+    }
+  | string {
+  const profileId = args[1];
+  const toolName = args[2];
+  const risk = parseMcpToolRisk(args[3]);
+  if (!profileId || !toolName || !risk) {
+    return "Usage: orx mcp add-tool <profile> <tool> <read|write|destructive|billable> [--auth-required|--no-auth] [--billable|--free]";
+  }
+
+  const parsed: {
+    profileId: string;
+    toolName: string;
+    risk: McpToolRisk;
+    authRequired?: boolean;
+    billable?: boolean;
+  } = { profileId, toolName, risk };
+  const rest = args.slice(4);
+  for (const flag of rest) {
+    if (flag === "--auth-required") {
+      parsed.authRequired = true;
+      continue;
+    }
+    if (flag === "--no-auth") {
+      parsed.authRequired = false;
+      continue;
+    }
+    if (flag === "--billable") {
+      parsed.billable = true;
+      continue;
+    }
+    if (flag === "--free") {
+      parsed.billable = false;
+      continue;
+    }
+    return `Unknown add-tool option: ${flag}`;
+  }
+
+  return parsed;
+}
+
+function parseMcpToolRisk(value: string | undefined): McpToolRisk | undefined {
+  if (
+    value === "read" ||
+    value === "write" ||
+    value === "destructive" ||
+    value === "billable"
+  ) {
+    return value;
+  }
+  return undefined;
 }
 
 async function runBinsCommand(

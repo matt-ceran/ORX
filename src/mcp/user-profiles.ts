@@ -1,6 +1,13 @@
-import { existsSync, lstatSync, readFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import type {
   McpDeclaredTool,
   McpProfile,
@@ -32,6 +39,29 @@ export interface UserMcpProfileCatalogLoadResult {
   profiles: McpProfile[];
   omissions: UserMcpProfileOmission[];
   truncated: boolean;
+}
+
+export interface UserMcpRemoteProfileInput {
+  name?: string;
+  url: string;
+  authRequired?: boolean;
+  notes?: string;
+}
+
+export interface UserMcpToolInput {
+  name: string;
+  risk: McpToolRisk;
+  authRequired?: boolean;
+  billable?: boolean;
+}
+
+export interface UserMcpProfileCatalogMutationResult {
+  ok: boolean;
+  path: string;
+  profileId?: string;
+  toolName?: string;
+  profile?: McpProfile;
+  message: string;
 }
 
 const MAX_USER_MCP_PROFILES = 128;
@@ -161,6 +191,233 @@ export function loadUserMcpProfileCatalog(
   };
 }
 
+export function upsertUserMcpRemoteProfile(
+  id: string,
+  input: UserMcpRemoteProfileInput,
+  options: UserMcpProfileCatalogIoOptions = {},
+): UserMcpProfileCatalogMutationResult {
+  const path = options.profileCatalogPath ?? defaultMcpProfileCatalogPath();
+  const serverId = normalizeUserProfileId(id);
+  const existingCatalog = loadEditableUserMcpProfileCatalog(path);
+  const existing = existingCatalog.profiles[serverId];
+  const existingRecord = isPlainObject(existing) ? existing : {};
+  const existingTools = Array.isArray(existingRecord.tools) ? existingRecord.tools : [];
+  const safeName = optionalSafeString(input.name, "profile.name", 1, MAX_NAME_LENGTH);
+  const safeNotes = optionalSafeString(input.notes, "profile.notes", 1, MAX_NOTE_LENGTH);
+  const declaration = {
+    ...existingRecord,
+    ...(typeof safeName === "undefined" ? {} : { name: safeName }),
+    transport: sanitizeUserTransport({
+      kind: "remote-http",
+      url: input.url,
+    }),
+    authRequired:
+      input.authRequired ??
+      optionalBoolean(existingRecord.authRequired, "profile.authRequired") ??
+      false,
+    tools: existingTools,
+    ...(typeof safeNotes === "undefined" ? {} : { notes: safeNotes }),
+  };
+
+  const profile = sanitizeUserMcpProfile(serverId, declaration, path);
+  existingCatalog.profiles[serverId] = toEditableUserMcpProfileDeclaration(
+    serverId,
+    declaration,
+    path,
+  );
+  saveEditableUserMcpProfileCatalog(path, existingCatalog);
+
+  return {
+    ok: true,
+    path,
+    profileId: profile.id,
+    profile,
+    message: `User MCP profile ${profile.id} stored in ${path}. Enable it with orx mcp enable ${profile.id}.`,
+  };
+}
+
+export function removeUserMcpProfile(
+  id: string,
+  options: UserMcpProfileCatalogIoOptions = {},
+): UserMcpProfileCatalogMutationResult {
+  const path = options.profileCatalogPath ?? defaultMcpProfileCatalogPath();
+  const serverId = normalizeUserProfileId(id);
+  const catalog = loadEditableUserMcpProfileCatalog(path);
+
+  if (!catalog.profiles[serverId]) {
+    return {
+      ok: false,
+      path,
+      profileId: `user:${serverId}`,
+      message: `No user MCP profile stored for user:${serverId}.`,
+    };
+  }
+
+  delete catalog.profiles[serverId];
+  saveEditableUserMcpProfileCatalog(path, catalog);
+
+  return {
+    ok: true,
+    path,
+    profileId: `user:${serverId}`,
+    message: `User MCP profile user:${serverId} removed from ${path}.`,
+  };
+}
+
+export function upsertUserMcpProfileTool(
+  profileId: string,
+  input: UserMcpToolInput,
+  options: UserMcpProfileCatalogIoOptions = {},
+): UserMcpProfileCatalogMutationResult {
+  const path = options.profileCatalogPath ?? defaultMcpProfileCatalogPath();
+  const serverId = normalizeUserProfileId(profileId);
+  const catalog = loadEditableUserMcpProfileCatalog(path);
+  const existing = catalog.profiles[serverId];
+  if (!isPlainObject(existing)) {
+    return {
+      ok: false,
+      path,
+      profileId: `user:${serverId}`,
+      toolName: input.name,
+      message: `No user MCP profile stored for user:${serverId}.`,
+    };
+  }
+
+  const profileAuthRequired =
+    optionalBoolean(existing.authRequired, "profile.authRequired") ?? false;
+  const tool = sanitizeTool(
+    {
+      name: input.name,
+      risk: input.risk,
+      authRequired: input.authRequired,
+      billable: input.billable,
+    },
+    0,
+    profileAuthRequired,
+  );
+  const currentTools = Array.isArray(existing.tools) ? existing.tools : [];
+  const nextTools = [
+    ...currentTools.filter(
+      (entry) => !(isPlainObject(entry) && entry.name === tool.name),
+    ),
+    tool,
+  ];
+  const declaration = {
+    ...existing,
+    tools: nextTools.sort((left, right) => {
+      const leftName = isPlainObject(left) && typeof left.name === "string" ? left.name : "";
+      const rightName = isPlainObject(right) && typeof right.name === "string" ? right.name : "";
+      return leftName.localeCompare(rightName);
+    }),
+  };
+  const profile = sanitizeUserMcpProfile(serverId, declaration, path);
+  catalog.profiles[serverId] = toEditableUserMcpProfileDeclaration(serverId, declaration, path);
+  saveEditableUserMcpProfileCatalog(path, catalog);
+
+  return {
+    ok: true,
+    path,
+    profileId: profile.id,
+    toolName: tool.name,
+    profile,
+    message: `User MCP tool ${profile.id}/${tool.name} stored in ${path}.`,
+  };
+}
+
+export function removeUserMcpProfileTool(
+  profileId: string,
+  toolName: string,
+  options: UserMcpProfileCatalogIoOptions = {},
+): UserMcpProfileCatalogMutationResult {
+  const path = options.profileCatalogPath ?? defaultMcpProfileCatalogPath();
+  const serverId = normalizeUserProfileId(profileId);
+  const safeToolName = requiredSafeString(toolName, "profile.tool.name", 1, 128);
+  if (!MCP_TOOL_NAME_PATTERN.test(safeToolName)) {
+    throw new Error("profile.tool.name contains unsupported characters");
+  }
+  const catalog = loadEditableUserMcpProfileCatalog(path);
+  const existing = catalog.profiles[serverId];
+  if (!isPlainObject(existing)) {
+    return {
+      ok: false,
+      path,
+      profileId: `user:${serverId}`,
+      toolName: safeToolName,
+      message: `No user MCP profile stored for user:${serverId}.`,
+    };
+  }
+
+  const currentTools = Array.isArray(existing.tools) ? existing.tools : [];
+  const nextTools = currentTools.filter(
+    (entry) => !(isPlainObject(entry) && entry.name === safeToolName),
+  );
+  if (nextTools.length === currentTools.length) {
+    return {
+      ok: false,
+      path,
+      profileId: `user:${serverId}`,
+      toolName: safeToolName,
+      message: `No user MCP tool stored for user:${serverId}/${safeToolName}.`,
+    };
+  }
+
+  const declaration = {
+    ...existing,
+    tools: nextTools,
+  };
+  const profile = sanitizeUserMcpProfile(serverId, declaration, path);
+  catalog.profiles[serverId] = toEditableUserMcpProfileDeclaration(serverId, declaration, path);
+  saveEditableUserMcpProfileCatalog(path, catalog);
+
+  return {
+    ok: true,
+    path,
+    profileId: profile.id,
+    toolName: safeToolName,
+    profile,
+    message: `User MCP tool ${profile.id}/${safeToolName} removed from ${path}.`,
+  };
+}
+
+export function renderUserMcpProfileCatalog(
+  catalog: UserMcpProfileCatalogLoadResult,
+): string {
+  const lines = [
+    "MCP user catalog",
+    `  path: ${catalog.path}`,
+    `  exists: ${catalog.exists ? "yes" : "no"}`,
+    `  profiles: ${catalog.profiles.length}`,
+    `  omissions: ${catalog.omissions.length}`,
+    `  truncated: ${catalog.truncated ? "yes" : "no"}`,
+    ...catalog.profiles.map((profile) =>
+      [
+        `  - profile=${profile.id}`,
+        `name=${JSON.stringify(profile.name)}`,
+        `transport=${profile.transport.kind}`,
+        profile.transport.url ? `url=${profile.transport.url}` : undefined,
+        `auth=${profile.authRequired ? "yes" : "no"}`,
+        `risk=${profile.riskLevel}`,
+        `write=${profile.writeCapable ? "yes" : "no"}`,
+        `tools=${profile.tools.length}`,
+        profile.source?.componentHash ? `declaration_hash=${profile.source.componentHash}` : undefined,
+      ]
+        .filter((part): part is string => typeof part === "string")
+        .join(" "),
+    ),
+    ...catalog.omissions.map((omission) =>
+      [
+        "  - omission",
+        omission.id ? `id=${omission.id}` : undefined,
+        `reason=${JSON.stringify(omission.reason)}`,
+      ]
+        .filter((part): part is string => typeof part === "string")
+        .join(" "),
+    ),
+  ];
+
+  return lines.join("\n");
+}
+
 function sanitizeUserMcpProfile(
   fallbackProfileId: string,
   value: unknown,
@@ -214,6 +471,148 @@ function sanitizeUserMcpProfile(
       "Declared in the local user MCP profile catalog. Disabled until explicitly enabled and trusted.",
     source,
   };
+}
+
+interface EditableUserMcpProfileCatalog {
+  version: 1;
+  profiles: Record<string, Record<string, unknown>>;
+}
+
+function toEditableUserMcpProfileDeclaration(
+  serverId: string,
+  value: Record<string, unknown>,
+  catalogPath: string,
+): Record<string, unknown> {
+  const profile = sanitizeUserMcpProfile(serverId, value, catalogPath);
+  const name = optionalSafeString(value.name, "profile.name", 1, MAX_NAME_LENGTH);
+  const notes = optionalSafeString(value.notes, "profile.notes", 1, MAX_NOTE_LENGTH);
+  const riskLevel = optionalRiskLevel(value.riskLevel, "profile.riskLevel");
+  const explicitWriteCapable = optionalBoolean(value.writeCapable, "profile.writeCapable");
+
+  return {
+    ...(typeof name === "undefined" ? {} : { name }),
+    transport: profile.transport,
+    ...(typeof riskLevel === "undefined" ? {} : { riskLevel }),
+    authRequired: profile.authRequired,
+    ...(typeof explicitWriteCapable === "undefined"
+      ? {}
+      : { writeCapable: explicitWriteCapable }),
+    tools: [...profile.tools].sort((left, right) => left.name.localeCompare(right.name)),
+    ...(typeof notes === "undefined" ? {} : { notes }),
+  };
+}
+
+function loadEditableUserMcpProfileCatalog(path: string): EditableUserMcpProfileCatalog {
+  if (!existsSync(path)) {
+    return {
+      version: 1,
+      profiles: {},
+    };
+  }
+
+  let stat;
+  try {
+    stat = lstatSync(path);
+  } catch {
+    throw new Error("User MCP profile catalog could not be inspected.");
+  }
+
+  if (!stat.isFile()) {
+    throw new Error("User MCP profile catalog is not a file.");
+  }
+
+  if (stat.size > MAX_USER_MCP_FILE_BYTES) {
+    throw new Error("User MCP profile catalog exceeds the byte limit.");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  } catch {
+    throw new Error("User MCP profile catalog is invalid JSON.");
+  }
+
+  if (!isPlainObject(parsed)) {
+    throw new Error("User MCP profile catalog must be a JSON object.");
+  }
+
+  if (typeof parsed.version !== "undefined" && parsed.version !== 1) {
+    throw new Error("User MCP profile catalog version must be 1.");
+  }
+
+  const profiles: Record<string, Record<string, unknown>> = {};
+  const rawProfiles =
+    typeof parsed.profiles === "undefined" && isPlainObject(parsed.servers)
+      ? parsed.servers
+      : parsed.profiles;
+  if (typeof rawProfiles === "undefined") {
+    return {
+      version: 1,
+      profiles,
+    };
+  }
+
+  if (Array.isArray(rawProfiles)) {
+    if (rawProfiles.length > MAX_USER_MCP_PROFILES) {
+      throw new Error("User MCP profile catalog has too many profiles for edits.");
+    }
+
+    for (const [index, value] of rawProfiles.entries()) {
+      if (!isPlainObject(value)) {
+        throw new Error(`User MCP profile ${index + 1} must be an object.`);
+      }
+      const profile = sanitizeUserMcpProfile(String(index + 1), value, path);
+      const serverId = normalizeUserProfileId(profile.id);
+      if (profiles[serverId]) {
+        throw new Error(`Duplicate user MCP profile user:${serverId}.`);
+      }
+      profiles[serverId] = toEditableUserMcpProfileDeclaration(serverId, value, path);
+    }
+
+    return {
+      version: 1,
+      profiles,
+    };
+  }
+
+  if (!isPlainObject(rawProfiles)) {
+    throw new Error("User MCP profile catalog profiles must be an object for edits.");
+  }
+
+  for (const [id, value] of Object.entries(rawProfiles)) {
+    if (!isPlainObject(value)) {
+      throw new Error(`User MCP profile ${id} must be an object.`);
+    }
+    profiles[normalizeUserProfileId(id)] = { ...value };
+  }
+
+  return {
+    version: 1,
+    profiles,
+  };
+}
+
+function saveEditableUserMcpProfileCatalog(
+  path: string,
+  catalog: EditableUserMcpProfileCatalog,
+): void {
+  const directory = dirname(path);
+  mkdirSync(directory, {
+    recursive: true,
+    mode: 0o700,
+  });
+  chmodSync(directory, 0o700);
+  writeFileSync(path, `${JSON.stringify(catalog, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  chmodSync(path, 0o600);
+}
+
+function normalizeUserProfileId(id: string): string {
+  const raw = requiredSafeString(id, "profile.id", 1, 85);
+  const withoutPrefix = raw.startsWith("user:") ? raw.slice("user:".length) : raw;
+  return sanitizeServerId(withoutPrefix);
 }
 
 function sanitizeUserTransport(value: unknown): McpProfile["transport"] {

@@ -24,7 +24,7 @@ test("help, version, and status work without an API key", async () => {
     assert.equal(await runCli(["node", "cli", helpArg], {}, help.io), 0);
     assert.match(help.stdout(), /Commands:/);
     assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
-    assert.match(help.stdout(), /mcp\s+List, inspect, enable, disable, and grant MCP tool policy/);
+    assert.match(help.stdout(), /mcp\s+List, edit, inspect, enable, disable, and grant MCP tool policy/);
     assert.match(help.stdout(), /plugins\s+List catalog entries, command aliases, inspect, install, enable, or disable plugins/);
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
@@ -466,7 +466,52 @@ test("cli mcp commands use user MCP profile catalog", async () => {
   };
 
   try {
-    writeUserMcpProfileCatalog(profileCatalogPath);
+    const emptyCatalog = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "catalog"], env, emptyCatalog.io), 0);
+    assert.match(emptyCatalog.stdout(), /profiles: 0/);
+
+    const addedProfile = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        [
+          "node",
+          "cli",
+          "mcp",
+          "add-profile",
+          "context7",
+          "https://mcp.context7.example/mcp",
+          "--name",
+          "Context7",
+          "docs",
+          "--auth-required",
+        ],
+        env,
+        addedProfile.io,
+      ),
+      0,
+    );
+    assert.match(addedProfile.stdout(), /User MCP profile user:context7 stored/);
+
+    const addedTool = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        [
+          "node",
+          "cli",
+          "mcp",
+          "add-tool",
+          "user:context7",
+          "resolve-library-id",
+          "read",
+          "--auth-required",
+          "--free",
+        ],
+        env,
+        addedTool.io,
+      ),
+      0,
+    );
+    assert.match(addedTool.stdout(), /User MCP tool user:context7\/resolve-library-id stored/);
 
     const list = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "list"], env, list.io), 0);
@@ -484,8 +529,20 @@ test("cli mcp commands use user MCP profile catalog", async () => {
 
     const inspected = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "inspect", "user:context7"], env, inspected.io), 0);
+    assert.match(inspected.stdout(), /name: Context7 docs/);
     assert.match(inspected.stdout(), /source: user catalog_path=/);
     assert.match(inspected.stdout(), /resolve-library-id risk=read auth=yes billable=no policy=allowed/);
+
+    const removedTool = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "remove-tool", "context7", "resolve-library-id"], env, removedTool.io),
+      0,
+    );
+    assert.match(removedTool.stdout(), /User MCP tool user:context7\/resolve-library-id removed/);
+
+    const removedProfile = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "remove-profile", "context7"], env, removedProfile.io), 0);
+    assert.match(removedProfile.stdout(), /User MCP profile user:context7 removed/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

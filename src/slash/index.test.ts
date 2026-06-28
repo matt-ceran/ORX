@@ -112,7 +112,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
-  assert.match(output, /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(output, /\/mcp \[list\|catalog\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog\|list\|commands\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
@@ -127,7 +127,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|catalog\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -326,7 +326,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-  assert.match(alias.stdout(), /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(alias.stdout(), /\/mcp \[list\|catalog\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -2186,7 +2186,26 @@ test("mcp slash commands use user MCP profile catalog", async () => {
   });
 
   try {
-    writeUserMcpProfileCatalog(profileCatalogPath);
+    assert.equal(await handleSlashCommand("/mcp catalog", harness.context), "continue");
+    assert.match(harness.stdout(), /profiles: 0/);
+
+    assert.equal(
+      await handleSlashCommand(
+        '/mcp add-profile context7 https://mcp.context7.example/mcp --name "Context7 docs" --auth-required',
+        harness.context,
+      ),
+      "continue",
+    );
+    assert.match(harness.stdout(), /User MCP profile user:context7 stored/);
+
+    assert.equal(
+      await handleSlashCommand(
+        "/mcp add-tool user:context7 resolve-library-id read --auth-required --free",
+        harness.context,
+      ),
+      "continue",
+    );
+    assert.match(harness.stdout(), /User MCP tool user:context7\/resolve-library-id stored/);
 
     assert.equal(handleSlashCommand("/status", harness.context), "continue");
     assert.match(harness.stdout(), /mcp_user_profiles: 1/);
@@ -2197,6 +2216,7 @@ test("mcp slash commands use user MCP profile catalog", async () => {
     assert.match(harness.stdout(), /source=user/);
 
     assert.equal(await handleSlashCommand("/mcp inspect user:context7", harness.context), "continue");
+    assert.match(harness.stdout(), /name: Context7 docs/);
     assert.match(harness.stdout(), /source: user catalog_path=/);
     assert.match(harness.stdout(), /resolve-library-id risk=read auth=yes billable=no policy=blocked_by_profile/);
 
@@ -2211,6 +2231,15 @@ test("mcp slash commands use user MCP profile catalog", async () => {
 
     assert.equal(await handleSlashCommand("/mcp model status", harness.context), "continue");
     assert.match(harness.stdout(), /model_tool_grants: 1/);
+
+    assert.equal(
+      await handleSlashCommand("/mcp remove-tool context7 resolve-library-id", harness.context),
+      "continue",
+    );
+    assert.match(harness.stdout(), /User MCP tool user:context7\/resolve-library-id removed/);
+
+    assert.equal(await handleSlashCommand("/mcp remove-profile context7", harness.context), "continue");
+    assert.match(harness.stdout(), /User MCP profile user:context7 removed/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
