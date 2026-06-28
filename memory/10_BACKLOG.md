@@ -11,6 +11,7 @@ Urgent UX recovery:
 Completed:
 
 - Add saved local profile controls: private `~/.orx/profiles.json` registry with `ORX_PROFILE_CONFIG_PATH`, no API-key persistence, `orx profile list|save|use|inspect|delete`, global `orx --profile <id>`, `/profile [list|save|use|inspect|delete]`, `active_profile`/`profile_count` status visibility, session snapshot persistence, and stale active-profile clearing on manual routing/theme changes.
+- Add top-level `orx doctor` readiness overview for runtime config, API-key presence, MCP, plugins, delegation, test targets, and concrete next commands without OpenRouter, remote MCP, bin, or hook execution.
 - Add TTY theme controls: config `theme`, `/theme [default|mono|vivid]`, `ORX_TTY_THEME`/`ORX_THEME` overrides, theme-aware status/composer/tool summaries/credits/palette output, CLI status/credits/ask propagation, and session snapshot persistence.
 - Add line-based multiline prompt continuation: trailing unescaped `\` keeps collecting input lines, TTY renders `orx ...` continuation state, non-TTY renders `...>`, and ORX submits the collected lines as one user message.
 - Add compact TTY model badges for OpenRouter routing shortcuts (`auto` and `fusion`) while preserving full model ids in config, requests, plain status, and non-TTY output.

@@ -33,6 +33,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /orchestrator\s+Show delegation readiness or refuse session-less changes/);
     assert.match(help.stdout(), /delegate\s+Show\/refuse session delegate changes, policy, or saved teams/);
     assert.match(help.stdout(), /delegates\s+Show delegate readiness, execution policy, or saved teams/);
+    assert.match(help.stdout(), /doctor\s+Run a no-network readiness check across runtime, MCP, plugins, and delegation/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
   }
@@ -43,20 +44,21 @@ test("help, version, and status work without an API key", async () => {
 
   const cwd = createTempDir();
   try {
+    const diagnosticEnv = {
+      ORX_MCP_CONFIG_PATH: join(cwd, "mcp", "profiles.json"),
+      ORX_MCP_PROFILE_CATALOG_PATH: join(cwd, "mcp", "profile-catalog.json"),
+      ORX_PLUGIN_REGISTRY_PATH: join(cwd, "plugins", "registry.json"),
+      ORX_PLUGIN_CATALOG_PATH: join(cwd, "plugins", "catalog.json"),
+      ORX_PLUGIN_BINS_CONFIG_PATH: join(cwd, "plugins", "bins.json"),
+      ORX_PLUGIN_HOOKS_CONFIG_PATH: join(cwd, "plugins", "hooks.json"),
+      ORX_PROFILE_CONFIG_PATH: join(cwd, "profiles.json"),
+      ORX_DELEGATION_TEAMS_PATH: join(cwd, "delegation", "teams.json"),
+      ORX_DELEGATION_POLICY_PATH: join(cwd, "delegation", "policy.json"),
+      ORX_DELEGATION_AUDIT_PATH: join(cwd, "audit", "delegation.jsonl"),
+    };
     const status = createIo();
     assert.equal(
-      await runCli(
-        ["node", "cli", "status"],
-        {
-          ORX_MCP_CONFIG_PATH: join(cwd, "mcp", "profiles.json"),
-          ORX_PLUGIN_BINS_CONFIG_PATH: join(cwd, "plugins", "bins.json"),
-          ORX_PLUGIN_HOOKS_CONFIG_PATH: join(cwd, "plugins", "hooks.json"),
-          ORX_PROFILE_CONFIG_PATH: join(cwd, "profiles.json"),
-          ORX_DELEGATION_POLICY_PATH: join(cwd, "delegation", "policy.json"),
-          ORX_DELEGATION_AUDIT_PATH: join(cwd, "audit", "delegation.jsonl"),
-        },
-        status.io,
-      ),
+      await runCli(["node", "cli", "status"], diagnosticEnv, status.io),
       0,
     );
     assert.match(status.stdout(), /api_key_present: no/);
@@ -104,6 +106,99 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /delegate_task_runtime: policy_enforced_disabled/);
     assert.match(status.stdout(), /delegate_task_model_exposure: unavailable/);
     assert.match(status.stdout(), /delegate_task_adapter: openrouter_available/);
+
+    let fetchCalls = 0;
+    const doctor = createIo({
+      cwd,
+      fetch: async (): Promise<Response> => {
+        fetchCalls += 1;
+        throw new Error("doctor must not call fetch");
+      },
+    });
+    assert.equal(await runCli(["node", "cli", "doctor"], diagnosticEnv, doctor.io), 0);
+    assert.match(doctor.stdout(), /ORX doctor/);
+    assert.match(doctor.stdout(), /interactive_chat: blocked_missing_openrouter_api_key/);
+    assert.match(doctor.stdout(), /network_calls: none/);
+    assert.match(doctor.stdout(), /remote_mcp_calls: none/);
+    assert.match(doctor.stdout(), /plugin_execution: none/);
+    assert.match(doctor.stdout(), /api_key_present: no/);
+    assert.match(doctor.stdout(), /approval_policy: never/);
+    assert.match(doctor.stdout(), /sandbox_mode: danger-full-access/);
+    assert.match(doctor.stdout(), /active_profiles: none/);
+    assert.match(doctor.stdout(), /installed: 0/);
+    assert.match(doctor.stdout(), /execution_policy: disabled/);
+    assert.match(doctor.stdout(), /delegate_task_cli_exposure: unavailable_sessionless_cli/);
+    assert.match(doctor.stdout(), /chat_readiness: not_evaluated_sessionless_cli/);
+    assert.match(doctor.stdout(), /saved_team_availability: blocked_policy_disabled/);
+    assert.match(doctor.stdout(), /next_steps:/);
+    assert.equal(fetchCalls, 0);
+    assert.equal(doctor.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli doctor does not treat saved delegation teams as active chat delegates", async () => {
+  const cwd = createTempDir();
+  const env = {
+    ORX_DELEGATION_POLICY_PATH: join(cwd, "delegation", "policy.json"),
+    ORX_DELEGATION_TEAMS_PATH: join(cwd, "delegation", "teams.json"),
+    ORX_MCP_CONFIG_PATH: join(cwd, "mcp", "profiles.json"),
+    ORX_MCP_PROFILE_CATALOG_PATH: join(cwd, "mcp", "profile-catalog.json"),
+    ORX_PLUGIN_REGISTRY_PATH: join(cwd, "plugins", "registry.json"),
+    ORX_PLUGIN_CATALOG_PATH: join(cwd, "plugins", "catalog.json"),
+    ORX_PLUGIN_BINS_CONFIG_PATH: join(cwd, "plugins", "bins.json"),
+    ORX_PLUGIN_HOOKS_CONFIG_PATH: join(cwd, "plugins", "hooks.json"),
+    ORX_PROFILE_CONFIG_PATH: join(cwd, "profiles.json"),
+  };
+  const fetch = async (): Promise<Response> => {
+    throw new Error("doctor delegation readiness test must not call fetch");
+  };
+
+  try {
+    const policy = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "delegates", "policy", "set", "--execution", "enabled"],
+        env,
+        policy.io,
+      ),
+      0,
+    );
+
+    const saved = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(
+        [
+          "node",
+          "cli",
+          "delegates",
+          "save",
+          "review",
+          "--controller",
+          "openrouter/fusion",
+          "--delegate",
+          "reviewer",
+          "anthropic/claude-sonnet-4.5",
+        ],
+        env,
+        saved.io,
+      ),
+      0,
+    );
+
+    const doctor = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "doctor"], env, doctor.io), 0);
+    assert.match(doctor.stdout(), /execution_policy: enabled/);
+    assert.match(doctor.stdout(), /saved_teams: 1/);
+    assert.match(doctor.stdout(), /chat_readiness: not_evaluated_sessionless_cli/);
+    assert.match(
+      doctor.stdout(),
+      /chat_delegate_requirement: active_chat_session_delegate_required/,
+    );
+    assert.match(doctor.stdout(), /saved_team_availability: available_load_in_chat/);
+    assert.doesNotMatch(doctor.stdout(), /policy_enabled_saved_team_available/);
+    assert.equal(doctor.stderr(), "");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

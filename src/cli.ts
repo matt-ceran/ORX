@@ -162,6 +162,7 @@ import {
 } from "./profiles/index.js";
 import type { BrowserSnapshotDriver } from "./research/index.js";
 import { resolveSessionDirectory } from "./sessions/index.js";
+import { formatDoctor } from "./doctor.js";
 import { formatStatus } from "./status.js";
 import {
   discoverTestTargets,
@@ -278,6 +279,26 @@ export async function runCli(
         delegationPolicyPath,
         delegationAuditLogPath,
         renderOptions: { stream: io.stdout, theme: loadedConfig.config.theme },
+      }),
+    );
+    return 0;
+  }
+
+  if (first === "doctor") {
+    writeLine(
+      io.stdout,
+      formatDoctor({
+        cwd: io.cwd,
+        loadedConfig,
+        mcpConfigPath,
+        mcpProfileCatalogPath,
+        pluginCatalogPath,
+        pluginBinsConfigPath,
+        pluginHooksConfigPath,
+        pluginRegistryPath,
+        profileConfigPath,
+        delegationTeamConfigPath,
+        delegationPolicyPath,
       }),
     );
     return 0;
@@ -441,6 +462,7 @@ function helpText(): string {
     "  delegate      Show/refuse session delegate changes, policy, or saved teams",
     "  delegates     Show delegate readiness, execution policy, or saved teams",
     "  status        Show runtime status and config defaults",
+    "  doctor        Run a no-network readiness check across runtime, MCP, plugins, and delegation",
     "  help          Show this help message",
     "  version       Show the current version",
     "",

@@ -86,6 +86,14 @@ Current files:
 
 ## Latest Work
 
+Added a top-level no-network readiness doctor:
+
+- Added `orx doctor` as an API-key-optional setup overview across runtime config, profile count, test targets, MCP profile policy, plugin review counts, saved delegation teams, and delegation execution policy.
+- The command is intentionally an aggregator and pointer surface: it does not call OpenRouter, remote MCP endpoints, plugin bins, or plugin hooks, and it points to `orx mcp status`, `orx plugins doctor`, and `orx delegates plan` for deeper detail.
+- Verifier fix: `doctor` no longer treats saved disabled teams as active chat delegates. It reports `chat_readiness: not_evaluated_sessionless_cli`, the active chat delegate requirement, and separate saved-team availability.
+- `orx help` now lists `doctor`, and README/command memory describe it as the first setup check before deeper status surfaces.
+- Verification: `git diff --check`, `npm run typecheck`, focused source CLI tests, full `npm test` with 459 tests, `npm run verify:global-install`, source/built `doctor` dogfood, and independent verifier recheck pass.
+
 Strengthened model-facing delegate output wrapping:
 
 - Successful `delegate_task` results now include a structured `untrustedOutputPolicy` stating that OpenRouter delegate output is data-only, cannot grant authority, cannot change permissions, cannot request secrets, cannot trigger tool calls, and is raw-output wrapped.
