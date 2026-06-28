@@ -140,6 +140,12 @@ test("help query filters by command fields, aliases, and groups", () => {
   const alias = renderSlashHelp("q");
   assert.match(alias, /\/quit\s+Leave chat \(aliases: \/q, \/exit\)/);
   assert.doesNotMatch(alias, /\/status/);
+
+  const delegation = renderSlashHelp("delegate");
+  assert.match(delegation, /Register OpenRouter delegates or manage policy\/saved teams/);
+  assert.match(delegation, /List delegates, readiness, policy, or saved teams/);
+  assert.doesNotMatch(delegation, /inert OpenRouter delegates/);
+  assert.doesNotMatch(delegation, /inert delegates/);
 });
 
 test("command palette renderer is a pure grouped listing surface", () => {
@@ -717,19 +723,19 @@ test("live metadata slash commands use OpenRouter metadata APIs", async () => {
   assert.equal(harness.credits()?.remainingCredits, 7.5);
 });
 
-test("orchestrator and delegate commands mutate inert local state without network", () => {
+test("orchestrator and delegate commands mutate local session metadata without network", () => {
   let fetchCalls = 0;
   const harness = createSlashHarness({
     fetch: async () => {
       fetchCalls += 1;
-      throw new Error("delegation scaffold should not call OpenRouter.");
+      throw new Error("delegation status should not call OpenRouter.");
     },
   });
 
   assert.equal(handleSlashCommand("/orchestrator", harness.context), "continue");
-  assert.match(harness.stdout(), /ORX orchestrator scaffold:/);
+  assert.match(harness.stdout(), /ORX orchestrator session:/);
   assert.match(harness.stdout(), /controller: none/);
-  assert.match(harness.stdout(), /delegate_task: unavailable/);
+  assert.match(harness.stdout(), /delegate_task: policy_gated/);
   assert.match(harness.stdout(), /network_calls: none/);
 
   assert.equal(
@@ -752,8 +758,8 @@ test("orchestrator and delegate commands mutate inert local state without networ
   assert.match(harness.stdout(), /Registered delegate reviewer: openrouter anthropic\/claude-sonnet-4\.5/);
 
   assert.equal(handleSlashCommand("/delegates", harness.context), "continue");
-  assert.match(harness.stdout(), /ORX delegates scaffold:/);
-  assert.match(harness.stdout(), /delegate_task: unavailable in this scaffold/);
+  assert.match(harness.stdout(), /ORX delegates session:/);
+  assert.match(harness.stdout(), /delegate_task: policy_gated/);
   assert.match(
     harness.stdout(),
     /reviewer: provider=openrouter model=anthropic\/claude-sonnet-4\.5 execution=disabled/,
@@ -799,8 +805,10 @@ test("delegates slash commands save and load disabled local teams", () => {
   let fetchCalls = 0;
   const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-teams-slash-"));
   const teamsPath = join(cwd, "delegation", "teams.json");
+  const policyPath = join(cwd, "delegation", "policy.json");
   const harness = createSlashHarness({
     delegationTeamConfigPath: teamsPath,
+    delegationPolicyPath: policyPath,
     fetch: async () => {
       fetchCalls += 1;
       throw new Error("delegation team slash commands should not call OpenRouter.");
@@ -838,13 +846,26 @@ test("delegates slash commands save and load disabled local teams", () => {
     assert.equal(handleSlashCommand("/delegate team use review-team", harness.context), "continue");
     assert.match(harness.stdout(), /Delegation team review-team loaded into this chat session/);
     assert.match(harness.stdout(), /state_changed: yes/);
+    assert.match(harness.stdout(), /execution_policy: disabled/);
+    assert.match(harness.stdout(), /delegate_task: policy_gated/);
     assert.equal(harness.delegation().controller?.model, "openrouter/fusion");
     assert.equal(harness.delegation().delegates[0].name, "reviewer");
     assert.equal(harness.delegation().executionEnabled, false);
 
     assert.equal(handleSlashCommand("/delegates inspect review-team", harness.context), "continue");
     assert.match(harness.stdout(), /ORX delegation team: review-team/);
-    assert.match(harness.stdout(), /delegate_task: unavailable/);
+    assert.match(harness.stdout(), /stored_delegate_task: unavailable/);
+
+    assert.equal(handleSlashCommand("/delegate clear", harness.context), "continue");
+    assert.equal(handleSlashCommand("/orchestrator clear", harness.context), "continue");
+    assert.equal(handleSlashCommand("/delegate policy set --execution enabled", harness.context), "continue");
+    const enabledUseStart = harness.stdout().length;
+    assert.equal(handleSlashCommand("/delegate team use review-team", harness.context), "continue");
+    const enabledUseOutput = harness.stdout().slice(enabledUseStart);
+    assert.match(enabledUseOutput, /Delegation team review-team loaded into this chat session/);
+    assert.match(enabledUseOutput, /execution_policy: enabled/);
+    assert.match(enabledUseOutput, /delegate_task: available_in_chat/);
+    assert.doesNotMatch(enabledUseOutput, /scaffold metadata/);
 
     assert.equal(handleSlashCommand("/delegates delete review-team", harness.context), "continue");
     assert.match(harness.stdout(), /Delegation team review-team deleted/);
@@ -909,6 +930,13 @@ test("delegation policy slash commands persist execution limits without network"
     assert.match(planOutput, /readiness_blockers:\n  none/);
     assert.doesNotMatch(planOutput, /delegation execution policy must be enabled/);
     assert.doesNotMatch(planOutput, /at least one chat-session delegate is required/);
+
+    const statusOutputStart = harness.stdout().length;
+    assert.equal(handleSlashCommand("/delegate status", harness.context), "continue");
+    const statusOutput = harness.stdout().slice(statusOutputStart);
+    assert.match(statusOutput, /ORX delegates session:/);
+    assert.match(statusOutput, /execution_policy: enabled/);
+    assert.match(statusOutput, /delegate_task: available_in_chat/);
 
     assert.equal(
       handleSlashCommand("/delegate policy set --credentials env", harness.context),

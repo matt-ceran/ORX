@@ -437,9 +437,9 @@ function helpText(): string {
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  tests         Discover or run native test targets",
     "  code          Render local code maps or symbol indexes",
-    "  orchestrator  Show delegation scaffold readiness or refuse session-less changes",
-    "  delegate      Show/refuse inert delegate scaffold changes, policy, or saved teams",
-    "  delegates     Show inert delegate readiness, execution policy, or saved teams",
+    "  orchestrator  Show delegation readiness or refuse session-less changes",
+    "  delegate      Show/refuse session delegate changes, policy, or saved teams",
+    "  delegates     Show delegate readiness, execution policy, or saved teams",
     "  status        Show runtime status and config defaults",
     "  help          Show this help message",
     "  version       Show the current version",
@@ -614,17 +614,15 @@ function runCodeSymbolsCommand(args: string[], io: CliIo): number {
 function runOrchestratorCommand(args: string[], io: CliIo, delegationPolicyPath: string): number {
   const subcommand = args[0]?.toLowerCase() ?? "status";
   const emptyState = createEmptyDelegationState();
+  const policy = loadDelegationExecutionPolicy({ configPath: delegationPolicyPath });
 
   if (subcommand === "status" || subcommand === "plan" || subcommand === "readiness") {
     writeLine(
       io.stdout,
       [
-        renderOrchestratorStatus(emptyState),
+        renderOrchestratorStatus(emptyState, { surface: "cli", policy }),
         "",
-        renderDelegationReadinessPlan(emptyState, {
-          surface: "cli",
-          policy: loadDelegationExecutionPolicy({ configPath: delegationPolicyPath }),
-        }),
+        renderDelegationReadinessPlan(emptyState, { surface: "cli", policy }),
       ].join("\n"),
     );
     return 0;
@@ -674,17 +672,15 @@ function runDelegateCommand(
 ): number {
   const subcommand = args[0]?.toLowerCase() ?? "status";
   const emptyState = createEmptyDelegationState();
+  const policy = loadDelegationExecutionPolicy({ configPath: delegationPolicyPath });
 
   if (subcommand === "status" || subcommand === "list" || subcommand === "plan" || subcommand === "readiness") {
     writeLine(
       io.stdout,
       [
-        renderDelegates(emptyState),
+        renderDelegates(emptyState, { surface: "cli", policy }),
         "",
-        renderDelegationReadinessPlan(emptyState, {
-          surface: "cli",
-          policy: loadDelegationExecutionPolicy({ configPath: delegationPolicyPath }),
-        }),
+        renderDelegationReadinessPlan(emptyState, { surface: "cli", policy }),
       ].join("\n"),
     );
     return 0;
@@ -765,17 +761,15 @@ function runDelegatesCommand(
 ): number {
   const subcommand = args[0]?.toLowerCase() ?? "list";
   const emptyState = createEmptyDelegationState();
+  const policy = loadDelegationExecutionPolicy({ configPath: delegationPolicyPath });
 
   if (subcommand === "list" || subcommand === "status") {
     writeLine(
       io.stdout,
       [
-        renderDelegates(emptyState),
+        renderDelegates(emptyState, { surface: "cli", policy }),
         "",
-        renderDelegationReadinessPlan(emptyState, {
-          surface: "cli",
-          policy: loadDelegationExecutionPolicy({ configPath: delegationPolicyPath }),
-        }),
+        renderDelegationReadinessPlan(emptyState, { surface: "cli", policy }),
       ].join("\n"),
     );
     return 0;
@@ -785,12 +779,9 @@ function runDelegatesCommand(
     writeLine(
       io.stdout,
       [
-        renderDelegates(emptyState),
+        renderDelegates(emptyState, { surface: "cli", policy }),
         "",
-        renderDelegationReadinessPlan(emptyState, {
-          surface: "cli",
-          policy: loadDelegationExecutionPolicy({ configPath: delegationPolicyPath }),
-        }),
+        renderDelegationReadinessPlan(emptyState, { surface: "cli", policy }),
       ].join("\n"),
     );
     return 0;

@@ -48,7 +48,7 @@ Urgent UX recovery additions from user testing:
 - Native test target commands are implemented through `orx tests list|run`, `/tests list|run`, `/test`, package `test*` script discovery, direct Node test/spec fallback, framework/reporter metadata, compact report summary parsing, bounded shell-disabled execution, and status counts. The same adapter is exposed to the model loop through the native `run_tests` tool.
 - Dependency-free local code maps and symbol indexes are implemented through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `/map`, `/code map`, `/code symbols`, and `/symbols`; output is local-only/no-key and includes bounded language, key-file, entrypoint, JavaScript/TypeScript import/export, and exported-symbol summaries.
 - Delegation readiness rendering is implemented through noninteractive `orx orchestrator`, `orx delegate`, `orx delegates`, and read-only slash `plan/status` variants. CLI status/readiness is session-less and no-key; mutating CLI forms validate arguments then refuse, while slash mutations remain session-local only. OpenRouter delegate execution now exists behind explicit policy enablement and interactive chat delegate state; subprocess/external-agent delegation remains unavailable.
-- Saved disabled delegation teams are implemented through private local `~/.orx/delegation/teams.json` storage with `ORX_DELEGATION_TEAMS_PATH`, plus `orx delegates teams|save|inspect|use|delete`, `/delegates teams|save|inspect|use|delete`, and `/delegate team ...`. Saved records contain only normalized disabled controller/delegates plus metadata; CLI `use` is read-only because there is no active chat session, while slash `use` loads inert metadata into the current session.
+- Saved disabled delegation teams are implemented through private local `~/.orx/delegation/teams.json` storage with `ORX_DELEGATION_TEAMS_PATH`, plus `orx delegates teams|save|inspect|use|delete`, `/delegates teams|save|inspect|use|delete`, and `/delegate team ...`. Saved records contain only normalized disabled controller/delegates plus metadata; CLI `use` is read-only because there is no active chat session, while slash `use` loads disabled metadata into the current session.
 - Delegation execution policy storage is implemented through private local `~/.orx/delegation/policy.json` storage with `ORX_DELEGATION_POLICY_PATH`, plus `orx delegate policy`, `orx delegates policy`, `/delegate policy`, and `/delegates policy`. Policy can tune max task cost, timeout, result byte cap, max concurrent delegates, and explicit `--execution enabled|disabled`; credential forwarding/result persistence/result merge remain fixed to `none`/`none`/`manual_summary`.
 - The internal `delegate_task` runtime contract and OpenRouter delegate adapter are implemented. Normal `ask` does not expose it; interactive chat exposes the schema only when policy execution is enabled and at least one delegate is configured. Live calls use env/provided OpenRouter API credentials, reject secret-like task/context payloads before network, return untrusted wrapped delegate output, and write hash-only audit metadata to `~/.orx/audit/delegation.jsonl` or `ORX_DELEGATION_AUDIT_PATH`.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
@@ -86,6 +86,15 @@ Current files:
 
 ## Latest Work
 
+Updated delegation help/docs for the policy-gated OpenRouter adapter:
+
+- Replaced stale "inert scaffold" wording in CLI help, slash descriptions, README delegation usage, and command memory with current policy-gated chat behavior.
+- Generic delegation status renderers now label the surface as session metadata, show `execution_policy`, and report `delegate_task: policy_gated` or `available_in_chat` instead of implying execution is permanently unavailable.
+- Documented the interactive flow: `/delegate add ...`, `/delegate policy set --execution enabled ...`, then `/delegate plan`; `orx ask` still does not expose delegation, and noninteractive CLI commands remain sessionless/read-only for live-session mutation.
+- Verifier fixes: saved-team use output is now policy-aware, saved team list/inspect render stored metadata with `stored_*` fields, fixed-mode policy validation errors no longer mention scaffolds or future execution, and stale decision/current-context memory was refreshed.
+- Verification: `git diff --check`, `npm run typecheck`, focused delegation/CLI/slash/TUI tests, full `npm test` with 456 tests, `npm run verify:global-install`, built CLI help/readiness dogfood, stale-string scan, and independent verifier recheck pass.
+- Next likely work remains real-key policy-enabled chat dogfood, result merge controls, delegate team/profile ergonomics, managed MCP auth beyond env bearer, and final global-install/release hardening.
+
 Implemented policy-gated OpenRouter delegate execution:
 
 - Added an async OpenRouter-backed `delegate_task` adapter behind the existing policy/audit/result envelope. It streams through the existing OpenRouter client, uses the selected delegate model, applies policy/request timeout and result-byte bounds, and returns delegated content only as explicitly wrapped untrusted tool output.
@@ -108,17 +117,17 @@ Implemented the disabled `delegate_task` runtime contract and audit envelope:
 - Verification: `npm run typecheck`, `npm run build`, `git diff --check`, focused compiled tests for delegation/agent/CLI/slash/chat paths, full `npm test` passes with 450 tests, `npm run verify:global-install` passes, built CLI status/readiness dogfood passes with isolated policy/audit paths, direct `runDelegateTask` dogfood confirms no raw task/secret in audit output, nested audit symlink dogfood fails closed without writing through the target, and independent verifier recheck confirmed the nested symlink finding is resolved.
 - Next likely delegation work: add the OpenRouter delegate adapter and live execution enforcement behind the existing policy/audit/result envelope, then decide when model-visible `delegate_task` can be exposed in normal chat.
 
-Implemented inert delegation execution policy storage:
+Historical slice: implemented initial disabled delegation execution policy storage:
 
 - Added private local policy storage at `~/.orx/delegation/policy.json`, with `ORX_DELEGATION_POLICY_PATH` for tests and isolated runs, `0600` files, `0700` default/private parents, bounded file reads, malformed policy fail-closed defaults, and symlink path refusal.
-- Added policy fields for future execution enforcement: max task cost USD, task timeout ms, max result bytes, max concurrent delegates, credential forwarding, result persistence, and result merge. Execution is always forced disabled; credential forwarding is currently fixed to `none`, result persistence to `none`, and result merge to `manual_summary`.
+- Added policy fields for later execution enforcement: max task cost USD, task timeout ms, max result bytes, max concurrent delegates, credential forwarding, result persistence, and result merge. In this initial slice execution was forced disabled; credential forwarding stayed `none`, result persistence stayed `none`, and result merge stayed `manual_summary`.
 - Added CLI management through `orx delegate policy` / `orx delegates policy` and `policy set --max-cost-usd <n> --timeout-ms <ms> --max-result-bytes <bytes> --max-concurrent <n> --credentials none --result-persistence none --result-merge manual_summary`.
 - Added matching slash commands through `/delegate policy` and `/delegates policy`, including deterministic Tab completion and `/status` visibility for policy path and limits.
 - Execution remained unavailable in that slice: no OpenRouter delegate calls, subprocess agents, normal model-visible `delegate_task`, delegate result persistence, or automatic result merge semantics were added.
 - Verification: `npm run typecheck`, `npm run build`, `git diff --check`, focused source and build-backed delegation/CLI/slash tests pass with 140 tests, full build-backed `npm test` passes with 443 tests, built CLI dogfood for policy status/set/status visibility succeeds against an isolated `ORX_DELEGATION_POLICY_PATH`, symlink-parent dogfood refuses without writing through the link, and independent verifier recheck passes after fixing parent-symlink and stale usage findings.
 - Superseded by the later policy-gated OpenRouter adapter slice; remaining work is real-key dogfood, observed-cost/budget UX, result merge controls, and delegate ergonomics.
 
-Implemented bounded saved delegation teams for the inert Phase 11 scaffold:
+Historical slice: implemented bounded saved delegation teams for the initial Phase 11 metadata surface:
 
 - Added a private local saved-team registry at `~/.orx/delegation/teams.json`, with `ORX_DELEGATION_TEAMS_PATH` for tests and isolated runs, `0600` files, `0700` default/private parents, a 64-team bound, and oversized/invalid registry fail-closed loading.
 - Saved team ids are sanitized and normalized. Saved records store only normalized disabled OpenRouter controller/delegate metadata plus timestamps/optional display metadata; persisted state is forced to `executionEnabled=false`, delegates remain capped at 16, and secret-like/control-character values are rejected or omitted.
@@ -546,14 +555,14 @@ Implemented and verified Phase 12 compact TTY model badge polish:
 - Added focused screen/chat assertions for the compact `auto` badge and verifier manually checked the `fusion` badge path.
 - Verifier reported no findings after typecheck, focused TUI/slash tests, diff check, and a manual render probe. Main-session `npm run typecheck`, `npm test` with 261 tests, full `git diff --check`, and `npm run dev -- status` pass.
 
-Implemented and verified Phase 11 orchestration/delegation command scaffold:
+Historical slice: implemented and verified the initial Phase 11 orchestration/delegation command metadata:
 
-- Added inert session-local delegation state for an optional OpenRouter controller and named OpenRouter delegates. Execution remains disabled and no `delegate_task` tool/schema exists yet.
+- Added session-local delegation state for an optional OpenRouter controller and named OpenRouter delegates. In this initial slice execution remained disabled and no `delegate_task` tool/schema existed yet.
 - Added `/orchestrator`, `/delegate`, and `/delegates` slash command scaffolds. They mutate only local session metadata and make no OpenRouter, subprocess, Codex, Devin, or external agent calls.
-- `/status` in interactive chat now shows `orchestration_controller`, `orchestration_execution=disabled`, `delegate_count`, and `delegate_task=unavailable`.
+- In this initial slice, `/status` in interactive chat showed `orchestration_controller`, disabled execution state, delegate count, and unavailable `delegate_task`; later policy-gated adapter work superseded that runtime status.
 - Session JSON can persist and restore delegation metadata on `/resume`; API keys are still excluded.
 - Delegate names/models reject control characters and secret-like values. Stored delegation state is normalized, deduped, sorted, capped at 16 delegates, and forced to `executionEnabled=false`.
-- `/clear` intentionally preserves orchestration/delegate state; use `/orchestrator clear`, `/delegate remove <name>`, or `/delegate clear` for scaffold state.
+- `/clear` intentionally preserves orchestration/delegate metadata; use `/orchestrator clear`, `/delegate remove <name>`, or `/delegate clear` for that state.
 - Implementor and verifier agent sessions were used. Verifier found missing delegate count bounds and overly broad `/clear` behavior; main session fixed both and verifier recheck reported no findings.
 - `npm run typecheck`, build-backed targeted delegation/slash/session/TUI tests, `git diff --check`, and `npm test` pass with 261 tests.
 

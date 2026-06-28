@@ -53,6 +53,13 @@ export interface DelegationReadinessRenderOptions {
   };
 }
 
+export interface DelegationStatusRenderOptions {
+  surface?: "interactive" | "cli";
+  policy?: {
+    executionEnabled?: boolean;
+  };
+}
+
 export interface DelegationTeamsPathOptions {
   env?: NodeJS.ProcessEnv;
   cwd?: string;
@@ -401,7 +408,7 @@ export function saveDelegationTeam(
   return {
     ok: true,
     team,
-    message: `Delegation team ${teamId} saved. Execution remains disabled.`,
+    message: `Delegation team ${teamId} saved. Stored team metadata remains disabled; delegation execution stays policy-gated.`,
   };
 }
 
@@ -444,8 +451,8 @@ export function renderDelegationTeamList(
     "ORX delegation teams:",
     path ? `  registry_path: ${path}` : undefined,
     `  saved_teams: ${summary.count}`,
-    "  execution: disabled",
-    "  delegate_task: unavailable",
+    "  stored_execution: disabled",
+    "  stored_delegate_task: unavailable",
   ];
 
   if (summary.teams.length === 0) {
@@ -470,9 +477,9 @@ export function renderDelegationTeamInspect(team: SavedDelegationTeamRecord): st
       ? `controller: openrouter ${team.delegation.controller.model}`
       : "controller: none",
     `delegates: ${team.delegation.delegates.length}`,
-    "execution: disabled",
-    "delegate_task: unavailable",
-    "model_exposure: none",
+    "stored_execution: disabled",
+    "stored_delegate_task: unavailable",
+    "stored_model_exposure: none",
     "network_calls: none",
     `created_at: ${team.createdAt}`,
     `updated_at: ${team.updatedAt}`,
@@ -489,15 +496,17 @@ export function renderDelegationTeamInspect(team: SavedDelegationTeamRecord): st
 
 export function renderDelegationTeamUse(
   team: SavedDelegationTeamRecord,
-  options: { surface: "cli" | "interactive" },
+  options: { surface: "cli" | "interactive"; policy?: { executionEnabled?: boolean } },
 ): string {
+  const policyEnabled = options.policy?.executionEnabled === true;
+  const chatReady = options.surface === "interactive" && policyEnabled && team.delegation.delegates.length > 0;
   const lines =
     options.surface === "cli"
       ? [
           `Delegation team ${team.id} inspected for use.`,
           "state_changed: no",
           "reason: noninteractive CLI has no active delegation session",
-          "Use /delegates use <id> or /delegate team use <id> inside chat to load it into session-local scaffold metadata.",
+          "Use /delegates use <id> or /delegate team use <id> inside chat to load it into session-local delegation metadata.",
         ]
       : [
           `Delegation team ${team.id} loaded into this chat session.`,
@@ -506,9 +515,9 @@ export function renderDelegationTeamUse(
 
   return [
     ...lines,
-    "execution: disabled",
-    "delegate_task: unavailable",
-    "network_calls: none",
+    `execution_policy: ${options.surface === "cli" ? "unchanged" : policyEnabled ? "enabled" : "disabled"}`,
+    `delegate_task: ${options.surface === "cli" ? "unavailable_in_cli" : chatReady ? "available_in_chat" : "policy_gated"}`,
+    "network_calls: none_from_team_load",
     "subprocesses: none",
     "",
     renderDelegationTeamInspect(team),
@@ -529,26 +538,38 @@ export function getDelegationStatusSummary(
   };
 }
 
-export function renderOrchestratorStatus(state: DelegationState | undefined): string {
+export function renderOrchestratorStatus(
+  state: DelegationState | undefined,
+  options: DelegationStatusRenderOptions = {},
+): string {
   const normalized = normalizeDelegationState(state);
+  const policyEnabled = options.policy?.executionEnabled === true;
+  const hasDelegate = normalized.delegates.length > 0;
+  const chatReady = options.surface !== "cli" && policyEnabled && hasDelegate;
   return [
-    "ORX orchestrator scaffold:",
+    "ORX orchestrator session:",
     normalized.controller
       ? `controller: openrouter ${normalized.controller.model}`
       : "controller: none",
     `delegate_count: ${normalized.delegates.length}`,
-    "execution: disabled",
-    "delegate_task: unavailable",
-    "network_calls: none",
+    `execution_policy: ${policyEnabled ? "enabled" : "disabled"}`,
+    `delegate_task: ${chatReady ? "available_in_chat" : "policy_gated"}`,
+    `network_calls: ${chatReady ? "openrouter_delegate_only_when_tool_is_called" : "none_from_status"}`,
   ].join("\n");
 }
 
-export function renderDelegates(state: DelegationState | undefined): string {
+export function renderDelegates(
+  state: DelegationState | undefined,
+  options: DelegationStatusRenderOptions = {},
+): string {
   const normalized = normalizeDelegationState(state);
+  const policyEnabled = options.policy?.executionEnabled === true;
+  const hasDelegate = normalized.delegates.length > 0;
+  const chatReady = options.surface !== "cli" && policyEnabled && hasDelegate;
   const lines = [
-    "ORX delegates scaffold:",
-    "execution: disabled",
-    "delegate_task: unavailable in this scaffold",
+    "ORX delegates session:",
+    `execution_policy: ${policyEnabled ? "enabled" : "disabled"}`,
+    `delegate_task: ${chatReady ? "available_in_chat" : "policy_gated"}`,
     `delegates: ${normalized.delegates.length}`,
   ];
 
@@ -606,17 +627,17 @@ export function renderDelegationReadinessPlan(
 
 export function renderSessionlessDelegationRefusal(action: string): string {
   return [
-    "ORX delegation scaffold:",
+    "ORX delegation session:",
     "status: refused",
     `action: ${action}`,
     "reason: noninteractive CLI has no active delegation chat session",
     "state_changed: no",
-    "execution: disabled",
-    "delegate_task: unavailable",
+    "execution_policy: unchanged",
+    "delegate_task: unavailable_in_cli",
     "model_exposure: none",
     "network_calls: none",
     "subprocesses: none",
-    "Use interactive chat slash commands to store session-local scaffold metadata.",
+    "Use interactive chat slash commands to store session-local delegation metadata.",
   ].join("\n");
 }
 

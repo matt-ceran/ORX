@@ -1108,7 +1108,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
   },
   "/orchestrator": {
     usage: "/orchestrator [status|plan|openrouter <model>|clear]",
-    description: "Show or configure inert OpenRouter orchestration",
+    description: "Configure the chat delegation controller metadata",
     group: "Orchestration",
     tier: "advanced",
     handler: (command, context): SlashResult => {
@@ -1118,7 +1118,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
   },
   "/delegate": {
     usage: "/delegate [help|status|plan|add|remove|clear|team|policy]",
-    description: "Register inert OpenRouter delegates or manage saved teams",
+    description: "Register OpenRouter delegates or manage policy/saved teams",
     group: "Orchestration",
     tier: "advanced",
     handler: (command, context): SlashResult => {
@@ -1128,7 +1128,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
   },
   "/delegates": {
     usage: "/delegates [list|status|plan|policy|teams|save|use|inspect|delete]",
-    description: "List inert delegates or manage saved disabled teams",
+    description: "List delegates, readiness, policy, or saved teams",
     group: "Orchestration",
     tier: "advanced",
     handler: (command, context): SlashResult => {
@@ -2754,18 +2754,17 @@ async function handleHooksCommand(command: SlashCommand, context: SlashCommandCo
 
 function handleOrchestratorCommand(command: SlashCommand, context: SlashCommandContext): void {
   const subcommand = command.args[0]?.toLowerCase();
+  const policy = loadDelegationExecutionPolicy({ configPath: context.delegationPolicyPath });
 
   if (!subcommand || subcommand === "status") {
-    writeLine(context.io.stdout, renderOrchestratorStatus(getDelegationState(context)));
+    writeLine(context.io.stdout, renderOrchestratorStatus(getDelegationState(context), { policy }));
     return;
   }
 
   if (subcommand === "plan" || subcommand === "readiness") {
     writeLine(
       context.io.stdout,
-      renderDelegationReadinessPlan(getDelegationState(context), {
-        policy: loadDelegationExecutionPolicy({ configPath: context.delegationPolicyPath }),
-      }),
+      renderDelegationReadinessPlan(getDelegationState(context), { policy }),
     );
     return;
   }
@@ -2779,7 +2778,7 @@ function handleOrchestratorCommand(command: SlashCommand, context: SlashCommandC
     if (!setDelegationState(context, clearController(getDelegationState(context)))) {
       return;
     }
-    writeLine(context.io.stdout, "Orchestration controller cleared. Execution remains disabled.");
+    writeLine(context.io.stdout, "Orchestration controller cleared. Delegation execution policy is unchanged.");
     return;
   }
 
@@ -2796,7 +2795,7 @@ function handleOrchestratorCommand(command: SlashCommand, context: SlashCommandC
       }
       writeLine(
         context.io.stdout,
-        `Orchestration controller set: openrouter ${nextState.controller?.model}. Execution remains disabled.`,
+        `Orchestration controller set: openrouter ${nextState.controller?.model}. Delegation execution remains policy-gated.`,
       );
     } catch (error) {
       writeLine(context.io.stderr, formatDelegationError(error));
@@ -2809,6 +2808,7 @@ function handleOrchestratorCommand(command: SlashCommand, context: SlashCommandC
 
 function handleDelegatesCommand(command: SlashCommand, context: SlashCommandContext): void {
   const subcommand = command.args[0]?.toLowerCase() ?? "list";
+  const policy = loadDelegationExecutionPolicy({ configPath: context.delegationPolicyPath });
   const teamArgs = subcommand === "teams" || subcommand === "team" || subcommand === "saved"
     ? command.args.slice(1)
     : command.args;
@@ -2816,16 +2816,14 @@ function handleDelegatesCommand(command: SlashCommand, context: SlashCommandCont
   const teamId = teamArgs[1];
 
   if (subcommand === "list" || subcommand === "status") {
-    writeLine(context.io.stdout, renderDelegates(getDelegationState(context)));
+    writeLine(context.io.stdout, renderDelegates(getDelegationState(context), { policy }));
     return;
   }
 
   if (subcommand === "plan" || subcommand === "readiness") {
     writeLine(
       context.io.stdout,
-      renderDelegationReadinessPlan(getDelegationState(context), {
-        policy: loadDelegationExecutionPolicy({ configPath: context.delegationPolicyPath }),
-      }),
+      renderDelegationReadinessPlan(getDelegationState(context), { policy }),
     );
     return;
   }
@@ -2929,7 +2927,13 @@ function handleDelegatesCommand(command: SlashCommand, context: SlashCommandCont
       if (!setDelegationState(slashContext, team.delegation)) {
         return;
       }
-      writeLine(slashContext.io.stdout, renderDelegationTeamUse(team, { surface: "interactive" }));
+      writeLine(
+        slashContext.io.stdout,
+        renderDelegationTeamUse(team, {
+          surface: "interactive",
+          policy: loadDelegationExecutionPolicy({ configPath: slashContext.delegationPolicyPath }),
+        }),
+      );
       return;
     }
 
@@ -2963,6 +2967,7 @@ function handleDelegatesCommand(command: SlashCommand, context: SlashCommandCont
 
 function handleDelegateCommand(command: SlashCommand, context: SlashCommandContext): void {
   const subcommand = command.args[0]?.toLowerCase();
+  const policy = loadDelegationExecutionPolicy({ configPath: context.delegationPolicyPath });
 
   if (!subcommand || subcommand === "help") {
     writeLine(
@@ -2986,16 +2991,14 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
   }
 
   if (subcommand === "status" || subcommand === "list") {
-    writeLine(context.io.stdout, renderDelegates(getDelegationState(context)));
+    writeLine(context.io.stdout, renderDelegates(getDelegationState(context), { policy }));
     return;
   }
 
   if (subcommand === "plan" || subcommand === "readiness") {
     writeLine(
       context.io.stdout,
-      renderDelegationReadinessPlan(getDelegationState(context), {
-        policy: loadDelegationExecutionPolicy({ configPath: context.delegationPolicyPath }),
-      }),
+      renderDelegationReadinessPlan(getDelegationState(context), { policy }),
     );
     return;
   }
@@ -3033,7 +3036,7 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
       }
       writeLine(
         context.io.stdout,
-        `${result.created ? "Registered" : "Updated"} delegate ${result.delegate.name}: openrouter ${result.delegate.model}. Execution remains disabled.`,
+        `${result.created ? "Registered" : "Updated"} delegate ${result.delegate.name}: openrouter ${result.delegate.model}. Delegation execution remains policy-gated.`,
       );
     } catch (error) {
       writeLine(context.io.stderr, formatDelegationError(error));
@@ -3054,7 +3057,7 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
       }
       writeLine(
         context.io.stdout,
-        `Removed delegate ${result.removed.name}. Execution remains disabled.`,
+        `Removed delegate ${result.removed.name}. Delegation execution policy is unchanged.`,
       );
     } catch (error) {
       writeLine(context.io.stderr, formatDelegationError(error));
@@ -3071,7 +3074,7 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
     if (!setDelegationState(context, clearDelegates(getDelegationState(context)))) {
       return;
     }
-    writeLine(context.io.stdout, "Delegates cleared. Execution remains disabled.");
+    writeLine(context.io.stdout, "Delegates cleared. Delegation execution policy is unchanged.");
     return;
   }
 

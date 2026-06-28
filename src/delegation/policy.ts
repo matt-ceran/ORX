@@ -280,19 +280,19 @@ export function validateDelegationPolicyPatch(
   }
   if (patch.credentialForwarding !== undefined) {
     if (patch.credentialForwarding !== "none") {
-      throw new DelegationPolicyError("Credential forwarding must be none in this scaffold.");
+      throw new DelegationPolicyError("Credential forwarding is fixed to none for OpenRouter delegation.");
     }
     result.credentialForwarding = "none";
   }
   if (patch.resultPersistence !== undefined) {
     if (patch.resultPersistence !== "none") {
-      throw new DelegationPolicyError("Result persistence must be none until delegate execution exists.");
+      throw new DelegationPolicyError("Result persistence is fixed to none; delegate output stays in the normal chat/tool transcript only.");
     }
     result.resultPersistence = "none";
   }
   if (patch.resultMerge !== undefined) {
     if (patch.resultMerge !== "manual_summary") {
-      throw new DelegationPolicyError("Result merge must be manual_summary until delegate execution exists.");
+      throw new DelegationPolicyError("Result merge is fixed to manual_summary for the current OpenRouter delegate adapter.");
     }
     result.resultMerge = "manual_summary";
   }

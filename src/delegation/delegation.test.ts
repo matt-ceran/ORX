@@ -50,26 +50,26 @@ import {
   validateOpenRouterModel,
 } from "./index.js";
 
-test("delegation state renders an inert empty scaffold", () => {
+test("delegation state renders policy-gated empty session status", () => {
   const state = createEmptyDelegationState();
 
   assert.equal(
     renderOrchestratorStatus(state),
     [
-      "ORX orchestrator scaffold:",
+      "ORX orchestrator session:",
       "controller: none",
       "delegate_count: 0",
-      "execution: disabled",
-      "delegate_task: unavailable",
-      "network_calls: none",
+      "execution_policy: disabled",
+      "delegate_task: policy_gated",
+      "network_calls: none_from_status",
     ].join("\n"),
   );
   assert.equal(
     renderDelegates(state),
     [
-      "ORX delegates scaffold:",
-      "execution: disabled",
-      "delegate_task: unavailable in this scaffold",
+      "ORX delegates session:",
+      "execution_policy: disabled",
+      "delegate_task: policy_gated",
       "delegates: 0",
     ].join("\n"),
   );
@@ -127,9 +127,14 @@ test("delegation readiness reflects policy-enabled chat delegates", () => {
   assert.match(rendered, /readiness_blockers:\n  none/);
   assert.doesNotMatch(rendered, /delegation execution policy must be enabled/);
   assert.doesNotMatch(rendered, /at least one chat-session delegate is required/);
+
+  assert.match(
+    renderDelegates(state, { policy: { executionEnabled: true } }),
+    /delegate_task: available_in_chat/,
+  );
 });
 
-test("controller and delegates mutate only local inert state", () => {
+test("controller and delegates mutate only local session metadata", () => {
   const withController = setOpenRouterController(undefined, "openrouter/fusion");
   const first = addOpenRouterDelegate(withController, "reviewer", "anthropic/claude-sonnet-4.5");
   const second = addOpenRouterDelegate(first.state, "coder", "openrouter/auto");
@@ -144,7 +149,7 @@ test("controller and delegates mutate only local inert state", () => {
     ["coder:openai/gpt-5.5", "reviewer:anthropic/claude-sonnet-4.5"],
   );
   assert.equal(updated.state.executionEnabled, false);
-  assert.match(renderDelegates(updated.state), /delegate_task: unavailable in this scaffold/);
+  assert.match(renderDelegates(updated.state), /delegate_task: policy_gated/);
 
   const removed = removeDelegate(updated.state, "reviewer");
   assert.equal(removed.removed.name, "reviewer");
@@ -189,7 +194,7 @@ test("delegation execution policy defaults, renders, and resolves isolated paths
   }
 });
 
-test("delegation execution policy saves private inert limits and validates patches", () => {
+test("delegation execution policy saves private gated limits and validates patches", () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-policy-"));
   const configPath = join(cwd, "delegation", "policy.json");
 
@@ -252,6 +257,18 @@ test("delegation execution policy saves private inert limits and validates patch
     assert.throws(
       () => parseDelegationExecutionPolicySetArgs(["--credentials", "env"]),
       /--credentials must be none/,
+    );
+    assert.throws(
+      () => validateDelegationPolicyPatch({ credentialForwarding: "env" as never }),
+      /Credential forwarding is fixed to none/,
+    );
+    assert.throws(
+      () => validateDelegationPolicyPatch({ resultPersistence: "file" as never }),
+      /Result persistence is fixed to none/,
+    );
+    assert.throws(
+      () => validateDelegationPolicyPatch({ resultMerge: "auto" as never }),
+      /Result merge is fixed to manual_summary/,
     );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -877,7 +894,7 @@ test("delegation team registry saves private disabled teams", () => {
     assert.equal(saved.team?.delegation.executionEnabled, false);
     assert.equal(saved.team?.delegation.controller?.execution, "disabled");
     assert.equal(saved.team?.delegation.delegates[0].execution, "disabled");
-    assert.match(saved.message, /Execution remains disabled/);
+    assert.match(saved.message, /delegation execution stays policy-gated/);
     assert.equal(statSync(join(cwd, "delegation")).mode & 0o777, 0o700);
     assert.equal(statSync(configPath).mode & 0o777, 0o600);
     assert.doesNotMatch(readFileSync(configPath, "utf8"), /api_key|OPENROUTER_API_KEY/);
@@ -886,8 +903,10 @@ test("delegation team registry saves private disabled teams", () => {
     assert.ok(found);
     assert.equal(found.delegation.controller?.model, "openrouter/fusion");
     assert.match(renderDelegationTeamList(getDelegationTeamStatusSummary({ configPath })), /saved_teams: 1/);
-    assert.match(renderDelegationTeamInspect(found), /delegate_task: unavailable/);
+    assert.match(renderDelegationTeamInspect(found), /stored_delegate_task: unavailable/);
     assert.match(renderDelegationTeamUse(found, { surface: "cli" }), /state_changed: no/);
+    assert.match(renderDelegationTeamUse(found, { surface: "cli" }), /delegate_task: unavailable_in_cli/);
+    assert.doesNotMatch(renderDelegationTeamUse(found, { surface: "cli" }), /scaffold metadata/);
 
     const deleted = deleteSavedDelegationTeam("review-team", { configPath });
     assert.equal(deleted.ok, true);

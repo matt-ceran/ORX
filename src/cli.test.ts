@@ -30,9 +30,9 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
     assert.match(help.stdout(), /code\s+Render local code maps or symbol indexes/);
-    assert.match(help.stdout(), /orchestrator\s+Show delegation scaffold readiness/);
-    assert.match(help.stdout(), /delegate\s+Show\/refuse inert delegate scaffold changes, policy, or saved teams/);
-    assert.match(help.stdout(), /delegates\s+Show inert delegate readiness, execution policy, or saved teams/);
+    assert.match(help.stdout(), /orchestrator\s+Show delegation readiness or refuse session-less changes/);
+    assert.match(help.stdout(), /delegate\s+Show\/refuse session delegate changes, policy, or saved teams/);
+    assert.match(help.stdout(), /delegates\s+Show delegate readiness, execution policy, or saved teams/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
   }
@@ -116,7 +116,7 @@ test("cli delegation commands render readiness and refuse session-less mutation 
 
   const orchestrator = createIo({ fetch });
   assert.equal(await runCli(["node", "cli", "orchestrator"], {}, orchestrator.io), 0);
-  assert.match(orchestrator.stdout(), /ORX orchestrator scaffold:/);
+  assert.match(orchestrator.stdout(), /ORX orchestrator session:/);
   assert.match(orchestrator.stdout(), /controller: none/);
   assert.match(orchestrator.stdout(), /ORX delegation readiness:/);
   assert.match(orchestrator.stdout(), /state_scope: cli-saved-teams-available/);
@@ -128,7 +128,7 @@ test("cli delegation commands render readiness and refuse session-less mutation 
 
   const delegates = createIo({ fetch });
   assert.equal(await runCli(["node", "cli", "delegates", "plan"], {}, delegates.io), 0);
-  assert.match(delegates.stdout(), /ORX delegates scaffold:/);
+  assert.match(delegates.stdout(), /ORX delegates session:/);
   assert.match(delegates.stdout(), /delegates: 0/);
   assert.match(delegates.stdout(), /delegation execution policy must be enabled before model exposure/);
   assert.equal(delegates.stderr(), "");
@@ -179,7 +179,7 @@ test("cli delegation commands render readiness and refuse session-less mutation 
   assert.match(unsafe.stderr(), /Delegate name must match/);
 });
 
-test("cli delegation policy commands persist inert limits without an API key or network", async () => {
+test("cli delegation policy commands persist gated limits without an API key or network", async () => {
   let fetchCalls = 0;
   const cwd = createTempDir();
   const policyPath = join(cwd, "delegation", "policy.json");
@@ -299,7 +299,7 @@ test("cli delegation team commands manage a private disabled registry without an
       0,
     );
     assert.match(saved.stdout(), /Delegation team review-team saved/);
-    assert.match(saved.stdout(), /Execution remains disabled/);
+    assert.match(saved.stdout(), /delegation execution stays policy-gated/);
     assert.equal(statSync(join(cwd, "delegation")).mode & 0o777, 0o700);
     assert.equal(statSync(teamsPath).mode & 0o777, 0o600);
     assert.doesNotMatch(readFileSync(teamsPath, "utf8"), /OPENROUTER_API_KEY|api_key/);
@@ -315,7 +315,7 @@ test("cli delegation team commands manage a private disabled registry without an
       0,
     );
     assert.match(inspected.stdout(), /ORX delegation team: review-team/);
-    assert.match(inspected.stdout(), /delegate_task: unavailable/);
+    assert.match(inspected.stdout(), /stored_delegate_task: unavailable/);
     assert.match(
       inspected.stdout(),
       /reviewer: provider=openrouter model=anthropic\/claude-sonnet-4\.5 execution=disabled/,
@@ -325,7 +325,9 @@ test("cli delegation team commands manage a private disabled registry without an
     assert.equal(await runCli(["node", "cli", "delegates", "use", "review-team"], env, used.io), 0);
     assert.match(used.stdout(), /state_changed: no/);
     assert.match(used.stdout(), /noninteractive CLI has no active delegation session/);
-    assert.match(used.stdout(), /execution: disabled/);
+    assert.match(used.stdout(), /execution_policy: unchanged/);
+    assert.match(used.stdout(), /delegate_task: unavailable_in_cli/);
+    assert.doesNotMatch(used.stdout(), /scaffold metadata/);
 
     const deleted = createIo({ cwd, fetch });
     assert.equal(

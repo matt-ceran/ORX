@@ -1228,7 +1228,7 @@ test("chat resume restores evidence sources for cite and bibliography commands",
   }
 });
 
-test("chat persists delegation scaffold state and restores it on resume", async () => {
+test("chat persists delegation metadata and restores it on resume", async () => {
   const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-delegation-sessions-"));
   const firstCwd = mkdtempSync(join(tmpdir(), "orx-chat-delegation-cwd-"));
   const requests: Array<Record<string, unknown>> = [];
@@ -1238,7 +1238,7 @@ test("chat persists delegation scaffold state and restores it on resume", async 
       stdin: Readable.from([
         "/orchestrator openrouter openrouter/fusion\n",
         "/delegate add reviewer openrouter anthropic/claude-sonnet-4.5\n",
-        "Hello with delegation scaffold\n",
+        "Hello with delegation metadata\n",
         "/exit\n",
       ]),
       cwd: firstCwd,
@@ -1299,7 +1299,7 @@ test("chat persists delegation scaffold state and restores it on resume", async 
     const resumeCapture = createIo({
       stdin: Readable.from([`/resume ${saved.id}\n`, "/delegates\n", "/status\n", "/exit\n"]),
       fetch: async () => {
-        throw new Error("resume delegation scaffold commands should not call OpenRouter.");
+        throw new Error("resume delegation metadata commands should not call OpenRouter.");
       },
     });
 
