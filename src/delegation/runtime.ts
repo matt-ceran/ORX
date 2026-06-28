@@ -111,6 +111,9 @@ export interface DelegateTaskSuccessResult extends DelegateTaskResultBase {
   resolvedModel?: string;
   generationId?: string;
   observedCostUsd?: number;
+  effectiveMaxTaskCostUsd: number;
+  costLimitStatus: "not_reported" | "within_limit" | "over_limit";
+  costLimitExceeded: boolean;
   usage?: OpenRouterUsageMetadata;
 }
 
@@ -287,6 +290,9 @@ export async function runDelegateTask(
             resolvedModel: result.resolvedModel,
             generationIdHash: result.generationId ? sha256(result.generationId) : undefined,
             observedCostUsd: result.observedCostUsd,
+            effectiveMaxTaskCostUsd: result.effectiveMaxTaskCostUsd,
+            costLimitStatus: result.costLimitStatus,
+            costLimitExceeded: result.costLimitExceeded,
             finishReason: result.finishReason,
             usage: result.usage,
           } : {
@@ -503,10 +509,14 @@ async function runOpenRouterDelegateTask(options: {
       maxBytes: maxResultBytes,
     });
     const resultText = wrapped.text;
+    const effectiveMaxTaskCostUsd = options.parsed.maxTaskCostUsd ?? options.policy.maxTaskCostUsd;
+    const costLimitStatus = getCostLimitStatus(response.metadata.cost, effectiveMaxTaskCostUsd);
     return {
       ok: true,
       status: "completed",
-      message: "delegate_task completed with untrusted OpenRouter delegate output.",
+      message: costLimitStatus === "over_limit"
+        ? "delegate_task completed, but observed OpenRouter cost exceeded the configured cap."
+        : "delegate_task completed with untrusted OpenRouter delegate output.",
       delegate: options.delegate.name,
       provider: options.delegate.provider,
       model: options.delegate.model,
@@ -535,6 +545,9 @@ async function runOpenRouterDelegateTask(options: {
       resolvedModel: response.metadata.resolvedModel,
       generationId: response.metadata.generationId,
       observedCostUsd: response.metadata.cost,
+      effectiveMaxTaskCostUsd,
+      costLimitStatus,
+      costLimitExceeded: costLimitStatus === "over_limit",
       usage: extractUsageSummary(response.metadata),
     };
   } catch (error) {
@@ -559,6 +572,16 @@ async function runOpenRouterDelegateTask(options: {
   } finally {
     abort.cleanup();
   }
+}
+
+function getCostLimitStatus(
+  observedCostUsd: number | undefined,
+  effectiveMaxTaskCostUsd: number,
+): "not_reported" | "within_limit" | "over_limit" {
+  if (observedCostUsd === undefined) {
+    return "not_reported";
+  }
+  return observedCostUsd > effectiveMaxTaskCostUsd ? "over_limit" : "within_limit";
 }
 
 function buildDelegateChatRequest(

@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Delegate Cost Caps Are Reported From Observed Metadata
+
+Decision: ORX should treat delegated-task `maxTaskCostUsd` as an operator cap that can be validated before the call and checked against OpenRouter generation metadata after the call. Until a provider-supported pre-spend strategy exists, ORX must make this boundary visible by returning and auditing effective cap, observed cost, cost-limit status, and overage flags instead of implying that cost was prevented before generation.
+
+Reasoning: OpenRouter generation cost is normally known after a request completes. Reporting observed overages is honest and useful for dogfooding without pretending to enforce a guarantee the transport cannot currently provide.
+
 ## 2026-06-28: OpenRouter Delegates Are Policy-Gated Chat Tools
 
 Decision: ORX may expose the native `delegate_task` tool to interactive chat only when the local delegation execution policy is explicitly enabled and the chat session has at least one configured OpenRouter delegate. The live adapter may call OpenRouter using the existing API key path and delegate model slug, but it must reject secret-like live payloads before network, apply timeout and result-byte bounds, avoid subprocesses and credential forwarding, wrap returned delegate text as untrusted output, and audit only hashes/bounded metadata. Noninteractive `orx ask` remains without session delegation exposure for now.

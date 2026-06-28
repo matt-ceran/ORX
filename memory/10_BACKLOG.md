@@ -107,7 +107,7 @@ Completed:
 Next:
 
 - Add managed OAuth/provider auth setup beyond the current env-only MCP bearer readiness path.
-- Dogfood policy-enabled OpenRouter delegation with a real key using isolated policy/audit paths, then tighten observed-cost/budget reporting, result merge controls, and delegate team/profile ergonomics.
+- Dogfood policy-enabled OpenRouter delegation with a real key using isolated policy/audit paths, then tighten result merge controls, delegate team/profile ergonomics, and any stronger pre-spend budget strategy OpenRouter can support.
 - Add secret redaction and minimal env forwarding for future stdio/child-process MCP runners if ORX adds them beyond the current remote HTTP path.
 
 ## P4
@@ -176,7 +176,7 @@ Next:
 - Add research profiles: `research-web`, `research-crawl`, `research-scholar`, `research-docs`, `research-browser`, `research-rag`, and `research-memory`.
 - Extend citation support later with style selection and richer paper/PDF identifiers after scholarly/document source adapters exist.
 - Extend saved orchestration teams with active execution policy selection only after model-visible `delegate_task` boundaries, live policy enforcement, result merge, and audit semantics are implemented.
-- Add stronger live delegated-task budget UX, observed-cost reporting, and result merge controls.
+- Add stronger live delegated-task result merge controls and pre-spend budget strategy if provider APIs support it.
 - Add Codex delegate adapter.
 - Add Devin delegate adapter through MCP/API when credentials are configured.
 - Add live budget, permission, timeout, and result-truncation enforcement for delegated tasks.

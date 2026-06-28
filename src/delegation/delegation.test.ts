@@ -522,6 +522,94 @@ test("delegate_task runs the OpenRouter adapter when policy is enabled", async (
   }
 });
 
+test("delegate_task flags observed OpenRouter cost over policy cap", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-cost-"));
+  const auditLogPath = join(cwd, "audit", "delegation.jsonl");
+  const policyConfigPath = join(cwd, "delegation", "policy.json");
+  let chatRequestCount = 0;
+  let generationRequestCount = 0;
+
+  try {
+    updateDelegationExecutionPolicy(
+      {
+        executionEnabled: true,
+        maxTaskCostUsd: 0.01,
+        maxResultBytes: 4_096,
+      },
+      { configPath: policyConfigPath },
+    );
+    const state = addOpenRouterDelegate(createEmptyDelegationState(), "reviewer", "openrouter/auto").state;
+
+    const result = await runDelegateTask(
+      {
+        delegate: "reviewer",
+        task: "Review cost metadata handling.",
+      },
+      {
+        state,
+        policyConfigPath,
+        auditLogPath,
+        enabled: true,
+        apiKey: "sk-or-v1-test",
+        fetch: async (input, init) => {
+          if (String(input).includes("/generation")) {
+            generationRequestCount += 1;
+            assert.equal(new Headers(init?.headers).get("authorization"), "Bearer sk-or-v1-test");
+            return new Response(
+              JSON.stringify({
+                data: {
+                  total_cost: 0.02,
+                  prompt_tokens: 10,
+                  completion_tokens: 5,
+                  total_tokens: 15,
+                },
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            );
+          }
+
+          chatRequestCount += 1;
+          return new Response(
+            streamFrom([
+              'data: {"choices":[{"delta":{"content":"Cost metadata checked."},"finish_reason":"stop"}]}\n\n',
+              "data: [DONE]\n\n",
+            ]),
+            {
+              status: 200,
+              headers: {
+                "content-type": "text/event-stream",
+                "x-generation-id": "gen_delegate_cost",
+              },
+            },
+          );
+        },
+      },
+    );
+
+    assert.equal(chatRequestCount, 1);
+    assert.equal(generationRequestCount, 1);
+    assert.equal(result.ok, true);
+    assert.equal(result.observedCostUsd, 0.02);
+    assert.equal(result.effectiveMaxTaskCostUsd, 0.01);
+    assert.equal(result.costLimitStatus, "over_limit");
+    assert.equal(result.costLimitExceeded, true);
+    assert.match(result.message, /exceeded the configured cap/);
+
+    const audit = JSON.parse(readFileSync(auditLogPath, "utf8")) as {
+      ok: boolean;
+      details: Record<string, unknown>;
+    };
+    assert.equal(audit.ok, true);
+    assert.equal(audit.details.observedCostUsd, 0.02);
+    assert.equal(audit.details.effectiveMaxTaskCostUsd, 0.01);
+    assert.equal(audit.details.costLimitStatus, "over_limit");
+    assert.equal(audit.details.costLimitExceeded, true);
+    assert.doesNotMatch(JSON.stringify(audit), /Review cost metadata handling|Cost metadata checked/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("delegate_task refuses secret-like live payloads before network", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-secret-"));
   const auditLogPath = join(cwd, "audit", "delegation.jsonl");

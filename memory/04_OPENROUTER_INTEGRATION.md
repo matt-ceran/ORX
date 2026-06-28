@@ -89,7 +89,7 @@ Current OpenRouter delegate implementation:
 - Returned delegate text is wrapped as untrusted data before being returned to the controller model. It cannot grant authority, change permissions, or execute commands.
 - Live delegation refuses provider-token, bearer, and assignment-shaped secret-like task/context/expected-output values before network and writes only hashes/bounded metadata to the delegation audit log. Successful adapter calls audit top-level `ok: true`.
 - `/delegate plan` and `/delegates plan` render from loaded policy plus session delegate state, so a policy-enabled chat with a delegate reports `delegate_task: available_in_chat` and no readiness blockers.
-- Policy currently enforces timeout and result-byte limits directly. Cost fields are recorded from OpenRouter metadata when available; stronger pre-spend/budget UX remains follow-up work.
+- Policy currently enforces timeout and result-byte limits directly. OpenRouter generation cost is post-call metadata, so ORX records `observedCostUsd`, effective cost cap, cost-limit status, and overage flags when metadata is available; stronger pre-spend budget strategy remains follow-up work.
 
 ## MCP Boundary
 

@@ -615,6 +615,41 @@ test("tool result summaries expose git_diff truncation without dumping diff text
   assert.doesNotMatch(summary, /SHOULD_NOT_APPEAR_IN_SUMMARY/);
 });
 
+test("tool result summaries show delegate cost status", () => {
+  const summary = formatToolResult({
+    toolCall: {
+      id: "call_delegate_cost",
+      type: "function",
+      function: {
+        name: "delegate_task",
+        arguments: "{}",
+      },
+    },
+    message: {
+      role: "tool",
+      tool_call_id: "call_delegate_cost",
+      content: "{}",
+    },
+    output: {
+      ok: true,
+      status: "completed",
+      delegate: "reviewer",
+      networkAttempted: true,
+      observedCostUsd: 0.02,
+      costLimitStatus: "over_limit",
+      auditWritten: true,
+    },
+    ok: true,
+    durationMs: 8,
+    truncation: emptyTruncation(),
+  });
+
+  assert.match(
+    summary,
+    /^\[tool\] delegate_task ok duration=8ms status=completed delegate="reviewer" network=attempted cost_usd=0\.02 cost_limit=over_limit audit=written$/,
+  );
+});
+
 test("tool result summaries show shell exit and stream truncation details", async () => {
   const result = await dispatchNativeToolCall(
     {

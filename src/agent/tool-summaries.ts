@@ -261,6 +261,12 @@ function formatDelegateTaskDetails(output: JsonObject | undefined): string[] {
   if (typeof output.networkAttempted === "boolean") {
     details.push(`network=${output.networkAttempted ? "attempted" : "not_attempted"}`);
   }
+  if (typeof output.observedCostUsd === "number") {
+    details.push(`cost_usd=${formatCost(output.observedCostUsd)}`);
+  }
+  if (typeof output.costLimitStatus === "string") {
+    details.push(`cost_limit=${output.costLimitStatus}`);
+  }
   if (typeof output.taskHash === "string") {
     details.push(`task_hash=${output.taskHash}`);
   }
@@ -270,6 +276,10 @@ function formatDelegateTaskDetails(output: JsonObject | undefined): string[] {
     details.push("audit=not_written");
   }
   return details;
+}
+
+function formatCost(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(6).replace(/0+$/, "").replace(/\.$/, ".0") : "n/a";
 }
 
 function formatArgument(
