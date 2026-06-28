@@ -87,6 +87,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /plugin_enabled_skills: 0/);
     assert.match(status.stdout(), /test_targets: 0/);
     assert.match(status.stdout(), /test_default_target: none/);
+    assert.match(status.stdout(), /test_frameworks: node=0, vitest=0, jest=0, playwright=0, unknown=0/);
     assert.match(status.stdout(), /active_profile: none/);
     assert.match(status.stdout(), /profile_count: 0/);
   } finally {
@@ -116,6 +117,7 @@ test("cli tests commands list and run package scripts without an API key", async
     assert.match(listed.stdout(), /Test Targets/);
     assert.match(listed.stdout(), /id=script:test/);
     assert.match(listed.stdout(), /id=script:test:unit/);
+    assert.match(listed.stdout(), /framework=unknown/);
     assert.equal(listed.stderr(), "");
 
     const ran = createIo({ cwd });

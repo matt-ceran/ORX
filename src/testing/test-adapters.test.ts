@@ -36,6 +36,7 @@ test("discovers and runs package script test targets", async () => {
       ["script:test", "script:test:unit"],
     );
     assert.equal(discovery.targets[0].packageManager, "npm");
+    assert.equal(discovery.targets[0].framework, "unknown");
     assert.match(renderTestTargets(discovery), /usage: orx tests run/);
 
     const result = await runTestTarget({
@@ -69,6 +70,7 @@ test("falls back to direct node:test files when no package test script exists", 
     assert.equal(discovery.defaultTargetId, "node:test");
     assert.equal(discovery.targets.length, 1);
     assert.equal(discovery.targets[0].kind, "node-test");
+    assert.equal(discovery.targets[0].framework, "node");
     assert.equal(discovery.targets[0].fileCount, 1);
 
     const result = await runTestTarget({ cwd });
@@ -79,6 +81,68 @@ test("falls back to direct node:test files when no package test script exists", 
     const summary = getTestAdapterSummary(cwd);
     assert.equal(summary.targetCount, 1);
     assert.equal(summary.nodeTestTargetCount, 1);
+    assert.deepEqual(summary.frameworkCounts, {
+      node: 1,
+      vitest: 0,
+      jest: 0,
+      playwright: 0,
+      unknown: 0,
+    });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("infers package-script frameworks and report metadata", () => {
+  const cwd = createTempDir();
+  try {
+    writeFileSync(
+      join(cwd, "package.json"),
+      JSON.stringify({
+        scripts: {
+          test: "vitest run --reporter=json",
+          "test:custom-node": "node ./custom-runner.mjs --test",
+          "test:jest": "jest --json",
+          "test:node": "node --test --test-reporter=tap ./example.test.mjs",
+          "test:playwright": "playwright test --reporter=list",
+          "test:playwright-install": "playwright install && npm test",
+          "test:react": "react-scripts test",
+          "test:unknown": "node ./custom-runner.mjs",
+        },
+      }),
+    );
+
+    const discovery = discoverTestTargets(cwd);
+    const frameworks = Object.fromEntries(
+      discovery.targets.map((target) => [target.id, target.framework]),
+    );
+    assert.deepEqual(frameworks, {
+      "script:test": "vitest",
+      "script:test:custom-node": "unknown",
+      "script:test:jest": "jest",
+      "script:test:node": "node",
+      "script:test:playwright": "playwright",
+      "script:test:playwright-install": "unknown",
+      "script:test:react": "jest",
+      "script:test:unknown": "unknown",
+    });
+    assert.equal(discovery.targets.find((target) => target.id === "script:test")?.reporter, "json");
+    assert.equal(discovery.targets.find((target) => target.id === "script:test:node")?.reporter, "tap");
+    assert.equal(discovery.targets.find((target) => target.id === "script:test:playwright")?.reporter, "list");
+
+    const renderedTargets = renderTestTargets(discovery);
+    assert.match(renderedTargets, /id=script:test kind=package-script framework=vitest/);
+    assert.match(renderedTargets, /id=script:test:playwright kind=package-script framework=playwright/);
+    assert.match(renderedTargets, /reporter="json"/);
+
+    const summary = getTestAdapterSummary(cwd);
+    assert.deepEqual(summary.frameworkCounts, {
+      node: 1,
+      vitest: 1,
+      jest: 2,
+      playwright: 1,
+      unknown: 3,
+    });
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

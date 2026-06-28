@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Keep Framework Test Adapters Metadata-First
+
+Decision: ORX should infer Node, Vitest, Jest, Playwright, and unknown framework metadata for discovered test targets without introducing separate framework-specific process runners yet. Package-script targets continue to execute through the package manager with shell disabled and sanitized extra arguments; direct Node fallback continues to use `node --test`. Framework and reporter hints are reporting/context metadata for operators and model-visible `run_tests` summaries.
+
+Reasoning: Package scripts are the source of truth for project-specific test setup. Metadata-first framework detection makes `orx tests list`, `/status`, and `run_tests` more useful while preserving the already-verified execution boundary. Rich framework report parsing can be added later on top of this metadata without weakening process, argument, timeout, or output caps.
+
 ## 2026-06-28: Model MCP Requires Per-Tool Model Grants
 
 Decision: ORX model-visible MCP calls require explicit, persisted model-tool grants in addition to `/mcp model enable` or `orx ask --mcp-tools`. `/mcp allow-model-tool`, `/mcp revoke-model-tool`, and `orx mcp allow-model-tool|revoke-model-tool` store only profile id, tool name, current profile hash, risk, billable flag, and granted timestamp in the private MCP config. Grants are allowed only for read-only non-billable declared tools on enabled, trusted, unchanged profiles. Stale model grants are visible in status/tool output and denied before network. Billable, write, and destructive MCP tools remain unavailable to the model loop even if explicit operator `/mcp call` grants exist.

@@ -95,6 +95,7 @@ export function formatStatus({
     `test_default_target: ${testStatus.defaultTargetId ?? "none"}`,
     `test_package_scripts: ${testStatus.packageScriptCount}`,
     `test_node_targets: ${testStatus.nodeTestTargetCount}`,
+    `test_frameworks: node=${testStatus.frameworkCounts.node}, vitest=${testStatus.frameworkCounts.vitest}, jest=${testStatus.frameworkCounts.jest}, playwright=${testStatus.frameworkCounts.playwright}, unknown=${testStatus.frameworkCounts.unknown}`,
     `mcp_active_profiles: ${activeMcpProfiles}`,
     `mcp_active_servers: ${mcpStatus.serverCount}`,
     `mcp_auth_bearing_servers: ${mcpStatus.authBearingServerCount}`,

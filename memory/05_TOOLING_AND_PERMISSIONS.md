@@ -67,11 +67,12 @@ The tools remain standalone and testable. Phase 6 now exposes them to models thr
 Implemented under `src/testing/`:
 
 - package-script test target discovery for safe `test*` scripts
+- inferred Node/Vitest/Jest/Playwright/unknown framework metadata and simple reporter hints for package-script targets
 - direct Node test file fallback when no `test` package script exists
 - explicit operator commands `orx tests list|run` and `/tests list|run`
 - model-visible native tool `run_tests`
 
-The test adapter is available to the operator and model loop. Runs use the shared process runner with shell disabled, bounded output, timeout coverage, and sanitized extra arguments. `/status` and `orx status` show discovered target counts and the default target.
+The test adapter is available to the operator and model loop. Runs use the shared process runner with shell disabled, bounded output, timeout coverage, and sanitized extra arguments. `/status` and `orx status` show discovered target counts, framework counts, and the default target.
 
 Implemented under `src/code-map/`:
 

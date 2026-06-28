@@ -170,6 +170,9 @@ function formatRunTestsDetails(output: JsonObject | undefined): string[] {
   if (typeof target?.id === "string") {
     details.push(`target=${JSON.stringify(target.id)}`);
   }
+  if (typeof target?.framework === "string") {
+    details.push(`framework=${target.framework}`);
+  }
   if (typeof output.exitCode === "number") {
     details.push(`exit=${output.exitCode}`);
   } else if (output.exitCode === null) {

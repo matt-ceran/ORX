@@ -293,6 +293,7 @@ test("tests slash command lists and runs package scripts", async () => {
     assert.equal(await handleSlashCommand("/tests list", harness.context), "continue");
     assert.match(harness.stdout(), /Test Targets/);
     assert.match(harness.stdout(), /id=script:test:unit/);
+    assert.match(harness.stdout(), /framework=unknown/);
 
     assert.equal(
       await handleSlashCommand("/test run script:test:unit -- --flag", harness.context),

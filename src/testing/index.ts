@@ -10,17 +10,20 @@ import { runProcess, type RunProcessResult } from "../tools/process.js";
 
 export type TestTargetKind = "package-script" | "node-test";
 export type TestPackageManager = "npm" | "pnpm" | "yarn" | "bun";
+export type TestFramework = "node" | "vitest" | "jest" | "playwright" | "unknown";
 export type TestRunStatus = "ok" | "failed" | "timed_out" | "process_error" | "not_found" | "invalid_arguments";
 
 export interface TestTarget {
   id: string;
   kind: TestTargetKind;
+  framework: TestFramework;
   label: string;
   command: string;
   args: string[];
   cwd: string;
   packageManager?: TestPackageManager;
   scriptName?: string;
+  reporter?: string;
   fileCount?: number;
 }
 
@@ -58,6 +61,7 @@ export interface TestAdapterSummary {
   targetCount: number;
   packageScriptCount: number;
   nodeTestTargetCount: number;
+  frameworkCounts: Record<TestFramework, number>;
   defaultTargetId?: string;
   truncated: boolean;
   omissionCount: number;
@@ -100,13 +104,13 @@ export function discoverTestTargets(cwd = process.cwd()): TestDiscovery {
       const parsed = JSON.parse(readFileSync(packageJsonPath, "utf8")) as unknown;
       const scripts = sanitizePackageScripts(parsed, omissions);
       const packageManager = detectPackageManager(root, parsed);
-      for (const [scriptName] of scripts) {
+      for (const [scriptName, scriptCommand] of scripts) {
         if (targets.length >= MAX_SCRIPT_TARGETS) {
           truncated = true;
           omissions.push({ path: "package.json", reason: "maximum package test script count reached" });
           break;
         }
-        targets.push(createPackageScriptTarget(root, packageManager, scriptName));
+        targets.push(createPackageScriptTarget(root, packageManager, scriptName, scriptCommand));
       }
     } catch (error) {
       omissions.push({
@@ -140,6 +144,7 @@ export function getTestAdapterSummary(cwd = process.cwd()): TestAdapterSummary {
     targetCount: discovery.targets.length,
     packageScriptCount: discovery.targets.filter((target) => target.kind === "package-script").length,
     nodeTestTargetCount: discovery.targets.filter((target) => target.kind === "node-test").length,
+    frameworkCounts: countTestFrameworks(discovery.targets),
     defaultTargetId: discovery.defaultTargetId,
     truncated: discovery.truncated,
     omissionCount: discovery.omissions.length,
@@ -214,8 +219,10 @@ export function renderTestTargets(discovery: TestDiscovery): string {
         [
           `    - id=${target.id}`,
           `kind=${target.kind}`,
+          `framework=${target.framework}`,
           target.packageManager ? `manager=${target.packageManager}` : undefined,
           target.scriptName ? `script=${target.scriptName}` : undefined,
+          target.reporter ? `reporter=${JSON.stringify(target.reporter)}` : undefined,
           target.fileCount !== undefined ? `files=${target.fileCount}` : undefined,
           `command=${JSON.stringify([target.command, ...target.args].join(" "))}`,
         ]
@@ -251,6 +258,8 @@ export function renderTestRunResult(result: TestRunResult): string {
     `Test run: ${result.target?.id ?? "unknown"}`,
     `  status: ${result.status}`,
     result.target ? `  kind: ${result.target.kind}` : undefined,
+    result.target ? `  framework: ${result.target.framework}` : undefined,
+    result.target?.reporter ? `  reporter: ${result.target.reporter}` : undefined,
     result.command ? `  command: ${JSON.stringify([result.command, ...result.args].join(" "))}` : undefined,
     `  cwd: ${result.cwd}`,
     result.exitCode !== undefined ? `  exit_code: ${result.exitCode}` : undefined,
@@ -341,17 +350,21 @@ function createPackageScriptTarget(
   root: string,
   packageManager: TestPackageManager,
   scriptName: string,
+  scriptCommand: string,
 ): TestTarget {
   const commandArgs = packageScriptArgs(packageManager, scriptName);
+  const metadata = inferPackageScriptMetadata(scriptCommand);
   return {
     id: `script:${scriptName}`,
     kind: "package-script",
+    framework: metadata.framework,
     label: `package script ${scriptName}`,
     command: packageManager,
     args: commandArgs,
     cwd: root,
     packageManager,
     scriptName,
+    reporter: metadata.reporter,
   };
 }
 
@@ -370,6 +383,7 @@ function createNodeTestTarget(root: string, files: string[]): TestTarget {
   return {
     id: "node:test",
     kind: "node-test",
+    framework: "node",
     label: "Node.js test runner",
     command: process.execPath,
     args: ["--test", ...files.map((file) => formatNodeTestFileArg(root, file))],
@@ -465,6 +479,212 @@ function sortTestTargets(left: TestTarget, right: TestTarget): number {
     return left.kind === "package-script" ? -1 : 1;
   }
   return left.id.localeCompare(right.id);
+}
+
+function countTestFrameworks(targets: TestTarget[]): Record<TestFramework, number> {
+  const counts: Record<TestFramework, number> = {
+    node: 0,
+    vitest: 0,
+    jest: 0,
+    playwright: 0,
+    unknown: 0,
+  };
+  for (const target of targets) {
+    counts[target.framework] += 1;
+  }
+  return counts;
+}
+
+function inferPackageScriptMetadata(scriptCommand: string): {
+  framework: TestFramework;
+  reporter?: string;
+} {
+  const segments = tokenizeScriptCommandSegments(scriptCommand);
+  const tokens = segments.flat();
+  return {
+    framework: inferPackageScriptFramework(segments),
+    reporter: inferPackageScriptReporter(tokens),
+  };
+}
+
+function inferPackageScriptFramework(segments: string[][]): TestFramework {
+  for (const tokens of segments) {
+    for (const [index, rawToken] of tokens.entries()) {
+      const token = normalizeScriptToken(rawToken);
+      const next = normalizeScriptToken(tokens[index + 1] ?? "");
+      if (token === "vitest") {
+        return "vitest";
+      }
+      if (token === "jest" || (token === "react-scripts" && next === "test")) {
+        return "jest";
+      }
+      if (token === "playwright" || token === "playwright-core" || token === "@playwright/test") {
+        if (next === "test") {
+          return "playwright";
+        }
+      }
+      if (token === "node" && segmentRunsNodeTest(tokens, index)) {
+        return "node";
+      }
+    }
+  }
+  return "unknown";
+}
+
+function segmentRunsNodeTest(tokens: string[], nodeIndex: number): boolean {
+  for (let index = nodeIndex + 1; index < tokens.length; index += 1) {
+    const rawToken = stripShellQuotes(tokens[index] ?? "");
+    const token = normalizeScriptToken(rawToken);
+    if (token === "--test") {
+      return true;
+    }
+    if (rawToken === "--") {
+      return false;
+    }
+    if (rawToken.startsWith("-")) {
+      if (nodeOptionConsumesNextValue(rawToken) && index + 1 < tokens.length) {
+        index += 1;
+      }
+      continue;
+    }
+    return false;
+  }
+  return false;
+}
+
+function nodeOptionConsumesNextValue(rawToken: string): boolean {
+  const token = normalizeScriptToken(rawToken);
+  if (token.includes("=")) {
+    return false;
+  }
+  switch (token) {
+    case "-c":
+    case "-e":
+    case "-r":
+    case "--conditions":
+    case "--env-file":
+    case "--experimental-loader":
+    case "--import":
+    case "--loader":
+    case "--require":
+    case "--test-reporter":
+    case "--test-reporter-destination":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function tokenizeScriptCommandSegments(command: string): string[][] {
+  const segments: string[][] = [];
+  let tokens: string[] = [];
+  let current = "";
+  let quote: "'" | "\"" | undefined;
+  let escaping = false;
+
+  const finishToken = () => {
+    if (current) {
+      tokens.push(current);
+      current = "";
+    }
+  };
+  const finishSegment = () => {
+    finishToken();
+    if (tokens.length > 0) {
+      segments.push(tokens);
+      tokens = [];
+    }
+  };
+
+  for (const char of command) {
+    if (escaping) {
+      current += char;
+      escaping = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaping = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) {
+        quote = undefined;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+    if (char === "'" || char === "\"") {
+      quote = char;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      finishToken();
+      continue;
+    }
+    if (char === ";" || char === "|" || char === "&") {
+      finishSegment();
+      continue;
+    }
+    current += char;
+  }
+
+  finishSegment();
+  return segments;
+}
+function inferPackageScriptReporter(tokens: string[]): string | undefined {
+  for (const [index, rawToken] of tokens.entries()) {
+    const token = stripShellQuotes(rawToken);
+    if (token === "--json") {
+      return "json";
+    }
+    if (token === "--tap") {
+      return "tap";
+    }
+    if (token === "--reporter" || token === "--reporters" || token === "--test-reporter") {
+      return sanitizeReporterName(tokens[index + 1] ?? "");
+    }
+    if (
+      token.startsWith("--reporter=") ||
+      token.startsWith("--reporters=") ||
+      token.startsWith("--test-reporter=")
+    ) {
+      return sanitizeReporterName(token.slice(token.indexOf("=") + 1));
+    }
+  }
+  return undefined;
+}
+
+function normalizeScriptToken(token: string): string {
+  const stripped = stripShellQuotes(token).replace(/\\/g, "/").toLowerCase();
+  if (!stripped) {
+    return "";
+  }
+  if (stripped.startsWith("--")) {
+    return stripped;
+  }
+  if (stripped.includes("@playwright/test")) {
+    return "@playwright/test";
+  }
+  return stripped.split("/").filter(Boolean).pop() ?? stripped;
+}
+
+function stripShellQuotes(token: string): string {
+  return token.replace(/^['"]|['"]$/g, "");
+}
+
+function sanitizeReporterName(reporter: string): string | undefined {
+  const normalized = stripShellQuotes(reporter).trim();
+  if (
+    normalized.length === 0 ||
+    normalized.length > 80 ||
+    CONTROL_CHAR_PATTERN.test(normalized) ||
+    SECRET_LIKE_PATTERN.test(normalized) ||
+    !/^[A-Za-z0-9_@./:,=-]+$/.test(normalized)
+  ) {
+    return undefined;
+  }
+  return sanitizeRenderedToken(normalized);
 }
 
 function sanitizeExtraArgs(args: string[]): string[] | string {
