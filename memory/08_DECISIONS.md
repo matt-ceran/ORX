@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Parse Test Reports From Captured Output Only
+
+Decision: ORX test report summaries should initially be parsed from the already-captured, sanitized stdout/stderr of `run_tests` executions. The parser may recognize common Node, Vitest, Jest, and Playwright summary lines and store only numeric counts/durations. ORX should not yet rewrite project test commands to force JSON reporters or read framework-generated report files.
+
+Reasoning: Summary-line parsing improves operator and model-visible verification context without changing test execution semantics, adding dependencies, or expanding filesystem reads. Structured framework report ingestion can be added later, but it needs a separate design for opt-in reporter flags, generated-file bounds, cleanup, and trust treatment.
+
 ## 2026-06-28: Add Multiline Input Without Raw-Mode Rewrite First
 
 Decision: ORX should support multiline chat prompts through line-based continuation before introducing a custom raw-mode editor. A trailing unescaped `\` continues input collection; the collected lines are submitted as one user message. TTY mode renders a distinct continuation composer, while non-TTY and `NO_COLOR` keep deterministic line-oriented prompts.

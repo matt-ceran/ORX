@@ -43,6 +43,7 @@ export interface TestRunResult {
   ok: boolean;
   status: TestRunStatus;
   target?: TestTarget;
+  report?: TestReportSummary;
   message: string;
   command?: string;
   args: string[];
@@ -55,6 +56,20 @@ export interface TestRunResult {
   stderr?: string;
   stdoutTruncated?: boolean;
   stderrTruncated?: boolean;
+}
+
+export interface TestReportSummary {
+  framework: TestFramework;
+  source: TestFramework | "generic";
+  total?: number;
+  passed?: number;
+  failed?: number;
+  skipped?: number;
+  todo?: number;
+  flaky?: number;
+  files?: number;
+  suites?: number;
+  durationMs?: number;
 }
 
 export interface TestAdapterSummary {
@@ -84,6 +99,7 @@ const MAX_EXTRA_ARGS = 32;
 const MAX_EXTRA_ARG_LENGTH = 512;
 const DEFAULT_TEST_TIMEOUT_MS = 120_000;
 const DEFAULT_TEST_OUTPUT_BYTES = 64 * 1024;
+const MAX_REPORT_PARSE_BYTES = 32 * 1024;
 const SCRIPT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:._@+/-]{0,119}$/;
 const TEST_FILE_PATTERN = /\.(?:test|spec)\.(?:js|mjs|cjs)$/;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
@@ -266,6 +282,7 @@ export function renderTestRunResult(result: TestRunResult): string {
     result.signal !== undefined && result.signal !== null ? `  signal: ${result.signal}` : undefined,
     result.timedOut !== undefined ? `  timed_out: ${result.timedOut ? "yes" : "no"}` : undefined,
     result.durationMs !== undefined ? `  duration_ms: ${result.durationMs}` : undefined,
+    result.report ? `  report: ${formatTestReportSummary(result.report)}` : undefined,
     result.stdout !== undefined
       ? `  stdout${result.stdoutTruncated ? " (truncated)" : ""}: ${formatOutputBlock(result.stdout)}`
       : undefined,
@@ -284,6 +301,22 @@ export function formatTestTargetIdForMessage(id: string): string {
     return "[invalid test target]";
   }
   return trimmed;
+}
+
+export function parseTestReportSummary(
+  target: TestTarget,
+  stdout: string,
+  stderr = "",
+): TestReportSummary | undefined {
+  const text = limitReportText(`${stdout}\n${stderr}`);
+  const parsers = orderedReportParsers(target.framework);
+  for (const parser of parsers) {
+    const report = parser(text, target.framework);
+    if (report && hasReportCounts(report)) {
+      return report;
+    }
+  }
+  return undefined;
 }
 
 function sanitizePackageScripts(
@@ -495,6 +528,271 @@ function countTestFrameworks(targets: TestTarget[]): Record<TestFramework, numbe
   return counts;
 }
 
+type ReportParser = (text: string, framework: TestFramework) => TestReportSummary | undefined;
+
+function orderedReportParsers(framework: TestFramework): ReportParser[] {
+  const parsers: Record<TestFramework, ReportParser> = {
+    node: parseNodeReportSummary,
+    vitest: parseVitestReportSummary,
+    jest: parseJestReportSummary,
+    playwright: parsePlaywrightReportSummary,
+    unknown: parseGenericReportSummary,
+  };
+  return framework === "unknown"
+    ? [parseJestReportSummary, parseVitestReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseGenericReportSummary]
+    : [parsers[framework], parseGenericReportSummary];
+}
+
+function parseNodeReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  const report: TestReportSummary = {
+    framework,
+    source: "node",
+  };
+  assignNumber(report, "total", matchLineNumber(text, "tests"));
+  assignNumber(report, "suites", matchLineNumber(text, "suites"));
+  assignNumber(report, "passed", matchLineNumber(text, "pass"));
+  assignNumber(report, "failed", matchLineNumber(text, "fail"));
+  assignNumber(report, "skipped", matchLineNumber(text, "skipped"));
+  assignNumber(report, "todo", matchLineNumber(text, "todo"));
+  assignNumber(report, "durationMs", matchLineNumber(text, "duration_ms"));
+  return report;
+}
+
+function parseVitestReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  const filesLine = matchVitestNamedLine(text, "Test Files");
+  const testsLine = matchVitestNamedLine(text, "Tests");
+  if (!filesLine) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "vitest",
+  };
+  const fileCounts = filesLine ? parseStatusCounts(filesLine) : {};
+  const testCounts = testsLine ? parseStatusCounts(testsLine) : {};
+  assignNumber(report, "files", fileCounts.total ?? sumDefined(fileCounts.passed, fileCounts.failed, fileCounts.skipped));
+  assignNumber(report, "total", testCounts.total ?? sumDefined(testCounts.passed, testCounts.failed, testCounts.skipped, testCounts.todo));
+  assignNumber(report, "passed", testCounts.passed);
+  assignNumber(report, "failed", testCounts.failed);
+  assignNumber(report, "skipped", testCounts.skipped);
+  assignNumber(report, "todo", testCounts.todo);
+  assignNumber(report, "durationMs", parseDurationMs(matchVitestNamedLine(text, "Duration") ?? ""));
+  return report;
+}
+
+function parseJestReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  const suitesLine = matchJestNamedLine(text, "Test Suites");
+  const testsLine = matchJestNamedLine(text, "Tests");
+  if (!suitesLine && !testsLine) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "jest",
+  };
+  const suiteCounts = suitesLine ? parseStatusCounts(suitesLine) : {};
+  const testCounts = testsLine ? parseStatusCounts(testsLine) : {};
+  assignNumber(report, "suites", suiteCounts.total ?? sumDefined(suiteCounts.passed, suiteCounts.failed, suiteCounts.skipped));
+  assignNumber(report, "total", testCounts.total ?? sumDefined(testCounts.passed, testCounts.failed, testCounts.skipped, testCounts.todo));
+  assignNumber(report, "passed", testCounts.passed);
+  assignNumber(report, "failed", testCounts.failed);
+  assignNumber(report, "skipped", testCounts.skipped);
+  assignNumber(report, "todo", testCounts.todo);
+  assignNumber(report, "durationMs", parseDurationMs(matchJestNamedLine(text, "Time") ?? ""));
+  return report;
+}
+
+function parsePlaywrightReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  const counts: Partial<Record<"passed" | "failed" | "skipped" | "flaky", number>> = {};
+  let durationMs: number | undefined;
+  for (const match of text.matchAll(/^\s*(\d+)\s+(passed|failed|skipped|flaky)\b\s*(?:\(([^)]+)\))?\s*$/gim)) {
+    const key = match[2] as "passed" | "failed" | "skipped" | "flaky";
+    counts[key] = (counts[key] ?? 0) + Number.parseInt(match[1], 10);
+    durationMs ??= parseDurationMs(match[3] ?? "");
+  }
+  if (Object.keys(counts).length === 0) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "playwright",
+  };
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
+  assignNumber(report, "flaky", counts.flaky);
+  assignNumber(report, "total", sumDefined(counts.passed, counts.failed, counts.skipped, counts.flaky));
+  assignNumber(report, "durationMs", durationMs);
+  return report;
+}
+
+function parseGenericReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  const line = matchFirstNamedLine(text, ["Tests", "Test Results", "Test Summary", "Summary", "Results"]);
+  if (!line) {
+    return undefined;
+  }
+  if (!looksLikeStatusSummary(line)) {
+    return undefined;
+  }
+  const report: TestReportSummary = {
+    framework,
+    source: "generic",
+  };
+  const counts = parseStatusCounts(line);
+  if (!hasOutcomeCounts(counts)) {
+    return undefined;
+  }
+  assignNumber(report, "total", counts.total ?? sumDefined(counts.passed, counts.failed, counts.skipped, counts.todo));
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
+  assignNumber(report, "todo", counts.todo);
+  return report;
+}
+
+function parseStatusCounts(text: string): Partial<Record<"passed" | "failed" | "skipped" | "todo" | "total", number>> {
+  const counts: Partial<Record<"passed" | "failed" | "skipped" | "todo" | "total", number>> = {};
+  for (const match of text.matchAll(/\b(\d+)\s+(passed|failed|skipped|todo|pending|total)\b/gi)) {
+    const label = match[2].toLowerCase();
+    const key = label === "pending" ? "skipped" : label;
+    counts[key as keyof typeof counts] = (counts[key as keyof typeof counts] ?? 0) + Number.parseInt(match[1], 10);
+  }
+  const parenthesizedTotal = text.match(/\((\d+)\)/);
+  if (parenthesizedTotal && counts.total === undefined) {
+    counts.total = Number.parseInt(parenthesizedTotal[1], 10);
+  }
+  return counts;
+}
+
+function hasOutcomeCounts(
+  counts: Partial<Record<"passed" | "failed" | "skipped" | "todo" | "total", number>>,
+): boolean {
+  return [counts.passed, counts.failed, counts.skipped, counts.todo].some((value) => typeof value === "number");
+}
+
+function formatTestReportSummary(report: TestReportSummary): string {
+  return [
+    `source=${report.source}`,
+    formatReportNumber("tests", report.total),
+    formatReportNumber("passed", report.passed),
+    formatReportNumber("failed", report.failed),
+    formatReportNumber("skipped", report.skipped),
+    formatReportNumber("todo", report.todo),
+    formatReportNumber("flaky", report.flaky),
+    formatReportNumber("files", report.files),
+    formatReportNumber("suites", report.suites),
+    formatReportNumber("duration_ms", report.durationMs),
+  ]
+    .filter((part): part is string => typeof part === "string")
+    .join(" ");
+}
+
+function formatReportNumber(name: string, value: number | undefined): string | undefined {
+  return value === undefined ? undefined : `${name}=${formatFiniteNumber(value)}`;
+}
+
+function formatFiniteNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Math.round(value * 1000) / 1000);
+}
+
+function hasReportCounts(report: TestReportSummary): boolean {
+  return [
+    report.total,
+    report.passed,
+    report.failed,
+    report.skipped,
+    report.todo,
+    report.flaky,
+    report.files,
+    report.suites,
+  ].some((value) => typeof value === "number");
+}
+
+function matchLineNumber(text: string, label: string): number | undefined {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = text.match(new RegExp(`^\\s*(?:[#\\u2139]\\s*)?${escaped}\\s+(\\d+(?:\\.\\d+)?)\\s*$`, "im"));
+  return match ? Number.parseFloat(match[1]) : undefined;
+}
+
+function matchNamedLine(text: string, label: string): string | undefined {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = text.match(new RegExp(`^\\s*${escaped}:?\\s+(.+)$`, "im"));
+  return match?.[1];
+}
+
+function matchJestNamedLine(text: string, label: string): string | undefined {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = text.match(new RegExp(`^\\s*${escaped}:\\s+(.+)$`, "im"));
+  return match?.[1];
+}
+
+function matchVitestNamedLine(text: string, label: string): string | undefined {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = text.match(new RegExp(`^\\s*${escaped}\\s{2,}(.+)$`, "im"));
+  return match?.[1];
+}
+
+function matchFirstNamedLine(text: string, labels: string[]): string | undefined {
+  for (const label of labels) {
+    const line = matchNamedLine(text, label);
+    if (line) {
+      return line;
+    }
+  }
+  return undefined;
+}
+
+function looksLikeStatusSummary(line: string): boolean {
+  if (!/\b\d+\s+(?:passed|failed|skipped|todo|pending)\b/i.test(line)) {
+    return false;
+  }
+  const leftover = line
+    .replace(/\b\d+\s+(?:passed|failed|skipped|todo|pending|total)\b/gi, "")
+    .replace(/\(\d+\)/g, "")
+    .replace(/[|,;:/\s-]+/g, "");
+  return leftover.length === 0;
+}
+
+function parseDurationMs(value: string): number | undefined {
+  let total = 0;
+  for (const match of value.matchAll(/(\d+(?:\.\d+)?)\s*(ms|msec|milliseconds?|s|sec|seconds?|m|min|minutes?|h|hr|hours?)/gi)) {
+    const amount = Number.parseFloat(match[1]);
+    const unit = match[2].toLowerCase();
+    if (unit.startsWith("ms") || unit.startsWith("millisecond") || unit === "msec") {
+      total += amount;
+    } else if (unit.startsWith("s")) {
+      total += amount * 1000;
+    } else if (unit.startsWith("m")) {
+      total += amount * 60_000;
+    } else if (unit.startsWith("h")) {
+      total += amount * 3_600_000;
+    }
+  }
+  return total > 0 ? Math.round(total * 1000) / 1000 : undefined;
+}
+
+function sumDefined(...values: Array<number | undefined>): number | undefined {
+  const defined = values.filter((value): value is number => typeof value === "number");
+  return defined.length === 0 ? undefined : defined.reduce((sum, value) => sum + value, 0);
+}
+
+function assignNumber<T extends keyof TestReportSummary>(
+  report: TestReportSummary,
+  key: T,
+  value: TestReportSummary[T],
+): void {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    report[key] = value;
+  }
+}
+
+function limitReportText(text: string): string {
+  return text.length <= MAX_REPORT_PARSE_BYTES ? text : text.slice(-MAX_REPORT_PARSE_BYTES);
+}
+
 function inferPackageScriptMetadata(scriptCommand: string): {
   framework: TestFramework;
   reporter?: string;
@@ -632,6 +930,7 @@ function tokenizeScriptCommandSegments(command: string): string[][] {
   finishSegment();
   return segments;
 }
+
 function inferPackageScriptReporter(tokens: string[]): string | undefined {
   for (const [index, rawToken] of tokens.entries()) {
     const token = stripShellQuotes(rawToken);
@@ -731,11 +1030,14 @@ function formatTestProcessResult(
         ? "ok"
         : "failed";
   const ok = status === "ok";
+  const stdout = sanitizeRenderedText(result.stdout);
+  const stderr = sanitizeRenderedText(result.stderr || result.error?.message || "");
 
   return {
     ok,
     status,
     target,
+    report: parseTestReportSummary(target, stdout, stderr),
     message: ok
       ? `Test target ${target.id} passed.`
       : `Test target ${target.id} ${status === "failed" ? `exited with code ${result.exitCode}` : status}.`,
@@ -746,8 +1048,8 @@ function formatTestProcessResult(
     signal: result.signal,
     timedOut: result.timedOut,
     durationMs: result.durationMs,
-    stdout: sanitizeRenderedText(result.stdout),
-    stderr: sanitizeRenderedText(result.stderr || result.error?.message || ""),
+    stdout,
+    stderr,
     stdoutTruncated: result.stdoutTruncation.truncated,
     stderrTruncated: result.stderrTruncation.truncated,
   };

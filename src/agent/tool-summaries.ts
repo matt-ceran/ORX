@@ -173,6 +173,10 @@ function formatRunTestsDetails(output: JsonObject | undefined): string[] {
   if (typeof target?.framework === "string") {
     details.push(`framework=${target.framework}`);
   }
+  const report = isObject(output.report) ? output.report : undefined;
+  if (report) {
+    details.push(...formatRunTestsReportDetails(report));
+  }
   if (typeof output.exitCode === "number") {
     details.push(`exit=${output.exitCode}`);
   } else if (output.exitCode === null) {
@@ -188,6 +192,33 @@ function formatRunTestsDetails(output: JsonObject | undefined): string[] {
     details.push("stderr_truncated=true");
   }
   return details;
+}
+
+function formatRunTestsReportDetails(report: JsonObject): string[] {
+  const details: string[] = [];
+  if (typeof report.source === "string") {
+    details.push(`report=${report.source}`);
+  }
+  for (const [key, label] of [
+    ["total", "tests"],
+    ["passed", "passed"],
+    ["failed", "failed"],
+    ["skipped", "skipped"],
+    ["todo", "todo"],
+    ["flaky", "flaky"],
+    ["files", "files"],
+    ["suites", "suites"],
+    ["durationMs", "duration_ms"],
+  ] as const) {
+    if (typeof report[key] === "number") {
+      details.push(`${label}=${formatSummaryNumber(report[key])}`);
+    }
+  }
+  return details;
+}
+
+function formatSummaryNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Math.round(value * 1000) / 1000);
 }
 
 function formatMcpCallDetails(output: JsonObject | undefined): string[] {

@@ -65,6 +65,7 @@ Completed:
 - Add native test-runner adapters: package `test*` script discovery/run, direct Node test fallback, `orx tests list|run`, `/tests list|run`, and status visibility.
 - Add model-visible native `run_tests` tool that reuses the test adapter with shell disabled, bounded output, timeout coverage, sanitized extra arguments, and compact tool summaries.
 - Add framework-aware test target metadata: infer Node/Vitest/Jest/Playwright/unknown frameworks and simple reporter hints for package-script targets, render framework counts in status, and include framework metadata in `run_tests` summaries.
+- Add compact test report parsing for common Node/Vitest/Jest/Playwright summary lines in `orx tests run`, `/tests run`, and model-visible `run_tests` summaries.
 - Add dependency-free local code maps: bounded tree scan, language/key-file/entrypoint summaries, JavaScript/TypeScript import/export extraction, `orx code map`, `orx map`, `orx code-map`, `/map`, and `/code map`.
 - Add dependency-free local symbol indexes: exported JavaScript/TypeScript symbol names with file paths and line numbers through `orx code symbols`, `orx symbols`, `/code symbols`, and `/symbols`.
 
@@ -146,7 +147,7 @@ Next:
 - Extend plugin metadata further only where needed for remote source UX, marketplace/catalog trust, or executable surface policy decisions.
 - Add `/plugins` command for list/install/enable/disable/inspect.
 - Add tree-sitter and ast-grep code intelligence for richer call/reference slices, syntax-aware search, and codemod previews beyond the dependency-free code map and exported-symbol index.
-- Add deeper Vitest/Jest/Playwright/Node report parsing beyond the current framework-aware package-script/Node `run_tests` foundation.
+- Add structured Vitest/Jest/Playwright/Node report ingestion beyond current summary-line parsing when framework-native JSON/report files can be requested safely.
 - Add LSP/SCIP bridge research spike for diagnostics, references, hover, and go-to-definition.
 - Add Sourcegraph read-only profile for multi-repo search/navigation/history.
 - Add docs/retrieval providers: Context7, DeepWiki, OpenAI Docs, Microsoft Learn, AWS docs, Google Developer Knowledge.

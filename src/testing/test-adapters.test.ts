@@ -6,9 +6,12 @@ import { join } from "node:path";
 import {
   discoverTestTargets,
   getTestAdapterSummary,
+  parseTestReportSummary,
   renderTestRunResult,
   renderTestTargets,
   runTestTarget,
+  type TestFramework,
+  type TestTarget,
 } from "./index.js";
 
 test("discovers and runs package script test targets", async () => {
@@ -26,7 +29,11 @@ test("discovers and runs package script test targets", async () => {
     );
     writeFileSync(
       join(cwd, "pass.mjs"),
-      "console.log(`adapter-pass ${process.argv.slice(2).join(',')}`);\n",
+      [
+        "console.log(`adapter-pass ${process.argv.slice(2).join(',')}`);",
+        "console.log('Tests 1 passed (1)');",
+        "",
+      ].join("\n"),
     );
 
     const discovery = discoverTestTargets(cwd);
@@ -46,8 +53,15 @@ test("discovers and runs package script test targets", async () => {
     });
     assert.equal(result.ok, true);
     assert.equal(result.status, "ok");
+    assert.deepEqual(result.report, {
+      framework: "unknown",
+      source: "generic",
+      total: 1,
+      passed: 1,
+    });
     assert.match(result.stdout ?? "", /adapter-pass unit,--flag/);
     assert.match(renderTestRunResult(result), /status: ok/);
+    assert.match(renderTestRunResult(result), /report: source=generic tests=1 passed=1/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -91,6 +105,131 @@ test("falls back to direct node:test files when no package test script exists", 
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("parses common framework report summaries", () => {
+  const vitestOutput = [
+    " Test Files  1 failed | 2 passed (3)",
+    "      Tests  1 failed | 4 passed | 1 skipped (6)",
+    "   Duration  1.25s",
+  ].join("\n");
+  const jestOutput = [
+    "Test Suites: 1 failed, 2 passed, 3 total",
+    "Tests:       1 failed, 2 skipped, 3 passed, 6 total",
+    "Time:        1.234 s",
+  ].join("\n");
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "ℹ tests 6",
+        "ℹ suites 0",
+        "ℹ pass 5",
+        "ℹ fail 1",
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 522.250584",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "node",
+      total: 6,
+      passed: 5,
+      failed: 1,
+      skipped: 0,
+      todo: 0,
+      suites: 0,
+      durationMs: 522.250584,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("vitest"), vitestOutput),
+    {
+      framework: "vitest",
+      source: "vitest",
+      files: 3,
+      total: 6,
+      passed: 4,
+      failed: 1,
+      skipped: 1,
+      durationMs: 1250,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("jest"), jestOutput),
+    {
+      framework: "jest",
+      source: "jest",
+      suites: 3,
+      total: 6,
+      passed: 3,
+      failed: 1,
+      skipped: 2,
+      durationMs: 1234,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("playwright"),
+      ["  1 failed", "  2 skipped", "  3 passed (4.5s)"].join("\n"),
+    ),
+    {
+      framework: "playwright",
+      source: "playwright",
+      passed: 3,
+      failed: 1,
+      skipped: 2,
+      total: 6,
+      durationMs: 4500,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), jestOutput),
+    {
+      framework: "unknown",
+      source: "jest",
+      suites: 3,
+      total: 6,
+      passed: 3,
+      failed: 1,
+      skipped: 2,
+      durationMs: 1234,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), vitestOutput),
+    {
+      framework: "unknown",
+      source: "vitest",
+      files: 3,
+      total: 6,
+      passed: 4,
+      failed: 1,
+      skipped: 1,
+      durationMs: 1250,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "Test Summary: 1 failed, 2 passed, 3 total"),
+    {
+      framework: "unknown",
+      source: "generic",
+      total: 3,
+      passed: 2,
+      failed: 1,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 failed network requests (99)"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("playwright"), "2 failed network requests (99)"), undefined);
 });
 
 test("infers package-script frameworks and report metadata", () => {
@@ -247,4 +386,18 @@ test("rejects unsafe test run arguments and unknown targets", async () => {
 
 function createTempDir(): string {
   return mkdtempSync(join(tmpdir(), "orx-tests-"));
+}
+
+function createTarget(framework: TestFramework): TestTarget {
+  return {
+    id: `script:${framework}`,
+    kind: "package-script",
+    framework,
+    label: `${framework} target`,
+    command: "npm",
+    args: ["run", "test"],
+    cwd: "/tmp/orx-test-target",
+    packageManager: "npm",
+    scriptName: "test",
+  };
 }

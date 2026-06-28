@@ -74,9 +74,9 @@ orx tests run
 orx tests run script:test:unit -- --watch=false
 ```
 
-The adapter discovers local `package.json` scripts whose names start with `test` and falls back to Node's built-in test runner for `*.test.js`, `*.test.mjs`, `*.test.cjs`, `*.spec.js`, `*.spec.mjs`, and `*.spec.cjs` files when no `test` package script exists. Target listings and run summaries include inferred framework metadata for Node, Vitest, Jest, Playwright, and unknown package-script runners, plus simple reporter hints when script flags declare them.
+The adapter discovers local `package.json` scripts whose names start with `test` and falls back to Node's built-in test runner for `*.test.js`, `*.test.mjs`, `*.test.cjs`, `*.spec.js`, `*.spec.mjs`, and `*.spec.cjs` files when no `test` package script exists. Target listings and run summaries include inferred framework metadata for Node, Vitest, Jest, Playwright, and unknown package-script runners, plus simple reporter hints when script flags declare them. When output contains common Node, Vitest, Jest, or Playwright summary lines, ORX also renders compact parsed report counts.
 
-The agent loop also exposes `run_tests` as a native model tool. It runs the same discovered target with shell disabled, bounded output, timeouts, sanitized extra arguments, and compact framework-aware summaries, so routine verification can use the test adapter instead of raw shell commands.
+The agent loop also exposes `run_tests` as a native model tool. It runs the same discovered target with shell disabled, bounded output, timeouts, sanitized extra arguments, and compact framework/report-aware summaries, so routine verification can use the test adapter instead of raw shell commands.
 
 Local code-map discovery is also available without an OpenRouter API key:
 

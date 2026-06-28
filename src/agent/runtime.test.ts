@@ -117,11 +117,18 @@ test("dispatchNativeToolCall runs discovered test targets through run_tests", as
   const cwd = createTempDir();
   try {
     writeFileSync(
-      join(cwd, "sample.test.js"),
+      join(cwd, "package.json"),
+      JSON.stringify({
+        scripts: {
+          test: "node ./sample.mjs",
+        },
+      }),
+    );
+    writeFileSync(
+      join(cwd, "sample.mjs"),
       [
-        "const test = require('node:test');",
-        "const assert = require('node:assert/strict');",
-        "test('sample', () => assert.equal(2 + 2, 4));",
+        "console.log('runtime test ok');",
+        "console.log('Tests 1 passed (1)');",
         "",
       ].join("\n"),
     );
@@ -145,9 +152,12 @@ test("dispatchNativeToolCall runs discovered test targets through run_tests", as
     const output = JSON.parse(envelope.output);
     assert.equal(output.ok, true);
     assert.equal(output.status, "ok");
-    assert.equal(output.target.id, "node:test");
+    assert.equal(output.target.id, "script:test");
+    assert.equal(output.report.source, "generic");
+    assert.equal(output.report.passed, 1);
     assert.match(output.message, /passed/);
-    assert.match(formatToolResult(result), /\[tool\] run_tests ok duration=\d+ms status=ok target="node:test"/);
+    assert.match(formatToolResult(result), /\[tool\] run_tests ok duration=\d+ms status=ok target="script:test"/);
+    assert.match(formatToolResult(result), /report=generic tests=1 passed=1/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

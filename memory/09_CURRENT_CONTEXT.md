@@ -36,7 +36,7 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin `components.hooks` JSON can contribute hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run manually through `hooks run` / `/hooks run` or automatically on matching lifecycle events with minimal env/cwd and JSONL audit logging.
 - Enabled plugin `components.bins` directories can contribute explicit operator-run bins. Regular cached bin files appear as `plugin:<plugin-id>:bin:<file>` in `orx bins`, `/bins`, and `/status`; trusted bin hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run only through explicit `bins run` / `/bins run` with cached-plugin cwd, manifest-declared env, redacted/truncated output, and JSONL audit logs without raw argument lists.
 - Enabled plugin prompt commands and bins now produce namespaced aliases visible through `/plugin list`, `orx plugins commands`, and `/status`. `/plugin:<plugin-id>:command:<slug>` activates the matching prompt as untrusted context; `/plugin:<plugin-id>:bin:<file> [args...]` runs the matching bin through the same trusted-hash gates as `/bins run`.
-- Native test target commands are implemented through `orx tests list|run`, `/tests list|run`, `/test`, package `test*` script discovery, direct Node test/spec fallback, framework/reporter metadata, bounded shell-disabled execution, and status counts. The same adapter is exposed to the model loop through the native `run_tests` tool.
+- Native test target commands are implemented through `orx tests list|run`, `/tests list|run`, `/test`, package `test*` script discovery, direct Node test/spec fallback, framework/reporter metadata, compact report summary parsing, bounded shell-disabled execution, and status counts. The same adapter is exposed to the model loop through the native `run_tests` tool.
 - Dependency-free local code maps and symbol indexes are implemented through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `/map`, `/code map`, `/code symbols`, and `/symbols`; output is local-only/no-key and includes bounded language, key-file, entrypoint, JavaScript/TypeScript import/export, and exported-symbol summaries.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
@@ -72,6 +72,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented compact test report parsing:
+
+- `src/testing/` now parses common Node, Vitest, Jest, and Playwright summary lines from already-captured sanitized test output into numeric report counts.
+- `orx tests run`, `/tests run`, and rendered run results show compact `report:` fields when counts are available.
+- Model-visible `run_tests` output includes the same report object, and visible tool summaries include compact report counts such as tests, passed, failed, skipped, files, suites, and duration.
+- Verification: `npm run typecheck`, `npm run build`, `git diff --check`, focused source tests for `src/testing/test-adapters.test.ts` plus `src/agent/runtime.test.ts`, build-backed focused runtime/CLI/slash/test-adapter tests, full `npm test` with 381 tests, and independent verifier recheck after parser-conservatism fixes.
+- Next likely programming-power-pack work: tree-sitter/ast-grep code intelligence or structured framework report ingestion when ORX can safely request framework-native report formats.
 
 Implemented line-based multiline prompt continuation:
 
