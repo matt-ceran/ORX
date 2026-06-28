@@ -47,6 +47,7 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin prompt commands and bins now produce namespaced aliases visible through `/plugin list`, `orx plugins commands`, and `/status`. `/plugin:<plugin-id>:command:<slug>` activates the matching prompt as untrusted context; `/plugin:<plugin-id>:bin:<file> [args...]` runs the matching bin through the same trusted-hash gates as `/bins run`.
 - Native test target commands are implemented through `orx tests list|run`, `/tests list|run`, `/test`, package `test*` script discovery, direct Node test/spec fallback, framework/reporter metadata, compact report summary parsing, bounded shell-disabled execution, and status counts. The same adapter is exposed to the model loop through the native `run_tests` tool.
 - Dependency-free local code maps and symbol indexes are implemented through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `/map`, `/code map`, `/code symbols`, and `/symbols`; output is local-only/no-key and includes bounded language, key-file, entrypoint, JavaScript/TypeScript import/export, and exported-symbol summaries.
+- Delegation readiness rendering is implemented through noninteractive `orx orchestrator`, `orx delegate`, `orx delegates`, and read-only slash `plan/status` variants. CLI status/readiness is session-less and no-key; mutating CLI forms validate arguments then refuse, while slash mutations remain session-local only. Execution/network/subprocess/model-visible `delegate_task` exposure remain unavailable.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -81,6 +82,15 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented noninteractive delegation CLI parity/readiness:
+
+- Added `orx orchestrator`, `orx delegate`, and `orx delegates` as no-key noninteractive parity for the existing slash scaffold, and added read-only slash `plan/status` variants that use the same readiness renderer.
+- The CLI renders inert scaffold status plus readiness blockers for future execution: missing `delegate_task` schema registration, delegate execution policy, budget/timeout/result truncation, credential/secret-forwarding policy, result merge/persistence, and CLI state storage.
+- Mutating forms such as `orx orchestrator openrouter <model>`, `orx orchestrator clear`, `orx delegate add <name> openrouter <model>`, `orx delegate remove <name>`, and `orx delegate clear` validate safe arguments and then refuse because noninteractive CLI has no delegation session state store.
+- The command path remains read-only: no OpenRouter calls, subprocess agents, network calls, persisted delegation state, or model-visible `delegate_task` exposure.
+- Verification: `npm run typecheck`, `git diff --check`, focused delegation/CLI/slash tests with 126 tests, full build-backed `npm test` with 429 tests, built-CLI dogfood for read-only status plus session-less mutation refusal, and independent verifier pass.
+- Next likely delegation work: design budget, timeout, credential, result-truncation, result-merge, and persistent orchestration profile policy before adding any OpenRouter delegate adapter or ORX-owned `delegate_task` tool.
 
 Implemented read-only plugin review/doctor/audit:
 

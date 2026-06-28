@@ -7,6 +7,15 @@ import { formatToolCallStart, formatToolResult, runAgentTurn } from "./agent/ind
 import { createCodeMap, createCodeSymbolIndex, renderCodeMap, renderCodeSymbols } from "./code-map/index.js";
 import { loadConfig, validateApiKey } from "./config/index.js";
 import type { LoadedConfig, OrxConfig, OrxMode } from "./config/types.js";
+import {
+  createEmptyDelegationState,
+  renderDelegates,
+  renderDelegationReadinessPlan,
+  renderOrchestratorStatus,
+  renderSessionlessDelegationRefusal,
+  validateDelegateName,
+  validateOpenRouterModel,
+} from "./delegation/index.js";
 import type { AskRequestOverrides } from "./openrouter/request.js";
 import type { OpenRouterMessage } from "./openrouter/types.js";
 import { formatOpenRouterMetadata } from "./openrouter/summary.js";
@@ -317,6 +326,18 @@ export async function runCli(
     return runCodeSymbolsCommand(args.slice(1), io);
   }
 
+  if (first === "orchestrator") {
+    return runOrchestratorCommand(args.slice(1), io);
+  }
+
+  if (first === "delegate") {
+    return runDelegateCommand(args.slice(1), io);
+  }
+
+  if (first === "delegates") {
+    return runDelegatesCommand(args.slice(1), io);
+  }
+
   const apiKeyError = validateApiKey(loadedConfig);
   if (apiKeyError) {
     writeLine(io.stderr, apiKeyError);
@@ -390,6 +411,9 @@ function helpText(): string {
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  tests         Discover or run native test targets",
     "  code          Render local code maps or symbol indexes",
+    "  orchestrator  Show delegation scaffold readiness or refuse session-less changes",
+    "  delegate      Show/refuse inert delegate scaffold changes outside chat",
+    "  delegates     Show inert delegate scaffold readiness",
     "  status        Show runtime status and config defaults",
     "  help          Show this help message",
     "  version       Show the current version",
@@ -553,6 +577,144 @@ function runCodeSymbolsCommand(args: string[], io: CliIo): number {
   const query = args.join(" ").trim() || undefined;
   writeLine(io.stdout, renderCodeSymbols(createCodeSymbolIndex({ cwd: io.cwd, query })));
   return 0;
+}
+
+function runOrchestratorCommand(args: string[], io: CliIo): number {
+  const subcommand = args[0]?.toLowerCase() ?? "status";
+  const emptyState = createEmptyDelegationState();
+
+  if (subcommand === "status" || subcommand === "plan" || subcommand === "readiness") {
+    writeLine(
+      io.stdout,
+      [renderOrchestratorStatus(emptyState), "", renderDelegationReadinessPlan(emptyState, { surface: "cli" })].join("\n"),
+    );
+    return 0;
+  }
+
+  if (subcommand === "openrouter") {
+    const model = args[1];
+    if (!model || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx orchestrator openrouter <model>");
+      return 1;
+    }
+
+    let safeModel: string;
+    try {
+      safeModel = validateOpenRouterModel(model);
+    } catch (error) {
+      writeLine(io.stderr, formatDelegationCliError(error));
+      return 1;
+    }
+
+    writeLine(
+      io.stderr,
+      renderSessionlessDelegationRefusal(`orchestrator openrouter ${safeModel}`),
+    );
+    return 1;
+  }
+
+  if (subcommand === "clear") {
+    if (args.length !== 1) {
+      writeLine(io.stderr, "Usage: orx orchestrator clear");
+      return 1;
+    }
+
+    writeLine(io.stderr, renderSessionlessDelegationRefusal("orchestrator clear"));
+    return 1;
+  }
+
+  writeLine(io.stderr, "Usage: orx orchestrator [status|plan|openrouter <model>|clear]");
+  return 1;
+}
+
+function runDelegateCommand(args: string[], io: CliIo): number {
+  const subcommand = args[0]?.toLowerCase() ?? "status";
+  const emptyState = createEmptyDelegationState();
+
+  if (subcommand === "status" || subcommand === "list" || subcommand === "plan" || subcommand === "readiness") {
+    writeLine(
+      io.stdout,
+      [renderDelegates(emptyState), "", renderDelegationReadinessPlan(emptyState, { surface: "cli" })].join("\n"),
+    );
+    return 0;
+  }
+
+  if (subcommand === "add") {
+    const name = args[1];
+    const provider = args[2]?.toLowerCase();
+    const model = args[3];
+    if (!name || provider !== "openrouter" || !model || args.length !== 4) {
+      writeLine(io.stderr, "Usage: orx delegate add <name> openrouter <model>");
+      return 1;
+    }
+
+    let safeName: string;
+    let safeModel: string;
+    try {
+      safeName = validateDelegateName(name);
+      safeModel = validateOpenRouterModel(model);
+    } catch (error) {
+      writeLine(io.stderr, formatDelegationCliError(error));
+      return 1;
+    }
+
+    writeLine(
+      io.stderr,
+      renderSessionlessDelegationRefusal(`delegate add ${safeName} openrouter ${safeModel}`),
+    );
+    return 1;
+  }
+
+  if (subcommand === "remove") {
+    const name = args[1];
+    if (!name || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx delegate remove <name>");
+      return 1;
+    }
+
+    let safeName: string;
+    try {
+      safeName = validateDelegateName(name);
+    } catch (error) {
+      writeLine(io.stderr, formatDelegationCliError(error));
+      return 1;
+    }
+
+    writeLine(io.stderr, renderSessionlessDelegationRefusal(`delegate remove ${safeName}`));
+    return 1;
+  }
+
+  if (subcommand === "clear") {
+    if (args.length !== 1) {
+      writeLine(io.stderr, "Usage: orx delegate clear");
+      return 1;
+    }
+
+    writeLine(io.stderr, renderSessionlessDelegationRefusal("delegate clear"));
+    return 1;
+  }
+
+  writeLine(io.stderr, "Usage: orx delegate [status|plan|add <name> openrouter <model>|remove <name>|clear]");
+  return 1;
+}
+
+function runDelegatesCommand(args: string[], io: CliIo): number {
+  const subcommand = args[0]?.toLowerCase() ?? "list";
+  if (subcommand !== "list" && subcommand !== "status" && subcommand !== "plan" && subcommand !== "readiness") {
+    writeLine(io.stderr, "Usage: orx delegates [list|status|plan]");
+    return 1;
+  }
+
+  const emptyState = createEmptyDelegationState();
+  writeLine(
+    io.stdout,
+    [renderDelegates(emptyState), "", renderDelegationReadinessPlan(emptyState, { surface: "cli" })].join("\n"),
+  );
+  return 0;
+}
+
+function formatDelegationCliError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function runProfileCommand(

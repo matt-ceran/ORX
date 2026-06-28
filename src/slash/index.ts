@@ -21,6 +21,7 @@ import {
   createEmptyDelegationState,
   removeDelegate,
   renderDelegates,
+  renderDelegationReadinessPlan,
   renderOrchestratorStatus,
   setOpenRouterController,
   type DelegationState,
@@ -448,9 +449,10 @@ const PROFILE_SUBCOMMAND_COMPLETIONS = [
   "use",
   "delete",
 ] as const;
-const ORCHESTRATOR_SUBCOMMAND_COMPLETIONS = ["status", "openrouter", "clear"] as const;
-const DELEGATE_SUBCOMMAND_COMPLETIONS = ["help", "add", "remove", "clear"] as const;
+const ORCHESTRATOR_SUBCOMMAND_COMPLETIONS = ["status", "plan", "openrouter", "clear"] as const;
+const DELEGATE_SUBCOMMAND_COMPLETIONS = ["help", "status", "plan", "add", "remove", "clear"] as const;
 const DELEGATE_ADAPTER_COMPLETIONS = ["openrouter"] as const;
+const DELEGATES_SUBCOMMAND_COMPLETIONS = ["list", "status", "plan"] as const;
 const RESUME_SELECTOR_COMPLETIONS = ["latest"] as const;
 const COMMON_GROUP_ORDER: SlashCommandGroup[] = [
   "Core",
@@ -1068,7 +1070,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/orchestrator": {
-    usage: "/orchestrator [openrouter <model>|clear]",
+    usage: "/orchestrator [status|plan|openrouter <model>|clear]",
     description: "Show or configure inert OpenRouter orchestration",
     group: "Orchestration",
     tier: "advanced",
@@ -1078,7 +1080,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/delegate": {
-    usage: "/delegate <add|remove|clear>",
+    usage: "/delegate [help|status|plan|add|remove|clear]",
     description: "Register or remove inert OpenRouter delegates",
     group: "Orchestration",
     tier: "advanced",
@@ -1088,17 +1090,23 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/delegates": {
-    usage: "/delegates",
-    description: "List inert delegates and disabled execution state",
+    usage: "/delegates [list|status|plan]",
+    description: "List inert delegates or delegation readiness",
     group: "Orchestration",
     tier: "advanced",
     handler: (command, context): SlashResult => {
-      if (command.argText) {
-        writeLine(context.io.stderr, "Usage: /delegates");
+      const subcommand = command.args[0]?.toLowerCase() ?? "list";
+      if (subcommand === "list" || subcommand === "status") {
+        writeLine(context.io.stdout, renderDelegates(getDelegationState(context)));
         return "continue";
       }
 
-      writeLine(context.io.stdout, renderDelegates(getDelegationState(context)));
+      if (subcommand === "plan" || subcommand === "readiness") {
+        writeLine(context.io.stdout, renderDelegationReadinessPlan(getDelegationState(context)));
+        return "continue";
+      }
+
+      writeLine(context.io.stderr, "Usage: /delegates [list|status|plan]");
       return "continue";
     },
   },
@@ -1545,6 +1553,8 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
         return [...OPENROUTER_MODEL_SHORTCUT_COMPLETIONS];
       }
       return [];
+    case "/delegates":
+      return argIndex === 0 ? [...DELEGATES_SUBCOMMAND_COMPLETIONS] : [];
     case "/resume":
       return argIndex === 0 ? [...RESUME_SELECTOR_COMPLETIONS] : [];
     default:
@@ -2706,6 +2716,11 @@ function handleOrchestratorCommand(command: SlashCommand, context: SlashCommandC
     return;
   }
 
+  if (subcommand === "plan" || subcommand === "readiness") {
+    writeLine(context.io.stdout, renderDelegationReadinessPlan(getDelegationState(context)));
+    return;
+  }
+
   if (subcommand === "clear") {
     if (command.args.length !== 1) {
       writeLine(context.io.stderr, "Usage: /orchestrator clear");
@@ -2740,7 +2755,7 @@ function handleOrchestratorCommand(command: SlashCommand, context: SlashCommandC
     return;
   }
 
-  writeLine(context.io.stderr, "Usage: /orchestrator [openrouter <model>|clear]");
+  writeLine(context.io.stderr, "Usage: /orchestrator [status|plan|openrouter <model>|clear]");
 }
 
 function handleDelegateCommand(command: SlashCommand, context: SlashCommandContext): void {
@@ -2751,6 +2766,8 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
       context.io.stdout,
       [
         "Delegate commands:",
+        "  /delegate plan",
+        "  /delegate status",
         "  /delegate add <name> openrouter <model>",
         "  /delegate remove <name>",
         "  /delegate clear",
@@ -2758,6 +2775,16 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
         "Execution is disabled; delegate_task is unavailable in this scaffold.",
       ].join("\n"),
     );
+    return;
+  }
+
+  if (subcommand === "status" || subcommand === "list") {
+    writeLine(context.io.stdout, renderDelegates(getDelegationState(context)));
+    return;
+  }
+
+  if (subcommand === "plan" || subcommand === "readiness") {
+    writeLine(context.io.stdout, renderDelegationReadinessPlan(getDelegationState(context)));
     return;
   }
 
@@ -2820,7 +2847,7 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
     return;
   }
 
-  writeLine(context.io.stderr, "Usage: /delegate <add|remove|clear>");
+  writeLine(context.io.stderr, "Usage: /delegate [help|status|plan|add|remove|clear]");
 }
 
 async function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {

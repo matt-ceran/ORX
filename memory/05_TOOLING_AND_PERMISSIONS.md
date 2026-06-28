@@ -161,7 +161,10 @@ Current Phase 11 orchestration scaffold:
 
 - `src/delegation/` stores inert session-local metadata for an optional OpenRouter controller and named OpenRouter delegates.
 - `/orchestrator`, `/delegate`, and `/delegates` mutate or render only local session metadata. They do not call OpenRouter, spawn subprocess agents, contact Codex/Devin, or expose a `delegate_task` tool to the model.
+- `/orchestrator plan`, `/delegate plan`, and `/delegates plan` render readiness blockers only and do not mutate session metadata.
+- `orx orchestrator`, `orx delegate`, and `orx delegates` are noninteractive read-only/session-less parity commands. They render scaffold status/readiness without an API key; mutating forms validate arguments and refuse without persisting state because there is no CLI delegation session store.
 - Delegation state is sanitized before storage/rendering: delegate names and models reject control characters and secret-like values, persisted delegates are sorted/deduped, at most 16 delegates are stored, and execution is always forced disabled.
 - Session JSON persists delegation metadata for `/resume`; API keys are still excluded.
 - Interactive `/status` shows orchestration controller, disabled execution state, delegate count, and `delegate_task=unavailable`.
 - `/clear` preserves orchestration/delegate metadata; only `/orchestrator clear`, `/delegate remove <name>`, and `/delegate clear` intentionally remove scaffold state.
+- Delegation readiness output must continue to show execution disabled, no network calls, no subprocesses, no model-visible `delegate_task`, and blockers for budget/timeout/result truncation, credential policy, result merge/persistence, and any future state store before adapters are implemented.

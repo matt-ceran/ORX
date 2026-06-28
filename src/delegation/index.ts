@@ -27,6 +27,10 @@ export interface DelegationStatusSummary {
   delegateTaskAvailable: false;
 }
 
+export interface DelegationReadinessRenderOptions {
+  surface?: "interactive" | "cli";
+}
+
 export class DelegationStateError extends Error {
   constructor(message: string) {
     super(message);
@@ -210,6 +214,56 @@ export function renderDelegates(state: DelegationState | undefined): string {
   }
 
   return lines.join("\n");
+}
+
+export function renderDelegationReadinessPlan(
+  state: DelegationState | undefined,
+  options: DelegationReadinessRenderOptions = {},
+): string {
+  const normalized = normalizeDelegationState(state);
+  const lines = [
+    "ORX delegation readiness:",
+    normalized.controller
+      ? `controller: openrouter ${normalized.controller.model}`
+      : "controller: none",
+    `delegate_count: ${normalized.delegates.length}`,
+    "execution: disabled",
+    "delegate_task: unavailable",
+    "model_exposure: none",
+    "network_calls: none",
+    "subprocesses: none",
+    options.surface === "cli"
+      ? "state_scope: cli-sessionless-readonly"
+      : "state_scope: interactive-session-local",
+    "readiness_blockers:",
+    "  - delegate_task schema is intentionally not registered",
+    "  - delegate execution policy is not designed",
+    "  - budget, timeout, and result-truncation controls are not configured",
+    "  - credential forwarding and secret-redaction policy is not implemented",
+    "  - delegate result persistence and merge semantics are not implemented",
+  ];
+
+  if (options.surface === "cli") {
+    lines.push("  - noninteractive CLI has no delegation state store");
+  }
+
+  return lines.join("\n");
+}
+
+export function renderSessionlessDelegationRefusal(action: string): string {
+  return [
+    "ORX delegation scaffold:",
+    "status: refused",
+    `action: ${action}`,
+    "reason: noninteractive CLI has no delegation session state store",
+    "state_changed: no",
+    "execution: disabled",
+    "delegate_task: unavailable",
+    "model_exposure: none",
+    "network_calls: none",
+    "subprocesses: none",
+    "Use interactive chat slash commands to store session-local scaffold metadata.",
+  ].join("\n");
 }
 
 export function validateDelegateName(rawName: string): string {

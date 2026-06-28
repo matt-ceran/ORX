@@ -30,6 +30,9 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
     assert.match(help.stdout(), /code\s+Render local code maps or symbol indexes/);
+    assert.match(help.stdout(), /orchestrator\s+Show delegation scaffold readiness/);
+    assert.match(help.stdout(), /delegate\s+Show\/refuse inert delegate scaffold changes outside chat/);
+    assert.match(help.stdout(), /delegates\s+Show inert delegate scaffold readiness/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
   }
@@ -94,6 +97,76 @@ test("help, version, and status work without an API key", async () => {
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("cli delegation commands render readiness and refuse session-less mutation without an API key", async () => {
+  const fetch = async (): Promise<Response> => {
+    throw new Error("delegation CLI must not make network calls");
+  };
+
+  const orchestrator = createIo({ fetch });
+  assert.equal(await runCli(["node", "cli", "orchestrator"], {}, orchestrator.io), 0);
+  assert.match(orchestrator.stdout(), /ORX orchestrator scaffold:/);
+  assert.match(orchestrator.stdout(), /controller: none/);
+  assert.match(orchestrator.stdout(), /ORX delegation readiness:/);
+  assert.match(orchestrator.stdout(), /state_scope: cli-sessionless-readonly/);
+  assert.match(orchestrator.stdout(), /delegate_task: unavailable/);
+  assert.match(orchestrator.stdout(), /network_calls: none/);
+  assert.match(orchestrator.stdout(), /subprocesses: none/);
+  assert.match(orchestrator.stdout(), /noninteractive CLI has no delegation state store/);
+  assert.equal(orchestrator.stderr(), "");
+
+  const delegates = createIo({ fetch });
+  assert.equal(await runCli(["node", "cli", "delegates", "plan"], {}, delegates.io), 0);
+  assert.match(delegates.stdout(), /ORX delegates scaffold:/);
+  assert.match(delegates.stdout(), /delegates: 0/);
+  assert.match(delegates.stdout(), /delegate_task schema is intentionally not registered/);
+  assert.equal(delegates.stderr(), "");
+
+  const refusedController = createIo({ fetch });
+  assert.equal(
+    await runCli(
+      ["node", "cli", "orchestrator", "openrouter", "openrouter/fusion"],
+      {},
+      refusedController.io,
+    ),
+    1,
+  );
+  assert.equal(refusedController.stdout(), "");
+  assert.match(refusedController.stderr(), /status: refused/);
+  assert.match(refusedController.stderr(), /action: orchestrator openrouter openrouter\/fusion/);
+  assert.match(refusedController.stderr(), /state_changed: no/);
+  assert.match(refusedController.stderr(), /model_exposure: none/);
+  assert.match(refusedController.stderr(), /network_calls: none/);
+  assert.match(refusedController.stderr(), /subprocesses: none/);
+
+  const refusedDelegate = createIo({ fetch });
+  assert.equal(
+    await runCli(
+      ["node", "cli", "delegate", "add", "reviewer", "openrouter", "anthropic/claude-sonnet-4.5"],
+      {},
+      refusedDelegate.io,
+    ),
+    1,
+  );
+  assert.equal(refusedDelegate.stdout(), "");
+  assert.match(
+    refusedDelegate.stderr(),
+    /action: delegate add reviewer openrouter anthropic\/claude-sonnet-4\.5/,
+  );
+  assert.match(refusedDelegate.stderr(), /delegate_task: unavailable/);
+
+  const unsafe = createIo({ fetch });
+  assert.equal(
+    await runCli(
+      ["node", "cli", "delegate", "add", "Reviewer", "openrouter", "openrouter/auto"],
+      {},
+      unsafe.io,
+    ),
+    1,
+  );
+  assert.equal(unsafe.stdout(), "");
+  assert.match(unsafe.stderr(), /Delegate name must match/);
 });
 
 test("cli tests commands list and run package scripts without an API key", async () => {

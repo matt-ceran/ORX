@@ -106,9 +106,9 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/browse <url>/);
   assert.match(output, /\/cite <source-id>/);
   assert.match(output, /\/bibliography/);
-  assert.match(output, /\/orchestrator \[openrouter <model>\|clear\]/);
-  assert.match(output, /\/delegate <add\|remove\|clear>/);
-  assert.match(output, /\/delegates/);
+  assert.match(output, /\/orchestrator \[status\|plan\|openrouter <model>\|clear\]/);
+  assert.match(output, /\/delegate \[help\|status\|plan\|add\|remove\|clear\]/);
+  assert.match(output, /\/delegates \[list\|status\|plan\]/);
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
@@ -208,6 +208,9 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog ", "commands "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/plugins r"), [["review ", "register "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/plugins d"), [["doctor ", "disable "], "d"]);
+  assert.deepEqual(completeSlashCommandLine("/orchestrator p"), [["plan "], "p"]);
+  assert.deepEqual(completeSlashCommandLine("/delegate p"), [["plan "], "p"]);
+  assert.deepEqual(completeSlashCommandLine("/delegates p"), [["plan "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/plugins catalog check-"), [["check-updates "], "check-"]);
   assert.deepEqual(completeSlashCommandLine("/plugins catalog u"), [
     ["updates ", "update ", "upgrade ", "update-check "],
@@ -744,6 +747,15 @@ test("orchestrator and delegate commands mutate inert local state without networ
     harness.stdout(),
     /reviewer: provider=openrouter model=anthropic\/claude-sonnet-4\.5 execution=disabled/,
   );
+
+  assert.equal(handleSlashCommand("/delegates plan", harness.context), "continue");
+  assert.match(harness.stdout(), /ORX delegation readiness:/);
+  assert.match(harness.stdout(), /controller: openrouter openrouter\/fusion/);
+  assert.match(harness.stdout(), /delegate_count: 1/);
+  assert.match(harness.stdout(), /state_scope: interactive-session-local/);
+  assert.match(harness.stdout(), /delegate_task schema is intentionally not registered/);
+  assert.match(harness.stdout(), /network_calls: none/);
+  assert.match(harness.stdout(), /subprocesses: none/);
 
   assert.equal(handleSlashCommand("/status", harness.context), "continue");
   assert.match(harness.stdout(), /approval_policy: never/);

@@ -48,6 +48,8 @@ orx tests run
 orx code map
 orx map src
 orx code symbols
+orx orchestrator
+orx delegates plan
 OPENROUTER_API_KEY=... orx
 ```
 
@@ -89,6 +91,8 @@ orx symbols renderCode
 ```
 
 The code map scans a bounded local tree, skips generated/vendor directories such as `node_modules`, `.git`, `.orx`, `dist`, `build`, and `coverage`, summarizes languages, key files, package/config/source entrypoints, and top JavaScript/TypeScript source imports/exports, and redacts secret-like rendered paths or symbols. The symbol index reuses the same bounded scan to list exported JavaScript/TypeScript symbols with file paths and line numbers.
+
+Delegation/orchestration CLI commands are no-key and read-only. `orx orchestrator`, `orx delegate`, and `orx delegates` render the inert scaffold status, readiness blockers, and disabled execution boundary. Mutating forms such as `orx orchestrator openrouter <model>` and `orx delegate add <name> openrouter <model>` validate arguments, then refuse because the noninteractive CLI has no delegation session state store. They do not call OpenRouter, spawn subprocess agents, expose `delegate_task` to the model, or persist delegation state.
 
 Plugin registry management is also available outside chat:
 
@@ -265,6 +269,8 @@ OPENROUTER_API_KEY=... ORX_MCP_BEARER_OPENROUTER=... npm run dev -- ask "Use Ope
 
 `--mcp-tools` exposes the same read-only non-billable, model-granted `mcp_call` bridge as `/mcp model enable` for that one `ask` invocation only.
 
+Delegation is currently a readiness scaffold, not an execution surface. Noninteractive commands such as `orx delegates plan` show the blockers and confirm that `delegate_task` is unavailable, no network calls are made, and no subprocess agents are spawned. Session-local scaffold mutations are available only in interactive chat through `/orchestrator` and `/delegate`.
+
 After the streamed assistant text, ORX prints a compact metadata summary when OpenRouter provides details such as requested/resolved model, generation id, token counts, reasoning tokens, and cost. Secrets are never printed.
 
 Start an interactive chat session with:
@@ -296,6 +302,9 @@ The chat UI keeps in-session message history for the current process, streams as
 /prompts [list|status|activate]
 /rules [list|status|activate]
 /mcp [catalog|presets [inspect]|add-preset|list|inspect|auth|tools|enable|disable|add-profile|remove-profile|add-tool|remove-tool|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool|discover|remote-tools|import-remote-tools|call|model]
+/orchestrator [status|plan|openrouter <model>|clear]
+/delegate [help|status|plan|add|remove|clear]
+/delegates [list|status|plan]
 /models
 /clear
 /new

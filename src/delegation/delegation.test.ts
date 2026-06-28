@@ -11,7 +11,9 @@ import {
   normalizeDelegationState,
   removeDelegate,
   renderDelegates,
+  renderDelegationReadinessPlan,
   renderOrchestratorStatus,
+  renderSessionlessDelegationRefusal,
   setOpenRouterController,
   validateDelegateName,
   validateOpenRouterModel,
@@ -46,6 +48,32 @@ test("delegation state renders an inert empty scaffold", () => {
     executionEnabled: false,
     delegateTaskAvailable: false,
   });
+
+  assert.equal(
+    renderDelegationReadinessPlan(state, { surface: "cli" }),
+    [
+      "ORX delegation readiness:",
+      "controller: none",
+      "delegate_count: 0",
+      "execution: disabled",
+      "delegate_task: unavailable",
+      "model_exposure: none",
+      "network_calls: none",
+      "subprocesses: none",
+      "state_scope: cli-sessionless-readonly",
+      "readiness_blockers:",
+      "  - delegate_task schema is intentionally not registered",
+      "  - delegate execution policy is not designed",
+      "  - budget, timeout, and result-truncation controls are not configured",
+      "  - credential forwarding and secret-redaction policy is not implemented",
+      "  - delegate result persistence and merge semantics are not implemented",
+      "  - noninteractive CLI has no delegation state store",
+    ].join("\n"),
+  );
+  assert.match(
+    renderSessionlessDelegationRefusal("delegate add reviewer openrouter openrouter/auto"),
+    /state_changed: no/,
+  );
 });
 
 test("controller and delegates mutate only local inert state", () => {

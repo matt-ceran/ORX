@@ -58,6 +58,10 @@ npm run dev -- code map
 npm run dev -- code symbols
 npm run dev -- symbols renderCode
 npm run dev -- map src
+npm run dev -- orchestrator
+npm run dev -- orchestrator plan
+npm run dev -- delegates
+npm run dev -- delegate add reviewer openrouter anthropic/claude-sonnet-4.5
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- models claude
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- credits
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- generation "gen_..."
@@ -102,6 +106,8 @@ Native test commands are no-key and local-only. `orx tests list` and `/tests lis
 
 Native code-map commands are no-key and local-only. `orx code map [path]`, `orx map [path]`, `orx code-map [path]`, `/map [path]`, and `/code map [path]` scan a bounded local tree, skip generated/vendor directories, and render language counts, key files, package/config/source entrypoints, and top JavaScript/TypeScript source imports/exports with rendered secret redaction. `orx code symbols [query]`, `orx symbols [query]`, `/code symbols [query]`, and `/symbols [query]` reuse that scan to render exported JavaScript/TypeScript symbols with file paths and line numbers.
 
+Delegation CLI commands are no-key and read-only/session-less. `orx orchestrator`, `orx orchestrator plan`, `orx delegate`, `orx delegate plan`, `orx delegates`, and `orx delegates plan` render the inert scaffold status plus readiness blockers. Mutating forms such as `orx orchestrator openrouter <model>`, `orx orchestrator clear`, `orx delegate add <name> openrouter <model>`, `orx delegate remove <name>`, and `orx delegate clear` validate safe names/models and then refuse because noninteractive CLI has no delegation session state store. They do not persist delegation state, call OpenRouter, spawn subprocess agents, or expose `delegate_task` to the model.
+
 In chat, `/model <id-or-search>` resolves through the OpenRouter catalog before changing active state. Exact `provider/model` slugs still work, but unknown friendly names such as `/model deepseek v4` are refused with a `/models <query>` suggestion instead of becoming invalid model ids.
 
 Slash help is grouped and filterable: `/help` shows common commands, `/help all` includes advanced commands, and `/help <query>` filters by name, alias, group, usage, or description. Current aliases include `/m` for `/model`, `/s` for `/status`, `/q` for `/quit`, `/h` for `/help`, and `/exit` as a quit alias.
@@ -112,7 +118,7 @@ Interactive chat supports line-based multiline prompts. End a line with an unesc
 
 Web research commands are explicit slash commands, not model-autonomous browsing. `/web fetch <url>` fetches a guarded URL directly. `/web search <query>` and `/search <query>` call Brave Web Search only when `BRAVE_SEARCH_API_KEY` is configured; results are stored as secondary provider-snippet evidence and cited as snippets rather than fetched primary pages. `/web browse <url>` and `/browse <url>` create browser evidence snapshots when Playwright is available, using ORX's guarded document fetch before local browser DOM extraction.
 
-Orchestration commands are scaffolds only. `/orchestrator` shows local controller state, `/orchestrator openrouter <model>` stores an inert OpenRouter controller, `/orchestrator clear` clears the controller, `/delegate add <name> openrouter <model>` stores an inert named delegate, `/delegate remove <name>` and `/delegate clear` remove delegates, and `/delegates` lists them. No external calls or `delegate_task` execution exist yet.
+Orchestration slash commands are scaffolds only. `/orchestrator` shows local controller state, `/orchestrator plan` renders readiness blockers, `/orchestrator openrouter <model>` stores an inert OpenRouter controller, and `/orchestrator clear` clears the controller. `/delegate status` and `/delegate plan` render inert delegate state/readiness, `/delegate add <name> openrouter <model>` stores an inert named delegate, `/delegate remove <name>` and `/delegate clear` remove delegates, and `/delegates [list|status|plan]` lists delegates or readiness. No external calls or `delegate_task` execution exist yet.
 
 `/status` now includes local approximate context and OpenRouter metadata cost meters. `/credits` and `orx credits` now include a live OpenRouter credits usage meter when the credits endpoint returns usable fields. Set `NO_COLOR=1` to force plain output.
 

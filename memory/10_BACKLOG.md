@@ -98,6 +98,7 @@ Completed:
 - Add MCP declared-tool allow/deny policy evaluation and `/mcp tools <profile>` render-only visibility.
 - Add `/status`, `/mcp list`, and `/mcp inspect` visibility for MCP policy-allowed, policy-denied, configured default-denied, and risky declared tool counts.
 - Add Phase 11 orchestration/delegation command scaffold: inert session-local OpenRouter controller/delegate metadata, `/orchestrator`, `/delegate`, `/delegates`, interactive `/status` visibility, session persistence/resume, count-bounded sanitized state, and no `delegate_task` execution/tool exposure.
+- Add Phase 11 delegation readiness parity: `orx orchestrator`, `orx delegate`, `orx delegates`, and read-only slash `plan/status` variants render scaffold status/blockers; mutating CLI forms validate arguments then refuse because CLI has no delegation session store, with execution/network/subprocess/model-visible `delegate_task` still unavailable.
 
 Next:
 
