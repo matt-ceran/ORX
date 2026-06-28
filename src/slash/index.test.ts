@@ -107,7 +107,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/delegate <add\|remove\|clear>/);
   assert.match(output, /\/delegates/);
   assert.match(output, /\/mcp \[list\|inspect\|tools\|discover\|enable\|disable\]/);
-  assert.match(output, /\/plugins \[list\|inspect\|register\|enable\|disable\]/);
+  assert.match(output, /\/plugins \[list\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/skills \[list\|activate <id>\]/);
 });
 
@@ -136,7 +136,7 @@ test("command palette renderer is a pure grouped listing surface", () => {
 
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
-  assert.match(palette, /\/plugins \[list\|inspect\|register\|enable\|disable\]/);
+  assert.match(palette, /\/plugins \[list\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(palette, /\/skills \[list\|activate <id>\]/);
   assert.doesNotMatch(palette, /\/model <id-or-search>/);
 });
@@ -149,7 +149,7 @@ test("compact command palette renderer bounds TTY-oriented command discovery", (
   });
 
   assert.match(palette, /^Command palette matching "plugin" \(2\)/);
-  assert.match(palette, /\/plugins \[list\|inspect\|register\|enable\|disable\]/);
+  assert.match(palette, /\/plugins \[list\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(palette, /\/skills \[list\|activate <id>\]/);
   assert.doesNotMatch(palette, /\/model <id-or-search>/);
   for (const line of palette.split("\n")) {
@@ -176,6 +176,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/web h"), [["help "], "h"]);
   assert.deepEqual(completeSlashCommandLine("/mcp inspect o"), [["openrouter "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/plugins en"), [["enable "], "en"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins i"), [["inspect ", "install "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/orchestrator openrouter openrouter/"), [
     ["openrouter/auto ", "openrouter/fusion "],
@@ -201,7 +202,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.equal(handleSlashCommand("/commands plugin", harness.context), "continue");
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
-  assert.match(harness.stdout(), /\/plugins \[list\|inspect\|register\|enable\|disable\]/);
+  assert.match(harness.stdout(), /\/plugins \[list\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(harness.stdout(), /\/skills \[list\|activate <id>\]/);
   assert.doesNotMatch(harness.stdout(), /\/model <id-or-search>/);
 
@@ -1543,7 +1544,7 @@ test("plugins register, list, inspect, enable, and disable without network or ex
   });
 
   try {
-    assert.equal(await handleSlashCommand(`/plugins register ${manifestPath}`, harness.context), "continue");
+    assert.equal(await handleSlashCommand(`/plugins install ${manifestPath}`, harness.context), "continue");
     assert.equal(fetchCalls, 0);
     assert.match(harness.stdout(), /Plugin acme\.demo-plugin@1\.0\.0 registered disabled/);
     assert.match(harness.stdout(), /No hooks, bins, MCP servers, or plugin code are active/);

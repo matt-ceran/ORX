@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -14,6 +15,7 @@ import { join } from "node:path";
 import {
   getPluginStatusSummary,
   loadPluginRegistry,
+  formatPluginIdForMessage,
   registerPluginManifest,
   renderPluginInspect,
   resolvePluginRegistryPath,
@@ -122,6 +124,25 @@ test("plugin registry enable and disable only changes state markers", () => {
     });
     assert.equal(disabled.ok, true);
     assert.equal(getPluginStatusSummary({ registryPath }).enabledCount, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugin unknown-id messages do not render unsafe values", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-unsafe-id-"));
+  const registryPath = join(cwd, "registry.json");
+
+  try {
+    assert.equal(formatPluginIdForMessage("missing"), "missing");
+    assert.equal(formatPluginIdForMessage("MISSING"), "missing");
+    assert.equal(formatPluginIdForMessage("bad\u001b[31m"), "[invalid plugin id]");
+    assert.equal(formatPluginIdForMessage("sk-or-v1-secret"), "[invalid plugin id]");
+
+    const result = setPluginEnabledState("bad\u001b[31m", true, { registryPath });
+    assert.equal(result.ok, false);
+    assert.doesNotMatch(result.message, /\u001b|sk-or-v1/);
+    assert.match(result.message, /Unknown plugin: \[invalid plugin id\]/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -461,6 +482,24 @@ test("plugin registry drops terminal control characters from loaded display meta
     assert.match(rendered, /registered_at: 1970-01-01T00:00:00\.000Z/);
     assert.match(rendered, /manifest_path: $/m);
     assert.match(rendered, /component_hashes:\n    - none_available/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugin registry preserves existing override parent permissions", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-override-mode-"));
+  const registryDirectory = join(cwd, "shared-state");
+  const registryPath = join(registryDirectory, "plugins.json");
+  const manifestPath = join(cwd, "plugin.json");
+  mkdirSync(registryDirectory, { recursive: true });
+  chmodSync(registryDirectory, 0o755);
+  writeFileSync(manifestPath, JSON.stringify(validManifest()));
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    assert.equal(modeBits(cwd, "shared-state"), "755");
+    assert.equal(modeBits(cwd, "shared-state/plugins.json"), "600");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

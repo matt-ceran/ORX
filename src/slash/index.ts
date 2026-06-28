@@ -58,6 +58,7 @@ import {
   activatePluginSkill,
   discoverEnabledPluginSkills,
   findInstalledPlugin,
+  formatPluginIdForMessage,
   getPluginStatusSummary,
   registerPluginManifest,
   renderPluginInspect,
@@ -265,6 +266,7 @@ const PLUGIN_SUBCOMMAND_COMPLETIONS = [
   "status",
   "inspect",
   "register",
+  "install",
   "enable",
   "disable",
 ] as const;
@@ -752,7 +754,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/plugins": {
-    usage: "/plugins [list|inspect|register|enable|disable]",
+    usage: "/plugins [list|inspect|register|install|enable|disable]",
     description: "Show and update inert plugin registry state",
     group: "Integrations",
     tier: "advanced",
@@ -1676,7 +1678,7 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
 
     const plugin = findInstalledPlugin(pluginId, { registryPath: context.pluginRegistryPath });
     if (!plugin) {
-      writeLine(context.io.stderr, `Unknown plugin: ${pluginId}`);
+      writeLine(context.io.stderr, `Unknown plugin: ${formatPluginIdForMessage(pluginId)}`);
       return;
     }
 
@@ -1684,10 +1686,10 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
     return;
   }
 
-  if (subcommand === "register") {
+  if (subcommand === "register" || subcommand === "install") {
     const manifestPath = command.args.slice(1).join(" ").trim();
     if (!manifestPath) {
-      writeLine(context.io.stderr, "Usage: /plugins register <manifest-path>");
+      writeLine(context.io.stderr, `Usage: /plugins ${subcommand} <manifest-path>`);
       return;
     }
 
@@ -1730,7 +1732,7 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
 
   writeLine(
     context.io.stderr,
-    "Usage: /plugins [list|inspect <id>|register <manifest-path>|enable <id>|disable <id>]",
+    "Usage: /plugins [list|inspect <id>|register <manifest-path>|install <manifest-path>|enable <id>|disable <id>]",
   );
 }
 

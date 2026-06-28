@@ -22,6 +22,7 @@ Urgent UX recovery additions from user testing:
 - The TTY bottom status notch now uses compact model badges for OpenRouter routing shortcuts, rendering `openrouter/auto` as `auto` and `openrouter/fusion` as `fusion`; full model ids remain unchanged in config, request construction, plain status, and non-TTY output.
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
+- Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; executable plugin surfaces remain inactive.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -56,6 +57,17 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented and verified plugin management CLI ergonomics:
+
+- Added `orx plugins list|inspect|register|install|enable|disable` as a no-API-key, noninteractive wrapper around the existing private plugin registry.
+- Added `/plugins install <manifest-path>` as an operator-facing alias for the existing inert `/plugins register <manifest-path>` flow.
+- Plugin install/register still stores a local disabled registry record only; enabling a plugin persists an enabled marker but hooks, bins, plugin MCP servers, plugin commands, and plugin code execution remain inactive.
+- Updated slash completions, help/palette usage, README, and command memory for the new `install` alias and CLI plugin commands.
+- Added focused CLI coverage for install/list/inspect/enable/disable without `OPENROUTER_API_KEY`, plus updated slash completion/help assertions.
+- Verifier found and fixed plugin registry override parent chmod behavior, so existing `ORX_PLUGIN_REGISTRY_PATH` parent directories keep their mode while default/new ORX-owned registry directories remain private and registry files stay `0600`.
+- Verifier also sanitized unknown plugin id error rendering and updated CLI help/no-fetch coverage for plugin commands.
+- Verifier `npm run typecheck`, `npm run build && node --test dist/plugins/registry.test.js dist/cli.test.js dist/slash/index.test.js`, manual no-key plugin CLI smokes, `git diff --check`, and `npm test` with 276 tests pass.
 
 Implemented and verified Phase 12 saved profile controls:
 

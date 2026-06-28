@@ -76,11 +76,18 @@ npm run dev -- profile list
 npm run dev -- profile save daily
 npm run dev -- profile inspect daily
 npm run dev -- profile delete daily
+npm run dev -- plugins list
+npm run dev -- plugins install ./orx-plugin.json
+npm run dev -- plugins inspect acme.example@1.0.0
+npm run dev -- plugins enable acme.example@1.0.0
+npm run dev -- plugins disable acme.example@1.0.0
 npm run dev -- --profile daily status
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- --profile daily ask "Say hello"
 ```
 
 Profiles persist model, mode, Fusion preset, theme, and permission posture under `~/.orx/profiles.json`; use `ORX_PROFILE_CONFIG_PATH` for isolated runs. Profiles do not store API keys. In chat, `/profile list`, `/profile save <id>`, `/profile use <id>`, `/profile inspect <id>`, and `/profile delete <id>` manage the same registry. Manual `/model`, `/mode`, `/fusion`, or `/theme` changes clear the active profile label.
+
+Plugin registry commands are no-key and no-network by default. `orx plugins install <manifest-path>` and `/plugins install <manifest-path>` are aliases for inert local manifest registration. Installed plugins remain disabled; enabling a plugin persists only the enabled marker while hooks, bins, plugin MCP servers, plugin commands, and plugin code execution remain inactive.
 
 In chat, `/model <id-or-search>` resolves through the OpenRouter catalog before changing active state. Exact `provider/model` slugs still work, but unknown friendly names such as `/model deepseek v4` are refused with a `/models <query>` suggestion instead of becoming invalid model ids.
 

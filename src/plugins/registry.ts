@@ -70,6 +70,8 @@ export interface PluginStatusSummary {
 }
 
 const REGISTRY_VERSION = 1;
+const PLUGIN_DIRECTORY_MODE = 0o700;
+const PLUGIN_FILE_MODE = 0o600;
 const COMPONENT_KEYS = new Set<PluginComponentKey>([
   "skills",
   "commands",
@@ -126,16 +128,20 @@ export function savePluginRegistry(
 ): void {
   const path = options.registryPath ?? defaultPluginRegistryPath();
   const sanitized = sanitizePluginRegistry(registry);
-  mkdirSync(dirname(path), {
+  const parentDir = dirname(path);
+  const parentExisted = existsSync(parentDir);
+  mkdirSync(parentDir, {
     recursive: true,
-    mode: 0o700,
+    mode: PLUGIN_DIRECTORY_MODE,
   });
-  chmodSync(dirname(path), 0o700);
+  if (shouldTightenPluginParent(path, parentExisted)) {
+    chmodSync(parentDir, PLUGIN_DIRECTORY_MODE);
+  }
   writeFileSync(path, `${JSON.stringify(sanitized, null, 2)}\n`, {
     encoding: "utf8",
-    mode: 0o600,
+    mode: PLUGIN_FILE_MODE,
   });
-  chmodSync(path, 0o600);
+  chmodSync(path, PLUGIN_FILE_MODE);
 }
 
 export function registerPluginManifest(
@@ -183,7 +189,7 @@ export function setPluginEnabledState(
   if (!plugin) {
     return {
       ok: false,
-      message: `Unknown plugin: ${id}`,
+      message: `Unknown plugin: ${formatPluginIdForMessage(id)}`,
     };
   }
 
@@ -235,6 +241,11 @@ export function findInstalledPlugin(
 
 export function hashPluginManifest(manifest: PluginManifest): string {
   return sha256(canonicalJson(manifest));
+}
+
+export function formatPluginIdForMessage(id: string): string {
+  const formatted = sanitizeDisplayString(id.trim().toLowerCase(), "", 160);
+  return formatted || "[invalid plugin id]";
 }
 
 function sanitizePluginRegistry(value: unknown): PluginRegistryFile {
@@ -417,8 +428,14 @@ function isSafeDisplayString(value: unknown, maximum: number): value is string {
 }
 
 function tightenPluginRegistryPermissions(path: string): void {
-  chmodSync(dirname(path), 0o700);
-  chmodSync(path, 0o600);
+  if (shouldTightenPluginParent(path, true)) {
+    chmodSync(dirname(path), PLUGIN_DIRECTORY_MODE);
+  }
+  chmodSync(path, PLUGIN_FILE_MODE);
+}
+
+function shouldTightenPluginParent(path: string, parentExisted: boolean): boolean {
+  return !parentExisted || resolve(path) === resolve(defaultPluginRegistryPath());
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

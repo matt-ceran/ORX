@@ -61,6 +61,18 @@ OPENROUTER_API_KEY=... orx --profile daily
 
 Profiles are stored outside repos at `~/.orx/profiles.json`; set `ORX_PROFILE_CONFIG_PATH` to isolate or test that registry.
 
+Plugin registry management is also available outside chat:
+
+```sh
+orx plugins list
+orx plugins install ./orx-plugin.json
+orx plugins inspect acme.example@1.0.0
+orx plugins enable acme.example@1.0.0
+orx plugins disable acme.example@1.0.0
+```
+
+Plugin install/register stores an inert local registry record. Enabling a plugin only enables its metadata/skills surface where supported; hooks, bins, plugin MCP servers, plugin commands, and plugin code execution remain inactive in the current scaffold.
+
 Send one non-interactive streaming request with:
 
 ```sh
@@ -94,6 +106,7 @@ The chat UI keeps in-session message history for the current process, streams as
 /fusion [preset]
 /theme [default|mono|vivid]
 /profile [list|save|use|inspect|delete]
+/plugins [list|inspect|register|install|enable|disable]
 /models
 /clear
 /new

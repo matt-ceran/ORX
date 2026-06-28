@@ -18,6 +18,7 @@ test("help, version, and status work without an API key", async () => {
     assert.equal(await runCli(["node", "cli", helpArg], {}, help.io), 0);
     assert.match(help.stdout(), /Commands:/);
     assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
+    assert.match(help.stdout(), /plugins\s+List, inspect, register\/install, enable, or disable plugins/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
   }
@@ -266,6 +267,120 @@ test("cli status reflects plugin registry override without enabling executable s
     assert.match(status.stdout(), /plugin_enabled_bins: 0/);
     assert.match(status.stdout(), /plugin_enabled_mcp: 0/);
     assert.match(status.stdout(), /plugin_enabled_skills: 1/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli plugins install list inspect enable and disable without an API key", async () => {
+  const cwd = createTempDir();
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const manifestPath = join(cwd, "plugin", "orx-plugin.json");
+  let fetchCalls = 0;
+  mkdirSync(join(cwd, "plugin", "skills"), { recursive: true });
+  writeFileSync(join(cwd, "plugin", "skills", "SKILL.md"), "# Demo skill\n");
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "cli-plugin",
+      version: "1.0.0",
+      description: "CLI plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        skills: "./skills",
+        hooks: "./hooks/hooks.json",
+        bins: "./bin",
+        mcpServers: "./mcp.json",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+  const env = { ORX_PLUGIN_REGISTRY_PATH: registryPath };
+  const createNoFetchIo = () =>
+    createIo({
+      cwd,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("plugin CLI commands should not call fetch");
+      },
+    });
+
+  try {
+    const installed = createNoFetchIo();
+    assert.equal(
+      await runCli(["node", "cli", "plugins", "install", manifestPath], env, installed.io),
+      0,
+    );
+    assert.match(installed.stdout(), /Plugin acme\.cli-plugin@1\.0\.0 registered disabled/);
+    assert.match(installed.stdout(), /No hooks, bins, MCP servers, or plugin code are active/);
+
+    const listed = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "plugins", "list"], env, listed.io), 0);
+    assert.match(listed.stdout(), /installed: 1/);
+    assert.match(listed.stdout(), /enabled: 0/);
+    assert.match(listed.stdout(), /plugin=acme\.cli-plugin@1\.0\.0 enabled=no/);
+
+    const inspected = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "inspect", "acme.cli-plugin@1.0.0"],
+        env,
+        inspected.io,
+      ),
+      0,
+    );
+    assert.match(inspected.stdout(), /Plugin: acme\.cli-plugin@1\.0\.0/);
+    assert.match(inspected.stdout(), /executable_surfaces: hooks=inactive bins=inactive mcp=inactive/);
+    assert.match(inspected.stdout(), /plugin_code_execution: disabled in this scaffold/);
+
+    const enabled = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "enable", "acme.cli-plugin@1.0.0"],
+        env,
+        enabled.io,
+      ),
+      0,
+    );
+    assert.match(enabled.stdout(), /Plugin acme\.cli-plugin@1\.0\.0 enabled/);
+    assert.match(enabled.stdout(), /executable surfaces remain inactive/);
+
+    const disabled = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "disable", "acme.cli-plugin@1.0.0"],
+        env,
+        disabled.io,
+      ),
+      0,
+    );
+    assert.match(disabled.stdout(), /Plugin acme\.cli-plugin@1\.0\.0 disabled/);
+
+    const missing = createNoFetchIo();
+    assert.equal(
+      await runCli(["node", "cli", "plugins", "inspect", "missing"], env, missing.io),
+      1,
+    );
+    assert.match(missing.stderr(), /Unknown plugin: missing/);
+
+    const unsafeMissing = createNoFetchIo();
+    assert.equal(
+      await runCli(["node", "cli", "plugins", "inspect", "bad\u001b[31m"], env, unsafeMissing.io),
+      1,
+    );
+    assert.doesNotMatch(unsafeMissing.stderr(), /\u001b/);
+    assert.match(unsafeMissing.stderr(), /Unknown plugin: \[invalid plugin id\]/);
+    assert.equal(fetchCalls, 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

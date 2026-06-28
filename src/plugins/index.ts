@@ -20,6 +20,7 @@ export {
   defaultPluginRegistryPath,
   emptyPluginRegistry,
   findInstalledPlugin,
+  formatPluginIdForMessage,
   getPluginStatusSummary,
   hashPluginManifest,
   loadPluginRegistry,

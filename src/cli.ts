@@ -19,7 +19,17 @@ import {
   listOpenRouterModels,
 } from "./openrouter/live.js";
 import { resolveMcpConfigPath } from "./mcp/index.js";
-import { createEnabledPluginSkillsSystemMessage, resolvePluginRegistryPath } from "./plugins/index.js";
+import {
+  createEnabledPluginSkillsSystemMessage,
+  findInstalledPlugin,
+  formatPluginIdForMessage,
+  getPluginStatusSummary,
+  registerPluginManifest,
+  renderPluginInspect,
+  renderPluginList,
+  resolvePluginRegistryPath,
+  setPluginEnabledState,
+} from "./plugins/index.js";
 import {
   applySavedProfile,
   deleteSavedProfile,
@@ -124,6 +134,10 @@ export async function runCli(
     return runProfileCommand(args.slice(1), loadedConfig.config, io, profileConfigPath);
   }
 
+  if (first === "plugins" || first === "plugin") {
+    return runPluginsCommand(args.slice(1), io, pluginRegistryPath);
+  }
+
   const apiKeyError = validateApiKey(loadedConfig);
   if (apiKeyError) {
     writeLine(io.stderr, apiKeyError);
@@ -178,6 +192,7 @@ function helpText(): string {
     "  credits       Show live OpenRouter credits",
     "  generation <id>  Show OpenRouter generation metadata",
     "  profile       List, inspect, save, or delete local ORX profiles",
+    "  plugins       List, inspect, register/install, enable, or disable plugins",
     "  status        Show runtime status and config defaults",
     "  help          Show this help message",
     "  version       Show the current version",
@@ -376,6 +391,84 @@ function runProfileCommand(
   }
 
   writeLine(io.stderr, "Usage: orx profile [list|save <id>|use <id>|inspect <id>|delete <id>]");
+  return 1;
+}
+
+function runPluginsCommand(args: string[], io: CliIo, pluginRegistryPath: string): number {
+  const subcommand = args[0]?.toLowerCase() ?? "list";
+  const pluginId = args[1];
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(
+      io.stdout,
+      renderPluginList(getPluginStatusSummary({ registryPath: pluginRegistryPath })),
+    );
+    return 0;
+  }
+
+  if (subcommand === "inspect") {
+    if (!pluginId || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx plugins inspect <id>");
+      return 1;
+    }
+
+    const plugin = findInstalledPlugin(pluginId, { registryPath: pluginRegistryPath });
+    if (!plugin) {
+      writeLine(io.stderr, `Unknown plugin: ${formatPluginIdForMessage(pluginId)}`);
+      return 1;
+    }
+
+    writeLine(io.stdout, renderPluginInspect(plugin));
+    return 0;
+  }
+
+  if (subcommand === "register" || subcommand === "install") {
+    const manifestPath = args.slice(1).join(" ").trim();
+    if (!manifestPath) {
+      writeLine(io.stderr, `Usage: orx plugins ${subcommand} <manifest-path>`);
+      return 1;
+    }
+
+    try {
+      const result = registerPluginManifest(manifestPath, {
+        registryPath: pluginRegistryPath,
+      });
+      writeLine(io.stdout, result.message);
+      return 0;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeLine(io.stderr, message);
+      return 1;
+    }
+  }
+
+  if (subcommand === "enable" || subcommand === "disable") {
+    if (!pluginId || args.length !== 2) {
+      writeLine(io.stderr, `Usage: orx plugins ${subcommand} <id>`);
+      return 1;
+    }
+
+    try {
+      const result = setPluginEnabledState(pluginId, subcommand === "enable", {
+        registryPath: pluginRegistryPath,
+      });
+      if (!result.ok) {
+        writeLine(io.stderr, result.message);
+        return 1;
+      }
+
+      writeLine(io.stdout, result.message);
+      return 0;
+    } catch (error) {
+      writeLine(io.stderr, `Unable to persist plugin registry state${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
+  writeLine(
+    io.stderr,
+    "Usage: orx plugins [list|inspect <id>|register <manifest-path>|install <manifest-path>|enable <id>|disable <id>]",
+  );
   return 1;
 }
 
