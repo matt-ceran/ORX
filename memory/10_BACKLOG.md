@@ -107,11 +107,12 @@ Completed:
 - Add Phase 11 `delegate_task` runtime contract: optional native schema, dispatch path, policy-bounded argument validation, sanitized delegate resolution, result envelope, hash-only audit JSONL at `~/.orx/audit/delegation.jsonl` with `ORX_DELEGATION_AUDIT_PATH`, status/readiness visibility, and later policy-gated OpenRouter delegate calls in interactive chat only.
 - Add policy-gated OpenRouter delegate adapter: explicit `--execution enabled|disabled`, chat-only `delegate_task` exposure when policy plus delegate state are present, OpenRouter streaming delegate calls, untrusted result wrapping, secret-like live payload refusal, hash-only audit metadata, and no subprocess or credential forwarding.
 - Add delegation result merge controls: `--result-merge manual_summary|metadata_only`, model-facing omission of delegate text in metadata-only mode, hash/result metadata preservation, terminal summary/status visibility, and no automatic result merge.
+- Add saved delegation team readiness previews: `orx delegates plan <saved-team-id>` and `orx delegate plan <saved-team-id>` render a stored team against current execution policy without mutating chat state, calling OpenRouter, or changing policy.
 
 Next:
 
 - Add managed OAuth/provider auth setup beyond the current env-only MCP bearer readiness/setup path.
-- Dogfood policy-enabled OpenRouter delegation with a real key using isolated policy/audit paths, then tighten delegate team/profile ergonomics and any stronger pre-spend budget strategy OpenRouter can support.
+- Dogfood policy-enabled OpenRouter delegation with a real key using isolated policy/audit paths, then tighten remaining delegate team/profile ergonomics and any stronger pre-spend budget strategy OpenRouter can support.
 - Add secret redaction and minimal env forwarding for future stdio/child-process MCP runners if ORX adds them beyond the current remote HTTP path.
 
 ## P4

@@ -88,6 +88,16 @@ Current files:
 
 ## Latest Work
 
+Added saved delegation team readiness previews:
+
+- Added `orx delegates plan <saved-team-id>` and `orx delegate plan <saved-team-id>` to preview a saved disabled team against the current delegation execution policy from the noninteractive CLI.
+- The preview renders saved-team source, `state_changed: no`, current policy readiness, delegate count, controller/delegate metadata, and the existing CLI blocker that a saved team can only be loaded inside interactive chat.
+- No OpenRouter calls, subprocess agents, chat-session mutation, policy mutation, or delegate output persistence are added.
+- Verifier fixes: unknown secret-shaped team IDs are redacted in both `delegate plan` and `delegates plan`, and sessionless saved-team readiness renders `network_calls: none_from_sessionless_cli` even when policy is enabled.
+- Verification: `npm run typecheck`, focused delegation/CLI source tests with 66 tests, `git diff --check`, full `npm test` with 470 compiled tests, `npm run verify:global-install`, and isolated CLI dogfood for saving a team, enabling metadata-only policy, previewing `orx delegates plan <id>`, and redacting missing secret-shaped team IDs.
+- Independent verifier reported no findings on the patched tree. Real-key OpenRouter delegation dogfood remains blocked until `OPENROUTER_API_KEY` is available.
+- Next likely work remains real-key policy-enabled delegation dogfood when an `OPENROUTER_API_KEY` is available, managed MCP auth beyond env bearer setup, broader provider/plugin preset polish, final TTY ergonomics, and release hardening.
+
 Added delegation result merge controls:
 
 - Added `metadata_only` alongside the existing default `manual_summary` delegation result merge policy.

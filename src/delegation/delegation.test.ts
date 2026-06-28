@@ -33,6 +33,7 @@ import {
   renderDelegationReadinessPlan,
   renderDelegationTeamInspect,
   renderDelegationTeamList,
+  renderDelegationTeamReadinessPlan,
   renderDelegationTeamUse,
   renderOrchestratorStatus,
   resolveDelegationAuditLogPath,
@@ -92,7 +93,7 @@ test("delegation state renders policy-gated empty session status", () => {
       "runtime_enforcement: policy_gated_openrouter_adapter",
       "audit_log: configured",
       "model_exposure: available_when_policy_and_delegate_are_enabled",
-      "network_calls: none",
+      "network_calls: none_from_sessionless_cli",
       "subprocesses: none",
       "state_scope: cli-saved-teams-available",
       "readiness_blockers:",
@@ -979,6 +980,21 @@ test("delegation team registry saves private disabled teams", () => {
     assert.match(renderDelegationTeamUse(found, { surface: "cli" }), /state_changed: no/);
     assert.match(renderDelegationTeamUse(found, { surface: "cli" }), /delegate_task: unavailable_in_cli/);
     assert.doesNotMatch(renderDelegationTeamUse(found, { surface: "cli" }), /scaffold metadata/);
+    const readiness = renderDelegationTeamReadinessPlan(found, {
+      surface: "cli",
+      policy: {
+        executionEnabled: true,
+        resultMerge: "metadata_only",
+      },
+    });
+    assert.match(readiness, /ORX delegation saved-team readiness: review-team/);
+    assert.match(readiness, /source: saved_team_registry/);
+    assert.match(readiness, /team_load: available_inside_interactive_chat_only/);
+    assert.match(readiness, /delegate_count: 1/);
+    assert.match(readiness, /execution: enabled/);
+    assert.doesNotMatch(readiness, /delegation execution policy must be enabled before model exposure/);
+    assert.match(readiness, /noninteractive CLI cannot attach a saved team to a live chat session/);
+    assert.match(readiness, /delegated model text is omitted from model-facing tool output by policy/);
 
     const deleted = deleteSavedDelegationTeam("review-team", { configPath });
     assert.equal(deleted.ok, true);

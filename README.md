@@ -58,6 +58,7 @@ orx delegates policy
 orx delegates policy set --max-cost-usd 0.5 --timeout-ms 60000 --max-result-bytes 50000 --max-concurrent 2
 orx delegates teams
 orx delegates save review --controller openrouter/fusion --delegate reviewer anthropic/claude-sonnet-4.5
+orx delegates plan review
 OPENROUTER_API_KEY=... orx
 ```
 
@@ -102,7 +103,7 @@ orx symbols renderCode
 
 The code map scans a bounded local tree, skips generated/vendor directories such as `node_modules`, `.git`, `.orx`, `dist`, `build`, and `coverage`, summarizes languages, key files, package/config/source entrypoints, and top JavaScript/TypeScript source imports/exports, and redacts secret-like rendered paths or symbols. The symbol index reuses the same bounded scan to list exported JavaScript/TypeScript symbols with file paths and line numbers.
 
-Delegation/orchestration CLI commands are no-key and sessionless. `orx orchestrator`, `orx delegate`, and `orx delegates` render delegation status, readiness blockers, saved-team guidance, and the current policy boundary. Mutating live-session forms such as `orx orchestrator openrouter <model>` and `orx delegate add <name> openrouter <model>` validate arguments, then refuse because the noninteractive CLI has no active chat session to mutate.
+Delegation/orchestration CLI commands are no-key and sessionless. `orx orchestrator`, `orx delegate`, and `orx delegates` render delegation status, readiness blockers, saved-team guidance, and the current policy boundary. `orx delegates plan <saved-team-id>` and `orx delegate plan <saved-team-id>` preview a saved team against the current execution policy without loading it into chat. Mutating live-session forms such as `orx orchestrator openrouter <model>` and `orx delegate add <name> openrouter <model>` validate arguments, then refuse because the noninteractive CLI has no active chat session to mutate.
 
 Delegation execution policy is stored separately at `~/.orx/delegation/policy.json`; set `ORX_DELEGATION_POLICY_PATH` to isolate it. `orx delegates policy` shows the current policy, which defaults to disabled. `orx delegates policy set --execution enabled|disabled ...` can explicitly enable or disable chat delegation and tune max task cost, timeout, result bytes, max concurrent delegates, credential forwarding, result persistence, and result merge mode. Credential forwarding and result persistence remain fixed to `none`; result merge accepts `manual_summary` or `metadata_only`. Setting policy does not call OpenRouter or spawn subprocesses by itself.
 
@@ -126,7 +127,7 @@ orx delegates use review
 orx delegates delete review
 ```
 
-Teams are stored at `~/.orx/delegation/teams.json`; set `ORX_DELEGATION_TEAMS_PATH` to isolate the registry. Saved team records contain only normalized disabled controller/delegate metadata. CLI `use` is read-only and tells you how to load the team in chat; `/delegate team use <id>` loads that metadata into the current chat session. Team commands do not call OpenRouter, spawn subprocess agents, or change the separate execution policy.
+Teams are stored at `~/.orx/delegation/teams.json`; set `ORX_DELEGATION_TEAMS_PATH` to isolate the registry. Saved team records contain only normalized disabled controller/delegate metadata. CLI `use` is read-only and tells you how to load the team in chat; CLI `plan <id>` previews saved-team readiness against the current policy; `/delegate team use <id>` loads that metadata into the current chat session. Team commands do not call OpenRouter, spawn subprocess agents, or change the separate execution policy.
 
 Plugin registry management is also available outside chat:
 
@@ -303,7 +304,7 @@ OPENROUTER_API_KEY=... ORX_MCP_BEARER_OPENROUTER=... npm run dev -- ask "Use Ope
 
 `--mcp-tools` exposes the same read-only non-billable, model-granted `mcp_call` bridge as `/mcp model enable` for that one `ask` invocation only.
 
-Delegation is a policy-gated chat feature. Noninteractive commands such as `orx delegates plan` show blockers and never call OpenRouter because there is no live chat session to mutate. `orx delegates policy` and `/delegate policy` show or tune execution limits, including explicit `--execution enabled|disabled`. Saved disabled teams can be created with explicit CLI args and loaded into an interactive chat with `/delegate team use <id>`. Live session-local delegation setup remains interactive through `/orchestrator`, `/delegate`, and `/delegate team`; `orx ask` does not expose `delegate_task`.
+Delegation is a policy-gated chat feature. Noninteractive commands such as `orx delegates plan` show blockers and never call OpenRouter because there is no live chat session to mutate. `orx delegates plan <saved-team-id>` previews a saved team against the current execution policy without loading it. `orx delegates policy` and `/delegate policy` show or tune execution limits, including explicit `--execution enabled|disabled`. Saved disabled teams can be created with explicit CLI args and loaded into an interactive chat with `/delegate team use <id>`. Live session-local delegation setup remains interactive through `/orchestrator`, `/delegate`, and `/delegate team`; `orx ask` does not expose `delegate_task`.
 
 After the streamed assistant text, ORX prints a compact metadata summary when OpenRouter provides details such as requested/resolved model, generation id, token counts, reasoning tokens, and cost. Secrets are never printed.
 

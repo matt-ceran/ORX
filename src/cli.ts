@@ -27,6 +27,7 @@ import {
   renderDelegationReadinessPlan,
   renderDelegationTeamInspect,
   renderDelegationTeamList,
+  renderDelegationTeamReadinessPlan,
   renderDelegationTeamUse,
   renderOrchestratorStatus,
   renderSessionlessDelegationRefusal,
@@ -710,7 +711,26 @@ function runDelegateCommand(
   const emptyState = createEmptyDelegationState();
   const policy = loadDelegationExecutionPolicy({ configPath: delegationPolicyPath });
 
-  if (subcommand === "status" || subcommand === "list" || subcommand === "plan" || subcommand === "readiness") {
+  if (subcommand === "status" || subcommand === "list") {
+    writeLine(
+      io.stdout,
+      [
+        renderDelegates(emptyState, { surface: "cli", policy }),
+        "",
+        renderDelegationReadinessPlan(emptyState, { surface: "cli", policy }),
+      ].join("\n"),
+    );
+    return 0;
+  }
+
+  if (subcommand === "plan" || subcommand === "readiness") {
+    if (args.length > 2) {
+      writeLine(io.stderr, "Usage: orx delegate plan [saved-team-id]");
+      return 1;
+    }
+    if (args[1]) {
+      return runDelegationTeamReadinessCommand(args[1], io, delegationTeamConfigPath, policy);
+    }
     writeLine(
       io.stdout,
       [
@@ -785,7 +805,7 @@ function runDelegateCommand(
     return 1;
   }
 
-  writeLine(io.stderr, "Usage: orx delegate [status|plan|add <name> openrouter <model>|remove <name>|clear|team|policy]");
+  writeLine(io.stderr, "Usage: orx delegate [status|plan [saved-team-id]|add <name> openrouter <model>|remove <name>|clear|team|policy]");
   return 1;
 }
 
@@ -812,6 +832,13 @@ function runDelegatesCommand(
   }
 
   if (subcommand === "plan" || subcommand === "readiness") {
+    if (args.length > 2) {
+      writeLine(io.stderr, "Usage: orx delegates plan [saved-team-id]");
+      return 1;
+    }
+    if (args[1]) {
+      return runDelegationTeamReadinessCommand(args[1], io, delegationTeamConfigPath, policy);
+    }
     writeLine(
       io.stdout,
       [
@@ -837,9 +864,25 @@ function runDelegatesCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx delegates [list|status|plan|policy|teams|save <id> --controller <model> --delegate <name> <model>|use <id>|inspect <id>|delete <id>]",
+    "Usage: orx delegates [list|status|plan [saved-team-id]|policy|teams|save <id> --controller <model> --delegate <name> <model>|use <id>|inspect <id>|delete <id>]",
   );
   return 1;
+}
+
+function runDelegationTeamReadinessCommand(
+  teamId: string,
+  io: CliIo,
+  delegationTeamConfigPath: string,
+  policy: ReturnType<typeof loadDelegationExecutionPolicy>,
+): number {
+  const team = findSavedDelegationTeam(teamId, { configPath: delegationTeamConfigPath });
+  if (!team) {
+    writeLine(io.stderr, `Unknown delegation team: ${formatDelegationTeamIdForMessage(teamId)}`);
+    return 1;
+  }
+
+  writeLine(io.stdout, renderDelegationTeamReadinessPlan(team, { surface: "cli", policy }));
+  return 0;
 }
 
 function formatDelegationCliError(error: unknown): string {
@@ -3023,7 +3066,13 @@ function formatProfileIdForMessage(profileId: string): string {
   return profileId.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim().toLowerCase().slice(0, 80);
 }
 
+const SECRET_LIKE_MESSAGE_PATTERN =
+  /\b(?:sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/i;
+
 function formatDelegationTeamIdForMessage(teamId: string): string {
+  if (SECRET_LIKE_MESSAGE_PATTERN.test(teamId)) {
+    return "[redacted]";
+  }
   return teamId.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim().toLowerCase().slice(0, 80);
 }
 

@@ -527,6 +527,30 @@ export function renderDelegationTeamUse(
   ].join("\n");
 }
 
+export function renderDelegationTeamReadinessPlan(
+  team: SavedDelegationTeamRecord,
+  options: DelegationReadinessRenderOptions = {},
+): string {
+  return [
+    `ORX delegation saved-team readiness: ${team.id}`,
+    "state_changed: no",
+    "source: saved_team_registry",
+    options.surface === "cli"
+      ? "team_load: available_inside_interactive_chat_only"
+      : "team_load: available_in_current_chat_session",
+    "",
+    renderDelegates(team.delegation, options),
+    "",
+    renderDelegationReadinessPlan(team.delegation, options),
+    "",
+    "saved_team:",
+    renderDelegationTeamInspect(team)
+      .split("\n")
+      .map((line) => `  ${line}`)
+      .join("\n"),
+  ].join("\n");
+}
+
 export function getDelegationStatusSummary(
   state: DelegationState | undefined,
 ): DelegationStatusSummary {
@@ -594,6 +618,16 @@ export function renderDelegationReadinessPlan(
   const resultMerge = options.policy?.resultMerge;
   const hasDelegate = normalized.delegates.length > 0;
   const chatReady = options.surface !== "cli" && policyEnabled && hasDelegate;
+  const networkCalls =
+    options.surface === "cli"
+      ? "none_from_sessionless_cli"
+      : policyEnabled
+        ? "openrouter_delegate_only_when_enabled"
+        : "none";
+  const stateScope =
+    options.surface === "cli"
+      ? "state_scope: cli-saved-teams-available"
+      : "state_scope: interactive-session-local";
   const blockers: string[] = [];
   if (!policyEnabled) {
     blockers.push("delegation execution policy must be enabled before model exposure");
@@ -616,11 +650,9 @@ export function renderDelegationReadinessPlan(
     "runtime_enforcement: policy_gated_openrouter_adapter",
     "audit_log: configured",
     `model_exposure: ${chatReady ? "available_in_chat" : "available_when_policy_and_delegate_are_enabled"}`,
-    `network_calls: ${policyEnabled ? "openrouter_delegate_only_when_enabled" : "none"}`,
+    `network_calls: ${networkCalls}`,
     "subprocesses: none",
-    options.surface === "cli"
-    ? "state_scope: cli-saved-teams-available"
-      : "state_scope: interactive-session-local",
+    stateScope,
     "readiness_blockers:",
     blockers.length === 0 ? "  none" : blockers.map((blocker) => `  - ${blocker}`),
     "readiness_notes:",

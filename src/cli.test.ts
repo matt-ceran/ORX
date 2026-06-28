@@ -469,8 +469,10 @@ test("cli delegation team commands manage a private disabled registry without an
   };
   const cwd = createTempDir();
   const teamsPath = join(cwd, "delegation", "teams.json");
+  const policyPath = join(cwd, "delegation", "policy.json");
   const env = {
     ORX_DELEGATION_TEAMS_PATH: teamsPath,
+    ORX_DELEGATION_POLICY_PATH: policyPath,
   };
 
   try {
@@ -522,6 +524,61 @@ test("cli delegation team commands manage a private disabled registry without an
       inspected.stdout(),
       /reviewer: provider=openrouter model=anthropic\/claude-sonnet-4\.5 execution=disabled/,
     );
+
+    const planned = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(["node", "cli", "delegates", "plan", "review-team"], env, planned.io),
+      0,
+    );
+    assert.match(planned.stdout(), /ORX delegation saved-team readiness: review-team/);
+    assert.match(planned.stdout(), /state_changed: no/);
+    assert.match(planned.stdout(), /source: saved_team_registry/);
+    assert.match(planned.stdout(), /team_load: available_inside_interactive_chat_only/);
+    assert.match(planned.stdout(), /controller: openrouter openrouter\/fusion/);
+    assert.match(planned.stdout(), /delegate_count: 1/);
+    assert.match(planned.stdout(), /delegation execution policy must be enabled before model exposure/);
+    assert.match(planned.stdout(), /noninteractive CLI cannot attach a saved team to a live chat session/);
+    assert.equal(planned.stderr(), "");
+
+    const enabledPolicy = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "delegate", "policy", "set", "--execution", "enabled"],
+        env,
+        enabledPolicy.io,
+      ),
+      0,
+    );
+
+    const plannedWithPolicy = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(["node", "cli", "delegate", "plan", "review-team"], env, plannedWithPolicy.io),
+      0,
+    );
+    assert.match(plannedWithPolicy.stdout(), /ORX delegation saved-team readiness: review-team/);
+    assert.match(plannedWithPolicy.stdout(), /execution: enabled/);
+    assert.doesNotMatch(
+      plannedWithPolicy.stdout(),
+      /delegation execution policy must be enabled before model exposure/,
+    );
+    assert.match(plannedWithPolicy.stdout(), /noninteractive CLI cannot attach a saved team to a live chat session/);
+    assert.match(plannedWithPolicy.stdout(), /state_changed: no/);
+
+    const secretMissingDelegates = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(["node", "cli", "delegates", "plan", "sk-or-v1-abc123"], env, secretMissingDelegates.io),
+      1,
+    );
+    assert.match(secretMissingDelegates.stderr(), /Unknown delegation team: \[redacted\]/);
+    assert.doesNotMatch(secretMissingDelegates.stderr(), /sk-or-v1-abc123/);
+
+    const secretMissingDelegate = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(["node", "cli", "delegate", "plan", "sk-or-v1-abc123"], env, secretMissingDelegate.io),
+      1,
+    );
+    assert.match(secretMissingDelegate.stderr(), /Unknown delegation team: \[redacted\]/);
+    assert.doesNotMatch(secretMissingDelegate.stderr(), /sk-or-v1-abc123/);
 
     const used = createIo({ cwd, fetch });
     assert.equal(await runCli(["node", "cli", "delegates", "use", "review-team"], env, used.io), 0);
