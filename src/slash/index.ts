@@ -1,4 +1,3 @@
-import { resolve } from "node:path";
 import {
   boundMessagesForContext,
   formatContextState,
@@ -61,11 +60,14 @@ import {
   findInstalledPlugin,
   formatPluginIdForMessage,
   getPluginStatusSummary,
+  loadPluginCatalog,
   registerPluginManifest,
+  renderPluginCatalog,
   renderPluginInspect,
   renderPluginList,
   renderPluginSkillList,
   renderSkillActivation,
+  resolvePluginInstallTarget,
   setPluginEnabledState,
   type PluginSkillActivationProvenance,
 } from "../plugins/index.js";
@@ -195,6 +197,7 @@ export interface SlashCommandContext {
   mcpAuditLogPath?: string;
   mcpConfigPath?: string;
   pluginCacheDirectory?: string;
+  pluginCatalogPath?: string;
   pluginRegistryPath?: string;
   profileConfigPath?: string;
   recordActivatedSkill?: (skill: PluginSkillActivationProvenance) => void;
@@ -264,6 +267,7 @@ const MCP_SUBCOMMAND_COMPLETIONS = [
 ] as const;
 const MCP_PROFILE_COMPLETIONS = ["openrouter"] as const;
 const PLUGIN_SUBCOMMAND_COMPLETIONS = [
+  "catalog",
   "list",
   "status",
   "inspect",
@@ -756,8 +760,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/plugins": {
-    usage: "/plugins [list|inspect|register|install|enable|disable]",
-    description: "Show and update inert plugin registry state",
+    usage: "/plugins [catalog|list|inspect|register|install|enable|disable]",
+    description: "Show catalog entries and update inert plugin registry state",
     group: "Integrations",
     tier: "advanced",
     handler: (command, context): SlashResult => {
@@ -1673,6 +1677,14 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
     return;
   }
 
+  if (subcommand === "catalog" || subcommand === "search") {
+    writeLine(
+      context.io.stdout,
+      renderPluginCatalog(loadPluginCatalog({ catalogPath: context.pluginCatalogPath })),
+    );
+    return;
+  }
+
   if (subcommand === "inspect") {
     if (!pluginId || command.args.length !== 2) {
       writeLine(context.io.stderr, "Usage: /plugins inspect <id>");
@@ -1697,11 +1709,18 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
     }
 
     try {
-      const result = registerPluginManifest(resolve(context.io.cwd, manifestPathText), {
+      const target = resolvePluginInstallTarget(manifestPathText, {
+        cwd: context.io.cwd,
+        catalogPath: context.pluginCatalogPath,
+      });
+      const result = registerPluginManifest(target.manifestPath, {
         registryPath: context.pluginRegistryPath,
         cacheDirectory: context.pluginCacheDirectory,
       });
-      writeLine(context.io.stdout, result.message);
+      const sourceMessage = target.catalogEntry
+        ? `Catalog entry ${target.catalogEntry.id} resolved to ${target.manifestPath}.\n`
+        : "";
+      writeLine(context.io.stdout, `${sourceMessage}${result.message}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       writeLine(context.io.stderr, message);
@@ -1736,7 +1755,7 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
 
   writeLine(
     context.io.stderr,
-    "Usage: /plugins [list|inspect <id>|register <manifest-path>|install <manifest-path>|enable <id>|disable <id>]",
+    "Usage: /plugins [catalog|list|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
 }
 

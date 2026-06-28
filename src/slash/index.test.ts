@@ -107,7 +107,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/delegate <add\|remove\|clear>/);
   assert.match(output, /\/delegates/);
   assert.match(output, /\/mcp \[list\|inspect\|tools\|discover\|enable\|disable\]/);
-  assert.match(output, /\/plugins \[list\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(output, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/skills \[list\|activate <id>\]/);
 });
 
@@ -136,7 +136,7 @@ test("command palette renderer is a pure grouped listing surface", () => {
 
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
-  assert.match(palette, /\/plugins \[list\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(palette, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disabl/);
   assert.match(palette, /\/skills \[list\|activate <id>\]/);
   assert.doesNotMatch(palette, /\/model <id-or-search>/);
 });
@@ -149,7 +149,7 @@ test("compact command palette renderer bounds TTY-oriented command discovery", (
   });
 
   assert.match(palette, /^Command palette matching "plugin" \(2\)/);
-  assert.match(palette, /\/plugins \[list\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(palette, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disabl/);
   assert.match(palette, /\/skills \[list\|activate <id>\]/);
   assert.doesNotMatch(palette, /\/model <id-or-search>/);
   for (const line of palette.split("\n")) {
@@ -175,6 +175,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/web b"), [["browse "], "b"]);
   assert.deepEqual(completeSlashCommandLine("/web h"), [["help "], "h"]);
   assert.deepEqual(completeSlashCommandLine("/mcp inspect o"), [["openrouter "], "o"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/plugins en"), [["enable "], "en"]);
   assert.deepEqual(completeSlashCommandLine("/plugins i"), [["inspect ", "install "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
@@ -202,7 +203,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.equal(handleSlashCommand("/commands plugin", harness.context), "continue");
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
-  assert.match(harness.stdout(), /\/plugins \[list\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(harness.stdout(), /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(harness.stdout(), /\/skills \[list\|activate <id>\]/);
   assert.doesNotMatch(harness.stdout(), /\/model <id-or-search>/);
 
@@ -1601,6 +1602,82 @@ test("plugins register, list, inspect, enable, and disable without network or ex
   }
 });
 
+test("plugins catalog lists and installs local catalog entries without network", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugins-catalog-slash-"));
+  const registryPath = join(cwd, "registry", "plugins.json");
+  const catalogPath = join(cwd, "catalog", "plugins.json");
+  const manifestPath = join(cwd, "plugin", "orx-plugin.json");
+  mkdirSync(join(cwd, "catalog"), { recursive: true });
+  mkdirSync(join(cwd, "plugin", "skills"), { recursive: true });
+  writeFileSync(join(cwd, "plugin", "skills", "SKILL.md"), "# Catalog slash skill\n");
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "catalog-slash-plugin",
+      version: "1.0.0",
+      description: "Catalog slash plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        skills: "./skills",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+  writeFileSync(
+    catalogPath,
+    JSON.stringify({
+      version: 1,
+      entries: [
+        {
+          id: "acme.catalog-slash-plugin@1.0.0",
+          description: "Install from slash catalog.",
+          manifestPath: "../plugin/orx-plugin.json",
+          tags: ["slash"],
+        },
+      ],
+    }),
+  );
+  const harness = createSlashHarness({
+    pluginCatalogPath: catalogPath,
+    pluginRegistryPath: registryPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(handleSlashCommand("/plugins catalog", harness.context), "continue");
+    assert.match(harness.stdout(), /Plugin Catalog/);
+    assert.match(harness.stdout(), /id=acme\.catalog-slash-plugin@1\.0\.0/);
+
+    assert.equal(
+      await handleSlashCommand("/plugins install acme.catalog-slash-plugin@1.0.0", harness.context),
+      "continue",
+    );
+    assert.match(
+      harness.stdout(),
+      /Catalog entry acme\.catalog-slash-plugin@1\.0\.0 resolved to/,
+    );
+    assert.match(harness.stdout(), /Plugin acme\.catalog-slash-plugin@1\.0\.0 registered disabled/);
+    assert.match(readFileSync(registryPath, "utf8"), /acme\.catalog-slash-plugin@1\.0\.0/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("plugins command rejects invalid manifests and unknown plugins without network", async () => {
   let fetchCalls = 0;
   const cwd = mkdtempSync(join(tmpdir(), "orx-plugins-invalid-"));
@@ -2145,6 +2222,7 @@ function createSlashHarness(
     cwd?: string;
     mcpAuditLogPath?: string;
     mcpConfigPath?: string;
+    pluginCatalogPath?: string;
     pluginRegistryPath?: string;
     profileConfigPath?: string;
     recordActivatedSkill?: SlashCommandContext["recordActivatedSkill"];
@@ -2236,6 +2314,7 @@ function createSlashHarness(
       },
       mcpAuditLogPath: options.mcpAuditLogPath,
       mcpConfigPath: options.mcpConfigPath,
+      pluginCatalogPath: options.pluginCatalogPath,
       pluginRegistryPath: options.pluginRegistryPath,
       profileConfigPath: options.profileConfigPath,
       recordActivatedSkill: options.recordActivatedSkill,

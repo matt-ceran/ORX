@@ -24,6 +24,7 @@ Urgent UX recovery additions from user testing:
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; executable plugin surfaces remain inactive.
 - Plugin install/register now snapshots sanitized manifests plus declared components into ORX-owned plugin cache storage before registry persistence; enabled skill discovery resolves from the cached manifest path, not the original source checkout.
+- Plugin catalog support is local-only: `orx plugins catalog`, `/plugins catalog`, and `plugins install <catalog-id>` read sanitized entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH` and do not fetch remote sources.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -67,7 +68,16 @@ Implemented and focused-verified ORX-owned local plugin install cache:
 - CLI and slash plugin install/register resolve relative manifests from the active cwd and pass the same cache directory through chat. `/status` reports `plugin_cache_path`.
 - Enabled plugin skill discovery now survives removal of the original plugin source directory because `components.skills` resolves from the cached manifest directory.
 - Focused verification: `npm run typecheck` and `npm run build && node --test dist/plugins/registry.test.js dist/plugins/skills.test.js dist/cli.test.js dist/slash/index.test.js dist/tui/chat.test.js` pass with 119 tests.
-- Next likely plugin work: catalog/source fetching and richer plugin metadata/namespacing, then plugin-provided prompts/rules and MCP preset wiring while executable hooks/bins/MCP/plugin commands remain gated.
+- Next likely plugin work after cache/catalog groundwork: remote source fetching or richer plugin metadata/namespacing, then plugin-provided prompts/rules and MCP preset wiring while executable hooks/bins/MCP/plugin commands remain gated.
+
+Implemented local plugin catalog metadata and install-by-id groundwork:
+
+- Added `src/plugins/catalog.ts` for local catalog JSON under `~/.orx/plugins/catalog.json`, with `ORX_PLUGIN_CATALOG_PATH` override support, sanitized catalog ids/descriptions/tags/manifest paths, broader token-like metadata rejection, and relative manifest resolution from the catalog file location.
+- Added `orx plugins catalog`, `/plugins catalog`, and `plugins install <catalog-id>` / `/plugins install <catalog-id>` resolution while preserving direct manifest-path installs.
+- Catalog operations are local and no-fetch; they only resolve a local manifest path and then reuse the existing inert register/cache flow.
+- Updated help, command palette, slash completions, README, CLI tests, slash tests, and catalog parser tests.
+- Focused verification: `npm run typecheck` and `npm run build && node --test dist/plugins/catalog.test.js dist/cli.test.js dist/slash/index.test.js dist/tui/chat.test.js` pass with 101 tests.
+- Next likely plugin work: remote source fetching or richer plugin metadata/namespacing, then plugin-provided prompts/rules and MCP preset wiring while executable hooks/bins/MCP/plugin commands remain gated.
 
 Implemented and verified plugin management CLI ergonomics:
 

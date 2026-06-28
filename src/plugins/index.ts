@@ -18,6 +18,19 @@ export {
   type PluginCachePathOptions,
 } from "./cache.js";
 export {
+  defaultPluginCatalogPath,
+  findPluginCatalogEntry,
+  loadPluginCatalog,
+  renderPluginCatalog,
+  resolvePluginCatalogPath,
+  resolvePluginInstallTarget,
+  type PluginCatalog,
+  type PluginCatalogEntry,
+  type PluginCatalogLoadOptions,
+  type PluginCatalogPathOptions,
+  type PluginInstallTarget,
+} from "./catalog.js";
+export {
   createPluginLockRecord,
   type PluginComponentHash,
   type PluginLockOptions,

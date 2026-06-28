@@ -96,6 +96,7 @@ Current Phase 9 plugin scaffold:
 
 - `src/plugins/` validates and sanitizes ORX plugin manifests before storing them.
 - Plugin registry/cache state is ORX-owned operator state outside repositories, defaulting to `~/.orx/plugins/registry.json` and `~/.orx/plugins/cache` with `ORX_PLUGIN_REGISTRY_PATH` / `ORX_PLUGIN_CACHE_DIR` for tests and isolated runs.
+- Optional local plugin catalog metadata is read from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH`; catalog entries are sanitized, local-only, and can resolve `orx plugins install <catalog-id>` / `/plugins install <catalog-id>` to a manifest path without network access.
 - Registering a local manifest snapshots the sanitized manifest plus declared component paths into the ORX-owned cache before writing the registry record; unknown manifest fields and unreferenced local files are not copied.
 - Registering a local manifest computes a stable plugin id, manifest hash, lock-style integrity record, install time, source metadata, cached manifest path, original manifest path provenance, and bounded component hashes from the cached snapshot when files/directories are available.
 - Git source manifests must include a pinned `resolvedCommit`; floating refs can be recorded as context but cannot be the lock pin.

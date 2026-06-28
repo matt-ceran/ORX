@@ -18,7 +18,7 @@ test("help, version, and status work without an API key", async () => {
     assert.equal(await runCli(["node", "cli", helpArg], {}, help.io), 0);
     assert.match(help.stdout(), /Commands:/);
     assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
-    assert.match(help.stdout(), /plugins\s+List, inspect, register\/install, enable, or disable plugins/);
+    assert.match(help.stdout(), /plugins\s+List catalog entries, inspect, register\/install, enable, or disable plugins/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
   }
@@ -380,6 +380,90 @@ test("cli plugins install list inspect enable and disable without an API key", a
     );
     assert.doesNotMatch(unsafeMissing.stderr(), /\u001b/);
     assert.match(unsafeMissing.stderr(), /Unknown plugin: \[invalid plugin id\]/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli plugins catalog lists and installs local catalog entries without fetch", async () => {
+  const cwd = createTempDir();
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const catalogPath = join(cwd, "catalog", "plugins.json");
+  const manifestPath = join(cwd, "plugin", "orx-plugin.json");
+  let fetchCalls = 0;
+  mkdirSync(join(cwd, "catalog"), { recursive: true });
+  mkdirSync(join(cwd, "plugin", "skills"), { recursive: true });
+  writeFileSync(join(cwd, "plugin", "skills", "SKILL.md"), "# Catalog skill\n");
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "catalog-plugin",
+      version: "1.0.0",
+      description: "Catalog plugin.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        skills: "./skills",
+      },
+      permissions: {
+        filesystem: [],
+        network: [],
+        env: [],
+        mcp: [],
+      },
+    }),
+  );
+  writeFileSync(
+    catalogPath,
+    JSON.stringify({
+      version: 1,
+      entries: [
+        {
+          id: "acme.catalog-plugin@1.0.0",
+          description: "Install from catalog.",
+          manifestPath: "../plugin/orx-plugin.json",
+          tags: ["demo"],
+        },
+      ],
+    }),
+  );
+  const env = {
+    ORX_PLUGIN_REGISTRY_PATH: registryPath,
+    ORX_PLUGIN_CATALOG_PATH: catalogPath,
+  };
+  const createNoFetchIo = () =>
+    createIo({
+      cwd,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("plugin catalog commands should not call fetch");
+      },
+    });
+
+  try {
+    const catalog = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "plugins", "catalog"], env, catalog.io), 0);
+    assert.match(catalog.stdout(), /Plugin Catalog/);
+    assert.match(catalog.stdout(), /entries: 1/);
+    assert.match(catalog.stdout(), /id=acme\.catalog-plugin@1\.0\.0/);
+
+    const installed = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "install", "acme.catalog-plugin@1.0.0"],
+        env,
+        installed.io,
+      ),
+      0,
+    );
+    assert.match(installed.stdout(), /Catalog entry acme\.catalog-plugin@1\.0\.0 resolved to/);
+    assert.match(installed.stdout(), /Plugin acme\.catalog-plugin@1\.0\.0 registered disabled/);
+    assert.match(readFileSync(registryPath, "utf8"), /acme\.catalog-plugin@1\.0\.0/);
     assert.equal(fetchCalls, 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });

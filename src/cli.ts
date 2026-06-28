@@ -24,10 +24,14 @@ import {
   findInstalledPlugin,
   formatPluginIdForMessage,
   getPluginStatusSummary,
+  loadPluginCatalog,
   registerPluginManifest,
+  renderPluginCatalog,
   renderPluginInspect,
   renderPluginList,
   resolvePluginCacheDirectory,
+  resolvePluginCatalogPath,
+  resolvePluginInstallTarget,
   resolvePluginRegistryPath,
   setPluginEnabledState,
 } from "./plugins/index.js";
@@ -108,6 +112,7 @@ export async function runCli(
     cwd: io.cwd,
     registryPath: pluginRegistryPath,
   });
+  const pluginCatalogPath = resolvePluginCatalogPath({ env, cwd: io.cwd });
   const profileConfigPath = resolveProfileConfigPath({ env, cwd: io.cwd });
   const loadedConfigResult = loadConfigWithProfile({
     env,
@@ -142,7 +147,13 @@ export async function runCli(
   }
 
   if (first === "plugins" || first === "plugin") {
-    return runPluginsCommand(args.slice(1), io, pluginRegistryPath, pluginCacheDirectory);
+    return runPluginsCommand(
+      args.slice(1),
+      io,
+      pluginRegistryPath,
+      pluginCacheDirectory,
+      pluginCatalogPath,
+    );
   }
 
   const apiKeyError = validateApiKey(loadedConfig);
@@ -173,6 +184,7 @@ export async function runCli(
     return runChatCommand(env, loadedConfig, io, {
       mcpConfigPath,
       pluginCacheDirectory,
+      pluginCatalogPath,
       pluginRegistryPath,
       profileConfigPath,
     });
@@ -200,7 +212,7 @@ function helpText(): string {
     "  credits       Show live OpenRouter credits",
     "  generation <id>  Show OpenRouter generation metadata",
     "  profile       List, inspect, save, or delete local ORX profiles",
-    "  plugins       List, inspect, register/install, enable, or disable plugins",
+    "  plugins       List catalog entries, inspect, register/install, enable, or disable plugins",
     "  status        Show runtime status and config defaults",
     "  help          Show this help message",
     "  version       Show the current version",
@@ -224,6 +236,7 @@ function runChatCommand(
   paths?: {
     mcpConfigPath?: string;
     pluginCacheDirectory?: string;
+    pluginCatalogPath?: string;
     pluginRegistryPath?: string;
     profileConfigPath?: string;
   },
@@ -244,6 +257,7 @@ function runChatCommand(
     mcpAuditLogPath: env.ORX_MCP_AUDIT_PATH,
     mcpConfigPath: paths?.mcpConfigPath,
     pluginCacheDirectory: paths?.pluginCacheDirectory,
+    pluginCatalogPath: paths?.pluginCatalogPath,
     pluginRegistryPath: paths?.pluginRegistryPath,
     profileConfigPath: paths?.profileConfigPath,
     braveSearchApiKey: env.BRAVE_SEARCH_API_KEY,
@@ -409,6 +423,7 @@ function runPluginsCommand(
   io: CliIo,
   pluginRegistryPath: string,
   pluginCacheDirectory: string,
+  pluginCatalogPath: string,
 ): number {
   const subcommand = args[0]?.toLowerCase() ?? "list";
   const pluginId = args[1];
@@ -418,6 +433,11 @@ function runPluginsCommand(
       io.stdout,
       renderPluginList(getPluginStatusSummary({ registryPath: pluginRegistryPath })),
     );
+    return 0;
+  }
+
+  if (subcommand === "catalog" || subcommand === "search") {
+    writeLine(io.stdout, renderPluginCatalog(loadPluginCatalog({ catalogPath: pluginCatalogPath })));
     return 0;
   }
 
@@ -445,11 +465,18 @@ function runPluginsCommand(
     }
 
     try {
-      const result = registerPluginManifest(resolve(io.cwd, manifestPathText), {
+      const target = resolvePluginInstallTarget(manifestPathText, {
+        cwd: io.cwd,
+        catalogPath: pluginCatalogPath,
+      });
+      const result = registerPluginManifest(target.manifestPath, {
         registryPath: pluginRegistryPath,
         cacheDirectory: pluginCacheDirectory,
       });
-      writeLine(io.stdout, result.message);
+      const sourceMessage = target.catalogEntry
+        ? `Catalog entry ${target.catalogEntry.id} resolved to ${target.manifestPath}.\n`
+        : "";
+      writeLine(io.stdout, `${sourceMessage}${result.message}`);
       return 0;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -483,7 +510,7 @@ function runPluginsCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx plugins [list|inspect <id>|register <manifest-path>|install <manifest-path>|enable <id>|disable <id>]",
+    "Usage: orx plugins [catalog|list|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
   return 1;
 }
