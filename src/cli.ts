@@ -13,16 +13,21 @@ import {
   deleteSavedDelegationTeam,
   findSavedDelegationTeam,
   getDelegationTeamStatusSummary,
+  loadDelegationExecutionPolicy,
+  parseDelegationExecutionPolicySetArgs,
   renderDelegates,
+  renderDelegationExecutionPolicy,
   renderDelegationReadinessPlan,
   renderDelegationTeamInspect,
   renderDelegationTeamList,
   renderDelegationTeamUse,
   renderOrchestratorStatus,
   renderSessionlessDelegationRefusal,
+  resolveDelegationPolicyPath,
   resolveDelegationTeamRegistryPath,
   saveDelegationTeam,
   setOpenRouterController,
+  updateDelegationExecutionPolicy,
   validateDelegateName,
   validateOpenRouterModel,
   type DelegationState,
@@ -239,6 +244,7 @@ export async function runCli(
   const pluginCatalogPath = resolvePluginCatalogPath({ env, cwd: io.cwd });
   const profileConfigPath = resolveProfileConfigPath({ env, cwd: io.cwd });
   const delegationTeamConfigPath = resolveDelegationTeamRegistryPath({ env, cwd: io.cwd });
+  const delegationPolicyPath = resolveDelegationPolicyPath({ env, cwd: io.cwd });
   const loadedConfigResult = loadConfigWithProfile({
     env,
     cwd: io.cwd,
@@ -267,6 +273,7 @@ export async function runCli(
         pluginRegistryPath,
         profileConfigPath,
         delegationTeamConfigPath,
+        delegationPolicyPath,
         renderOptions: { stream: io.stdout, theme: loadedConfig.config.theme },
       }),
     );
@@ -344,11 +351,11 @@ export async function runCli(
   }
 
   if (first === "delegate") {
-    return runDelegateCommand(args.slice(1), io, delegationTeamConfigPath);
+    return runDelegateCommand(args.slice(1), io, delegationTeamConfigPath, delegationPolicyPath);
   }
 
   if (first === "delegates") {
-    return runDelegatesCommand(args.slice(1), io, delegationTeamConfigPath);
+    return runDelegatesCommand(args.slice(1), io, delegationTeamConfigPath, delegationPolicyPath);
   }
 
   const apiKeyError = validateApiKey(loadedConfig);
@@ -394,6 +401,7 @@ export async function runCli(
       pluginRegistryPath,
       profileConfigPath,
       delegationTeamConfigPath,
+      delegationPolicyPath,
     });
   }
 
@@ -426,8 +434,8 @@ function helpText(): string {
     "  tests         Discover or run native test targets",
     "  code          Render local code maps or symbol indexes",
     "  orchestrator  Show delegation scaffold readiness or refuse session-less changes",
-    "  delegate      Show/refuse inert delegate scaffold changes or manage saved teams",
-    "  delegates     Show inert delegate readiness or manage saved disabled teams",
+    "  delegate      Show/refuse inert delegate scaffold changes, policy, or saved teams",
+    "  delegates     Show inert delegate readiness, execution policy, or saved teams",
     "  status        Show runtime status and config defaults",
     "  help          Show this help message",
     "  version       Show the current version",
@@ -461,6 +469,7 @@ function runChatCommand(
     pluginRegistryPath?: string;
     profileConfigPath?: string;
     delegationTeamConfigPath?: string;
+    delegationPolicyPath?: string;
   },
 ): Promise<number> {
   return runChat({
@@ -488,6 +497,7 @@ function runChatCommand(
     pluginRegistryPath: paths?.pluginRegistryPath,
     profileConfigPath: paths?.profileConfigPath,
     delegationTeamConfigPath: paths?.delegationTeamConfigPath,
+    delegationPolicyPath: paths?.delegationPolicyPath,
     braveSearchApiKey: env.BRAVE_SEARCH_API_KEY,
     hookEnv: env,
   });
@@ -643,7 +653,12 @@ function runOrchestratorCommand(args: string[], io: CliIo): number {
   return 1;
 }
 
-function runDelegateCommand(args: string[], io: CliIo, delegationTeamConfigPath: string): number {
+function runDelegateCommand(
+  args: string[],
+  io: CliIo,
+  delegationTeamConfigPath: string,
+  delegationPolicyPath: string,
+): number {
   const subcommand = args[0]?.toLowerCase() ?? "status";
   const emptyState = createEmptyDelegationState();
 
@@ -685,6 +700,10 @@ function runDelegateCommand(args: string[], io: CliIo, delegationTeamConfigPath:
     return runDelegationTeamCommand(args.slice(1), io, delegationTeamConfigPath);
   }
 
+  if (subcommand === "policy" || subcommand === "policies" || subcommand === "execution-policy") {
+    return runDelegationPolicyCommand(args.slice(1), io, delegationPolicyPath);
+  }
+
   if (subcommand === "remove") {
     const name = args[1];
     if (!name || args.length !== 2) {
@@ -714,11 +733,16 @@ function runDelegateCommand(args: string[], io: CliIo, delegationTeamConfigPath:
     return 1;
   }
 
-  writeLine(io.stderr, "Usage: orx delegate [status|plan|add <name> openrouter <model>|remove <name>|clear|team]");
+  writeLine(io.stderr, "Usage: orx delegate [status|plan|add <name> openrouter <model>|remove <name>|clear|team|policy]");
   return 1;
 }
 
-function runDelegatesCommand(args: string[], io: CliIo, delegationTeamConfigPath: string): number {
+function runDelegatesCommand(
+  args: string[],
+  io: CliIo,
+  delegationTeamConfigPath: string,
+  delegationPolicyPath: string,
+): number {
   const subcommand = args[0]?.toLowerCase() ?? "list";
   const emptyState = createEmptyDelegationState();
 
@@ -742,13 +766,17 @@ function runDelegatesCommand(args: string[], io: CliIo, delegationTeamConfigPath
     return runDelegationTeamCommand(args.slice(1), io, delegationTeamConfigPath);
   }
 
+  if (subcommand === "policy" || subcommand === "policies" || subcommand === "execution-policy") {
+    return runDelegationPolicyCommand(args.slice(1), io, delegationPolicyPath);
+  }
+
   if (isDelegationTeamCommand(subcommand)) {
     return runDelegationTeamCommand(args, io, delegationTeamConfigPath);
   }
 
   writeLine(
     io.stderr,
-    "Usage: orx delegates [list|status|plan|teams|save <id> --controller <model> --delegate <name> <model>|use <id>|inspect <id>|delete <id>]",
+    "Usage: orx delegates [list|status|plan|policy|teams|save <id> --controller <model> --delegate <name> <model>|use <id>|inspect <id>|delete <id>]",
   );
   return 1;
 }
@@ -864,6 +892,55 @@ function runDelegationTeamCommand(
   writeLine(
     io.stderr,
     "Usage: orx delegates teams [list|save <id> --controller <model> --delegate <name> <model>|use <id>|inspect <id>|delete <id>]",
+  );
+  return 1;
+}
+
+function runDelegationPolicyCommand(
+  args: string[],
+  io: CliIo,
+  delegationPolicyPath: string,
+): number {
+  const subcommand = args[0]?.toLowerCase() ?? "status";
+
+  if (subcommand === "status" || subcommand === "show" || subcommand === "inspect") {
+    writeLine(
+      io.stdout,
+      renderDelegationExecutionPolicy(
+        loadDelegationExecutionPolicy({ configPath: delegationPolicyPath }),
+        delegationPolicyPath,
+      ),
+    );
+    return 0;
+  }
+
+  if (subcommand === "set" || subcommand === "update") {
+    try {
+      const result = updateDelegationExecutionPolicy(
+        parseDelegationExecutionPolicySetArgs(args.slice(1)),
+        { configPath: delegationPolicyPath },
+      );
+      writeLine(
+        io.stdout,
+        [
+          result.message,
+          "",
+          renderDelegationExecutionPolicy(
+            result.policy ?? loadDelegationExecutionPolicy({ configPath: delegationPolicyPath }),
+            delegationPolicyPath,
+          ),
+        ].join("\n"),
+      );
+      return 0;
+    } catch (error) {
+      writeLine(io.stderr, formatDelegationCliError(error));
+      return 1;
+    }
+  }
+
+  writeLine(
+    io.stderr,
+    "Usage: orx delegates policy [status|set --max-cost-usd <n> --timeout-ms <ms> --max-result-bytes <bytes> --max-concurrent <n> --credentials none --result-persistence none --result-merge manual_summary]",
   );
   return 1;
 }

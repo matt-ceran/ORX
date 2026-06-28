@@ -50,6 +50,8 @@ orx map src
 orx code symbols
 orx orchestrator
 orx delegates plan
+orx delegates policy
+orx delegates policy set --max-cost-usd 0.5 --timeout-ms 60000 --max-result-bytes 50000 --max-concurrent 2
 orx delegates teams
 orx delegates save review --controller openrouter/fusion --delegate reviewer anthropic/claude-sonnet-4.5
 OPENROUTER_API_KEY=... orx
@@ -95,6 +97,8 @@ orx symbols renderCode
 The code map scans a bounded local tree, skips generated/vendor directories such as `node_modules`, `.git`, `.orx`, `dist`, `build`, and `coverage`, summarizes languages, key files, package/config/source entrypoints, and top JavaScript/TypeScript source imports/exports, and redacts secret-like rendered paths or symbols. The symbol index reuses the same bounded scan to list exported JavaScript/TypeScript symbols with file paths and line numbers.
 
 Delegation/orchestration CLI commands are no-key and non-executing. `orx orchestrator`, `orx delegate`, and `orx delegates` render the inert scaffold status, readiness blockers, and disabled execution boundary. Mutating live-session forms such as `orx orchestrator openrouter <model>` and `orx delegate add <name> openrouter <model>` validate arguments, then refuse because the noninteractive CLI has no active chat session to mutate.
+
+Delegation execution policy is stored separately at `~/.orx/delegation/policy.json`; set `ORX_DELEGATION_POLICY_PATH` to isolate it. `orx delegates policy` shows the current disabled policy. `orx delegates policy set ...` can tune future execution limits such as max task cost, timeout, result bytes, max concurrent delegates, credential forwarding, result persistence, and result merge mode, but the only credential/persistence/merge modes currently accepted are the inert defaults. Setting policy does not call OpenRouter, spawn subprocesses, expose `delegate_task`, or enable delegation execution.
 
 Saved disabled delegation teams can be managed outside chat:
 
@@ -283,7 +287,7 @@ OPENROUTER_API_KEY=... ORX_MCP_BEARER_OPENROUTER=... npm run dev -- ask "Use Ope
 
 `--mcp-tools` exposes the same read-only non-billable, model-granted `mcp_call` bridge as `/mcp model enable` for that one `ask` invocation only.
 
-Delegation is currently a readiness scaffold, not an execution surface. Noninteractive commands such as `orx delegates plan` show the blockers and confirm that `delegate_task` is unavailable, no network calls are made, and no subprocess agents are spawned. Saved disabled teams can be created with explicit CLI args and loaded into an interactive chat with `/delegate team use <id>`. Live session-local scaffold mutations remain interactive through `/orchestrator`, `/delegate`, and `/delegate team`.
+Delegation is currently a readiness scaffold, not an execution surface. Noninteractive commands such as `orx delegates plan` show the blockers and confirm that `delegate_task` is unavailable, no network calls are made, and no subprocess agents are spawned. `orx delegates policy` and `/delegate policy` show or tune inert future execution limits without enabling execution. Saved disabled teams can be created with explicit CLI args and loaded into an interactive chat with `/delegate team use <id>`. Live session-local scaffold mutations remain interactive through `/orchestrator`, `/delegate`, and `/delegate team`.
 
 After the streamed assistant text, ORX prints a compact metadata summary when OpenRouter provides details such as requested/resolved model, generation id, token counts, reasoning tokens, and cost. Secrets are never printed.
 
@@ -317,8 +321,8 @@ The chat UI keeps in-session message history for the current process, streams as
 /rules [list|status|activate]
 /mcp [catalog|presets [inspect]|add-preset|list|inspect|auth|tools|enable|disable|add-profile|remove-profile|add-tool|remove-tool|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool|discover|remote-tools|import-remote-tools|call|model]
 /orchestrator [status|plan|openrouter <model>|clear]
-/delegate [help|status|plan|add|remove|clear|team]
-/delegates [list|status|plan|teams|save|use|inspect|delete]
+/delegate [help|status|plan|add|remove|clear|team|policy]
+/delegates [list|status|plan|policy|teams|save|use|inspect|delete]
 /models
 /clear
 /new

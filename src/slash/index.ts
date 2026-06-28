@@ -15,6 +15,7 @@ import {
 } from "../constants.js";
 import {
   DelegationStateError,
+  DelegationPolicyError,
   addOpenRouterDelegate,
   clearController,
   clearDelegates,
@@ -22,8 +23,11 @@ import {
   deleteSavedDelegationTeam,
   findSavedDelegationTeam,
   getDelegationTeamStatusSummary,
+  loadDelegationExecutionPolicy,
+  parseDelegationExecutionPolicySetArgs,
   removeDelegate,
   renderDelegates,
+  renderDelegationExecutionPolicy,
   renderDelegationReadinessPlan,
   renderDelegationTeamInspect,
   renderDelegationTeamList,
@@ -31,6 +35,7 @@ import {
   renderOrchestratorStatus,
   saveDelegationTeam,
   setOpenRouterController,
+  updateDelegationExecutionPolicy,
   type DelegationState,
 } from "../delegation/index.js";
 import {
@@ -307,6 +312,7 @@ export interface SlashCommandContext {
   pluginRegistryPath?: string;
   profileConfigPath?: string;
   delegationTeamConfigPath?: string;
+  delegationPolicyPath?: string;
   recordActivatedPrompt?: (prompt: PluginPromptActivationProvenance) => void;
   recordActivatedRule?: (rule: PluginRuleActivationProvenance) => void;
   recordActivatedSkill?: (skill: PluginSkillActivationProvenance) => void;
@@ -458,12 +464,13 @@ const PROFILE_SUBCOMMAND_COMPLETIONS = [
   "delete",
 ] as const;
 const ORCHESTRATOR_SUBCOMMAND_COMPLETIONS = ["status", "plan", "openrouter", "clear"] as const;
-const DELEGATE_SUBCOMMAND_COMPLETIONS = ["help", "status", "plan", "add", "remove", "clear", "team"] as const;
+const DELEGATE_SUBCOMMAND_COMPLETIONS = ["help", "status", "plan", "add", "remove", "clear", "team", "policy"] as const;
 const DELEGATE_ADAPTER_COMPLETIONS = ["openrouter"] as const;
 const DELEGATES_SUBCOMMAND_COMPLETIONS = [
   "list",
   "status",
   "plan",
+  "policy",
   "teams",
   "save",
   "use",
@@ -477,6 +484,10 @@ const DELEGATION_TEAM_SUBCOMMAND_COMPLETIONS = [
   "use",
   "inspect",
   "delete",
+] as const;
+const DELEGATION_POLICY_SUBCOMMAND_COMPLETIONS = [
+  "status",
+  "set",
 ] as const;
 const RESUME_SELECTOR_COMPLETIONS = ["latest"] as const;
 const COMMON_GROUP_ORDER: SlashCommandGroup[] = [
@@ -1105,7 +1116,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/delegate": {
-    usage: "/delegate [help|status|plan|add|remove|clear|team]",
+    usage: "/delegate [help|status|plan|add|remove|clear|team|policy]",
     description: "Register inert OpenRouter delegates or manage saved teams",
     group: "Orchestration",
     tier: "advanced",
@@ -1115,7 +1126,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/delegates": {
-    usage: "/delegates [list|status|plan|teams|save|use|inspect|delete]",
+    usage: "/delegates [list|status|plan|policy|teams|save|use|inspect|delete]",
     description: "List inert delegates or manage saved disabled teams",
     group: "Orchestration",
     tier: "advanced",
@@ -1563,6 +1574,9 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       if ((firstArg === "team" || firstArg === "teams") && argIndex === 1) {
         return [...DELEGATION_TEAM_SUBCOMMAND_COMPLETIONS];
       }
+      if (firstArg === "policy" && argIndex === 1) {
+        return [...DELEGATION_POLICY_SUBCOMMAND_COMPLETIONS];
+      }
       if (firstArg === "add" && argIndex === 2) {
         return [...DELEGATE_ADAPTER_COMPLETIONS];
       }
@@ -1576,6 +1590,9 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       }
       if ((firstArg === "teams" || firstArg === "team") && argIndex === 1) {
         return [...DELEGATION_TEAM_SUBCOMMAND_COMPLETIONS];
+      }
+      if (firstArg === "policy" && argIndex === 1) {
+        return [...DELEGATION_POLICY_SUBCOMMAND_COMPLETIONS];
       }
       return [];
     case "/resume":
@@ -1763,6 +1780,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       pluginRegistryPath: context.pluginRegistryPath,
       profileConfigPath: context.profileConfigPath,
       delegationTeamConfigPath: context.delegationTeamConfigPath,
+      delegationPolicyPath: context.delegationPolicyPath,
       delegationState: getDelegationState(context),
       renderOptions: { stream: context.io.stdout, theme: context.getConfig().theme },
     }),
@@ -2800,6 +2818,11 @@ function handleDelegatesCommand(command: SlashCommand, context: SlashCommandCont
     return;
   }
 
+  if (subcommand === "policy" || subcommand === "policies" || subcommand === "execution-policy") {
+    handleDelegationPolicySlashCommand(command.args.slice(1), context, "/delegates policy");
+    return;
+  }
+
   if (subcommand === "teams" || subcommand === "team" || subcommand === "saved") {
     handleDelegationTeamSlashCommand(teamArgs, context);
     return;
@@ -2812,7 +2835,7 @@ function handleDelegatesCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /delegates [list|status|plan|teams|save <id>|use <id>|inspect <id>|delete <id>]",
+    "Usage: /delegates [list|status|plan|policy|teams|save <id>|use <id>|inspect <id>|delete <id>]",
   );
 
   function handleDelegationTeamSlashCommand(
@@ -2939,6 +2962,8 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
         "  /delegate add <name> openrouter <model>",
         "  /delegate remove <name>",
         "  /delegate clear",
+        "  /delegate policy",
+        "  /delegate policy set --max-cost-usd <n> --timeout-ms <ms>",
         "  /delegate team save <id>",
         "  /delegate team use <id>",
         "  /delegates",
@@ -2966,6 +2991,11 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
       },
       context,
     );
+    return;
+  }
+
+  if (subcommand === "policy" || subcommand === "policies" || subcommand === "execution-policy") {
+    handleDelegationPolicySlashCommand(command.args.slice(1), context, "/delegate policy");
     return;
   }
 
@@ -3028,7 +3058,56 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
     return;
   }
 
-  writeLine(context.io.stderr, "Usage: /delegate [help|status|plan|add|remove|clear|team]");
+  writeLine(context.io.stderr, "Usage: /delegate [help|status|plan|add|remove|clear|team|policy]");
+}
+
+function handleDelegationPolicySlashCommand(
+  args: string[],
+  context: SlashCommandContext,
+  usagePrefix: string,
+): void {
+  const subcommand = args[0]?.toLowerCase() ?? "status";
+
+  if (subcommand === "status" || subcommand === "show" || subcommand === "inspect") {
+    writeLine(
+      context.io.stdout,
+      renderDelegationExecutionPolicy(
+        loadDelegationExecutionPolicy({ configPath: context.delegationPolicyPath }),
+        context.delegationPolicyPath,
+      ),
+    );
+    return;
+  }
+
+  if (subcommand === "set" || subcommand === "update") {
+    try {
+      const result = updateDelegationExecutionPolicy(
+        parseDelegationExecutionPolicySetArgs(args.slice(1)),
+        { configPath: context.delegationPolicyPath },
+      );
+      writeLine(
+        context.io.stdout,
+        [
+          result.message,
+          "",
+          renderDelegationExecutionPolicy(
+            result.policy ?? loadDelegationExecutionPolicy({
+              configPath: context.delegationPolicyPath,
+            }),
+            context.delegationPolicyPath,
+          ),
+        ].join("\n"),
+      );
+    } catch (error) {
+      writeLine(context.io.stderr, formatDelegationError(error));
+    }
+    return;
+  }
+
+  writeLine(
+    context.io.stderr,
+    `Usage: ${usagePrefix} [status|set --max-cost-usd <n> --timeout-ms <ms> --max-result-bytes <bytes> --max-concurrent <n> --credentials none --result-persistence none --result-merge manual_summary]`,
+  );
 }
 
 async function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
@@ -4185,7 +4264,10 @@ function setDelegationState(context: SlashCommandContext, state: DelegationState
 }
 
 function formatDelegationError(error: unknown): string {
-  if (error instanceof DelegationStateError) {
+  if (error instanceof DelegationStateError || error instanceof DelegationPolicyError) {
+    return error.message;
+  }
+  if (error instanceof Error) {
     return error.message;
   }
   return "Unable to update delegation state.";

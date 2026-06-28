@@ -4,6 +4,7 @@ import { DEFAULT_THEME } from "./constants.js";
 import {
   getDelegationStatusSummary,
   getDelegationTeamStatusSummary,
+  loadDelegationExecutionPolicy,
   type DelegationState,
 } from "./delegation/index.js";
 import { getMcpStatusSummary, formatMcpProfile } from "./mcp/index.js";
@@ -34,6 +35,7 @@ export interface StatusOptions {
   pluginRegistryPath?: string;
   profileConfigPath?: string;
   delegationTeamConfigPath?: string;
+  delegationPolicyPath?: string;
   delegationState?: DelegationState;
   renderOptions?: TerminalRenderOptions;
 }
@@ -51,6 +53,7 @@ export function formatStatus({
   pluginRegistryPath,
   profileConfigPath,
   delegationTeamConfigPath,
+  delegationPolicyPath,
   delegationState,
   renderOptions,
 }: StatusOptions): string {
@@ -81,6 +84,9 @@ export function formatStatus({
   const profileStatus = getProfileStatusSummary({ configPath: profileConfigPath });
   const delegationTeamStatus = getDelegationTeamStatusSummary({
     configPath: delegationTeamConfigPath,
+  });
+  const delegationPolicy = loadDelegationExecutionPolicy({
+    configPath: delegationPolicyPath,
   });
   const testStatus = getTestAdapterSummary(cwd);
   const delegationStatus =
@@ -178,6 +184,15 @@ export function formatStatus({
     `profile_count: ${profileStatus.count}`,
     `delegation_team_registry_path: ${delegationTeamConfigPath ?? "default"}`,
     `delegation_team_count: ${delegationTeamStatus.count}`,
+    `delegation_policy_path: ${delegationPolicyPath ?? "default"}`,
+    "delegation_policy_execution: disabled",
+    `delegation_policy_max_task_cost_usd: ${delegationPolicy.maxTaskCostUsd}`,
+    `delegation_policy_timeout_ms: ${delegationPolicy.taskTimeoutMs}`,
+    `delegation_policy_max_result_bytes: ${delegationPolicy.maxResultBytes}`,
+    `delegation_policy_max_concurrent_delegates: ${delegationPolicy.maxConcurrentDelegates}`,
+    `delegation_policy_credential_forwarding: ${delegationPolicy.credentialForwarding}`,
+    `delegation_policy_result_persistence: ${delegationPolicy.resultPersistence}`,
+    `delegation_policy_result_merge: ${delegationPolicy.resultMerge}`,
     delegationStatus ? `orchestration_controller: ${delegationStatus.controller}` : undefined,
     delegationStatus ? "orchestration_execution: disabled" : undefined,
     delegationStatus ? `delegate_count: ${delegationStatus.delegateCount}` : undefined,

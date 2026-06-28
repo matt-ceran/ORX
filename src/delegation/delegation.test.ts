@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   chmodSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -20,22 +21,29 @@ import {
   createEmptyDelegationState,
   deleteSavedDelegationTeam,
   findSavedDelegationTeam,
+  loadDelegationExecutionPolicy,
   getDelegationTeamStatusSummary,
   loadDelegationTeamRegistry,
   getDelegationStatusSummary,
   normalizeDelegationState,
+  parseDelegationExecutionPolicySetArgs,
   removeDelegate,
   renderDelegates,
+  renderDelegationExecutionPolicy,
   renderDelegationReadinessPlan,
   renderDelegationTeamInspect,
   renderDelegationTeamList,
   renderDelegationTeamUse,
   renderOrchestratorStatus,
+  resolveDelegationPolicyPath,
   renderSessionlessDelegationRefusal,
   resolveDelegationTeamRegistryPath,
+  saveDelegationExecutionPolicy,
   saveDelegationTeam,
   setOpenRouterController,
+  updateDelegationExecutionPolicy,
   validateDelegateName,
+  validateDelegationPolicyPatch,
   validateDelegationTeamId,
   validateOpenRouterModel,
 } from "./index.js";
@@ -120,6 +128,194 @@ test("controller and delegates mutate only local inert state", () => {
 
   assert.equal(clearController(removed.state).controller, undefined);
   assert.deepEqual(clearDelegates(removed.state).delegates, []);
+});
+
+test("delegation execution policy defaults, renders, and resolves isolated paths", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-policy-path-"));
+  const configPath = join(cwd, "policy.json");
+
+  try {
+    assert.equal(
+      resolveDelegationPolicyPath({
+        env: { ORX_DELEGATION_POLICY_PATH: "policy.json" },
+        cwd,
+      }),
+      configPath,
+    );
+
+    const policy = loadDelegationExecutionPolicy({ configPath });
+    assert.equal(policy.executionEnabled, false);
+    assert.equal(policy.maxTaskCostUsd, 0.25);
+    assert.equal(policy.taskTimeoutMs, 120_000);
+    assert.equal(policy.maxResultBytes, 60_000);
+    assert.equal(policy.maxConcurrentDelegates, 1);
+    assert.equal(policy.credentialForwarding, "none");
+    assert.equal(policy.resultPersistence, "none");
+    assert.equal(policy.resultMerge, "manual_summary");
+
+    const rendered = renderDelegationExecutionPolicy(policy, configPath);
+    assert.match(rendered, /ORX delegation execution policy:/);
+    assert.match(rendered, /execution: disabled/);
+    assert.match(rendered, /delegate_task: unavailable/);
+    assert.match(rendered, /network_calls: none/);
+    assert.match(rendered, /subprocesses: none/);
+    assert.match(rendered, /enforcement: pending_delegate_task_adapter/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegation execution policy saves private inert limits and validates patches", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-policy-"));
+  const configPath = join(cwd, "delegation", "policy.json");
+
+  try {
+    const parsed = parseDelegationExecutionPolicySetArgs([
+      "--max-cost-usd",
+      "0.333333",
+      "--timeout-ms",
+      "60000",
+      "--max-result-bytes",
+      "50000",
+      "--max-concurrent",
+      "2",
+      "--credentials",
+      "none",
+      "--result-persistence",
+      "none",
+      "--result-merge",
+      "manual_summary",
+    ]);
+    assert.deepEqual(parsed, {
+      maxTaskCostUsd: 0.3333,
+      taskTimeoutMs: 60000,
+      maxResultBytes: 50000,
+      maxConcurrentDelegates: 2,
+      credentialForwarding: "none",
+      resultPersistence: "none",
+      resultMerge: "manual_summary",
+    });
+
+    const result = updateDelegationExecutionPolicy(parsed, {
+      configPath,
+      now: () => new Date("2026-06-28T12:00:00.000Z"),
+    });
+    assert.equal(result.ok, true);
+    assert.match(result.message, /Execution remains disabled/);
+    assert.equal(statSync(join(cwd, "delegation")).mode & 0o777, 0o700);
+    assert.equal(statSync(configPath).mode & 0o777, 0o600);
+    assert.doesNotMatch(readFileSync(configPath, "utf8"), /OPENROUTER_API_KEY|sk-or-v1/);
+
+    const loaded = loadDelegationExecutionPolicy({ configPath });
+    assert.equal(loaded.executionEnabled, false);
+    assert.equal(loaded.maxTaskCostUsd, 0.3333);
+    assert.equal(loaded.taskTimeoutMs, 60000);
+    assert.equal(loaded.maxResultBytes, 50000);
+    assert.equal(loaded.maxConcurrentDelegates, 2);
+    assert.equal(loaded.updatedAt, "2026-06-28T12:00:00.000Z");
+
+    assert.throws(
+      () => validateDelegationPolicyPatch({ maxTaskCostUsd: 101 }),
+      /between 0 and 100/,
+    );
+    assert.throws(
+      () => parseDelegationExecutionPolicySetArgs(["--timeout-ms", "1.5"]),
+      /Invalid integer/,
+    );
+    assert.throws(
+      () => parseDelegationExecutionPolicySetArgs(["--credentials", "env"]),
+      /--credentials must be none/,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegation execution policy sanitizes malformed persisted values and refuses symlink writes", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-policy-symlink-"));
+  const targetPath = join(cwd, "target.json");
+  const configPath = join(cwd, "policy.json");
+
+  try {
+    saveDelegationExecutionPolicy(
+      {
+        version: 1,
+        executionEnabled: false,
+        maxTaskCostUsd: 1,
+        taskTimeoutMs: 10_000,
+        maxResultBytes: 20_000,
+        maxConcurrentDelegates: 2,
+        credentialForwarding: "none",
+        resultPersistence: "none",
+        resultMerge: "manual_summary",
+      },
+      { configPath: targetPath },
+    );
+    chmodSync(targetPath, 0o644);
+    symlinkSync(targetPath, configPath);
+
+    assert.equal(loadDelegationExecutionPolicy({ configPath }).maxTaskCostUsd, 0.25);
+    assert.equal(statSync(targetPath).mode & 0o777, 0o644);
+
+    assert.throws(
+      () => updateDelegationExecutionPolicy({ maxTaskCostUsd: 0.5 }, { configPath }),
+      /regular file|ELOOP/,
+    );
+    assert.equal(statSync(targetPath).mode & 0o777, 0o644);
+
+    writeFileSync(
+      targetPath,
+      JSON.stringify({
+        version: 1,
+        executionEnabled: true,
+        maxTaskCostUsd: "1",
+        taskTimeoutMs: 10,
+        maxResultBytes: 5_000_000,
+        maxConcurrentDelegates: 99,
+        credentialForwarding: "env",
+        resultPersistence: "disk",
+        resultMerge: "auto",
+        updatedAt: "not a date",
+      }),
+    );
+    rmSync(configPath);
+
+    const sanitized = loadDelegationExecutionPolicy({ configPath: targetPath });
+    assert.equal(sanitized.executionEnabled, false);
+    assert.equal(sanitized.maxTaskCostUsd, 0.25);
+    assert.equal(sanitized.taskTimeoutMs, 120_000);
+    assert.equal(sanitized.maxResultBytes, 60_000);
+    assert.equal(sanitized.maxConcurrentDelegates, 1);
+    assert.equal(sanitized.credentialForwarding, "none");
+    assert.equal(sanitized.resultPersistence, "none");
+    assert.equal(sanitized.resultMerge, "manual_summary");
+    assert.equal(sanitized.updatedAt, undefined);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegation execution policy refuses symlink parent directories", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-policy-parent-symlink-"));
+  const targetDir = join(cwd, "target");
+  const linkDir = join(cwd, "link");
+  const configPath = join(linkDir, "policy.json");
+
+  try {
+    mkdirSync(targetDir);
+    symlinkSync(targetDir, linkDir, "dir");
+
+    assert.throws(
+      () => updateDelegationExecutionPolicy({ maxTaskCostUsd: 0.5 }, { configPath }),
+      /parent path must not contain symlinks/,
+    );
+    assert.throws(
+      () => statSync(join(targetDir, "policy.json")),
+      /ENOENT/,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("delegation validation rejects unsafe names, control characters, and secrets", () => {

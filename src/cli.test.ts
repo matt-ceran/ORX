@@ -31,8 +31,8 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
     assert.match(help.stdout(), /code\s+Render local code maps or symbol indexes/);
     assert.match(help.stdout(), /orchestrator\s+Show delegation scaffold readiness/);
-    assert.match(help.stdout(), /delegate\s+Show\/refuse inert delegate scaffold changes or manage saved teams/);
-    assert.match(help.stdout(), /delegates\s+Show inert delegate readiness or manage saved disabled teams/);
+    assert.match(help.stdout(), /delegate\s+Show\/refuse inert delegate scaffold changes, policy, or saved teams/);
+    assert.match(help.stdout(), /delegates\s+Show inert delegate readiness, execution policy, or saved teams/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
   }
@@ -52,6 +52,7 @@ test("help, version, and status work without an API key", async () => {
           ORX_PLUGIN_BINS_CONFIG_PATH: join(cwd, "plugins", "bins.json"),
           ORX_PLUGIN_HOOKS_CONFIG_PATH: join(cwd, "plugins", "hooks.json"),
           ORX_PROFILE_CONFIG_PATH: join(cwd, "profiles.json"),
+          ORX_DELEGATION_POLICY_PATH: join(cwd, "delegation", "policy.json"),
         },
         status.io,
       ),
@@ -94,6 +95,10 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /test_frameworks: node=0, vitest=0, jest=0, playwright=0, unknown=0/);
     assert.match(status.stdout(), /active_profile: none/);
     assert.match(status.stdout(), /profile_count: 0/);
+    assert.match(status.stdout(), /delegation_policy_execution: disabled/);
+    assert.match(status.stdout(), /delegation_policy_max_task_cost_usd: 0\.25/);
+    assert.match(status.stdout(), /delegation_policy_timeout_ms: 120000/);
+    assert.match(status.stdout(), /delegation_policy_result_merge: manual_summary/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -167,6 +172,86 @@ test("cli delegation commands render readiness and refuse session-less mutation 
   );
   assert.equal(unsafe.stdout(), "");
   assert.match(unsafe.stderr(), /Delegate name must match/);
+});
+
+test("cli delegation policy commands persist inert limits without an API key or network", async () => {
+  let fetchCalls = 0;
+  const cwd = createTempDir();
+  const policyPath = join(cwd, "delegation", "policy.json");
+  const env = { ORX_DELEGATION_POLICY_PATH: policyPath };
+  const fetch = async (): Promise<Response> => {
+    fetchCalls += 1;
+    throw new Error("delegation policy CLI must not make network calls");
+  };
+
+  try {
+    const initial = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "delegate", "policy"], env, initial.io), 0);
+    assert.match(initial.stdout(), /ORX delegation execution policy:/);
+    assert.match(initial.stdout(), /policy_path: .*policy\.json/);
+    assert.match(initial.stdout(), /execution: disabled/);
+    assert.match(initial.stdout(), /delegate_task: unavailable/);
+    assert.match(initial.stdout(), /max_task_cost_usd: 0\.25/);
+    assert.equal(initial.stderr(), "");
+
+    const updated = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(
+        [
+          "node",
+          "cli",
+          "delegates",
+          "policy",
+          "set",
+          "--max-cost-usd",
+          "0.5",
+          "--timeout-ms",
+          "60000",
+          "--max-result-bytes",
+          "50000",
+          "--max-concurrent",
+          "2",
+          "--credentials",
+          "none",
+          "--result-persistence",
+          "none",
+          "--result-merge",
+          "manual_summary",
+        ],
+        env,
+        updated.io,
+      ),
+      0,
+    );
+    assert.match(updated.stdout(), /Delegation execution policy saved/);
+    assert.match(updated.stdout(), /max_task_cost_usd: 0\.5/);
+    assert.match(updated.stdout(), /task_timeout_ms: 60000/);
+    assert.match(updated.stdout(), /max_result_bytes: 50000/);
+    assert.match(updated.stdout(), /max_concurrent_delegates: 2/);
+    assert.equal(statSync(join(cwd, "delegation")).mode & 0o777, 0o700);
+    assert.equal(statSync(policyPath).mode & 0o777, 0o600);
+    assert.doesNotMatch(readFileSync(policyPath, "utf8"), /test-key|OPENROUTER_API_KEY/);
+
+    const invalid = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "delegate", "policy", "set", "--credentials", "env"],
+        env,
+        invalid.io,
+      ),
+      1,
+    );
+    assert.match(invalid.stderr(), /--credentials must be none/);
+
+    const status = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "status"], env, status.io), 0);
+    assert.match(status.stdout(), /delegation_policy_path: .*policy\.json/);
+    assert.match(status.stdout(), /delegation_policy_max_task_cost_usd: 0\.5/);
+    assert.match(status.stdout(), /delegation_policy_max_concurrent_delegates: 2/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("cli delegation team commands manage a private disabled registry without an API key", async () => {

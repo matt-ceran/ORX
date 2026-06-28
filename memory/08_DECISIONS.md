@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Delegation Execution Policy Is Stored Before Execution Exists
+
+Decision: ORX may persist a private local delegation execution policy at `~/.orx/delegation/policy.json`, with `ORX_DELEGATION_POLICY_PATH` for isolated runs, before adding any real delegate runtime. The policy may store future enforcement limits for max task cost, task timeout, result byte cap, max concurrent delegates, credential forwarding, result persistence, and result merge mode. Execution must remain disabled, `delegate_task` must remain unavailable, credential forwarding must stay `none`, result persistence must stay `none`, and result merge must stay `manual_summary` until a live adapter/enforcement slice explicitly changes those boundaries.
+
+Reasoning: A comfortable delegation CLI needs editable limits before the first adapter, but writing a policy file must not imply that delegated execution is safe or active. Keeping the policy local, private, symlink-resistant, and inert gives the future OpenRouter delegate adapter a concrete contract while preserving the existing no-network/no-subprocess/model-no-tool boundary.
+
 ## 2026-06-28: Save Delegation Teams As Disabled Local Metadata Only
 
 Decision: ORX saved delegation teams should be private local operator state containing only sanitized disabled controller/delegate metadata and minimal timestamps/display metadata. Loading a team in chat may update session-local scaffold metadata, but it must not enable execution, register a model-visible `delegate_task`, call OpenRouter delegates, spawn subprocesses, persist delegate outputs, or define result merge semantics.

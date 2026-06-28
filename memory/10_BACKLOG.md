@@ -100,11 +100,12 @@ Completed:
 - Add Phase 11 orchestration/delegation command scaffold: inert session-local OpenRouter controller/delegate metadata, `/orchestrator`, `/delegate`, `/delegates`, interactive `/status` visibility, session persistence/resume, count-bounded sanitized state, and no `delegate_task` execution/tool exposure.
 - Add Phase 11 delegation readiness parity: `orx orchestrator`, `orx delegate`, `orx delegates`, and read-only slash `plan/status` variants render scaffold status/blockers; mutating CLI forms validate arguments then refuse because CLI has no delegation session store, with execution/network/subprocess/model-visible `delegate_task` still unavailable.
 - Add Phase 11 saved disabled delegation teams: private `~/.orx/delegation/teams.json` registry with `ORX_DELEGATION_TEAMS_PATH`, `orx delegates teams|save|inspect|use|delete`, `orx delegate team ...`, `/delegates teams|save|inspect|use|delete`, `/delegate team ...`, slash load into session-local inert state, and no execution/network/subprocess/model-visible `delegate_task`.
+- Add Phase 11 inert delegation execution policy: private `~/.orx/delegation/policy.json` storage with `ORX_DELEGATION_POLICY_PATH`, `orx delegate policy`, `orx delegates policy`, `/delegate policy`, `/delegates policy`, policy limits for future cost/timeout/result bytes/concurrency, fixed inert credential/result modes, `/status` visibility, and no execution/network/subprocess/model-visible `delegate_task`.
 
 Next:
 
 - Add managed OAuth/provider auth setup beyond the current env-only MCP bearer readiness path.
-- Add OpenRouter delegate adapter and ORX-owned `delegate_task` tool only after budget, timeout, credential, result-truncation, result-merge, and execution policy is designed.
+- Add OpenRouter delegate adapter and ORX-owned `delegate_task` tool only after live policy enforcement, prompt/result envelopes, audit logging, and model-visible result merge boundaries are designed.
 - Add secret redaction and minimal env forwarding for future stdio/child-process MCP runners if ORX adds them beyond the current remote HTTP path.
 
 ## P4
@@ -172,11 +173,11 @@ Next:
 - Add cloud/devops profiles only as explicit opt-ins with account/project/region visible in `/status`.
 - Add research profiles: `research-web`, `research-crawl`, `research-scholar`, `research-docs`, `research-browser`, `research-rag`, and `research-memory`.
 - Extend citation support later with style selection and richer paper/PDF identifiers after scholarly/document source adapters exist.
-- Extend saved orchestration teams with execution policy only after budget, timeout, credential, result-truncation, result-merge, and model-visible `delegate_task` boundaries are designed.
+- Extend saved orchestration teams with active execution policy selection only after model-visible `delegate_task` boundaries, live policy enforcement, result merge, and audit semantics are implemented.
 - Add OpenRouter delegate adapter.
 - Add Codex delegate adapter.
 - Add Devin delegate adapter through MCP/API when credentials are configured.
-- Add budget, permission, timeout, and result-truncation controls for delegated tasks.
+- Add live budget, permission, timeout, and result-truncation enforcement for delegated tasks.
 - Add tests for slash parsing, config loading, and tool execution.
 - Completed Phase 12 UX Recovery Slice 4 grouped command help: common/advanced tiers, filtered help, palette renderer, aliases `/m` `/s` `/q` `/h`, and concise unknown-command guidance.
 - Completed Phase 12 UX Recovery Slice 3 first TTY screen pass: pure `src/tui/screen.ts` renderer, compact bottom status/composer, long-footer suppression in TTY mode, width-aware truncation tests, and readline/NO_COLOR separation.

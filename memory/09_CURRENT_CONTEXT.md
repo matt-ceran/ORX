@@ -49,6 +49,7 @@ Urgent UX recovery additions from user testing:
 - Dependency-free local code maps and symbol indexes are implemented through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `/map`, `/code map`, `/code symbols`, and `/symbols`; output is local-only/no-key and includes bounded language, key-file, entrypoint, JavaScript/TypeScript import/export, and exported-symbol summaries.
 - Delegation readiness rendering is implemented through noninteractive `orx orchestrator`, `orx delegate`, `orx delegates`, and read-only slash `plan/status` variants. CLI status/readiness is session-less and no-key; mutating CLI forms validate arguments then refuse, while slash mutations remain session-local only. Execution/network/subprocess/model-visible `delegate_task` exposure remain unavailable.
 - Saved disabled delegation teams are implemented through private local `~/.orx/delegation/teams.json` storage with `ORX_DELEGATION_TEAMS_PATH`, plus `orx delegates teams|save|inspect|use|delete`, `/delegates teams|save|inspect|use|delete`, and `/delegate team ...`. Saved records contain only normalized disabled controller/delegates plus metadata; CLI `use` is read-only because there is no active chat session, while slash `use` loads inert metadata into the current session.
+- Inert delegation execution policy storage is implemented through private local `~/.orx/delegation/policy.json` storage with `ORX_DELEGATION_POLICY_PATH`, plus `orx delegate policy`, `orx delegates policy`, `/delegate policy`, and `/delegates policy`. Policy can tune future max task cost, timeout, result byte cap, and max concurrent delegates, while credential forwarding/result persistence/result merge are fixed to inert modes and execution remains disabled.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -83,6 +84,16 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented inert delegation execution policy storage:
+
+- Added private local policy storage at `~/.orx/delegation/policy.json`, with `ORX_DELEGATION_POLICY_PATH` for tests and isolated runs, `0600` files, `0700` default/private parents, bounded file reads, malformed policy fail-closed defaults, and symlink path refusal.
+- Added policy fields for future execution enforcement: max task cost USD, task timeout ms, max result bytes, max concurrent delegates, credential forwarding, result persistence, and result merge. Execution is always forced disabled; credential forwarding is currently fixed to `none`, result persistence to `none`, and result merge to `manual_summary`.
+- Added CLI management through `orx delegate policy` / `orx delegates policy` and `policy set --max-cost-usd <n> --timeout-ms <ms> --max-result-bytes <bytes> --max-concurrent <n> --credentials none --result-persistence none --result-merge manual_summary`.
+- Added matching slash commands through `/delegate policy` and `/delegates policy`, including deterministic Tab completion and `/status` visibility for policy path and limits.
+- Execution remains unavailable: no OpenRouter delegate calls, subprocess agents, model-visible `delegate_task`, delegate result persistence, or automatic result merge semantics were added.
+- Verification: `npm run typecheck`, `npm run build`, `git diff --check`, focused source and build-backed delegation/CLI/slash tests pass with 140 tests, full build-backed `npm test` passes with 443 tests, built CLI dogfood for policy status/set/status visibility succeeds against an isolated `ORX_DELEGATION_POLICY_PATH`, symlink-parent dogfood refuses without writing through the link, and independent verifier recheck passes after fixing parent-symlink and stale usage findings.
+- Next likely delegation work: wire the OpenRouter delegate adapter and ORX-owned `delegate_task` only after designing live enforcement around this policy, prompt/result envelopes, audit logs, and model-visible result merge boundaries.
 
 Implemented bounded saved delegation teams for the inert Phase 11 scaffold:
 

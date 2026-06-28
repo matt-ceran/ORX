@@ -112,6 +112,7 @@ export interface ChatOptions {
   pluginRegistryPath?: string;
   profileConfigPath?: string;
   delegationTeamConfigPath?: string;
+  delegationPolicyPath?: string;
   braveSearchApiKey?: string;
   hookEnv?: NodeJS.ProcessEnv;
 }
@@ -141,6 +142,7 @@ export async function runChat({
   pluginRegistryPath,
   profileConfigPath,
   delegationTeamConfigPath,
+  delegationPolicyPath,
   braveSearchApiKey = process.env.BRAVE_SEARCH_API_KEY,
   hookEnv = process.env,
 }: ChatOptions): Promise<number> {
@@ -282,6 +284,7 @@ export async function runChat({
           pluginRegistryPath,
           profileConfigPath,
           delegationTeamConfigPath,
+          delegationPolicyPath,
           recordActivatedSkill: (skill) => {
             activatedSkills = upsertActivatedSkill(activatedSkills, skill);
           },

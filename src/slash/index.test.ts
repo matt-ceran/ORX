@@ -107,8 +107,8 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/cite <source-id>/);
   assert.match(output, /\/bibliography/);
   assert.match(output, /\/orchestrator \[status\|plan\|openrouter <model>\|clear\]/);
-  assert.match(output, /\/delegate \[help\|status\|plan\|add\|remove\|clear\|team\]/);
-  assert.match(output, /\/delegates \[list\|status\|plan\|teams\|save\|use\|inspect\|delete\]/);
+  assert.match(output, /\/delegate \[help\|status\|plan\|add\|remove\|clear\|team\|policy\]/);
+  assert.match(output, /\/delegates \[list\|status\|plan\|policy\|teams\|save\|use\|inspect\|delete\]/);
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
@@ -209,17 +209,19 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/plugins r"), [["review ", "register "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/plugins d"), [["doctor ", "disable "], "d"]);
   assert.deepEqual(completeSlashCommandLine("/orchestrator p"), [["plan "], "p"]);
-  assert.deepEqual(completeSlashCommandLine("/delegate p"), [["plan "], "p"]);
+  assert.deepEqual(completeSlashCommandLine("/delegate p"), [["plan ", "policy "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/delegate team s"), [
     ["status ", "save "],
     "s",
   ]);
-  assert.deepEqual(completeSlashCommandLine("/delegates p"), [["plan "], "p"]);
+  assert.deepEqual(completeSlashCommandLine("/delegate policy s"), [["status ", "set "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/delegates p"), [["plan ", "policy "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/delegates t"), [["teams "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/delegates teams s"), [
     ["status ", "save "],
     "s",
   ]);
+  assert.deepEqual(completeSlashCommandLine("/delegates policy s"), [["status ", "set "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/plugins catalog check-"), [["check-updates "], "check-"]);
   assert.deepEqual(completeSlashCommandLine("/plugins catalog u"), [
     ["updates ", "update ", "upgrade ", "update-check "],
@@ -844,6 +846,65 @@ test("delegates slash commands save and load disabled local teams", () => {
     assert.match(harness.stdout(), /Delegation team review-team deleted/);
     assert.equal(fetchCalls, 0);
     assert.equal(harness.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("delegation policy slash commands persist inert execution limits without network", () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegation-policy-slash-"));
+  const policyPath = join(cwd, "delegation", "policy.json");
+  const harness = createSlashHarness({
+    delegationPolicyPath: policyPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("delegation policy slash commands should not call OpenRouter.");
+    },
+  });
+
+  try {
+    assert.equal(handleSlashCommand("/delegate policy", harness.context), "continue");
+    assert.match(harness.stdout(), /ORX delegation execution policy:/);
+    assert.match(harness.stdout(), /policy_path: .*policy\.json/);
+    assert.match(harness.stdout(), /execution: disabled/);
+    assert.match(harness.stdout(), /delegate_task: unavailable/);
+    assert.match(harness.stdout(), /max_task_cost_usd: 0\.25/);
+
+    assert.equal(
+      handleSlashCommand(
+        "/delegate policy set --max-cost-usd 0.5 --timeout-ms 60000 --max-result-bytes 50000 --max-concurrent 2 --credentials none --result-persistence none --result-merge manual_summary",
+        harness.context,
+      ),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Delegation execution policy saved/);
+    assert.equal(statSync(join(cwd, "delegation")).mode & 0o777, 0o700);
+    assert.equal(statSync(policyPath).mode & 0o777, 0o600);
+    assert.doesNotMatch(readFileSync(policyPath, "utf8"), /test-key|OPENROUTER_API_KEY/);
+
+    assert.equal(handleSlashCommand("/delegates policy status", harness.context), "continue");
+    assert.match(harness.stdout(), /max_task_cost_usd: 0\.5/);
+    assert.match(harness.stdout(), /task_timeout_ms: 60000/);
+    assert.match(harness.stdout(), /max_result_bytes: 50000/);
+    assert.match(harness.stdout(), /max_concurrent_delegates: 2/);
+    assert.match(harness.stdout(), /credential_forwarding: none/);
+    assert.match(harness.stdout(), /result_persistence: none/);
+    assert.match(harness.stdout(), /result_merge: manual_summary/);
+
+    assert.equal(
+      handleSlashCommand("/delegate policy set --credentials env", harness.context),
+      "continue",
+    );
+    assert.match(harness.stderr(), /--credentials must be none/);
+
+    const stderrStart = harness.stderr().length;
+    assert.equal(handleSlashCommand("/delegates nope", harness.context), "continue");
+    assert.match(
+      harness.stderr().slice(stderrStart),
+      /\/delegates \[list\|status\|plan\|policy\|teams\|save <id>\|use <id>\|inspect <id>\|delete <id>\]/,
+    );
+    assert.equal(fetchCalls, 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -3835,6 +3896,7 @@ function createSlashHarness(
     pluginRegistryPath?: string;
     profileConfigPath?: string;
     delegationTeamConfigPath?: string;
+    delegationPolicyPath?: string;
     recordActivatedPrompt?: SlashCommandContext["recordActivatedPrompt"];
     recordActivatedRule?: SlashCommandContext["recordActivatedRule"];
     recordActivatedSkill?: SlashCommandContext["recordActivatedSkill"];
@@ -3951,6 +4013,7 @@ function createSlashHarness(
       pluginRegistryPath: options.pluginRegistryPath,
       profileConfigPath: options.profileConfigPath,
       delegationTeamConfigPath: options.delegationTeamConfigPath,
+      delegationPolicyPath: options.delegationPolicyPath,
       recordActivatedPrompt: options.recordActivatedPrompt,
       recordActivatedRule: options.recordActivatedRule,
       recordActivatedSkill: options.recordActivatedSkill,

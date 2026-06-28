@@ -14,6 +14,8 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
+export * from "./policy.js";
+
 export type DelegationProvider = "openrouter";
 export type DelegationExecutionState = "disabled";
 
