@@ -72,6 +72,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.match(output, /\/commands \[query\]\s+Show a compact slash command palette \(aliases: \/palette\)/);
   assert.match(output, /\/status\s+Show current chat status/);
   assert.match(output, /\/theme \[default\|mono\|vivid\]\s+Show or set the TTY color theme/);
+  assert.match(output, /\/config \[show\|path\|set <key> <value>\]\s+Inspect or edit safe ORX config keys/);
   assert.match(output, /\/profile \[list\|save\|use\|inspect\|delete\]\s+Manage saved local config profiles/);
   assert.match(output, /\/tests \[list\|run <target-id>\]\s+Discover or run native test targets \(aliases: \/test\)/);
   assert.match(output, /\/map \[path\]\s+Render a bounded local repository code map/);
@@ -85,7 +86,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.doesNotMatch(output, /^Chat commands:/m);
 
   const commandLines = output.split("\n").filter((line) => line.startsWith("  /"));
-  assert.ok(commandLines.length <= 16, `expected concise common help, got ${commandLines.length}`);
+  assert.ok(commandLines.length <= 18, `expected concise common help, got ${commandLines.length}`);
 });
 
 test("help all shows common commands first plus advanced surfaces", () => {
@@ -195,6 +196,17 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mode a"), [["auto "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/fusion g"), [["general-budget "], "g"]);
   assert.deepEqual(completeSlashCommandLine("/theme v"), [["vivid "], "v"]);
+  assert.deepEqual(completeSlashCommandLine("/config s"), [
+    ["show ", "status ", "set "],
+    "s",
+  ]);
+  assert.deepEqual(completeSlashCommandLine("/config set t"), [["theme "], "t"]);
+  assert.deepEqual(completeSlashCommandLine("/config set theme v"), [["vivid "], "v"]);
+  assert.deepEqual(completeSlashCommandLine("/config set mode f"), [["fusion "], "f"]);
+  assert.deepEqual(completeSlashCommandLine("/config set theme vivid --"), [
+    ["--user ", "--local "],
+    "--",
+  ]);
   assert.deepEqual(completeSlashCommandLine("/profile s"), [
     ["status ", "save "],
     "s",
@@ -437,6 +449,80 @@ test("theme command shows and updates active TTY theme", () => {
   assert.equal(handleSlashCommand("/theme neon", harness.context), "continue");
   assert.equal(harness.config().theme, "vivid");
   assert.match(harness.stderr(), /Usage: \/theme \[default\|mono\|vivid\]/);
+});
+
+test("config slash command shows paths and updates safe config keys", () => {
+  const tempHome = mkdtempSync(join(tmpdir(), "orx-slash-config-home-"));
+  const tempCwd = mkdtempSync(join(tmpdir(), "orx-slash-config-cwd-"));
+  const configPath = join(tempCwd, "user-config.toml");
+
+  try {
+    writeFileSync(configPath, ['api_key = "stored-secret"', 'theme = "default"', ""].join("\n"));
+    const harness = createSlashHarness({
+      cwd: tempCwd,
+      homeDir: tempHome,
+      env: {
+        ORX_CONFIG_PATH: configPath,
+      } as NodeJS.ProcessEnv,
+      config: {
+        ...baseConfig(),
+        apiKey: "env-secret",
+        activeProfile: "daily",
+      },
+      loadedConfig: {
+        config: {
+          ...baseConfig(),
+          apiKey: "env-secret",
+        },
+        loadedFiles: [configPath],
+        apiKeyPresent: true,
+        apiKeySource: "OPENROUTER_API_KEY",
+      },
+    });
+
+    assert.equal(handleSlashCommand("/config show", harness.context), "continue");
+    assert.match(harness.stdout(), /ORX config/);
+    assert.match(harness.stdout(), /user_config_path: .*user-config\.toml/);
+    assert.match(harness.stdout(), /api_key: present/);
+    assert.match(harness.stdout(), /api_key_source: OPENROUTER_API_KEY/);
+    assert.doesNotMatch(harness.stdout(), /env-secret|stored-secret/);
+
+    assert.equal(handleSlashCommand("/config path", harness.context), "continue");
+    assert.match(harness.stdout(), /edit_user: \/config set <key> <value>/);
+    assert.match(harness.stdout(), /user_env_override: ORX_CONFIG_PATH/);
+
+    assert.equal(handleSlashCommand("/config set theme vivid", harness.context), "continue");
+    assert.equal(harness.config().theme, "vivid");
+    assert.equal(harness.config().activeProfile, undefined);
+    assert.match(readFileSync(configPath, "utf8"), /theme = "vivid"/);
+    assert.match(readFileSync(configPath, "utf8"), /api_key = "stored-secret"/);
+    assert.equal(statSync(configPath).mode & 0o777, 0o600);
+    assert.match(harness.stdout(), /current_chat: updated/);
+    assert.match(harness.stdout(), /network_calls: none/);
+
+    assert.equal(handleSlashCommand("/config set api_key sk-or-v1-secret", harness.context), "continue");
+    assert.match(harness.stderr(), /Refusing to store API keys/);
+    assert.doesNotMatch(harness.stderr(), /sk-or-v1-secret/);
+    assert.match(readFileSync(configPath, "utf8"), /api_key = "stored-secret"/);
+
+    assert.equal(handleSlashCommand("/config set sk-or-v1-misplaced value", harness.context), "continue");
+    assert.match(harness.stderr(), /Unknown config key: \[redacted\]/);
+    assert.doesNotMatch(harness.stderr(), /sk-or-v1-misplaced/);
+
+    assert.equal(handleSlashCommand("/config set safe_sk-or-v1-misplaced value", harness.context), "continue");
+    assert.match(harness.stderr(), /Unknown config key: \[redacted\]/);
+    assert.doesNotMatch(harness.stderr(), /safe_sk-or-v1-misplaced/);
+
+    assert.equal(
+      handleSlashCommand("/config set safe\u0007prefix\u001b]0;owned\u0007suffix value", harness.context),
+      "continue",
+    );
+    assert.match(harness.stderr(), /Unknown config key: \[redacted\]/);
+    assert.doesNotMatch(harness.stderr(), /owned/);
+  } finally {
+    rmSync(tempHome, { recursive: true, force: true });
+    rmSync(tempCwd, { recursive: true, force: true });
+  }
 });
 
 test("profile command saves lists applies inspects and deletes local profiles", () => {
@@ -3922,6 +4008,7 @@ test("status reports concise observed edit state", () => {
 function createSlashHarness(
   options: {
     config?: OrxConfig;
+    loadedConfig?: LoadedConfig;
     messages?: OpenRouterMessage[];
     evidenceSources?: EvidenceSource[];
     metadata?: OpenRouterStreamMetadata;
@@ -3948,6 +4035,8 @@ function createSlashHarness(
     recordActivatedRule?: SlashCommandContext["recordActivatedRule"];
     recordActivatedSkill?: SlashCommandContext["recordActivatedSkill"];
     resumeSession?: SlashCommandContext["resumeSession"];
+    env?: NodeJS.ProcessEnv;
+    homeDir?: string;
     fetch?: typeof fetch;
     mcpDiscoveryFetch?: typeof fetch;
     mcpRemoteToolsFetch?: typeof fetch;
@@ -3985,7 +4074,7 @@ function createSlashHarness(
     stdout.isTTY = true;
     stdout.columns = options.columns;
   }
-  const loadedConfig: LoadedConfig = {
+  const loadedConfig: LoadedConfig = options.loadedConfig ?? {
     config,
     loadedFiles: [],
     apiKeyPresent: true,
@@ -4005,6 +4094,8 @@ function createSlashHarness(
         cwd: options.cwd ?? "/tmp/orx-test",
       },
       loadedConfig,
+      env: options.env,
+      homeDir: options.homeDir,
       fetch: options.fetch,
       mcpDiscoveryFetch: options.mcpDiscoveryFetch,
       mcpRemoteToolsFetch: options.mcpRemoteToolsFetch,

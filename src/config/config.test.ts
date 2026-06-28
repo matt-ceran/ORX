@@ -182,6 +182,26 @@ test("setConfigValue rejects unsafe values and symlink config paths", () => {
       /Refusing to store API keys/,
     );
     assert.throws(
+      () => setConfigValue("openrouter_api_key", "plain-value", { cwd: tempCwd, homeDir: tempHome }),
+      /Refusing to store API keys/,
+    );
+    assert.throws(
+      () => setConfigValue("sk-or-v1-secret", "plain-value", { cwd: tempCwd, homeDir: tempHome }),
+      /Unknown config key: \[redacted\]/,
+    );
+    assert.throws(
+      () => setConfigValue("safe_sk-or-v1-secret", "plain-value", { cwd: tempCwd, homeDir: tempHome }),
+      /Unknown config key: \[redacted\]/,
+    );
+    assert.throws(
+      () =>
+        setConfigValue("safe\u0007prefix\u001b]0;owned\u0007suffix", "plain-value", {
+          cwd: tempCwd,
+          homeDir: tempHome,
+        }),
+      /Unknown config key: \[redacted\]/,
+    );
+    assert.throws(
       () => setConfigValue("theme", "neon", { cwd: tempCwd, homeDir: tempHome }),
       /Invalid theme/,
     );

@@ -1,18 +1,17 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BIN_NAME } from "./constants.js";
 import { formatToolCallStart, formatToolResult, runAgentTurn } from "./agent/index.js";
 import { createCodeMap, createCodeSymbolIndex, renderCodeMap, renderCodeSymbols } from "./code-map/index.js";
 import {
-  formatConfigSources,
   loadConfig,
-  resolveLocalConfigPath,
-  resolveUserConfigPath,
+  parseConfigSetArgs,
+  renderConfigPaths,
+  renderConfigShow,
   setConfigValue,
   validateApiKey,
-  type ConfigEditScope,
 } from "./config/index.js";
 import type { LoadedConfig, OrxConfig, OrxMode } from "./config/types.js";
 import {
@@ -540,6 +539,7 @@ function runChatCommand(
     delegationPolicyPath: paths?.delegationPolicyPath,
     delegationAuditLogPath: paths?.delegationAuditLogPath,
     braveSearchApiKey: env.BRAVE_SEARCH_API_KEY,
+    env,
     hookEnv: env,
   });
 }
@@ -1069,12 +1069,12 @@ function runConfigCommand(
   const subcommand = args[0]?.toLowerCase() ?? "show";
 
   if (subcommand === "show" || subcommand === "status" || subcommand === "list") {
-    writeLine(io.stdout, renderConfigShow(loadedConfig, io, env));
+    writeLine(io.stdout, renderConfigShow(loadedConfig, { cwd: io.cwd, env }));
     return 0;
   }
 
   if (subcommand === "path" || subcommand === "paths") {
-    writeLine(io.stdout, renderConfigPaths(loadedConfig, io, env));
+    writeLine(io.stdout, renderConfigPaths(loadedConfig, { cwd: io.cwd, env }));
     return 0;
   }
 
@@ -1116,83 +1116,6 @@ function runConfigCommand(
 
   writeLine(io.stderr, "Usage: orx config [show|path|set <key> <value> [--user|--local]]");
   return 1;
-}
-
-function renderConfigShow(
-  loadedConfig: LoadedConfig,
-  io: CliIo,
-  env: NodeJS.ProcessEnv,
-): string {
-  const config = loadedConfig.config;
-  return [
-    "ORX config",
-    `  config_source: ${formatConfigSources(loadedConfig.loadedFiles)}`,
-    `  local_config_path: ${resolveLocalConfigPath({ cwd: io.cwd })}`,
-    `  user_config_path: ${resolveUserConfigPath({ env, cwd: io.cwd })}`,
-    `  mode: ${config.mode}`,
-    `  model: ${config.model}`,
-    `  fusion_preset: ${config.fusionPreset ?? "none"}`,
-    `  theme: ${config.theme ?? "default"}`,
-    `  active_profile: ${config.activeProfile ?? "none"}`,
-    `  api_key: ${loadedConfig.apiKeyPresent ? "present" : "missing"}`,
-    `  api_key_source: ${loadedConfig.apiKeySource}`,
-    `  approval_policy: ${config.permissions.approvalPolicy}`,
-    `  sandbox_mode: ${config.permissions.sandboxMode}`,
-    "  editable_keys: model, mode, fusion_preset, theme, approval_policy, sandbox_mode",
-    "  api_key_storage: use OPENROUTER_API_KEY or edit config manually; config set refuses secrets",
-  ].join("\n");
-}
-
-function renderConfigPaths(
-  loadedConfig: LoadedConfig,
-  io: CliIo,
-  env: NodeJS.ProcessEnv,
-): string {
-  const localPath = resolveLocalConfigPath({ cwd: io.cwd });
-  const userPath = resolveUserConfigPath({ env, cwd: io.cwd });
-  return [
-    "ORX config paths",
-    `  effective_sources: ${formatConfigSources(loadedConfig.loadedFiles)}`,
-    `  local: ${localPath} exists=${existsSync(localPath) ? "yes" : "no"}`,
-    `  user: ${userPath} exists=${existsSync(userPath) ? "yes" : "no"}`,
-    `  user_env_override: ${env.ORX_CONFIG_PATH ? "ORX_CONFIG_PATH" : "none"}`,
-    "  edit_default: user",
-    "  edit_user: orx config set <key> <value>",
-    "  edit_local: orx config set <key> <value> --local",
-  ].join("\n");
-}
-
-function parseConfigSetArgs(args: string[]):
-  | {
-      key: string;
-      value: string;
-      scope: ConfigEditScope;
-    }
-  | string {
-  let scope: ConfigEditScope = "user";
-  const rest: string[] = [];
-
-  for (const arg of args) {
-    if (arg === "--user") {
-      scope = "user";
-      continue;
-    }
-    if (arg === "--local") {
-      scope = "local";
-      continue;
-    }
-    rest.push(arg);
-  }
-
-  if (rest.length !== 2) {
-    return "Usage: orx config set <key> <value> [--user|--local]";
-  }
-
-  return {
-    key: rest[0],
-    value: rest[1],
-    scope,
-  };
 }
 
 function runProfileCommand(

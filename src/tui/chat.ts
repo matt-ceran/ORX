@@ -116,6 +116,7 @@ export interface ChatOptions {
   delegationPolicyPath?: string;
   delegationAuditLogPath?: string;
   braveSearchApiKey?: string;
+  env?: NodeJS.ProcessEnv;
   hookEnv?: NodeJS.ProcessEnv;
 }
 
@@ -147,6 +148,7 @@ export async function runChat({
   delegationPolicyPath,
   delegationAuditLogPath,
   braveSearchApiKey = process.env.BRAVE_SEARCH_API_KEY,
+  env = process.env,
   hookEnv = process.env,
 }: ChatOptions): Promise<number> {
   let activeConfig: OrxConfig = { ...loadedConfig.config };
@@ -231,6 +233,7 @@ export async function runChat({
             cwd: activeCwd,
           },
           loadedConfig,
+          env,
           fetch: io.fetch,
           webFetch: io.webFetch,
           webSearchFetch: io.webSearchFetch,

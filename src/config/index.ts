@@ -46,13 +46,25 @@ export interface ConfigSetResult {
   message: string;
 }
 
+export interface ConfigSetArgs {
+  key: string;
+  value: string;
+  scope: ConfigEditScope;
+}
+
+export interface RenderConfigOptions extends LoadConfigOptions {
+  config?: OrxConfig;
+  commandPrefix?: string;
+}
+
 const VALID_MODES = new Set<OrxMode>(["exact", "auto", "fusion"]);
 const VALID_THEMES = new Set<OrxTheme>(TERMINAL_THEMES);
 const CONFIG_DIRECTORY_MODE = 0o700;
 const CONFIG_FILE_MODE = 0o600;
-const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
+const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F-\x9F]/;
+const CONTROL_CHAR_GLOBAL_PATTERN = /[\x00-\x1F\x7F-\x9F]/g;
 const SECRET_LIKE_PATTERN =
-  /\b(?:sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/i;
+  /(?:sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)/i;
 
 export function loadConfig(options: LoadConfigOptions = {}): LoadedConfig {
   const cwd = options.cwd ?? process.cwd();
@@ -139,12 +151,12 @@ export function setConfigValue(
   const scope = options.scope ?? "user";
   const key = normalizeConfigSetKey(keyInput);
   if (!key) {
-    if (normalizeConfigKeyInput(keyInput) === "api_key") {
+    if (isApiKeyConfigKeyInput(keyInput)) {
       throw new Error(
         "Refusing to store API keys through config set. Use OPENROUTER_API_KEY or edit the config file manually.",
       );
     }
-    throw new Error(`Unknown config key: ${keyInput}`);
+    throw new Error(`Unknown config key: ${formatConfigKeyForMessage(keyInput)}`);
   }
   const value = validateConfigSetValue(key, valueInput);
   const path = resolveConfigEditPath({ ...options, scope });
@@ -260,6 +272,79 @@ export function formatConfigSources(loadedFiles: string[]): string {
   return loadedFiles.length > 0 ? loadedFiles.join(", ") : "built-in defaults";
 }
 
+export function renderConfigShow(
+  loadedConfig: LoadedConfig,
+  options: RenderConfigOptions = {},
+): string {
+  const config = options.config ?? loadedConfig.config;
+  return [
+    "ORX config",
+    `  config_source: ${formatConfigSources(loadedConfig.loadedFiles)}`,
+    `  local_config_path: ${resolveLocalConfigPath(options)}`,
+    `  user_config_path: ${resolveUserConfigPath(options)}`,
+    `  mode: ${config.mode}`,
+    `  model: ${config.model}`,
+    `  fusion_preset: ${config.fusionPreset ?? "none"}`,
+    `  theme: ${config.theme ?? "default"}`,
+    `  active_profile: ${config.activeProfile ?? "none"}`,
+    `  api_key: ${loadedConfig.apiKeyPresent ? "present" : "missing"}`,
+    `  api_key_source: ${loadedConfig.apiKeySource}`,
+    `  approval_policy: ${config.permissions.approvalPolicy}`,
+    `  sandbox_mode: ${config.permissions.sandboxMode}`,
+    "  editable_keys: model, mode, fusion_preset, theme, approval_policy, sandbox_mode",
+    "  api_key_storage: use OPENROUTER_API_KEY or edit config manually; config set refuses secrets",
+  ].join("\n");
+}
+
+export function renderConfigPaths(
+  loadedConfig: LoadedConfig,
+  options: RenderConfigOptions = {},
+): string {
+  const localPath = resolveLocalConfigPath(options);
+  const userPath = resolveUserConfigPath(options);
+  const commandPrefix = options.commandPrefix ?? "orx config";
+  return [
+    "ORX config paths",
+    `  effective_sources: ${formatConfigSources(loadedConfig.loadedFiles)}`,
+    `  local: ${localPath} exists=${existsSync(localPath) ? "yes" : "no"}`,
+    `  user: ${userPath} exists=${existsSync(userPath) ? "yes" : "no"}`,
+    `  user_env_override: ${options.env?.ORX_CONFIG_PATH ? "ORX_CONFIG_PATH" : "none"}`,
+    "  edit_default: user",
+    `  edit_user: ${commandPrefix} set <key> <value>`,
+    `  edit_local: ${commandPrefix} set <key> <value> --local`,
+  ].join("\n");
+}
+
+export function parseConfigSetArgs(
+  args: string[],
+  usage = "Usage: orx config set <key> <value> [--user|--local]",
+): ConfigSetArgs | string {
+  let scope: ConfigEditScope = "user";
+  const rest: string[] = [];
+
+  for (const arg of args) {
+    if (arg === "--user") {
+      scope = "user";
+      continue;
+    }
+    if (arg === "--local") {
+      scope = "local";
+      continue;
+    }
+    rest.push(arg);
+  }
+
+  if (rest.length !== 2) {
+    return usage;
+  }
+
+  return {
+    key: rest[0],
+    value: rest[1],
+    scope,
+  };
+}
+
 function readEditableConfigFile(path: string): TomlTable {
   if (!existsSync(path)) {
     return {};
@@ -331,6 +416,28 @@ function normalizeConfigSetKey(key: string): ConfigSetKey | undefined {
 
 function normalizeConfigKeyInput(key: string): string {
   return key.trim().replace(/-/g, "_").replace(/^permissions\./, "").toLowerCase();
+}
+
+function isApiKeyConfigKeyInput(key: string): boolean {
+  const normalized = normalizeConfigKeyInput(key);
+  return (
+    normalized === "api_key" ||
+    normalized === "apikey" ||
+    normalized === "openrouter_api_key" ||
+    normalized === "openrouterapikey"
+  );
+}
+
+function formatConfigKeyForMessage(key: string): string {
+  if (CONTROL_CHAR_PATTERN.test(key) || SECRET_LIKE_PATTERN.test(key)) {
+    return "[redacted]";
+  }
+
+  const cleaned = key.replace(CONTROL_CHAR_GLOBAL_PATTERN, "").trim();
+  if (!cleaned) {
+    return "[redacted]";
+  }
+  return cleaned.length > 80 ? `${cleaned.slice(0, 80)}...` : cleaned;
 }
 
 function validateConfigSetValue(key: ConfigSetKey, valueInput: string): string {

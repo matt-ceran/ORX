@@ -23,6 +23,7 @@ Urgent UX recovery additions from user testing:
 - The TTY bottom status notch now uses compact model badges for OpenRouter routing shortcuts, rendering `openrouter/auto` as `auto` and `openrouter/fusion` as `fusion`; full model ids remain unchanged in config, request construction, plain status, and non-TTY output.
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
+- Safe config inspection/editing is available in both CLI and chat through `orx config show|path|set` and `/config [show|path|set]`. It redacts API-key values, refuses API-key/secret-like arguments, honors `ORX_CONFIG_PATH`, writes private config files through the shared guards, and updates the active chat snapshot for edited keys.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
 - Plugin authoring scaffold is implemented through `orx plugins scaffold <directory>` and `/plugins scaffold <directory>`. It creates a valid local `orx-plugin.json` authoring bundle without registry writes; defaults are inert skills/prompt-commands/rules markdown, `--minimal` writes only the manifest, and `--with` adds opt-in empty placeholders for hooks, bins, MCP, command schemas, assets, and docs behind the existing review gates.
 - Plugin manifest validation is implemented through `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>`. It parses/sanitizes manifests, renders manifest/component hashes, permission counts, missing component warnings, and explicitly leaves registry/cache/trust/runtime state unchanged.
@@ -85,6 +86,16 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added chat slash parity for safe config inspection/editing:
+
+- Shared config show/path formatting and config-set argument parsing from the CLI into `src/config/index.ts`, preserving CLI output while allowing chat to reuse the same redacted surfaces.
+- Added `/config [show|path|set <key> <value> [--user|--local]]` with deterministic completions for subcommands, editable keys, mode/theme values, and scope flags.
+- `/config show` and `/config path` render redacted effective config/path state without OpenRouter, MCP, plugin, hook, bin, or subprocess work.
+- `/config set` reuses the shared safe setter, honors `ORX_CONFIG_PATH` and local/user scope behavior, refuses API-key aliases and secret-like/control-character arguments, writes through existing private-file and symlink guards, and updates the active chat config snapshot for the edited key.
+- Verifier fix: unknown config-key errors now redact any key containing terminal control bytes or secret-shaped tokens anywhere, including misplaced `safe_sk-or-v1-*` style inputs, instead of echoing unsafe text.
+- Verification: `git diff --check`, `npm run typecheck`, focused config/slash/CLI source tests, full `npm test` with 468 tests, `npm run verify:global-install`, isolated source chat dogfood for `/config show|path|set`, and independent verifier review/recheck.
+- Next likely work remains final TTY ergonomics, real-key policy-enabled delegation dogfood, result merge controls, managed MCP auth beyond env bearer, and release hardening.
 
 Added first-class config inspection/editing:
 

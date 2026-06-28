@@ -10,6 +10,13 @@ import {
 import { createCodeMap, createCodeSymbolIndex, renderCodeMap, renderCodeSymbols } from "../code-map/index.js";
 import type { LoadedConfig, OrxConfig, OrxTheme } from "../config/types.js";
 import {
+  parseConfigSetArgs,
+  renderConfigPaths,
+  renderConfigShow,
+  setConfigValue,
+  type ConfigSetKey,
+} from "../config/index.js";
+import {
   DEFAULT_THEME,
   TERMINAL_THEMES,
 } from "../constants.js";
@@ -272,6 +279,8 @@ export type ResumeSessionResult =
 export interface SlashCommandContext {
   io: SlashIo;
   loadedConfig: LoadedConfig;
+  env?: NodeJS.ProcessEnv;
+  homeDir?: string;
   fetch?: typeof fetch;
   mcpDiscoveryFetch?: typeof fetch;
   mcpRemoteToolsFetch?: typeof fetch;
@@ -368,6 +377,16 @@ const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const MODE_COMPLETIONS = ["auto", "fusion"] as const;
 const FUSION_PRESET_COMPLETIONS = ["general-budget"] as const;
 const THEME_COMPLETIONS = [...TERMINAL_THEMES];
+const CONFIG_SUBCOMMAND_COMPLETIONS = ["show", "status", "list", "path", "paths", "set"] as const;
+const CONFIG_SET_KEY_COMPLETIONS = [
+  "model",
+  "mode",
+  "fusion_preset",
+  "theme",
+  "approval_policy",
+  "sandbox_mode",
+] as const;
+const CONFIG_SCOPE_COMPLETIONS = ["--user", "--local"] as const;
 const OPENROUTER_MODEL_SHORTCUT_COMPLETIONS = [
   "openrouter/auto",
   "openrouter/fusion",
@@ -580,6 +599,16 @@ const COMMANDS: Record<string, SlashDefinition> = {
         activeProfile: undefined,
       });
       writeLine(context.io.stdout, `Theme set to ${theme}.`);
+      return "continue";
+    },
+  },
+  "/config": {
+    usage: "/config [show|path|set <key> <value>]",
+    description: "Inspect or edit safe ORX config keys",
+    group: "Core",
+    tier: "common",
+    handler: (command, context): SlashResult => {
+      handleConfigCommand(command, context);
       return "continue";
     },
   },
@@ -1507,6 +1536,20 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       return argIndex === 0 ? [...FUSION_PRESET_COMPLETIONS] : [];
     case "/theme":
       return argIndex === 0 ? [...THEME_COMPLETIONS] : [];
+    case "/config":
+      if (argIndex === 0) {
+        return [...CONFIG_SUBCOMMAND_COMPLETIONS];
+      }
+      if (firstArg === "set" && argIndex === 1) {
+        return [...CONFIG_SET_KEY_COMPLETIONS];
+      }
+      if (firstArg === "set" && argIndex === 2) {
+        return configValueCompletions(secondArg);
+      }
+      if (firstArg === "set" && argIndex >= 3) {
+        return [...CONFIG_SCOPE_COMPLETIONS];
+      }
+      return [];
     case "/profile":
       return argIndex === 0 ? [...PROFILE_SUBCOMMAND_COMPLETIONS] : [];
     case "/web":
@@ -1605,6 +1648,16 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
 
 function isTerminalTheme(value: string | undefined): value is OrxTheme {
   return Boolean(value && (TERMINAL_THEMES as readonly string[]).includes(value));
+}
+
+function configValueCompletions(key: string | undefined): string[] {
+  if (key === "mode") {
+    return [...MODE_COMPLETIONS];
+  }
+  if (key === "theme") {
+    return [...THEME_COMPLETIONS];
+  }
+  return [];
 }
 
 function isMcpProfileSubcommand(subcommand: string | undefined): boolean {
@@ -1964,6 +2017,104 @@ function parseTestRunArgs(args: string[]): { targetId?: string; extraArgs: strin
     return { targetId: args[0], extraArgs: args.slice(2) };
   }
   return { targetId: args[0], extraArgs: args.slice(1) };
+}
+
+function handleConfigCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const subcommand = command.args[0]?.toLowerCase() ?? "show";
+  const configPathOptions = {
+    cwd: context.io.cwd,
+    homeDir: context.homeDir,
+    env: context.env,
+  };
+
+  if (subcommand === "show" || subcommand === "status" || subcommand === "list") {
+    writeLine(
+      context.io.stdout,
+      renderConfigShow(context.loadedConfig, {
+        ...configPathOptions,
+        config: context.getConfig(),
+        commandPrefix: "/config",
+      }),
+    );
+    return;
+  }
+
+  if (subcommand === "path" || subcommand === "paths") {
+    writeLine(
+      context.io.stdout,
+      renderConfigPaths(context.loadedConfig, {
+        ...configPathOptions,
+        commandPrefix: "/config",
+      }),
+    );
+    return;
+  }
+
+  if (subcommand === "set") {
+    const parsed = parseConfigSetArgs(
+      command.args.slice(1),
+      "Usage: /config set <key> <value> [--user|--local]",
+    );
+    if (typeof parsed === "string") {
+      writeLine(context.io.stderr, parsed);
+      return;
+    }
+
+    try {
+      const result = setConfigValue(parsed.key, parsed.value, {
+        ...configPathOptions,
+        scope: parsed.scope,
+      });
+      context.setConfig(applyConfigSetResultToConfig(context.getConfig(), result.key, result.value));
+      writeLine(
+        context.io.stdout,
+        [
+          "ORX config updated",
+          `  key: ${result.key}`,
+          `  value: ${result.value}`,
+          `  scope: ${result.scope}`,
+          `  path: ${result.path}`,
+          "  api_key: unchanged",
+          "  network_calls: none",
+          "  subprocesses: none",
+          "  current_chat: updated",
+          "  restart_required: no; next invocation uses the saved config",
+        ].join("\n"),
+      );
+    } catch (error) {
+      writeLine(
+        context.io.stderr,
+        `Unable to update config: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return;
+  }
+
+  writeLine(context.io.stderr, "Usage: /config [show|path|set <key> <value> [--user|--local]]");
+}
+
+function applyConfigSetResultToConfig(config: OrxConfig, key: ConfigSetKey, value: string): OrxConfig {
+  const nextConfig: OrxConfig = {
+    ...config,
+    activeProfile: undefined,
+    permissions: { ...config.permissions },
+  };
+
+  if (key === "model") {
+    nextConfig.model = value;
+  } else if (key === "mode") {
+    nextConfig.mode = value as OrxConfig["mode"];
+  } else if (key === "fusion_preset") {
+    nextConfig.fusionPreset = value;
+  } else if (key === "theme") {
+    nextConfig.theme = value as OrxTheme;
+  } else if (key === "approval_policy") {
+    nextConfig.permissions.approvalPolicy = value;
+  } else {
+    nextConfig.permissions.sandboxMode = value;
+  }
+
+  return nextConfig;
 }
 
 function handleProfileCommand(command: SlashCommand, context: SlashCommandContext): void {
