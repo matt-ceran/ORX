@@ -65,7 +65,7 @@ export interface PluginStateChange {
 export interface PluginStatusSummary {
   installedCount: number;
   enabledCount: number;
-  enabledHookCount: 0;
+  enabledHookCount: number;
   enabledBinCount: 0;
   enabledMcpCount: 0;
   plugins: InstalledPluginRecord[];
@@ -216,8 +216,8 @@ export function setPluginEnabledState(
     nextEnabled: enabled,
     message:
       previousEnabled === enabled
-        ? `Plugin ${id} already ${enabled ? "enabled" : "disabled"}. State marker persisted; automatic executable surfaces remain inactive.`
-        : `Plugin ${id} ${enabled ? "enabled" : "disabled"}. State marker persisted; automatic executable surfaces remain inactive.`,
+        ? `Plugin ${id} already ${enabled ? "enabled" : "disabled"}. State marker persisted; hooks require separate hash trust, and bins/MCP/commands remain inactive.`
+        : `Plugin ${id} ${enabled ? "enabled" : "disabled"}. State marker persisted; hooks require separate hash trust, and bins/MCP/commands remain inactive.`,
   };
 }
 

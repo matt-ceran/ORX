@@ -28,10 +28,12 @@ import {
   findInstalledPlugin,
   formatHookIdForMessage,
   formatPluginIdForMessage,
+  getPluginHookTrustSummary,
   getPluginStatusSummary,
   loadPluginCatalog,
   registerPluginManifest,
   renderPluginHookInspect,
+  renderPluginHookLifecycleResult,
   renderPluginHookRunResult,
   renderPluginHooks,
   renderPluginCatalog,
@@ -44,9 +46,11 @@ import {
   resolvePluginInstallTarget,
   resolvePluginRegistryPath,
   runPluginHook,
+  runTrustedPluginHooksForEvent,
   setPluginEnabledState,
   trustPluginHook,
   untrustPluginHook,
+  type PluginHookEvent,
 } from "./plugins/index.js";
 import {
   applySavedProfile,
@@ -170,6 +174,7 @@ export async function runCli(
       pluginRegistryPath,
       pluginCacheDirectory,
       pluginCatalogPath,
+      pluginHooksConfigPath,
     );
   }
 
@@ -192,6 +197,9 @@ export async function runCli(
 
   if (first === "ask") {
     return runAskCommand(args.slice(1), loadedConfig.config.apiKey ?? "", loadedConfig.config, io, {
+      hookEnv: env,
+      pluginHooksAuditLogPath,
+      pluginHooksConfigPath,
       pluginRegistryPath,
     });
   }
@@ -296,6 +304,7 @@ function runChatCommand(
     pluginRegistryPath: paths?.pluginRegistryPath,
     profileConfigPath: paths?.profileConfigPath,
     braveSearchApiKey: env.BRAVE_SEARCH_API_KEY,
+    hookEnv: env,
   });
 }
 
@@ -459,6 +468,7 @@ function runPluginsCommand(
   pluginRegistryPath: string,
   pluginCacheDirectory: string,
   pluginCatalogPath: string,
+  pluginHooksConfigPath: string,
 ): number {
   const subcommand = args[0]?.toLowerCase() ?? "list";
   const pluginId = args[1];
@@ -466,7 +476,12 @@ function runPluginsCommand(
   if (subcommand === "list" || subcommand === "status") {
     writeLine(
       io.stdout,
-      renderPluginList(getPluginStatusSummary({ registryPath: pluginRegistryPath })),
+      renderPluginList(getPluginStatusSummary({ registryPath: pluginRegistryPath }), {
+        enabledHookCount: getPluginHookTrustSummary({
+          configPath: pluginHooksConfigPath,
+          registryPath: pluginRegistryPath,
+        }).trustedCount,
+      }),
     );
     return 0;
   }
@@ -661,7 +676,12 @@ async function runAskCommand(
   apiKey: string,
   config: OrxConfig,
   io: CliIo,
-  options: { pluginRegistryPath?: string } = {},
+  options: {
+    hookEnv?: NodeJS.ProcessEnv;
+    pluginHooksAuditLogPath?: string;
+    pluginHooksConfigPath?: string;
+    pluginRegistryPath?: string;
+  } = {},
 ): Promise<number> {
   const parsed = parseAskArgs(args);
   if (typeof parsed === "string") {
@@ -672,7 +692,21 @@ async function runAskCommand(
   const requestMessages: OpenRouterMessage[] = [{ role: "user", content: parsed.prompt }];
   const requestConfig = applyAskOverrides(config, parsed.overrides);
 
+  async function runLifecycleHooksAndWarn(event: PluginHookEvent): Promise<void> {
+    const result = await runTrustedPluginHooksForEvent(event, {
+      auditLogPath: options.pluginHooksAuditLogPath,
+      configPath: options.pluginHooksConfigPath,
+      env: options.hookEnv,
+      registryPath: options.pluginRegistryPath,
+    });
+    if (result.failedCount > 0) {
+      writeLine(io.stderr, renderPluginHookLifecycleResult(result));
+    }
+  }
+
   try {
+    await runLifecycleHooksAndWarn("session_start");
+    await runLifecycleHooksAndWarn("user_prompt_submit");
     const result = await runAgentTurn(
       {
         apiKey,
@@ -685,15 +719,17 @@ async function runAskCommand(
           onText(text) {
             io.stdout.write(text);
           },
-          onToolCall(toolCall) {
+          async onToolCall(toolCall) {
             io.stdout.write(
               `\n${formatToolCallStart(toolCall, { stream: io.stdout, theme: requestConfig.theme })}\n`,
             );
+            await runLifecycleHooksAndWarn("pre_tool_use");
           },
-          onToolResult(result) {
+          async onToolResult(result) {
             io.stdout.write(
               `${formatToolResult(result, { stream: io.stdout, theme: requestConfig.theme })}\n`,
             );
+            await runLifecycleHooksAndWarn("post_tool_use");
           },
         },
       },
@@ -705,6 +741,8 @@ async function runAskCommand(
     const message = error instanceof Error ? error.message : String(error);
     writeLine(io.stderr, message);
     return 1;
+  } finally {
+    await runLifecycleHooksAndWarn("stop");
   }
 }
 

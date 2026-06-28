@@ -1,6 +1,6 @@
 # Tooling And Permissions
 
-Last updated: 2026-06-27
+Last updated: 2026-06-28
 
 ## Default Permission Policy
 
@@ -102,7 +102,7 @@ Current Phase 9 plugin scaffold:
 - Optional plugin manifest `metadata` fields for homepage, docs, license, trust tier, auth, privacy, and runtime requirements are sanitized and rendered as inert risk/requirements context in `/plugins inspect`; they do not grant permissions or enable executable surfaces.
 - Enabled plugins can declare render-only MCP presets through cached `components.mcpServers` JSON. ORX namespaces these profiles as `plugin:<plugin-id>:<server-id>`, includes plugin manifest/component hashes in the MCP profile hash, and shows them through `/mcp list`, `/mcp inspect`, `/mcp tools`, and `/status`; `/mcp discover` refuses plugin-sourced profiles and no plugin MCP tools are executable.
 - Enabled plugins can declare hook definitions through cached `components.hooks` JSON. ORX namespaces hooks as `plugin:<plugin-id>:<hook-id>`, computes hook hashes from sanitized declarations plus plugin provenance, stores trusted hook hashes in private operator state at `~/.orx/plugins/hooks.json` or `ORX_PLUGIN_HOOKS_CONFIG_PATH`, and shows discovered/trusted/pending counts in `/status`.
-- Trusted current hook hashes can run only through explicit `orx hooks run <id>` or `/hooks run <id>`. Hook runs use the cached plugin root plus optional safe relative cwd, disable inherited env, forward only declared env names, apply timeout/output caps, redact forwarded env values in rendered/audited output, and append JSONL audit events under `~/.orx/audit/hooks.jsonl` or `ORX_PLUGIN_HOOKS_AUDIT_PATH`. A hook command that succeeds but cannot persist its audit event is treated as a failed run.
+- Trusted current hook hashes can run through explicit `orx hooks run <id>` / `/hooks run <id>` and through matching automatic lifecycle events: `session_start`, `user_prompt_submit`, `pre_tool_use`, `post_tool_use`, `pre_compact`, `post_compact`, and `stop`. Hook runs use the cached plugin root plus optional safe relative cwd, disable inherited env, forward only declared env names, apply timeout/output caps, redact forwarded env values in rendered/audited output, and append JSONL audit events under `~/.orx/audit/hooks.jsonl` or `ORX_PLUGIN_HOOKS_AUDIT_PATH`. A hook command that succeeds but cannot persist its audit event is treated as a failed run.
 - Git source manifests must include a pinned `resolvedCommit`; floating refs can be recorded as context but cannot be the lock pin.
 - Manifest and loaded registry display fields reject secret-like values and terminal control characters before they can be stored or rendered.
 - Registering stores plugins disabled by default. `/plugins enable` and `/plugins disable` persist only an inert enabled flag.
@@ -113,8 +113,8 @@ Current Phase 9 plugin scaffold:
 - Full rule markdown is loaded only through explicit `/rules activate <id>`, rejects secret-like values and terminal control characters before model/session use, then stores safe content as an untrusted system message and records provenance in session metadata.
 - Activated skill, prompt, and rule context is pruned from chat messages and session provenance when the backing plugin component is no longer enabled.
 - Skill, prompt, or rule content and metadata cannot authorize tool use, permission changes, MCP enablement, hooks, bins, executable plugin commands, or command execution.
-- Automatic lifecycle hook execution, bins, executable plugin slash commands, plugin endpoint discovery, and plugin MCP tool execution are inactive even when a plugin is marked enabled.
-- `/plugins inspect`, `/skills`, `/prompts`, `/rules`, `/hooks`, and `/status` show this trust boundary explicitly; enabled hook/bin/MCP counts remain `0` for automatic/runtime-enabled surfaces.
+- Bins, executable plugin slash commands, plugin endpoint discovery, and plugin MCP tool execution are inactive even when a plugin is marked enabled.
+- `/plugins inspect`, `/skills`, `/prompts`, `/rules`, `/hooks`, and `/status` show this trust boundary explicitly; enabled hook counts reflect trusted current hashes, while enabled bin/MCP counts remain `0` for inactive executable surfaces.
 
 Current Phase 10 research scaffold:
 

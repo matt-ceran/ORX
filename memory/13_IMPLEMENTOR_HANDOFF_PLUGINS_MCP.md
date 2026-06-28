@@ -1,6 +1,6 @@
 # Implementor Handoff: Plugins, MCP, And Research Stack
 
-Last updated: 2026-06-27
+Last updated: 2026-06-28
 
 ## Purpose
 
@@ -93,7 +93,7 @@ Acceptance:
 
 Goal: create the ORX plugin substrate without enabling risky components by default.
 
-Current status as of 2026-06-27: local registry, cache, catalog install-by-id, skills/prompts/rules loaders, inert manifest metadata, render-only plugin MCP presets, hook discovery/trust, and explicit trusted hook manual runtime are implemented. Plugin manifests can include sanitized display-only homepage/docs/license/trust tier/auth/privacy/runtime metadata rendered by `/plugins inspect`. Enabled plugin `components.mcpServers` JSON can declare namespaced `plugin:<plugin-id>:<server-id>` profiles that flow through `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp enable`, and `/status`; `/mcp discover` refuses plugin-sourced profiles and no plugin MCP tools execute. Enabled plugin `components.hooks` JSON can declare namespaced `plugin:<plugin-id>:<hook-id>` hooks visible through `orx hooks`, `/hooks`, and `/status`; trusted current hook hashes can run only through explicit `hooks run` / `/hooks run` with cached cwd directories, minimal env/cwd, fail-closed audit persistence, and JSONL audit logging. Executable plugin slash commands, automatic lifecycle hook execution, bins, plugin endpoint discovery, and plugin MCP tool execution remain inactive.
+Current status as of 2026-06-28: local registry, cache, catalog install-by-id, skills/prompts/rules loaders, inert manifest metadata, render-only plugin MCP presets, hook discovery/trust, explicit trusted hook manual runtime, and automatic trusted lifecycle hook dispatch are implemented. Plugin manifests can include sanitized display-only homepage/docs/license/trust tier/auth/privacy/runtime metadata rendered by `/plugins inspect`. Enabled plugin `components.mcpServers` JSON can declare namespaced `plugin:<plugin-id>:<server-id>` profiles that flow through `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp enable`, and `/status`; `/mcp discover` refuses plugin-sourced profiles and no plugin MCP tools execute. Enabled plugin `components.hooks` JSON can declare namespaced `plugin:<plugin-id>:<hook-id>` hooks visible through `orx hooks`, `/hooks`, and `/status`; trusted current hook hashes can run manually through `hooks run` / `/hooks run` and automatically on matching lifecycle events with cached cwd directories, minimal env/cwd, fail-closed audit persistence, and JSONL audit logging. Executable plugin slash commands, bins, plugin endpoint discovery, and plugin MCP tool execution remain inactive.
 
 Implement:
 
@@ -166,13 +166,13 @@ Acceptance:
 
 Goal: add deterministic reusable workflows and guardrails.
 
-Current status as of 2026-06-27: markdown prompt commands and markdown rules have explicit progressive loaders. ORX discovers enabled plugin `components.commands` and `components.rules` markdown from cached manifests, surfaces compact metadata through `/prompts list`, `/rules list`, `/status`, and ephemeral model context, and loads full content only through `/prompts activate <id>` or `/rules activate <id>` as untrusted session context with provenance. Render-only plugin MCP presets are visible through MCP policy surfaces. Hooks have hash trust state plus explicit manual execution for trusted current hashes with minimal env/cwd and JSONL audit logging. Executable plugin slash commands, automatic lifecycle hook execution, bins, plugin endpoint discovery, plugin MCP tool execution, and other plugin code execution remain inactive.
+Current status as of 2026-06-28: markdown prompt commands and markdown rules have explicit progressive loaders. ORX discovers enabled plugin `components.commands` and `components.rules` markdown from cached manifests, surfaces compact metadata through `/prompts list`, `/rules list`, `/status`, and ephemeral model context, and loads full content only through `/prompts activate <id>` or `/rules activate <id>` as untrusted session context with provenance. Render-only plugin MCP presets are visible through MCP policy surfaces. Hooks have hash trust state plus explicit manual execution and automatic lifecycle execution for trusted current hashes with minimal env/cwd and JSONL audit logging. Executable plugin slash commands, bins, plugin endpoint discovery, plugin MCP tool execution, and other plugin code execution remain inactive.
 
 Implement:
 
 - Plugin slash command/prompts with namespacing.
 - Rules scoped by explicit activation events or path globs.
-- Automatic lifecycle hook dispatch that consumes the existing trusted-hook manual runtime.
+- Automatic lifecycle hook dispatch that consumes the existing trusted-hook manual runtime. Status: implemented for trusted current hooks on `session_start`, `user_prompt_submit`, `pre_tool_use`, `post_tool_use`, `pre_compact`, `post_compact`, and `stop`.
 - Hook events aligned with ORX behavior: session start, user prompt submit, pre tool use, post tool use, pre compact, post compact, stop.
 - `/hooks` or `/plugins inspect --hooks` to review and trust changed hooks.
 

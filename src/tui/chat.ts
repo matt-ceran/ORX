@@ -25,6 +25,9 @@ import {
   discoverEnabledPluginPrompts,
   discoverEnabledPluginRules,
   discoverEnabledPluginSkills,
+  renderPluginHookLifecycleResult,
+  runTrustedPluginHooksForEvent,
+  type PluginHookEvent,
 } from "../plugins/index.js";
 import type {
   BrowserSnapshotDriver,
@@ -104,6 +107,7 @@ export interface ChatOptions {
   pluginRegistryPath?: string;
   profileConfigPath?: string;
   braveSearchApiKey?: string;
+  hookEnv?: NodeJS.ProcessEnv;
 }
 
 export interface ChatTerminalModes {
@@ -128,6 +132,7 @@ export async function runChat({
   pluginRegistryPath,
   profileConfigPath,
   braveSearchApiKey = process.env.BRAVE_SEARCH_API_KEY,
+  hookEnv = process.env,
 }: ChatOptions): Promise<number> {
   let activeConfig: OrxConfig = { ...loadedConfig.config };
   let activeCwd = io.cwd;
@@ -149,6 +154,23 @@ export async function runChat({
   let delegationState: DelegationState = normalizeDelegationState(session.record.delegation);
   const { useReadlineTerminal, useTtyScreen } = resolveChatTerminalModes(io.stdin, io.stdout);
 
+  if (useTtyScreen) {
+    writeComposer(io.stdout, renderCurrentTtyComposer());
+  } else {
+    writeLine(
+      io.stdout,
+      renderHeader(activeCwd, loadedConfig, activeConfig, session, {
+        messages,
+        contextBudget,
+        costMeterState,
+        latestCredits,
+        renderOptions: { stream: io.stdout, theme: activeConfig.theme },
+      }),
+    );
+    writePrompt(io.stdout);
+  }
+  await runLifecycleHooksAndWarn("session_start");
+
   const rl = createInterface({
     input: io.stdin,
     output: writableStreamOrUndefined(io.stdout),
@@ -168,22 +190,6 @@ export async function runChat({
     writeLine(io.stdout, "\nExiting ORX chat.");
     rl.close();
   });
-
-  if (useTtyScreen) {
-    writeComposer(io.stdout, renderCurrentTtyComposer());
-  } else {
-    writeLine(
-      io.stdout,
-      renderHeader(activeCwd, loadedConfig, activeConfig, session, {
-        messages,
-        contextBudget,
-        costMeterState,
-        latestCredits,
-        renderOptions: { stream: io.stdout, theme: activeConfig.theme },
-      }),
-    );
-    writePrompt(io.stdout);
-  }
 
   try {
     for await (const rawLine of rl) {
@@ -258,6 +264,7 @@ export async function runChat({
           recordActivatedRule: (rule) => {
             activatedRules = upsertActivatedRule(activatedRules, rule);
           },
+          runLifecycleHooks: runLifecycleHooksAndWarn,
           startNewSession: async () => {
             session = await createChatSession(activeCwd, activeConfig, sessionDirectory, io.stderr);
             activatedSkills = [];
@@ -341,11 +348,11 @@ export async function runChat({
         activatedRules,
         pluginRegistryPath,
       ));
-      const userMessage: OpenRouterMessage = { role: "user", content: line };
-      const requestMessages = [...messages, userMessage];
-
       activeAbort = new AbortController();
       writeLine(io.stdout, `\nyou: ${line}`);
+      await runLifecycleHooksAndWarn("user_prompt_submit", activeAbort.signal);
+      const userMessage: OpenRouterMessage = { role: "user", content: line };
+      const requestMessages = [...messages, userMessage];
       if (useTtyScreen) {
         startTtyActivity("assistant");
       } else {
@@ -374,21 +381,23 @@ export async function runChat({
                 }
                 io.stdout.write(text);
               },
-              onToolCall(toolCall) {
+              async onToolCall(toolCall) {
                 finishTtyActivityLine();
                 io.stdout.write(
                   `\n${formatToolCallStart(toolCall, { stream: io.stdout, theme: activeConfig.theme })}\n`,
                 );
                 startTtyActivity("tool", toolCall.function.name);
                 needsAssistantPrefix = true;
+                await runLifecycleHooksAndWarn("pre_tool_use", activeAbort?.signal);
               },
-              onToolResult(result) {
+              async onToolResult(result) {
                 finishTtyActivityLine();
                 io.stdout.write(
                   `${formatToolResult(result, { stream: io.stdout, theme: activeConfig.theme })}\n`,
                 );
                 startTtyActivity("assistant");
                 needsAssistantPrefix = true;
+                await runLifecycleHooksAndWarn("post_tool_use", activeAbort?.signal);
               },
             },
           },
@@ -444,6 +453,7 @@ export async function runChat({
       writePromptOrComposer();
     }
   } finally {
+    await runLifecycleHooksAndWarn("stop");
     stopTtyActivity();
     rl.close();
   }
@@ -531,6 +541,22 @@ export async function runChat({
     }
     activeTtyActivity = undefined;
     activeTtyActivityLineCount = 0;
+  }
+
+  async function runLifecycleHooksAndWarn(
+    event: PluginHookEvent,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const result = await runTrustedPluginHooksForEvent(event, {
+      auditLogPath: pluginHooksAuditLogPath,
+      configPath: pluginHooksConfigPath,
+      env: hookEnv,
+      registryPath: pluginRegistryPath,
+      signal,
+    });
+    if (result.failedCount > 0) {
+      writeLine(io.stderr, renderPluginHookLifecycleResult(result));
+    }
   }
 }
 

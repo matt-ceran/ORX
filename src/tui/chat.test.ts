@@ -7,7 +7,12 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { COMPACTED_CONTEXT_PROVENANCE } from "../agent/index.js";
 import type { LoadedConfig } from "../config/types.js";
-import { registerPluginManifest, setPluginEnabledState } from "../plugins/index.js";
+import {
+  discoverEnabledPluginHooks,
+  registerPluginManifest,
+  setPluginEnabledState,
+  trustPluginHook,
+} from "../plugins/index.js";
 import type { BrowserSnapshotDriver, ResolveBrowserHost } from "../research/index.js";
 import { createSessionRecord, saveSessionRecord } from "../sessions/index.js";
 import { resolveChatTerminalModes, runChat } from "./chat.js";
@@ -1679,6 +1684,180 @@ test("tty chat renders compact command palette without a model request", async (
     } else {
       process.env.NO_COLOR = previousNoColor;
     }
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("chat runs trusted plugin lifecycle hooks for prompts, tools, compact, and stop", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-chat-hooks-cwd-"));
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-hooks-sessions-"));
+  const registryPath = join(sessionDirectory, "plugins", "registry.json");
+  const hooksConfigPath = join(sessionDirectory, "hooks", "hooks.json");
+  const auditLogPath = join(sessionDirectory, "audit", "hooks.jsonl");
+  const eventLogPath = join(sessionDirectory, "events.log");
+  const pluginDirectory = join(sessionDirectory, "plugin");
+  const manifestPath = join(pluginDirectory, "orx-plugin.json");
+  const hookEvents = [
+    ["sessionstart", "session_start"],
+    ["usersubmit", "user_prompt_submit"],
+    ["pretool", "pre_tool_use"],
+    ["posttool", "post_tool_use"],
+    ["precompact", "pre_compact"],
+    ["postcompact", "post_compact"],
+    ["stop", "stop"],
+  ] as const;
+  const commandFor = (event: string) =>
+    `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
+      `require("node:fs").appendFileSync(${JSON.stringify(eventLogPath)}, ${JSON.stringify(
+        `${event}\n`,
+      )})`,
+    )}`;
+  let callCount = 0;
+
+  try {
+    mkdirSync(pluginDirectory, { recursive: true });
+    writeFileSync(
+      join(pluginDirectory, "hooks.json"),
+      JSON.stringify({
+        hooks: Object.fromEntries(
+          hookEvents.map(([hookId, event]) => [
+            hookId,
+            {
+              event,
+              command: commandFor(event),
+            },
+          ]),
+        ),
+      }),
+    );
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        schemaVersion: "1",
+        name: "lifecycle-plugin",
+        version: "1.0.0",
+        description: "Lifecycle hook plugin.",
+        publisher: "acme",
+        source: {
+          type: "local",
+          path: ".",
+        },
+        components: {
+          hooks: "./hooks.json",
+        },
+        permissions: {
+          filesystem: [],
+          network: [],
+          env: [],
+          mcp: [],
+        },
+      }),
+    );
+    writeFileSync(join(cwd, "sample.txt"), "tool content\n");
+
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.lifecycle-plugin@1.0.0", true, { registryPath });
+    const discovery = discoverEnabledPluginHooks({ registryPath });
+    assert.equal(discovery.hooks.length, hookEvents.length);
+    for (const hook of discovery.hooks) {
+      trustPluginHook(hook.id, { registryPath, configPath: hooksConfigPath });
+    }
+
+    const capture = createIo({
+      stdin: Readable.from(["Read sample\n", "/compact\n", "/exit\n"]),
+      cwd,
+      fetch: async (_input, init) => {
+        callCount += 1;
+        const body = JSON.parse(String(init?.body));
+
+        if (callCount === 1) {
+          assert.equal(body.messages.at(-1).content, "Read sample");
+          return new Response(
+            streamFrom([
+              sse({
+                choices: [
+                  {
+                    delta: {
+                      tool_calls: [
+                        {
+                          index: 0,
+                          id: "call_read",
+                          type: "function",
+                          function: {
+                            name: "read_file",
+                            arguments: JSON.stringify({ path: "sample.txt" }),
+                          },
+                        },
+                      ],
+                    },
+                    finish_reason: "tool_calls",
+                  },
+                ],
+              }),
+              "data: [DONE]\n\n",
+            ]),
+            { status: 200 },
+          );
+        }
+
+        assert.equal(body.messages.at(-1).role, "tool");
+        return new Response(
+          streamFrom([
+            sse({
+              choices: [
+                {
+                  delta: {
+                    content: "Read complete.",
+                  },
+                },
+              ],
+            }),
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      pluginHooksAuditLogPath: auditLogPath,
+      pluginHooksConfigPath: hooksConfigPath,
+      pluginRegistryPath: registryPath,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(callCount, 2);
+    assert.deepEqual(readFileSync(eventLogPath, "utf8").trimEnd().split("\n"), [
+      "session_start",
+      "user_prompt_submit",
+      "pre_tool_use",
+      "post_tool_use",
+      "pre_compact",
+      "post_compact",
+      "stop",
+    ]);
+    const auditEvents = readFileSync(auditLogPath, "utf8")
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { hookId: string; hookEvent: string; ok: boolean });
+    for (const [hookId, event] of hookEvents) {
+      assert.ok(
+        auditEvents.some(
+          (entry) =>
+            entry.hookId === `plugin:acme.lifecycle-plugin@1.0.0:${hookId}` &&
+            entry.hookEvent === event &&
+            entry.ok,
+        ),
+      );
+    }
+    assert.match(capture.stdout(), /assistant: Read complete\./);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
     rmSync(sessionDirectory, { recursive: true, force: true });
   }
 });

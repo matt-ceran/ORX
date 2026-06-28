@@ -9,8 +9,8 @@ import { nativeToolDefinitions } from "./tool-schemas.js";
 
 export interface AgentTurnCallbacks {
   onText?: (text: string) => void;
-  onToolCall?: (toolCall: OpenRouterToolCall) => void;
-  onToolResult?: (result: ToolDispatchResult) => void;
+  onToolCall?: (toolCall: OpenRouterToolCall) => void | Promise<void>;
+  onToolResult?: (result: ToolDispatchResult) => void | Promise<void>;
 }
 
 export interface RunAgentTurnOptions {
@@ -107,7 +107,7 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
     });
 
     for (const toolCall of result.toolCalls) {
-      options.callbacks?.onToolCall?.(toolCall);
+      await options.callbacks?.onToolCall?.(toolCall);
       const toolResult = await dispatchNativeToolCall(toolCall, {
         cwd: options.cwd,
         signal: options.signal,
@@ -117,7 +117,7 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<AgentT
         recordToolResultForDiffState(options.diffState, toolResult);
       }
       messages.push(toolResult.message);
-      options.callbacks?.onToolResult?.(toolResult);
+      await options.callbacks?.onToolResult?.(toolResult);
       throwIfAborted(options.signal);
     }
   }

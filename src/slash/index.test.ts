@@ -1587,15 +1587,15 @@ test("plugins register, list, inspect, enable, and disable without network or ex
     assert.match(harness.stdout(), /skills: directory skills sha256:[a-f0-9]{64}/);
     assert.match(harness.stdout(), /filesystem: read:\./);
     assert.match(harness.stdout(), /env: DEMO_TOKEN/);
-    assert.match(harness.stdout(), /executable_surfaces: hooks=manual_trust_required bins=inactive mcp=inactive/);
-    assert.match(harness.stdout(), /plugin_code_execution: hooks run only through explicit \/hooks run/);
+    assert.match(harness.stdout(), /executable_surfaces: hooks=hash_trust_required bins=inactive mcp=inactive/);
+    assert.match(harness.stdout(), /plugin_code_execution: trusted current hooks run manually and on matching lifecycle events/);
 
     assert.equal(
       handleSlashCommand("/plugins enable acme.demo-plugin@1.0.0", harness.context),
       "continue",
     );
     assert.match(harness.stdout(), /Plugin acme\.demo-plugin@1\.0\.0 enabled/);
-    assert.match(harness.stdout(), /automatic executable surfaces remain inactive/);
+    assert.match(harness.stdout(), /hooks require separate hash trust, and bins\/MCP\/commands remain inactive/);
 
     assert.equal(handleSlashCommand("/status", harness.context), "continue");
     assert.match(harness.stdout(), /plugin_installed_count: 1/);
@@ -1689,7 +1689,7 @@ test("hooks slash command lists inspects trusts runs and untrusts hooks", async 
     assert.equal(await handleSlashCommand(`/hooks inspect ${hookId}`, harness.context), "continue");
     assert.match(harness.stdout(), /Hook: plugin:acme\.hook-slash-plugin@1\.0\.0:format/);
     assert.match(harness.stdout(), /command: .*slash-hook/);
-    assert.match(harness.stdout(), /execution: manual_run_only/);
+    assert.match(harness.stdout(), /execution: manual_and_lifecycle/);
 
     assert.equal(await handleSlashCommand(`/hooks run ${hookId}`, harness.context), "continue");
     assert.match(harness.stderr(), /status: untrusted/);
@@ -1704,11 +1704,14 @@ test("hooks slash command lists inspects trusts runs and untrusts hooks", async 
     assert.match(harness.stdout(), /stdout: "slash-hook\\n"/);
     assert.match(readFileSync(hooksAuditLogPath, "utf8"), /"type":"plugin.hook.run"/);
 
+    assert.equal(handleSlashCommand("/plugins list", harness.context), "continue");
+    assert.match(harness.stdout(), /enabled_hooks: 1/);
+
     assert.equal(handleSlashCommand("/status", harness.context), "continue");
     assert.match(harness.stdout(), /plugin_hook_definitions: 1/);
     assert.match(harness.stdout(), /plugin_trusted_hooks: 1/);
-    assert.match(harness.stdout(), /plugin_hook_runtime: manual_run_only/);
-    assert.match(harness.stdout(), /plugin_enabled_hooks: 0/);
+    assert.match(harness.stdout(), /plugin_hook_runtime: manual_and_lifecycle/);
+    assert.match(harness.stdout(), /plugin_enabled_hooks: 1/);
 
     assert.equal(await handleSlashCommand(`/hooks untrust ${hookId}`, harness.context), "continue");
     assert.match(harness.stdout(), /trust removed/);
@@ -2302,7 +2305,7 @@ test("resume reports missing and ambiguous selectors", async () => {
   assert.match(ambiguous.stderr(), /Use \/resume <exact-id> or a longer unique id prefix\./);
 });
 
-test("compact replaces older in-session turns with a local summary", () => {
+test("compact replaces older in-session turns with a local summary", async () => {
   const harness = createSlashHarness({
     messages: [
       { role: "user", content: "First task" },
@@ -2318,7 +2321,7 @@ test("compact replaces older in-session turns with a local summary", () => {
     },
   });
 
-  assert.equal(handleSlashCommand("/compact", harness.context), "continue");
+  assert.equal(await handleSlashCommand("/compact", harness.context), "continue");
   assert.match(harness.stdout(), /Context compacted locally: 4->3 messages/);
   assert.equal(harness.messages()[0].role, "assistant");
   assert.match(String(harness.messages()[0].content), new RegExp(COMPACTED_CONTEXT_PROVENANCE));
@@ -2328,12 +2331,12 @@ test("compact replaces older in-session turns with a local summary", () => {
   ]);
 });
 
-test("compact leaves an already minimal session unchanged", () => {
+test("compact leaves an already minimal session unchanged", async () => {
   const harness = createSlashHarness({
     messages: [{ role: "user", content: "Only task" }],
   });
 
-  assert.equal(handleSlashCommand("/compact", harness.context), "continue");
+  assert.equal(await handleSlashCommand("/compact", harness.context), "continue");
   assert.deepEqual(harness.messages(), [{ role: "user", content: "Only task" }]);
   assert.match(harness.stdout(), /Context unchanged: 1 messages/);
   assert.match(harness.stdout(), /compacted=no/);

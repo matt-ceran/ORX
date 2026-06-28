@@ -7,7 +7,12 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { runCli } from "./cli.js";
 import { setMcpProfilePersistentState } from "./mcp/index.js";
-import { registerPluginManifest, setPluginEnabledState } from "./plugins/index.js";
+import {
+  discoverEnabledPluginHooks,
+  registerPluginManifest,
+  setPluginEnabledState,
+  trustPluginHook,
+} from "./plugins/index.js";
 import { saveCurrentProfile } from "./profiles/index.js";
 
 const encoder = new TextEncoder();
@@ -345,8 +350,8 @@ test("cli plugins install list inspect enable and disable without an API key", a
       0,
     );
     assert.match(inspected.stdout(), /Plugin: acme\.cli-plugin@1\.0\.0/);
-    assert.match(inspected.stdout(), /executable_surfaces: hooks=manual_trust_required bins=inactive mcp=inactive/);
-    assert.match(inspected.stdout(), /plugin_code_execution: hooks run only through explicit \/hooks run/);
+    assert.match(inspected.stdout(), /executable_surfaces: hooks=hash_trust_required bins=inactive mcp=inactive/);
+    assert.match(inspected.stdout(), /plugin_code_execution: trusted current hooks run manually and on matching lifecycle events/);
 
     const enabled = createNoFetchIo();
     assert.equal(
@@ -358,7 +363,7 @@ test("cli plugins install list inspect enable and disable without an API key", a
       0,
     );
     assert.match(enabled.stdout(), /Plugin acme\.cli-plugin@1\.0\.0 enabled/);
-    assert.match(enabled.stdout(), /automatic executable surfaces remain inactive/);
+    assert.match(enabled.stdout(), /hooks require separate hash trust, and bins\/MCP\/commands remain inactive/);
 
     const disabled = createNoFetchIo();
     assert.equal(
@@ -480,7 +485,7 @@ test("cli hooks list inspect trust run and untrust without an API key or fetch",
     assert.equal(await runCli(["node", "cli", "hooks", "inspect", hookId], env, inspected.io), 0);
     assert.match(inspected.stdout(), /Hook: plugin:acme\.hook-cli-plugin@1\.0\.0:format/);
     assert.match(inspected.stdout(), /command: .*cli=/);
-    assert.match(inspected.stdout(), /execution: manual_run_only/);
+    assert.match(inspected.stdout(), /execution: manual_and_lifecycle/);
 
     const blocked = createNoFetchIo();
     assert.equal(await runCli(["node", "cli", "hooks", "run", hookId], env, blocked.io), 1);
@@ -499,12 +504,16 @@ test("cli hooks list inspect trust run and untrust without an API key or fetch",
     assert.match(ran.stdout(), /stdout: "cli=\[redacted-env:CI\]\\n"/);
     assert.match(readFileSync(hooksAuditLogPath, "utf8"), /"type":"plugin.hook.run"/);
 
+    const pluginList = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "plugins", "list"], env, pluginList.io), 0);
+    assert.match(pluginList.stdout(), /enabled_hooks: 1/);
+
     const status = createNoFetchIo();
     assert.equal(await runCli(["node", "cli", "status"], env, status.io), 0);
     assert.match(status.stdout(), /plugin_hook_definitions: 1/);
     assert.match(status.stdout(), /plugin_trusted_hooks: 1/);
-    assert.match(status.stdout(), /plugin_hook_runtime: manual_run_only/);
-    assert.match(status.stdout(), /plugin_enabled_hooks: 0/);
+    assert.match(status.stdout(), /plugin_hook_runtime: manual_and_lifecycle/);
+    assert.match(status.stdout(), /plugin_enabled_hooks: 1/);
 
     const untrusted = createNoFetchIo();
     assert.equal(await runCli(["node", "cli", "hooks", "untrust", hookId], env, untrusted.io), 0);
@@ -1179,6 +1188,173 @@ test("ask prints visible tool start and result summaries", async () => {
     } else {
       process.env.NO_COLOR = previousNoColor;
     }
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("ask runs trusted plugin lifecycle hooks for prompt, tools, and stop", async () => {
+  const cwd = createTempDir();
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const hooksConfigPath = join(cwd, "hooks", "trust.json");
+  const hooksAuditLogPath = join(cwd, "audit", "hooks.jsonl");
+  const eventLogPath = join(cwd, "events.log");
+  const pluginDirectory = join(cwd, "plugin");
+  const manifestPath = join(pluginDirectory, "orx-plugin.json");
+  const hookEvents = [
+    ["sessionstart", "session_start"],
+    ["usersubmit", "user_prompt_submit"],
+    ["pretool", "pre_tool_use"],
+    ["posttool", "post_tool_use"],
+    ["stop", "stop"],
+  ] as const;
+  const commandFor = (event: string) =>
+    `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
+      `require("node:fs").appendFileSync(${JSON.stringify(eventLogPath)}, ${JSON.stringify(
+        `${event}\n`,
+      )})`,
+    )}`;
+  let callCount = 0;
+
+  try {
+    mkdirSync(pluginDirectory, { recursive: true });
+    writeFileSync(join(cwd, "sample.txt"), "ask hook sample\n");
+    writeFileSync(
+      join(pluginDirectory, "hooks.json"),
+      JSON.stringify({
+        hooks: Object.fromEntries(
+          hookEvents.map(([hookId, event]) => [
+            hookId,
+            {
+              event,
+              command: commandFor(event),
+            },
+          ]),
+        ),
+      }),
+    );
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        schemaVersion: "1",
+        name: "ask-hook-plugin",
+        version: "1.0.0",
+        description: "Ask hook plugin.",
+        publisher: "acme",
+        source: {
+          type: "local",
+          path: ".",
+        },
+        components: {
+          hooks: "./hooks.json",
+        },
+        permissions: {
+          filesystem: [],
+          network: [],
+          env: [],
+          mcp: [],
+        },
+      }),
+    );
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.ask-hook-plugin@1.0.0", true, { registryPath });
+    const discovery = discoverEnabledPluginHooks({ registryPath });
+    assert.equal(discovery.hooks.length, hookEvents.length);
+    for (const hook of discovery.hooks) {
+      trustPluginHook(hook.id, { registryPath, configPath: hooksConfigPath });
+    }
+
+    const capture = createIo({
+      cwd,
+      fetch: async (_input, init) => {
+        callCount += 1;
+        const body = JSON.parse(String(init?.body));
+
+        if (callCount === 1) {
+          assert.equal(body.messages.at(-1).content, "Read sample");
+          return new Response(
+            streamFrom([
+              sse({
+                choices: [
+                  {
+                    delta: {
+                      tool_calls: [
+                        {
+                          index: 0,
+                          id: "call_read",
+                          type: "function",
+                          function: {
+                            name: "read_file",
+                            arguments: JSON.stringify({ path: "sample.txt" }),
+                          },
+                        },
+                      ],
+                    },
+                    finish_reason: "tool_calls",
+                  },
+                ],
+              }),
+              "data: [DONE]\n\n",
+            ]),
+            { status: 200 },
+          );
+        }
+
+        assert.equal(body.messages.at(-1).role, "tool");
+        return new Response(
+          streamFrom([
+            sse({
+              choices: [
+                {
+                  delta: {
+                    content: "Read complete.",
+                  },
+                },
+              ],
+            }),
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runCli(
+      ["node", "cli", "ask", "Read sample"],
+      {
+        OPENROUTER_API_KEY: "test-key",
+        ORX_PLUGIN_HOOKS_AUDIT_PATH: hooksAuditLogPath,
+        ORX_PLUGIN_HOOKS_CONFIG_PATH: hooksConfigPath,
+        ORX_PLUGIN_REGISTRY_PATH: registryPath,
+      },
+      capture.io,
+    );
+
+    assert.equal(exitCode, 0);
+    assert.equal(callCount, 2);
+    assert.deepEqual(readFileSync(eventLogPath, "utf8").trimEnd().split("\n"), [
+      "session_start",
+      "user_prompt_submit",
+      "pre_tool_use",
+      "post_tool_use",
+      "stop",
+    ]);
+    const auditEvents = readFileSync(hooksAuditLogPath, "utf8")
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { hookId: string; hookEvent: string; ok: boolean });
+    for (const [hookId, event] of hookEvents) {
+      assert.ok(
+        auditEvents.some(
+          (entry) =>
+            entry.hookId === `plugin:acme.ask-hook-plugin@1.0.0:${hookId}` &&
+            entry.hookEvent === event &&
+            entry.ok,
+        ),
+      );
+    }
+    assert.match(capture.stdout(), /Read complete\./);
+    assert.equal(capture.stderr(), "");
+  } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
 });

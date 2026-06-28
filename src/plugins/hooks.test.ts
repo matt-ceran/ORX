@@ -19,6 +19,7 @@ import {
   renderPluginHookRunResult,
   renderPluginHooks,
   runPluginHook,
+  runTrustedPluginHooksForEvent,
   setPluginEnabledState,
   trustPluginHook,
   untrustPluginHook,
@@ -47,7 +48,7 @@ test("plugin hooks discover from enabled cached manifests and render manual runt
     assert.match(hook.hookHash, /^sha256:[a-f0-9]{64}$/);
     assert.match(hook.componentHash, /^sha256:[a-f0-9]{64}$/);
     assert.match(rendered, /Hooks/);
-    assert.match(rendered, /execution: manual_run_only/);
+    assert.match(rendered, /execution: manual_and_lifecycle/);
     assert.match(rendered, /trusted=no/);
     assert.match(rendered, /command="npm run format"/);
   } finally {
@@ -118,6 +119,99 @@ test("plugin hook runner blocks untrusted hooks and executes trusted hooks with 
     assert.match(auditLog, /"status":"ok"/);
     assert.doesNotMatch(auditLog, new RegExp(secretValue));
     assert.doesNotMatch(auditLog, /UNDECLARED_VALUE/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugin lifecycle runner executes only trusted current hooks for one event", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-hook-lifecycle-"));
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const hooksConfigPath = join(cwd, "state", "hooks.json");
+  const auditLogPath = join(cwd, "audit", "hooks.jsonl");
+  const eventLogPath = join(cwd, "events.log");
+  const commandFor = (label: string) =>
+    `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
+      `require("node:fs").appendFileSync(${JSON.stringify(eventLogPath)}, ${JSON.stringify(
+        `${label}\n`,
+      )})`,
+    )}`;
+  const manifestPath = writeHookPluginFixture(cwd, {
+    hooks: {
+      trustedprompt: {
+        event: "user_prompt_submit",
+        command: commandFor("trusted-prompt"),
+      },
+      untrustedprompt: {
+        event: "user_prompt_submit",
+        command: commandFor("untrusted-prompt"),
+      },
+      trustedstop: {
+        event: "stop",
+        command: commandFor("trusted-stop"),
+      },
+    },
+  });
+  const trustedPromptId = "plugin:acme.hook-plugin@1.0.0:trustedprompt";
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.hook-plugin@1.0.0", true, { registryPath });
+    const promptHook = discoverEnabledPluginHooks({ registryPath }).hooks.find(
+      (hook) => hook.hookId === "trustedprompt",
+    );
+    assert.equal(promptHook?.id, trustedPromptId);
+    trustPluginHook(trustedPromptId, { registryPath, configPath: hooksConfigPath });
+
+    const result = await runTrustedPluginHooksForEvent("user_prompt_submit", {
+      auditLogPath,
+      configPath: hooksConfigPath,
+      registryPath,
+    });
+
+    assert.equal(result.hookCount, 2);
+    assert.equal(result.executedCount, 1);
+    assert.equal(result.failedCount, 0);
+    assert.equal(result.skippedUntrustedCount, 1);
+    assert.equal(result.skippedPendingTrustCount, 0);
+    assert.equal(readFileSync(eventLogPath, "utf8"), "trusted-prompt\n");
+    assert.match(readFileSync(auditLogPath, "utf8"), /trustedprompt/);
+    assert.doesNotMatch(readFileSync(auditLogPath, "utf8"), /untrustedprompt/);
+
+    const pluginRoot = dirname(
+      readPluginRegistryManifestPath(registryPath, "acme.hook-plugin@1.0.0"),
+    );
+    writeFileSync(
+      join(pluginRoot, "hooks.json"),
+      JSON.stringify({
+        hooks: {
+          trustedprompt: {
+            event: "user_prompt_submit",
+            command: commandFor("changed-trusted-prompt"),
+          },
+          untrustedprompt: {
+            event: "user_prompt_submit",
+            command: commandFor("untrusted-prompt"),
+          },
+          trustedstop: {
+            event: "stop",
+            command: commandFor("trusted-stop"),
+          },
+        },
+      }),
+    );
+
+    const pendingResult = await runTrustedPluginHooksForEvent("user_prompt_submit", {
+      auditLogPath,
+      configPath: hooksConfigPath,
+      registryPath,
+    });
+    assert.equal(pendingResult.hookCount, 2);
+    assert.equal(pendingResult.executedCount, 0);
+    assert.equal(pendingResult.failedCount, 0);
+    assert.equal(pendingResult.skippedUntrustedCount, 1);
+    assert.equal(pendingResult.skippedPendingTrustCount, 1);
+    assert.equal(readFileSync(eventLogPath, "utf8"), "trusted-prompt\n");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

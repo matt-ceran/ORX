@@ -95,8 +95,8 @@ export function formatStatus({
     `plugin_cache_path: ${pluginCacheDirectory ?? "default"}`,
     `plugin_hooks_config_path: ${pluginHooksConfigPath ?? "default"}`,
     `plugin_hooks_audit_path: ${pluginHooksAuditLogPath ?? "default"}`,
-    "plugin_hook_runtime: manual_run_only",
-    `plugin_enabled_hooks: ${pluginStatus.enabledHookCount}`,
+    "plugin_hook_runtime: manual_and_lifecycle",
+    `plugin_enabled_hooks: ${pluginHookTrustStatus.trustedCount}`,
     `plugin_hook_definitions: ${pluginHookTrustStatus.hookCount}${
       pluginHookTrustStatus.truncated ? " (truncated)" : ""
     }`,

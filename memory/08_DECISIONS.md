@@ -1,8 +1,14 @@
 # Decisions
 
-Last updated: 2026-06-27
+Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
+
+## 2026-06-28: Trusted Hooks May Run On Explicit Lifecycle Events
+
+Decision: ORX may automatically run enabled plugin hooks on `session_start`, `user_prompt_submit`, `pre_tool_use`, `post_tool_use`, `pre_compact`, `post_compact`, and `stop` only when the cached hook definition matches an operator-trusted current hash. Lifecycle hooks reuse the manual hook runtime: cached plugin cwd confinement, minimal declared env forwarding, timeout/output caps, redaction, private JSONL audit events, and fail-closed audit persistence. Untrusted and pending-hash hooks are skipped. Hook failures are visible on stderr and audited, but they do not silently mutate session state or implicitly authorize plugin/MCP/binary execution.
+
+Reasoning: Lifecycle hooks are useful for local formatting, logging, guardrails, and workflow automation, but they are executable plugin code. Reusing the trusted manual runtime keeps the trust boundary hash-based and operator-owned while allowing ORX sessions, tool use, compaction, and shutdown to trigger reviewed hooks predictably.
 
 ## 2026-06-27: Trusted Hook Runtime Is Manual Before Lifecycle Automation
 

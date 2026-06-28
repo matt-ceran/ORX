@@ -66,6 +66,7 @@ import {
   findInstalledPlugin,
   formatHookIdForMessage,
   formatPluginIdForMessage,
+  getPluginHookTrustSummary,
   getPluginStatusSummary,
   loadPluginCatalog,
   registerPluginManifest,
@@ -89,6 +90,7 @@ import {
   type PluginPromptActivationProvenance,
   type PluginRuleActivationProvenance,
   type PluginSkillActivationProvenance,
+  type PluginHookEvent,
 } from "../plugins/index.js";
 import {
   applySavedProfile,
@@ -224,6 +226,7 @@ export interface SlashCommandContext {
   recordActivatedPrompt?: (prompt: PluginPromptActivationProvenance) => void;
   recordActivatedRule?: (rule: PluginRuleActivationProvenance) => void;
   recordActivatedSkill?: (skill: PluginSkillActivationProvenance) => void;
+  runLifecycleHooks?: (event: PluginHookEvent) => Promise<void>;
   startNewSession?: () => Promise<void> | void;
   resumeSession?: (selector?: string) => Promise<ResumeSessionResult>;
 }
@@ -411,7 +414,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
     description: "Compact older in-session context locally",
     group: "Sessions",
     tier: "advanced",
-    handler: (_command, context) => {
+    handler: async (_command, context): Promise<SlashResult> => {
+      await context.runLifecycleHooks?.("pre_compact");
       const result = boundMessagesForContext(context.getMessages(), {
         budget: context.getContextBudget?.(),
         force: true,
@@ -420,6 +424,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
 
       if (!result.compacted) {
         writeLine(context.io.stdout, `Context unchanged: ${formatContextState(result.after)}.`);
+        await context.runLifecycleHooks?.("post_compact");
         return "continue";
       }
 
@@ -431,6 +436,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
           `${result.before.approximateBytes}B->${result.after.approximateBytes}B approx`,
         ].join(" "),
       );
+      await context.runLifecycleHooks?.("post_compact");
       return "continue";
     },
   },
@@ -1810,7 +1816,12 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
   if (subcommand === "list" || subcommand === "status") {
     writeLine(
       context.io.stdout,
-      renderPluginList(getPluginStatusSummary({ registryPath: context.pluginRegistryPath })),
+      renderPluginList(getPluginStatusSummary({ registryPath: context.pluginRegistryPath }), {
+        enabledHookCount: getPluginHookTrustSummary({
+          configPath: context.pluginHooksConfigPath,
+          registryPath: context.pluginRegistryPath,
+        }).trustedCount,
+      }),
     );
     return;
   }

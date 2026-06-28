@@ -117,6 +117,16 @@ export interface PluginHookRunResult {
   auditError?: string;
 }
 
+export interface PluginHookLifecycleResult {
+  event: PluginHookEvent;
+  hookCount: number;
+  executedCount: number;
+  skippedUntrustedCount: number;
+  skippedPendingTrustCount: number;
+  failedCount: number;
+  results: PluginHookRunResult[];
+}
+
 export type PluginHookAuditEventType = "plugin.hook.run";
 
 export interface PluginHookAuditEvent {
@@ -147,6 +157,8 @@ export interface PluginHookRunOptions extends PluginHookOptions {
   now?: () => Date;
   signal?: AbortSignal;
 }
+
+export interface PluginHookLifecycleOptions extends PluginHookRunOptions {}
 
 const HOOK_CONFIG_VERSION = 1;
 const HOOK_DIRECTORY_MODE = 0o700;
@@ -361,7 +373,7 @@ export function renderPluginHooks(
   const lines = [
     "Hooks",
     `  discovered_hooks: ${discovery.hooks.length}${discovery.truncated ? " (truncated)" : ""}`,
-    "  execution: manual_run_only",
+    "  execution: manual_and_lifecycle",
     "  hooks:",
   ];
 
@@ -418,7 +430,7 @@ export function renderPluginHookInspect(
     `  trusted: ${record?.hookHash === hook.hookHash ? "yes" : "no"}`,
     record && record.hookHash !== hook.hookHash ? `  trust_status: pending_hash_change trusted_hash=${record.hookHash}` : undefined,
     record?.trustedAt ? `  trusted_at: ${record.trustedAt}` : undefined,
-    "  execution: manual_run_only; lifecycle hook automation is not wired yet",
+    "  execution: manual_and_lifecycle; trusted current hooks run manually and on matching lifecycle events",
   ]
     .filter((line): line is string => typeof line === "string")
     .join("\n");
@@ -615,6 +627,58 @@ export async function runPluginHook(
     options,
     forwardedEnv,
   );
+}
+
+export async function runTrustedPluginHooksForEvent(
+  event: PluginHookEvent,
+  options: PluginHookLifecycleOptions = {},
+): Promise<PluginHookLifecycleResult> {
+  const discovery = discoverEnabledPluginHooks({ registryPath: options.registryPath });
+  const trust = loadPluginHooksTrustConfig({ configPath: options.configPath });
+  const hooks = discovery.hooks.filter((hook) => hook.event === event);
+  const results: PluginHookRunResult[] = [];
+  let skippedUntrustedCount = 0;
+  let skippedPendingTrustCount = 0;
+
+  for (const hook of hooks) {
+    const trustRecord = trust.hooks[hook.id];
+    if (!trustRecord) {
+      skippedUntrustedCount += 1;
+      continue;
+    }
+    if (trustRecord.hookHash !== hook.hookHash) {
+      skippedPendingTrustCount += 1;
+      continue;
+    }
+
+    results.push(await runPluginHook(hook.id, options));
+  }
+
+  return {
+    event,
+    hookCount: hooks.length,
+    executedCount: results.filter((result) => result.executed).length,
+    skippedUntrustedCount,
+    skippedPendingTrustCount,
+    failedCount: results.filter((result) => !result.ok).length,
+    results,
+  };
+}
+
+export function renderPluginHookLifecycleResult(result: PluginHookLifecycleResult): string {
+  const lines = [
+    `Plugin hooks ${result.event}: executed=${result.executedCount} failed=${result.failedCount} skipped_untrusted=${result.skippedUntrustedCount} skipped_pending=${result.skippedPendingTrustCount}`,
+  ];
+
+  for (const hookResult of result.results.filter((entry) => !entry.ok)) {
+    lines.push(
+      `  - ${hookResult.hook?.id ?? "unknown"} status=${hookResult.status} message=${JSON.stringify(
+        hookResult.message,
+      )}`,
+    );
+  }
+
+  return lines.join("\n");
 }
 
 export function renderPluginHookRunResult(result: PluginHookRunResult): string {
@@ -1133,7 +1197,7 @@ function formatHookSummary(
     record && !trusted ? "trust=pending_hash_change" : undefined,
     `hook_hash=${hook.hookHash}`,
     `command=${JSON.stringify(hook.command)}`,
-    `execution=${trusted ? "manual-run" : "trust-required"}`,
+    `execution=${trusted ? "manual-and-lifecycle" : "trust-required"}`,
   ]
     .filter((part): part is string => typeof part === "string")
     .join(" ");
