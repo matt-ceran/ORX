@@ -1,4 +1,8 @@
 import { redactSecrets } from "./audit.js";
+import {
+  mcpBearerTokenEnvName,
+  sanitizeMcpBearerToken,
+} from "./credentials.js";
 import { evaluateMcpToolPolicy, getMcpStatusSummary } from "./policy.js";
 import type { McpRegistryOptions } from "./registry.js";
 import { postMcpJsonRpc, type McpRemoteHttpOptions } from "./transport.js";
@@ -189,7 +193,7 @@ export async function callRemoteMcpTool(
   }
 
   const requiresAuth = profile.authRequired || tool.authRequired;
-  const authToken = sanitizeBearerToken(options.authToken);
+  const authToken = sanitizeMcpBearerToken(options.authToken);
   if (requiresAuth && !authToken) {
     return {
       ...base,
@@ -198,7 +202,7 @@ export async function callRemoteMcpTool(
       status: "auth_required",
       ok: false,
       networkAttempted: false,
-      message: `MCP tool ${profileId}/${toolName} requires a bearer token from ${mcpBearerTokenEnvName(profileId)} or ORX_MCP_BEARER_TOKEN.`,
+      message: `MCP tool ${profileId}/${toolName} requires a bearer token from ${mcpBearerTokenEnvName(profileId)}, ORX_MCP_BEARER_TOKEN, or an opted-in macOS Keychain item.`,
     };
   }
 
@@ -222,21 +226,6 @@ export async function callRemoteMcpTool(
         : options.headers,
     },
   );
-}
-
-export function resolveMcpBearerToken(
-  profileId: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string | undefined {
-  return sanitizeBearerToken(env[mcpBearerTokenEnvName(profileId)] ?? env.ORX_MCP_BEARER_TOKEN);
-}
-
-export function mcpBearerTokenEnvName(profileId: string): string {
-  const suffix = profileId
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return `ORX_MCP_BEARER_${suffix || "PROFILE"}`;
 }
 
 export function formatMcpToolCallResult(result: McpToolCallResult): string {
@@ -518,17 +507,6 @@ function sanitizeText(text: string): string {
     .replace(SECRET_ASSIGNMENT_PATTERN, "$1[redacted]")
     .replace(/[\r\n\t]+/g, " ")
     .trim();
-}
-
-function sanitizeBearerToken(value: string | undefined): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  if (!trimmed || /[\u0000-\u001f\u007f-\u009f]/.test(trimmed)) {
-    return undefined;
-  }
-  return trimmed;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

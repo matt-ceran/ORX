@@ -122,7 +122,7 @@ Reasoning: Manual JSON editing is a usability barrier for real MCP provider setu
 
 Decision: ORX may load local user MCP profile declarations from `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. User declarations are namespaced as `user:<profile-id>`, limited initially to `remote-http` transports, sanitized for safe IDs, tools, URLs, and secret-like values, disabled by default, and routed through the same enable, trusted-profile-hash, schema-change, per-tool grant, model-tool grant, guarded transport, bearer-auth, and audit gates as built-in and plugin MCP profiles.
 
-Reasoning: Users need a comfortable way to add real remote MCP providers without packaging every provider as a plugin. Treating the catalog as local operator configuration keeps provider setup lightweight while preserving the existing MCP authority boundary: declarations are not enabled by being present, trust is hash-bound, stale declarations are denied, bearer tokens stay env-only, and remote output remains untrusted.
+Reasoning: Users need a comfortable way to add real remote MCP providers without packaging every provider as a plugin. Treating the catalog as local operator configuration keeps provider setup lightweight while preserving the existing MCP authority boundary: declarations are not enabled by being present, trust is hash-bound, stale declarations are denied, bearer tokens are not stored in profile declarations, and remote output remains untrusted. Later 2026-06-28 work added optional macOS Keychain bearer lookup behind explicit `ORX_MCP_KEYCHAIN=1` opt-in.
 
 ## 2026-06-28: Treat Catalog Git Pins As Authoritative Install Provenance
 
@@ -174,13 +174,13 @@ Reasoning: Aliases make plugin workflows comfortable without creating another pe
 
 ## 2026-06-28: Model-Visible MCP Starts Session-Local And Read-Only
 
-Decision: ORX may expose one native model tool, `mcp_call`, only after the operator enables it in the current interactive chat with `/mcp model enable`. The tool is not present in normal model requests by default and `/mcp model disable`, `/new`, or `/resume` remove the session-local exposure. `mcp_call` reuses MCP profile state, trusted profile hashes, schema-change gates, declared-tool policy, env-only bearer auth, DNS-vetted transport, redaction/truncation, and MCP audit events. In this first model-loop slice, model-visible calls are limited to read-only non-billable declared tools, even if an operator has granted a billable/write/destructive tool for explicit operator calls.
+Decision: ORX may expose one native model tool, `mcp_call`, only after the operator enables it in the current interactive chat with `/mcp model enable`. The tool is not present in normal model requests by default and `/mcp model disable`, `/new`, or `/resume` remove the session-local exposure. `mcp_call` reuses MCP profile state, trusted profile hashes, schema-change gates, declared-tool policy, bearer auth, DNS-vetted transport, redaction/truncation, and MCP audit events. In this first model-loop slice, model-visible calls are limited to read-only non-billable declared tools, even if an operator has granted a billable/write/destructive tool for explicit operator calls. Later 2026-06-28 work added optional macOS Keychain bearer lookup behind explicit `ORX_MCP_KEYCHAIN=1` opt-in.
 
 Reasoning: The model needs a controlled path to use useful MCP metadata/docs integrations, but exposing arbitrary remote tools to the model would cross a larger authority boundary. A single ORX-owned tool preserves a stable schema, keeps remote schemas untrusted, avoids billable/write/destructive model autonomy, and makes the operator opt in per chat session.
 
 ## 2026-06-28: MCP Tool Calls Are Explicit Operator Commands
 
-Decision: ORX may execute remote MCP `tools/call` through explicit operator commands, `/mcp call <profile> <tool> [arguments-json]` and `orx mcp call <profile> <tool> [arguments-json]`. Calls require an enabled profile, trusted current profile hash, no pending schema change, an `allowed` declared-tool policy decision, guarded DNS-vetted remote HTTP transport, and env-only bearer auth for auth-bearing profiles/tools through `ORX_MCP_BEARER_<PROFILE>` or `ORX_MCP_BEARER_TOKEN`. Output is rendered as bounded, redacted, untrusted content with result hashes. Audit events record status, policy, result hashes, and content types, but not raw arguments, raw output, bearer tokens, or schemas. At this checkpoint MCP tools remained unavailable to the model loop; a later 2026-06-28 decision added session-local read-only non-billable `mcp_call` model exposure.
+Decision: ORX may execute remote MCP `tools/call` through explicit operator commands, `/mcp call <profile> <tool> [arguments-json]` and `orx mcp call <profile> <tool> [arguments-json]`. Calls require an enabled profile, trusted current profile hash, no pending schema change, an `allowed` declared-tool policy decision, guarded DNS-vetted remote HTTP transport, and bearer auth for auth-bearing profiles/tools through `ORX_MCP_BEARER_<PROFILE>`, `ORX_MCP_BEARER_TOKEN`, or later optional macOS Keychain lookup behind explicit `ORX_MCP_KEYCHAIN=1` opt-in. Output is rendered as bounded, redacted, untrusted content with result hashes. Audit events record status, policy, result hashes, and content types, but not raw arguments, raw output, bearer tokens, or schemas. At this checkpoint MCP tools remained unavailable to the model loop; a later 2026-06-28 decision added session-local read-only non-billable `mcp_call` model exposure.
 
 Reasoning: Operators need to actually use trusted MCP integrations, but model-autonomous remote tool execution is a larger authority boundary. Explicit commands validate transport, auth, redaction, and audit behavior while preserving the existing policy model: profile/schema drift invalidates grants, risky tools require per-tool grants, and remote output cannot authorize new permissions.
 
@@ -387,3 +387,9 @@ Reasoning: The CLI is for personal use, and the operator explicitly wants speed 
 Decision: Use TypeScript and Node.js unless later implementation evidence justifies a change.
 
 Reasoning: OpenRouter-compatible clients, MCP SDKs, Playwright, terminal UI libraries, validation libraries, and shell tooling are strongest and fastest to wire together in this ecosystem.
+
+## 2026-06-28: MCP Keychain Credentials Require Explicit Opt-In
+
+Decision: ORX may manage optional macOS Keychain bearer items for MCP profiles, but MCP calls must resolve credentials from env vars first and read Keychain only when `ORX_MCP_KEYCHAIN=1` is explicitly set.
+
+Reasoning: Keychain storage improves local comfort without putting bearer tokens in ORX config or command output. The opt-in preserves a visible trust boundary, avoids surprising Keychain access during tests/scripts, and keeps token values out of model-visible context and audit logs.

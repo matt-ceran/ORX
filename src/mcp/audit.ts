@@ -7,6 +7,7 @@ export type McpAuditEventType =
   | "mcp.profile.auth_status"
   | "mcp.profile.auth_setup"
   | "mcp.profile.auth_env_file"
+  | "mcp.profile.auth_keychain"
   | "mcp.profile.inspect"
   | "mcp.profile.tools"
   | "mcp.profile.remote_tools_attempt"
@@ -34,6 +35,7 @@ export interface McpAuditOptions {
 }
 
 const SENSITIVE_KEY_PATTERN = /(api[_-]?key|authorization|bearer|token|secret|password|credential)/i;
+const SAFE_SENSITIVE_KEY_EXCEPTIONS = /^(credentialSource)$/i;
 const BEARER_PATTERN = /bearer\s+[a-z0-9._~+/=-]+/gi;
 const API_KEY_LIKE_PATTERN = /(sk-or-v1-[a-z0-9._-]+)/gi;
 const SENSITIVE_QUERY_PATTERN =
@@ -76,7 +78,9 @@ export function redactSecrets(value: unknown): unknown {
   if (value && typeof value === "object") {
     const sanitized: Record<string, unknown> = {};
     for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
-      sanitized[key] = SENSITIVE_KEY_PATTERN.test(key) ? "[redacted]" : redactSecrets(nestedValue);
+      sanitized[key] = SENSITIVE_KEY_PATTERN.test(key) && !SAFE_SENSITIVE_KEY_EXCEPTIONS.test(key)
+        ? "[redacted]"
+        : redactSecrets(nestedValue);
     }
     return sanitized;
   }

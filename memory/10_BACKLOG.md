@@ -109,10 +109,11 @@ Completed:
 - Add delegation result merge controls: `--result-merge manual_summary|metadata_only`, model-facing omission of delegate text in metadata-only mode, hash/result metadata preservation, terminal summary/status visibility, and no automatic result merge.
 - Add saved delegation team readiness previews: `orx delegates plan <saved-team-id>` and `orx delegate plan <saved-team-id>` render a stored team against current execution policy without mutating chat state, calling OpenRouter, or changing policy.
 - Add MCP managed auth env-file templates: `orx mcp auth init <profile>` / `env-file` and matching slash commands create private commented shell env templates under `~/.orx/mcp/auth-env` or `ORX_MCP_AUTH_ENV_DIR` without token persistence, network calls, subprocesses, overwrite of existing files, or symlink-parent writes.
+- Add MCP macOS Keychain bearer support: `orx mcp auth keychain [status|set|delete] <profile>` and matching slash commands manage optional Keychain items through `/usr/bin/security`; MCP calls read Keychain only after explicit `ORX_MCP_KEYCHAIN=1` opt-in.
 
 Next:
 
-- Add actual managed OAuth/provider credential flows beyond env-file templates, such as provider-specific auth helpers or OS keychain-backed bearer retrieval with explicit trust and no model-visible secrets.
+- Add actual managed OAuth/provider credential flows beyond bearer storage, such as provider-specific auth helpers, refresh guidance, or provider-issued short-lived token helpers with explicit trust and no model-visible secrets.
 - Dogfood policy-enabled OpenRouter delegation with a real key using isolated policy/audit paths, then tighten remaining delegate team/profile ergonomics and any stronger pre-spend budget strategy OpenRouter can support.
 - Add secret redaction and minimal env forwarding for future stdio/child-process MCP runners if ORX adds them beyond the current remote HTTP path.
 
@@ -149,7 +150,7 @@ Next:
   - Add reviewed remote MCP tool import: `orx mcp import-remote-tools <profile>` and `/mcp import-remote-tools <profile>` use guarded `tools/list` metadata to import sanitized read-only/free tool names into local `user:` catalog profiles only, then require profile retrust if the declaration hash changed.
   - Add noninteractive MCP discovery/listing parity: `orx mcp discover` and `orx mcp remote-tools` now use the same guarded/audited behavior as the slash commands.
   - Add MCP per-tool grant policy storage: `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` persist profile-hash-bound grants for billable/write/destructive declared tools, render active/stale grant state, audit mutations, and still do not execute MCP tools.
-  - Add explicit operator MCP tool calls: `/mcp call` and `orx mcp call` execute guarded `tools/call` only for enabled/trusted/unchanged profiles with allowed declared-tool policy, env-only bearer auth, redacted/truncated untrusted output, and audit logs without raw arguments/output.
+  - Add explicit operator MCP tool calls: `/mcp call` and `orx mcp call` execute guarded `tools/call` only for enabled/trusted/unchanged profiles with allowed declared-tool policy, env bearer auth or explicit macOS Keychain opt-in, redacted/truncated untrusted output, and audit logs without raw arguments/output.
   - Add session-local model MCP read-only bridge: `/mcp model enable` exposes one native `mcp_call` model tool for read-only non-billable declared MCP tools, later narrowed by active model-tool grants; broad/billable/write model-loop MCP exposure remains inactive.
   - Add one-shot model MCP read-only opt-in: `orx ask --mcp-tools` exposes the same `mcp_call` bridge for one noninteractive request only.
   - Add persisted model MCP read-only allowlists: `/mcp allow-model-tool`, `/mcp revoke-model-tool`, and `orx mcp allow-model-tool|revoke-model-tool` store profile-hash-bound grants for model-visible read-only non-billable tools, with stale grants visible and denied.

@@ -7,7 +7,11 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, parse, relative, resolve, sep } from "node:path";
-import { mcpBearerTokenEnvName, resolveMcpBearerToken } from "./call.js";
+import {
+  isMcpMacosKeychainOptedIn,
+  mcpBearerTokenEnvName,
+  resolveMcpBearerToken,
+} from "./credentials.js";
 import { getMcpStatusSummary } from "./policy.js";
 import type { McpProfile, McpRegistryOptions } from "./registry.js";
 
@@ -21,6 +25,8 @@ export interface McpProfileAuthReport {
   profileEnvSet: boolean;
   fallbackEnvSet: boolean;
   effectiveBearerConfigured: boolean;
+  macosKeychainSupported: boolean;
+  macosKeychainOptedIn: boolean;
   managedEnvFilePath: string;
   authReady: boolean;
   authRequiredToolCount: number;
@@ -79,6 +85,7 @@ export function getMcpProfileAuthReport(
   const effectiveBearerConfigured = Boolean(resolveMcpBearerToken(profile.id, env));
   const authRequiredToolCount = profile.tools.filter((tool) => tool.authRequired).length;
   const needsBearer = profile.authRequired || authRequiredToolCount > 0;
+  const platform = process.platform;
 
   return {
     profile,
@@ -90,6 +97,8 @@ export function getMcpProfileAuthReport(
     profileEnvSet,
     fallbackEnvSet,
     effectiveBearerConfigured,
+    macosKeychainSupported: platform === "darwin",
+    macosKeychainOptedIn: isMcpMacosKeychainOptedIn(env),
     managedEnvFilePath: resolveMcpAuthEnvFilePath(profile.id, options),
     authReady: !needsBearer || effectiveBearerConfigured,
     authRequiredToolCount,
@@ -107,24 +116,25 @@ export function renderMcpProfileAuthReport(report: McpProfileAuthReport): string
     ? "no bearer token required by current local declarations"
     : report.authReady
       ? "continue with enable/trust/grant/call steps as needed"
-      : `set ${report.profileEnvName}=... or ${report.fallbackEnvName}=... in the shell before authenticated MCP calls`;
+      : `set ${report.profileEnvName}=..., ${report.fallbackEnvName}=..., or configure macOS Keychain and ORX_MCP_KEYCHAIN=1 before authenticated MCP calls`;
 
   return [
     `MCP auth: ${report.profile.id}`,
     `  state: ${report.profile.state}`,
     `  auth_required: ${needsBearer ? "yes" : "no"}`,
     `  auth_status: ${authStatus}`,
-    "  credential_mode: env_only_bearer",
+    "  credential_mode: env_bearer_then_optional_macos_keychain",
     `  profile_env: ${report.profileEnvName} status=${report.profileEnvSet ? "set" : "unset"}`,
     `  fallback_env: ${report.fallbackEnvName} status=${report.fallbackEnvSet ? "set" : "unset"}`,
     `  effective_bearer: ${report.effectiveBearerConfigured ? "configured" : "missing"}`,
+    `  macos_keychain: supported=${report.macosKeychainSupported ? "yes" : "no"} opt_in=${report.macosKeychainOptedIn ? "enabled" : "disabled"} status=not_checked`,
     `  tools_requiring_auth: ${report.authRequiredToolCount}`,
     `  managed_env_file: ${report.managedEnvFilePath}`,
     `  profile_hash: ${report.profileHash ?? "unknown"}`,
     report.trustedProfileHash ? `  trusted_hash: ${report.trustedProfileHash}` : undefined,
     report.schemaChangePending ? "  schema_change: pending" : undefined,
     "  oauth: not managed by ORX yet; use a provider-issued bearer or expiring MCP key only when the provider supports it",
-    "  storage: ORX does not persist MCP bearer token values",
+    "  storage: env vars are not persisted; optional macOS Keychain stores bearer values only after explicit keychain setup",
     `  next_step: ${nextStep}`,
   ].filter((line): line is string => typeof line === "string").join("\n");
 }
@@ -142,19 +152,20 @@ export function renderMcpProfileAuthSetup(report: McpProfileAuthReport): string 
     ? "no bearer token setup is required by current local declarations"
     : report.authReady
       ? `run orx mcp enable ${report.profile.id}, trust/grant as needed, then call tools explicitly`
-      : `export ${report.profileEnvName}, then run orx mcp auth ${report.profile.id}`;
+      : `export ${report.profileEnvName}, or run orx mcp auth keychain set ${report.profile.id} and export ORX_MCP_KEYCHAIN=1`;
 
   return [
     `MCP auth setup: ${report.profile.id}`,
     `  auth_required: ${needsBearer ? "yes" : "no"}`,
     `  auth_status: ${authStatus}`,
-    "  credential_mode: env_only_bearer",
-    "  storage: ORX does not persist MCP bearer token values",
+    "  credential_mode: env_bearer_then_optional_macos_keychain",
+    "  storage: env vars are not persisted; optional macOS Keychain stores bearer values only after explicit keychain setup",
     "  network_calls: none",
     "  subprocesses: none",
     "  config_writes: none",
     `  preferred_env: ${report.profileEnvName} status=${report.profileEnvSet ? "set" : "unset"}`,
     `  fallback_env: ${report.fallbackEnvName} status=${report.fallbackEnvSet ? "set" : "unset"}`,
+    `  macos_keychain: supported=${report.macosKeychainSupported ? "yes" : "no"} opt_in=${report.macosKeychainOptedIn ? "enabled" : "disabled"} status=not_checked`,
     `  managed_env_file: ${report.managedEnvFilePath}`,
     needsBearer
       ? "  token_value: never shown; paste a provider-issued bearer or expiring MCP key into your shell only"
@@ -165,6 +176,8 @@ export function renderMcpProfileAuthSetup(report: McpProfileAuthReport): string 
     needsBearer ? `    powershell: $env:${report.profileEnvName} = "<bearer-token>"` : undefined,
     needsBearer ? `    fallback_bash_zsh: ${fallbackExport}` : undefined,
     needsBearer ? `  unset: unset ${report.profileEnvName}` : undefined,
+    needsBearer ? `  keychain_setup: orx mcp auth keychain set ${report.profile.id}` : undefined,
+    needsBearer ? "  keychain_opt_in: export ORX_MCP_KEYCHAIN=1" : undefined,
     needsBearer
       ? "  note: prefer the profile-specific env var over the fallback when multiple MCP profiles are configured"
       : "  note: add bearer setup only if this profile's local declarations later require auth",

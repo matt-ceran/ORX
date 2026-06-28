@@ -17,6 +17,7 @@ import {
   allowMcpModelToolGrant,
   allowMcpToolGrant,
   callRemoteMcpTool,
+  deleteMcpMacosKeychainBearer,
   discoverMcpProfile,
   evaluateMcpModelToolPolicy,
   evaluateMcpToolPolicy,
@@ -24,6 +25,7 @@ import {
   formatMcpDiscoveryResult,
   formatMcpRemoteToolImportResult,
   formatMcpRemoteToolsResult,
+  getMcpMacosKeychainStatus,
   importRemoteMcpTools,
   installMcpProviderPreset,
   initializeMcpAuthEnvFile,
@@ -39,6 +41,7 @@ import {
   loadMcpProfilesConfig,
   renderMcpProviderPresetInspect,
   renderMcpAuthEnvFileInitResult,
+  renderMcpMacosKeychainResult,
   renderMcpProfileTools,
   renderMcpProviderPresets,
   renderUserMcpProfileCatalog,
@@ -47,11 +50,14 @@ import {
   removeUserMcpProfileTool,
   revokeMcpModelToolGrant,
   revokeMcpToolGrant,
+  resolveMcpBearerCredential,
   saveMcpProfilesConfig,
+  setMcpMacosKeychainBearerPrompt,
   setMcpProfilePersistentState,
   upsertUserMcpProfileTool,
   upsertUserMcpRemoteProfile,
   writeMcpAuditEvent,
+  type McpMacosKeychainCommandRunner,
   type McpProfile,
 } from "./index.js";
 import {
@@ -2271,12 +2277,14 @@ test("mcp redaction handles bearer strings and sensitive object keys", () => {
       message: "Authorization: Bearer sk-or-v1-test",
       assignment: "access_token=abcd1234 secret: abcdef token=toktok",
       password: "plain",
+      credentialSource: "macos_keychain",
       nested: [{ token: "abc" }],
     }),
     {
       message: "Authorization: Bearer [redacted]",
       assignment: "access_token=[redacted] secret: [redacted] token=[redacted]",
       password: "[redacted]",
+      credentialSource: "macos_keychain",
       nested: [{ token: "[redacted]" }],
     },
   );
@@ -2373,6 +2381,101 @@ test("mcp auth env file init refuses symlink parent paths", () => {
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("mcp macos keychain helpers require opt-in and never render token values", async () => {
+  const calls: Array<{ args: string[]; stdio: string }> = [];
+  const runner: McpMacosKeychainCommandRunner = async (args, options) => {
+    calls.push({ args, stdio: options.stdio });
+    if (args[0] === "find-generic-password" && args.includes("-w")) {
+      return { code: 0, stdout: "keychain-secret-token\n", stderr: "" };
+    }
+    if (args[0] === "find-generic-password") {
+      return { code: 0, stdout: "keychain item metadata\n", stderr: "" };
+    }
+    if (args[0] === "add-generic-password") {
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    if (args[0] === "delete-generic-password") {
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    return { code: 1, stdout: "", stderr: "unexpected" };
+  };
+
+  const envPreferred = await resolveMcpBearerCredential("openrouter", {
+    env: {
+      ORX_MCP_BEARER_OPENROUTER: "env-secret-token",
+      ORX_MCP_KEYCHAIN: "1",
+    },
+    platform: "darwin",
+    runner,
+  });
+  assert.equal(envPreferred.source, "profile_env");
+  assert.equal(envPreferred.token, "env-secret-token");
+  assert.equal(envPreferred.keychainAttempted, false);
+  assert.equal(calls.length, 0);
+
+  const disabled = await resolveMcpBearerCredential("openrouter", {
+    env: {},
+    platform: "darwin",
+    runner,
+  });
+  assert.equal(disabled.source, "none");
+  assert.equal(disabled.keychainAttempted, false);
+  assert.equal(disabled.keychainStatus, "disabled");
+
+  const resolved = await resolveMcpBearerCredential("openrouter", {
+    env: { ORX_MCP_KEYCHAIN: "1" },
+    platform: "darwin",
+    runner,
+  });
+  assert.equal(resolved.source, "macos_keychain");
+  assert.equal(resolved.token, "keychain-secret-token");
+  assert.equal(resolved.keychainAttempted, true);
+  assert.equal(resolved.keychainStatus, "configured");
+  assert.deepEqual(calls[0], {
+    args: ["find-generic-password", "-w", "-a", "openrouter", "-s", "orx.mcp.bearer"],
+    stdio: "capture",
+  });
+
+  const status = await getMcpMacosKeychainStatus("openrouter", {
+    platform: "darwin",
+    runner,
+  });
+  assert.equal(status.ok, true);
+  assert.equal(status.status, "configured");
+  assert.equal(status.tokenConfigured, true);
+  assert.doesNotMatch(renderMcpMacosKeychainResult(status), /keychain-secret-token|env-secret-token/);
+
+  const set = await setMcpMacosKeychainBearerPrompt("openrouter", {
+    platform: "darwin",
+    runner,
+  });
+  assert.equal(set.ok, true);
+  assert.equal(set.status, "configured");
+  assert.equal(calls.at(-1)?.stdio, "inherit");
+  const setArgs = calls.at(-1)?.args ?? [];
+  assert.equal(setArgs.at(-3), "-T");
+  assert.equal(setArgs.at(-2), "");
+  assert.equal(setArgs.at(-1), "-w");
+  assert.doesNotMatch(renderMcpMacosKeychainResult(set), /keychain-secret-token|env-secret-token/);
+  assert.match(renderMcpMacosKeychainResult(set), /ORX_MCP_KEYCHAIN=1/);
+
+  const deleted = await deleteMcpMacosKeychainBearer("openrouter", {
+    platform: "darwin",
+    runner,
+  });
+  assert.equal(deleted.ok, true);
+  assert.equal(deleted.status, "missing");
+  assert.equal(deleted.stateChanged, true);
+
+  const unsupported = await getMcpMacosKeychainStatus("openrouter", {
+    platform: "linux",
+    runner,
+  });
+  assert.equal(unsupported.ok, false);
+  assert.equal(unsupported.status, "unsupported");
+  assert.match(renderMcpMacosKeychainResult(unsupported), /only available on darwin/);
 });
 
 test("mcp discovery does not fetch disabled profiles", async () => {

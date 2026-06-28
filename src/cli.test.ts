@@ -7,7 +7,11 @@ import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { runCli } from "./cli.js";
-import { allowMcpModelToolGrant, setMcpProfilePersistentState } from "./mcp/index.js";
+import {
+  allowMcpModelToolGrant,
+  setMcpProfilePersistentState,
+  type McpMacosKeychainCommandRunner,
+} from "./mcp/index.js";
 import {
   discoverEnabledPluginHooks,
   registerPluginManifest,
@@ -844,6 +848,20 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     ORX_MCP_AUDIT_PATH: auditLogPath,
     ORX_MCP_AUTH_ENV_DIR: authEnvDir,
   };
+  const keychainCalls: Array<{ args: string[]; stdio: string }> = [];
+  const keychainRunner: McpMacosKeychainCommandRunner = async (args, options) => {
+    keychainCalls.push({ args, stdio: options.stdio });
+    if (args[0] === "find-generic-password") {
+      return { code: 0, stdout: "keychain item metadata\n", stderr: "" };
+    }
+    if (args[0] === "add-generic-password") {
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    if (args[0] === "delete-generic-password") {
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    return { code: 1, stdout: "", stderr: "unexpected keychain command" };
+  };
 
   try {
     const list = createIo({ cwd });
@@ -881,14 +899,16 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     assert.match(missingAuth.stdout(), /fallback_env: ORX_MCP_BEARER_TOKEN status=unset/);
     assert.match(missingAuth.stdout(), /effective_bearer: missing/);
     assert.match(missingAuth.stdout(), new RegExp(`managed_env_file: ${escapeRegExp(join(authEnvDir, "openrouter.env"))}`));
-    assert.match(missingAuth.stdout(), /storage: ORX does not persist MCP bearer token values/);
+    assert.match(missingAuth.stdout(), /macos_keychain: supported=(yes|no) opt_in=disabled status=not_checked/);
+    assert.match(missingAuth.stdout(), /storage: env vars are not persisted; optional macOS Keychain stores bearer values only after explicit keychain setup/);
 
     const authSetup = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "auth", "setup", "openrouter"], env, authSetup.io), 0);
     assert.match(authSetup.stdout(), /MCP auth setup: openrouter/);
     assert.match(authSetup.stdout(), /auth_required: yes/);
     assert.match(authSetup.stdout(), /auth_status: missing/);
-    assert.match(authSetup.stdout(), /credential_mode: env_only_bearer/);
+    assert.match(authSetup.stdout(), /credential_mode: env_bearer_then_optional_macos_keychain/);
+    assert.match(authSetup.stdout(), /keychain_setup: orx mcp auth keychain set openrouter/);
     assert.match(authSetup.stdout(), /preferred_env: ORX_MCP_BEARER_OPENROUTER status=unset/);
     assert.match(authSetup.stdout(), /fallback_env: ORX_MCP_BEARER_TOKEN status=unset/);
     assert.match(authSetup.stdout(), new RegExp(`managed_env_file: ${escapeRegExp(join(authEnvDir, "openrouter.env"))}`));
@@ -982,6 +1002,48 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     assert.match(configuredAuth.stdout(), /profile_env: ORX_MCP_BEARER_OPENROUTER status=set/);
     assert.doesNotMatch(configuredAuth.stdout(), /mcp-secret-token/);
 
+    const keychainStatus = createIo({
+      cwd,
+      mcpKeychainPlatform: "darwin",
+      mcpKeychainRunner: keychainRunner,
+    });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "auth", "keychain", "status", "openrouter"], env, keychainStatus.io),
+      0,
+    );
+    assert.match(keychainStatus.stdout(), /MCP auth keychain status: openrouter/);
+    assert.match(keychainStatus.stdout(), /status: configured/);
+    assert.match(keychainStatus.stdout(), /token_value: never shown/);
+    assert.match(keychainStatus.stdout(), /opt_in: ORX_MCP_KEYCHAIN=1 required/);
+    assert.doesNotMatch(keychainStatus.stdout(), /mcp-secret-token|keychain-secret-token/);
+
+    const keychainSet = createIo({
+      cwd,
+      mcpKeychainPlatform: "darwin",
+      mcpKeychainRunner: keychainRunner,
+    });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "auth", "keychain", "set", "openrouter"], env, keychainSet.io),
+      0,
+    );
+    assert.match(keychainSet.stdout(), /MCP auth keychain set: openrouter/);
+    assert.match(keychainSet.stdout(), /state_changed: yes/);
+    assert.match(keychainSet.stdout(), /entered in macOS security prompt; never printed by ORX/);
+    assert.equal(keychainCalls.at(-1)?.stdio, "inherit");
+    assert.equal(keychainCalls.at(-1)?.args.at(-1), "-w");
+
+    const keychainDelete = createIo({
+      cwd,
+      mcpKeychainPlatform: "darwin",
+      mcpKeychainRunner: keychainRunner,
+    });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "auth", "keychain", "delete", "openrouter"], env, keychainDelete.io),
+      0,
+    );
+    assert.match(keychainDelete.stdout(), /MCP auth keychain delete: openrouter/);
+    assert.match(keychainDelete.stdout(), /state_changed: yes/);
+
     const modelAllowed = createIo({ cwd });
     assert.equal(
       await runCli(
@@ -1061,6 +1123,8 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     assert.match(status.stdout(), /mcp_model_tool_grants: 0/);
 
     const audit = readFileSync(auditLogPath, "utf8");
+    assert.match(audit, /"type":"mcp.profile.auth_keychain"/);
+    assert.match(audit, /"keychainService":"orx.mcp.bearer"/);
     assert.match(audit, /"type":"mcp.tool.allow_attempt"/);
     assert.match(audit, /"type":"mcp.tool.revoke_attempt"/);
     assert.match(audit, /"type":"mcp.model_tool.allow_attempt"/);
@@ -1491,10 +1555,52 @@ test("cli mcp call executes allowed remote tools through dedicated auth and tran
     assert.match(called.stdout(), /access_token=\[redacted\]/);
     assert.doesNotMatch(called.stdout(), /abcd1234|mcp-secret-token/);
 
+    const keychainRunner: McpMacosKeychainCommandRunner = async (args) => {
+      assert.deepEqual(args, ["find-generic-password", "-w", "-a", "openrouter", "-s", "orx.mcp.bearer"]);
+      return { code: 0, stdout: "keychain-secret-token\n", stderr: "" };
+    };
+    const keychainCalled = createIo({
+      cwd,
+      mcpKeychainPlatform: "darwin",
+      mcpKeychainRunner: keychainRunner,
+      mcpCallFetch: async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit);
+        seenRequests.push({
+          authorization: headers.get("authorization"),
+          body: String(init?.body),
+        });
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-tools-call-1",
+            result: { content: [{ type: "text", text: "keychain ok" }] },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "mcp", "call", "openrouter", "models-list", "{}"],
+        {
+          ORX_MCP_CONFIG_PATH: mcpConfigPath,
+          ORX_MCP_AUDIT_PATH: auditLogPath,
+          ORX_MCP_KEYCHAIN: "1",
+        },
+        keychainCalled.io,
+      ),
+      0,
+    );
+    assert.equal(seenRequests.length, 2);
+    assert.equal(seenRequests[1].authorization, "Bearer keychain-secret-token");
+    assert.doesNotMatch(keychainCalled.stdout(), /keychain-secret-token/);
+
     const audit = readFileSync(auditLogPath, "utf8");
     assert.match(audit, /"type":"mcp.tool.call_attempt"/);
     assert.match(audit, /"resultHash":"sha256:[a-f0-9]{64}"/);
-    assert.doesNotMatch(audit, /abcd1234|mcp-secret-token/);
+    assert.match(audit, /"credentialSource":"profile_env"/);
+    assert.match(audit, /"credentialSource":"macos_keychain"/);
+    assert.doesNotMatch(audit, /abcd1234|mcp-secret-token|keychain-secret-token/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -3676,6 +3782,8 @@ function createIo(
     mcpDiscoveryFetch?: typeof fetch;
     mcpRemoteToolsFetch?: typeof fetch;
     mcpCallFetch?: typeof fetch;
+    mcpKeychainRunner?: McpMacosKeychainCommandRunner;
+    mcpKeychainPlatform?: NodeJS.Platform;
     stdin?: NodeJS.ReadableStream;
     cwd?: string;
     tty?: boolean;
@@ -3708,6 +3816,8 @@ function createIo(
       mcpDiscoveryFetch: options.mcpDiscoveryFetch,
       mcpRemoteToolsFetch: options.mcpRemoteToolsFetch,
       mcpCallFetch: options.mcpCallFetch,
+      mcpKeychainRunner: options.mcpKeychainRunner,
+      mcpKeychainPlatform: options.mcpKeychainPlatform,
     },
     stdout() {
       return stdoutText;

@@ -35,6 +35,7 @@ import type {
   EvidenceSource,
   ResolveBrowserHost,
 } from "../research/index.js";
+import type { McpMacosKeychainCommandRunner } from "../mcp/index.js";
 import {
   createSessionRecord,
   listSessionRecords,
@@ -103,6 +104,8 @@ export interface ChatOptions {
   sessionDirectory?: string;
   mcpAuditLogPath?: string;
   mcpConfigPath?: string;
+  mcpKeychainPlatform?: NodeJS.Platform;
+  mcpKeychainRunner?: McpMacosKeychainCommandRunner;
   mcpProfileCatalogPath?: string;
   pluginCacheDirectory?: string;
   pluginCatalogPath?: string;
@@ -135,6 +138,8 @@ export async function runChat({
   sessionDirectory,
   mcpAuditLogPath,
   mcpConfigPath,
+  mcpKeychainPlatform,
+  mcpKeychainRunner,
   mcpProfileCatalogPath,
   pluginCacheDirectory,
   pluginCatalogPath,
@@ -281,6 +286,8 @@ export async function runChat({
           mcpConfigPath,
           mcpProfileCatalogPath,
           mcpAuthEnv: hookEnv,
+          mcpKeychainPlatform,
+          mcpKeychainRunner,
           pluginCacheDirectory,
           pluginCatalogPath,
           pluginBinsAuditLogPath,
@@ -421,6 +428,8 @@ export async function runChat({
                   auditLogPath: mcpAuditLogPath,
                   authEnv: hookEnv,
                   configPath: mcpConfigPath,
+                  keychainPlatform: mcpKeychainPlatform,
+                  keychainRunner: mcpKeychainRunner,
                   profileCatalogPath: mcpProfileCatalogPath,
                   pluginRegistryPath,
                 }

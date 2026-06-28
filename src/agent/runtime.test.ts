@@ -20,6 +20,7 @@ import {
   allowMcpModelToolGrant,
   allowMcpToolGrant,
   setMcpProfilePersistentState,
+  type McpMacosKeychainCommandRunner,
 } from "../mcp/index.js";
 import { updateDelegationExecutionPolicy } from "../delegation/index.js";
 import type { OpenRouterToolCall } from "../openrouter/types.js";
@@ -595,6 +596,80 @@ test("dispatchNativeToolCall executes model MCP read tools with auth and redacte
     assert.match(auditText, /"source":"model_loop"/);
     assert.match(auditText, /"status":"ok"/);
     assert.doesNotMatch(auditText, /mcp-secret-token|remote-secret|claude/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("dispatchNativeToolCall can resolve model MCP auth from opted-in macOS Keychain", async () => {
+  const cwd = createTempDir();
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  let seenAuthorization = "";
+  let keychainCalls = 0;
+  const keychainRunner: McpMacosKeychainCommandRunner = async (args, options) => {
+    keychainCalls += 1;
+    assert.deepEqual(args, ["find-generic-password", "-w", "-a", "openrouter", "-s", "orx.mcp.bearer"]);
+    assert.equal(options.stdio, "capture");
+    return { code: 0, stdout: "keychain-secret-token\n", stderr: "" };
+  };
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+    const modelGrant = allowMcpModelToolGrant("openrouter", "models-list", { configPath });
+    assert.equal(modelGrant.ok, true);
+
+    const result = await dispatchNativeToolCall(
+      {
+        id: "call_mcp_keychain",
+        type: "function",
+        function: {
+          name: "mcp_call",
+          arguments: JSON.stringify({
+            profile: "openrouter",
+            tool: "models-list",
+            arguments: {},
+          }),
+        },
+      },
+      {
+        cwd,
+        maxResultBytes: 20_000,
+        mcp: {
+          enabled: true,
+          auditLogPath,
+          authEnv: {
+            ORX_MCP_KEYCHAIN: "1",
+          },
+          configPath,
+          keychainPlatform: "darwin",
+          keychainRunner,
+          fetch: async (_input, init) => {
+            seenAuthorization = new Headers(init?.headers).get("authorization") ?? "";
+            return new Response(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: "orx-tools-call-1",
+                result: { content: [{ type: "text", text: "keychain ok" }] },
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            );
+          },
+        },
+      },
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(keychainCalls, 1);
+    assert.equal(seenAuthorization, "Bearer keychain-secret-token");
+    const envelope = JSON.parse(String(result.message.content));
+    assert.doesNotMatch(envelope.output, /keychain-secret-token/);
+
+    const auditText = readFileSync(auditLogPath, "utf8");
+    assert.match(auditText, /"credentialSource":"macos_keychain"/);
+    assert.match(auditText, /"keychainAttempted":true/);
+    assert.match(auditText, /"keychainStatus":"configured"/);
+    assert.doesNotMatch(auditText, /keychain-secret-token/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

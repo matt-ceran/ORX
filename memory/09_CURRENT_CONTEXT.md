@@ -38,12 +38,13 @@ Urgent UX recovery additions from user testing:
 - MCP auth readiness inspection is implemented through `orx mcp auth <profile>` and `/mcp auth <profile>`. It shows profile-specific and fallback bearer env names, managed env-file path, set/unset status, effective readiness, profile hashes, and OAuth limitations without network calls or secret persistence.
 - MCP auth setup guidance is implemented through `orx mcp auth setup <profile>`, `orx mcp auth env <profile>`, `/mcp auth setup <profile>`, and `/mcp auth env <profile>`. It prints copyable placeholder exports only for auth-required profiles, shows no-auth profiles as not requiring setup, never displays token values, and performs no network calls, subprocess calls, or config writes beyond normal redacted audit metadata.
 - MCP managed auth env-file templates are implemented through `orx mcp auth init <profile>`, `orx mcp auth env-file <profile>`, `/mcp auth init <profile>`, and `/mcp auth env-file <profile>`. They create commented shell templates under `~/.orx/mcp/auth-env` or `ORX_MCP_AUTH_ENV_DIR`, use private modes, skip no-auth profiles, avoid overwriting existing files, and refuse symlink parent paths.
+- MCP macOS Keychain bearer support is implemented through `orx mcp auth keychain [status|set|delete] <profile>` and `/mcp auth keychain ...`. It uses `/usr/bin/security`, prompts for `set`, never prints token values, records only redacted audit metadata, and MCP calls read Keychain only after explicit `ORX_MCP_KEYCHAIN=1` opt-in.
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` or the derived `/plugin:<plugin-id>:command:<slug>` alias as untrusted context. Manifest-defined executable command schemas are discoverable through `components.commandSchemas` and exposed as `/plugin:<plugin-id>:exec:<slug>` aliases that can only run referenced trusted current bins.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
 - Enabled plugin `components.mcpServers` JSON can contribute MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp call`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`; trusted unchanged `remote-http` plugin profiles can be discovered, list remote tool metadata, run explicit operator `tools/call`, and optionally expose model-granted read-only non-billable tools through session-local `/mcp model enable`.
 - MCP tool grants are implemented: `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` persist per-tool grants for billable/write/destructive declared tools only on enabled/trusted/unchanged profiles. Grants bind to the current trusted profile hash; stale grants are visible and denied before explicit calls can reach the network.
-- Explicit MCP `tools/call` is implemented for operator commands: `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` require enabled/trusted/unchanged profiles, allowed declared-tool policy, env-only bearer auth for auth-bearing tools, guarded DNS-vetted transport, redacted/truncated untrusted output, and audit logs without raw arguments/output.
+- Explicit MCP `tools/call` is implemented for operator commands: `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` require enabled/trusted/unchanged profiles, allowed declared-tool policy, env bearer auth or explicit `ORX_MCP_KEYCHAIN=1` macOS Keychain opt-in for auth-bearing tools, guarded DNS-vetted transport, redacted/truncated untrusted output, and audit logs without raw arguments/output.
 - Model MCP exposure is implemented through `/mcp model enable|disable|status` for interactive chat and `orx ask --mcp-tools` for one-shot requests. ORX adds a single native model tool `mcp_call`, limited to read-only non-billable declared MCP tools with active `/mcp allow-model-tool` / `orx mcp allow-model-tool` grants; broad/billable/write/destructive model-loop MCP exposure remains inactive.
 - Enabled plugin `components.hooks` JSON can contribute hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run manually through `hooks run` / `/hooks run` or automatically on matching lifecycle events with minimal env/cwd and JSONL audit logging.
 - Enabled plugin `components.bins` directories can contribute explicit operator-run bins. Regular cached bin files appear as `plugin:<plugin-id>:bin:<file>` in `orx bins`, `/bins`, and `/status`; trusted bin hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run only through explicit `bins run` / `/bins run` with cached-plugin cwd, manifest-declared env, redacted/truncated output, and JSONL audit logs without raw argument lists.
@@ -89,6 +90,15 @@ Current files:
 
 ## Latest Work
 
+Added MCP macOS Keychain bearer support:
+
+- Added `orx mcp auth keychain [status|set|delete] <profile>` and matching slash commands to inspect, store/update, or delete optional macOS Keychain bearer items for MCP profiles.
+- Keychain `set` uses `/usr/bin/security add-generic-password ... -w` with the password prompt handled by macOS Security; ORX never receives or prints the token value from command arguments or rendered output.
+- MCP credential resolution remains env-first and only attempts Keychain after explicit `ORX_MCP_KEYCHAIN=1`. The same resolver is used by CLI `/mcp call`, slash `/mcp call`, one-shot `orx ask --mcp-tools`, and interactive model-visible `mcp_call`.
+- Audit events record credential source, keychain attempted/status, keychain service/account, action, and state changes without raw tokens or remote output. No network calls are made by keychain management commands.
+- Verification: `npm run typecheck`, `npm run build`, focused compiled agent/MCP/CLI/slash tests with 230 tests, `git diff --check`, full `npm test` with 475 tests, `npm run verify:global-install`, isolated built-CLI auth/keychain dogfood, and independent verifier review with no findings. The verifier's residual model-loop Keychain concern is closed by a dedicated regression test.
+- Next likely work is provider-specific OAuth/token helper polish beyond bearer storage, real-key policy-enabled delegation dogfood when `OPENROUTER_API_KEY` is available, final TTY ergonomics, broader provider/plugin preset polish, and release hardening.
+
 Added MCP auth env-file templates:
 
 - Added `orx mcp auth init <profile>` / `orx mcp auth env-file <profile>` and matching slash commands to create private commented shell env templates for bearer-based MCP profiles.
@@ -97,7 +107,7 @@ Added MCP auth env-file templates:
 - No-auth profiles skip file creation. The command makes no network calls, spawns no subprocesses, writes no config, stores no token values, audits only redacted metadata, and refuses symlink parent paths.
 - Verifier fix: existing auth-env directory permission tightening is now detected, rendered as `directory_permissions_tightened`, included in audit metadata, and covered by focused tests.
 - Verification: `npm run typecheck`, focused MCP/CLI/slash tests with 198 tests, `git diff --check`, isolated CLI dogfood for create/no-auth skip/symlink failure/directory-only permission tightening, full `npm test` with 473 tests, `npm run verify:global-install`, and independent verifier recheck with no findings.
-- Next likely work remains actual OAuth/keychain/provider credential flows beyond env-file templates, real-key policy-enabled delegation dogfood when `OPENROUTER_API_KEY` is available, final TTY ergonomics, broader provider/plugin preset polish, and release hardening.
+- Next likely work remains actual OAuth/provider credential flows beyond bearer storage, real-key policy-enabled delegation dogfood when `OPENROUTER_API_KEY` is available, final TTY ergonomics, broader provider/plugin preset polish, and release hardening.
 
 Added saved delegation team readiness previews:
 
@@ -232,7 +242,7 @@ Implemented read-only plugin review/doctor/audit:
 - Review aggregates installed/enabled/disabled counts, local catalog pin drift, bin and hook trust state, plugin MCP profile counts, plugin command aliases, omissions/truncation, and concrete next commands.
 - Review uses read-only registry/trust loading and does not fetch, install, enable, trust, grant, execute plugin surfaces, mutate registry/cache/catalog/trust state, or tighten existing file permissions.
 - Verification: `npm run typecheck`, `git diff --check`, focused plugin/CLI/slash tests with 143 tests, full build-backed `npm test` with 428 tests, isolated built-CLI review/audit dogfood with mode checks, and independent verifier recheck pass.
-- Next likely plugin/MCP work: actual managed OAuth/provider auth beyond env-only bearer readiness/setup, richer catalog provenance/signing or remote update discovery policy, broader provider/research/code-intelligence integrations, or final install/dogfood hardening.
+- Next likely plugin/MCP work: actual managed OAuth/provider auth beyond bearer readiness/setup, richer catalog provenance/signing or remote update discovery policy, broader provider/research/code-intelligence integrations, or final install/dogfood hardening.
 
 Implemented explicit plugin catalog update apply:
 
@@ -241,7 +251,7 @@ Implemented explicit plugin catalog update apply:
 - Refusal cases for current, not-installed, local-only, source-mismatch, and unknown catalog entries do not mutate registry/cache/catalog runtime state and render no-side-effect guidance.
 - Update-check output now points to `orx plugins catalog update <id>` instead of reusing the broader install command.
 - Verification: `npm run typecheck`, `git diff --check`, focused plugin/CLI/slash/TUI source tests with 157 tests, full build-backed `npm test` with 426 tests, built-CLI temp pinned-git dogfood, and independent verifier pass.
-- Next likely plugin/MCP work: actual managed OAuth/provider auth beyond env-only bearer readiness/setup, richer catalog provenance/signing or remote update discovery policy, broader provider/research integrations, or final install/dogfood hardening.
+- Next likely plugin/MCP work: actual managed OAuth/provider auth beyond bearer readiness/setup, richer catalog provenance/signing or remote update discovery policy, broader provider/research integrations, or final install/dogfood hardening.
 
 Implemented MCP auth readiness inspection:
 
@@ -249,7 +259,7 @@ Implemented MCP auth readiness inspection:
 - Auth output shows profile state, auth requirement, profile-specific bearer env name, fallback bearer env status, effective readiness, auth-required tool count, profile hash/trust state, OAuth limitation, and a no-secret-persistence note.
 - Auth checks use the same `ORX_MCP_BEARER_<PROFILE>` / `ORX_MCP_BEARER_TOKEN` resolution as real MCP calls, but render only set/unset/configured state and audit neutral metadata without bearer values.
 - Verification: `npm run typecheck`, `git diff --check`, focused MCP/CLI/slash source tests with 186 tests, full build-backed `npm test` with 426 tests, isolated built-CLI auth/audit dogfood, and independent verifier recheck pass.
-- Next likely plugin/MCP work: actual managed OAuth/provider auth beyond env-only bearer readiness/setup, richer catalog provenance/signing, broader research/browser integrations, or final install/dogfood hardening.
+- Next likely plugin/MCP work: actual managed OAuth/provider auth beyond bearer readiness/setup, richer catalog provenance/signing, broader research/browser integrations, or final install/dogfood hardening.
 
 Expanded built-in MCP provider presets and tightened import risk preservation:
 
@@ -450,7 +460,7 @@ Implemented persisted model MCP tool allowlists:
 
 - Added private MCP config `modelToolGrants` records for profile id, tool name, current profile hash, risk, billable flag, and granted timestamp.
 - Added `/mcp allow-model-tool <profile> <tool>` / `/mcp revoke-model-tool <profile> <tool>` plus matching `orx mcp allow-model-tool|revoke-model-tool` commands.
-- `mcp_call` now requires active model-tool grants in addition to session/ask opt-in, enabled/trusted/unchanged profiles, declared-tool policy, read-only non-billable risk, env-only bearer auth, guarded transport, redaction/truncation, and audit logging.
+- `mcp_call` now requires active model-tool grants in addition to session/ask opt-in, enabled/trusted/unchanged profiles, declared-tool policy, read-only non-billable risk, env bearer auth or explicit `ORX_MCP_KEYCHAIN=1` macOS Keychain opt-in, guarded transport, redaction/truncation, and audit logging.
 - Status and MCP policy renderers show `model_tool_grants`, `stale_model_tool_grants`, per-tool `model_grant=active|stale`, and `model_policy=allowed|denied` when a model grant exists.
 - Verification: Zeno found no behavior/security issue; wording and `/mcp tools` model-policy clarity fixes were applied. `npm run typecheck`, focused MCP/agent/CLI/slash tests with 173 tests, full `npm test` with 355 tests, `git diff --check`, and `npm run dev -- status` pass.
 - Later work added manifest-defined exec aliases; next likely MCP/plugin work is remote source fetching, richer catalog UX, or docs/provider presets.
@@ -459,7 +469,7 @@ Implemented session-local model MCP `mcp_call` runtime:
 
 - Added optional native model tool schema `mcp_call`, excluded from normal model requests unless `runAgentTurn` receives enabled MCP model options.
 - Added chat `/mcp model enable|disable|status` and `model_mcp_tools` in interactive `/status`; `/new` and `/resume` reset the session-local exposure to disabled.
-- `mcp_call` reuses the same enabled/trusted/unchanged profile gates, declared-tool policy, env-only bearer auth, guarded remote transport, redacted/truncated output, and audit event shape as explicit MCP calls.
+- `mcp_call` reuses the same enabled/trusted/unchanged profile gates, declared-tool policy, env bearer auth or explicit macOS Keychain opt-in, guarded remote transport, redacted/truncated output, and audit event shape as explicit MCP calls.
 - Model-visible MCP calls are limited to read-only non-billable declared tools. Billable/write/destructive MCP tools are denied before network even when an explicit operator grant exists.
 - Verification: verifier found only stale docs/memory wording; the wording was corrected. `npm run typecheck`, `git diff --check`, focused MCP/agent/slash/chat tests with 168 tests, full `npm test` with 350 tests, and `npm run dev -- status` pass.
 - Follow-up one-shot support: `orx ask --mcp-tools` now exposes the same read-only non-billable `mcp_call` bridge for one noninteractive request, with dedicated MCP transport injection in tests and no default exposure.
@@ -469,7 +479,7 @@ Implemented session-local model MCP `mcp_call` runtime:
 Implemented explicit operator MCP `tools/call` runtime:
 
 - Added `src/mcp/call.ts` for guarded `tools/call` requests on enabled/trusted/unchanged `remote-http` profiles when `evaluateMcpToolPolicy()` returns `allowed`.
-- Added env-only bearer auth lookup through `ORX_MCP_BEARER_<PROFILE>` or `ORX_MCP_BEARER_TOKEN`; auth-bearing profiles/tools do not attempt network calls without a token.
+- Added env bearer auth lookup through `ORX_MCP_BEARER_<PROFILE>` or `ORX_MCP_BEARER_TOKEN`; later macOS Keychain support remains explicit opt-in with `ORX_MCP_KEYCHAIN=1`, and auth-bearing profiles/tools do not attempt network calls without a resolved token.
 - Added `/mcp call <profile> <tool> [arguments-json]` and `orx mcp call <profile> <tool> [arguments-json]` with dedicated MCP call fetch hooks for tests. The general OpenRouter fetch hook is not used for live MCP calls.
 - Result rendering is bounded, redacted, marked untrusted, and explicitly not exposed to the model loop. Audit events record status/policy/result hashes/content types without raw arguments, raw output, bearer tokens, or schemas.
 - Billable/write/destructive tools still require active profile-hash-bound grants; stale grants deny before network.

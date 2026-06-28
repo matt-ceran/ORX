@@ -10,8 +10,10 @@ import {
 import {
   callRemoteMcpTool,
   evaluateMcpModelToolPolicy,
-  resolveMcpBearerToken,
+  resolveMcpBearerCredential,
   writeMcpAuditEvent,
+  type McpBearerCredentialResolution,
+  type McpMacosKeychainCommandRunner,
   type McpToolCallResult,
   type ResolveMcpHost,
 } from "../mcp/index.js";
@@ -38,6 +40,8 @@ export interface McpModelToolOptions {
   auditLogPath?: string;
   authEnv?: NodeJS.ProcessEnv;
   fetch?: typeof fetch;
+  keychainPlatform?: NodeJS.Platform;
+  keychainRunner?: McpMacosKeychainCommandRunner;
   resolveHost?: ResolveMcpHost;
 }
 
@@ -288,14 +292,19 @@ async function runModelMcpCallTool(
     return output;
   }
 
+  const credential = await resolveMcpBearerCredential(profileId, {
+    env: mcp.authEnv,
+    platform: mcp.keychainPlatform,
+    runner: mcp.keychainRunner,
+  });
   const result = await callRemoteMcpTool(profileId, toolName, toolArguments, {
     ...registryOptions,
     fetch: mcp.fetch,
     resolveHost: mcp.resolveHost,
     signal,
-    authToken: resolveMcpBearerToken(profileId, mcp.authEnv),
+    authToken: credential.token,
   });
-  tryWriteModelMcpCallResultAudit(mcp, result);
+  tryWriteModelMcpCallResultAudit(mcp, result, credential);
 
   return wrapModelMcpResult(result);
 }
@@ -364,6 +373,7 @@ function modelMcpError(
 function tryWriteModelMcpCallResultAudit(
   mcp: McpModelToolOptions | undefined,
   result: McpToolCallResult,
+  credential?: McpBearerCredentialResolution,
 ): void {
   tryWriteModelMcpAudit(mcp, result.profileId, result.toolName, result.ok, {
     source: "model_loop",
@@ -383,6 +393,9 @@ function tryWriteModelMcpCallResultAudit(
     contentTypes: result.content?.map((item) => item.type),
     error: result.error,
     message: result.message,
+    credentialSource: credential?.source,
+    keychainAttempted: credential?.keychainAttempted,
+    keychainStatus: credential?.keychainStatus,
   });
 }
 

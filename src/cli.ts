@@ -57,6 +57,7 @@ import {
   allowMcpModelToolGrant,
   allowMcpToolGrant,
   callRemoteMcpTool,
+  deleteMcpMacosKeychainBearer,
   discoverMcpProfile,
   findMcpProviderPreset,
   formatMcpDiscoveryResult,
@@ -64,6 +65,7 @@ import {
   formatMcpRemoteToolImportResult,
   formatMcpRemoteToolsResult,
   formatMcpToolCallResult,
+  getMcpMacosKeychainStatus,
   getMcpProfileAuthReport,
   getMcpProfileToolPolicyReport,
   getMcpStatusSummary,
@@ -74,6 +76,7 @@ import {
   loadUserMcpProfileCatalog,
   listRemoteMcpTools,
   renderMcpAuthEnvFileInitResult,
+  renderMcpMacosKeychainResult,
   renderMcpProviderPresetInspect,
   renderMcpProviderPresets,
   renderMcpProfileAuthReport,
@@ -84,16 +87,18 @@ import {
   renderUserMcpProfileCatalog,
   resolveMcpConfigPath,
   resolveMcpProfileCatalogPath,
-  resolveMcpBearerToken,
+  resolveMcpBearerCredential,
   removeUserMcpProfile,
   removeUserMcpProfileTool,
   revokeMcpModelToolGrant,
   revokeMcpToolGrant,
+  setMcpMacosKeychainBearerPrompt,
   setMcpProfilePersistentState,
   upsertUserMcpProfileTool,
   upsertUserMcpRemoteProfile,
   writeMcpAuditEvent,
   type McpAuditEvent,
+  type McpMacosKeychainCommandRunner,
   type McpToolRisk,
 } from "./mcp/index.js";
 import {
@@ -196,6 +201,8 @@ interface CliIo {
   mcpDiscoveryFetch?: typeof fetch;
   mcpRemoteToolsFetch?: typeof fetch;
   mcpCallFetch?: typeof fetch;
+  mcpKeychainRunner?: McpMacosKeychainCommandRunner;
+  mcpKeychainPlatform?: NodeJS.Platform;
   browserSnapshot?: BrowserSnapshotDriver;
 }
 
@@ -409,6 +416,8 @@ export async function runCli(
       mcpAuditLogPath: env.ORX_MCP_AUDIT_PATH,
       mcpConfigPath,
       mcpProfileCatalogPath,
+      mcpKeychainPlatform: io.mcpKeychainPlatform,
+      mcpKeychainRunner: io.mcpKeychainRunner,
       pluginHooksAuditLogPath,
       pluginHooksConfigPath,
       pluginRegistryPath,
@@ -430,6 +439,8 @@ export async function runCli(
   if (!first || first === "chat") {
     return runChatCommand(env, loadedConfig, io, {
       mcpConfigPath,
+      mcpKeychainPlatform: io.mcpKeychainPlatform,
+      mcpKeychainRunner: io.mcpKeychainRunner,
       mcpProfileCatalogPath,
       pluginCacheDirectory,
       pluginCatalogPath,
@@ -513,6 +524,8 @@ function runChatCommand(
     delegationTeamConfigPath?: string;
     delegationPolicyPath?: string;
     delegationAuditLogPath?: string;
+    mcpKeychainPlatform?: NodeJS.Platform;
+    mcpKeychainRunner?: McpMacosKeychainCommandRunner;
   },
 ): Promise<number> {
   return runChat({
@@ -530,6 +543,8 @@ function runChatCommand(
     sessionDirectory: resolveSessionDirectory({ env, cwd: io.cwd }),
     mcpAuditLogPath: env.ORX_MCP_AUDIT_PATH,
     mcpConfigPath: paths?.mcpConfigPath,
+    mcpKeychainPlatform: paths?.mcpKeychainPlatform,
+    mcpKeychainRunner: paths?.mcpKeychainRunner,
     mcpProfileCatalogPath: paths?.mcpProfileCatalogPath,
     pluginCacheDirectory: paths?.pluginCacheDirectory,
     pluginCatalogPath: paths?.pluginCatalogPath,
@@ -1592,7 +1607,7 @@ async function runPluginCatalogCommand(
   return 1;
 }
 
-function runMcpCommand(
+async function runMcpCommand(
   args: string[],
   io: CliIo,
   env: NodeJS.ProcessEnv,
@@ -1600,7 +1615,7 @@ function runMcpCommand(
   mcpProfileCatalogPath: string,
   pluginRegistryPath: string,
   mcpAuditLogPath?: string,
-): number | Promise<number> {
+): Promise<number> {
   const subcommand = args[0]?.toLowerCase() ?? "list";
   const profileId = args[1];
   const toolName = args[2];
@@ -1832,33 +1847,33 @@ function runMcpCommand(
   }
 
   if (subcommand === "auth") {
-    const authAction = parseMcpAuthAction(profileId);
-    const authProfileId = authAction === "status" ? profileId : args[2];
-    const expectedArgCount = authAction === "status" ? 2 : 3;
-    if (!authProfileId || args.length !== expectedArgCount) {
-      writeLine(io.stderr, "Usage: orx mcp auth <profile> | orx mcp auth setup <profile> | orx mcp auth env <profile> | orx mcp auth init <profile> | orx mcp auth env-file <profile>");
+    const authAction = parseMcpAuthArgs(args);
+    if (typeof authAction === "string") {
+      writeLine(io.stderr, authAction);
       return 1;
     }
 
-    const report = getMcpProfileAuthReport(authProfileId, {
+    const report = getMcpProfileAuthReport(authAction.profileId, {
       ...registryOptions,
       env,
       cwd: io.cwd,
     });
     const auditType =
-      authAction === "setup"
+      authAction.kind === "setup"
         ? "mcp.profile.auth_setup"
-        : authAction === "init"
+        : authAction.kind === "init"
           ? "mcp.profile.auth_env_file"
+          : authAction.kind === "keychain"
+            ? "mcp.profile.auth_keychain"
           : "mcp.profile.auth_status";
 
     if (!report) {
       tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
         type: auditType,
-        profileId: authProfileId,
+        profileId: authAction.profileId,
         ok: false,
       });
-      writeLine(io.stderr, `Unknown MCP profile: ${authProfileId}`);
+      writeLine(io.stderr, `Unknown MCP profile: ${authAction.profileId}`);
       return 1;
     }
 
@@ -1870,6 +1885,8 @@ function runMcpCommand(
       fallbackEnvName: report.fallbackEnvName,
       fallbackEnvSet: report.fallbackEnvSet,
       ready: report.authReady,
+      macosKeychainSupported: report.macosKeychainSupported,
+      macosKeychainOptedIn: report.macosKeychainOptedIn,
       authRequiredToolCount: report.authRequiredToolCount,
       managedEnvFilePath: report.managedEnvFilePath,
       profileHash: report.profileHash,
@@ -1877,12 +1894,45 @@ function runMcpCommand(
       schemaChangePending: report.schemaChangePending,
     };
 
-    if (authAction === "init") {
+    if (authAction.kind === "keychain") {
+      const keychainOptions = {
+        env,
+        platform: io.mcpKeychainPlatform,
+        runner: io.mcpKeychainRunner,
+      };
+      const result = await (
+        authAction.action === "set"
+          ? setMcpMacosKeychainBearerPrompt(authAction.profileId, keychainOptions)
+          : authAction.action === "delete"
+            ? deleteMcpMacosKeychainBearer(authAction.profileId, keychainOptions)
+            : getMcpMacosKeychainStatus(authAction.profileId, keychainOptions)
+      );
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: auditType,
+        profileId: authAction.profileId,
+        ok: result.ok,
+        details: {
+          ...auditDetails,
+          action: result.action,
+          status: result.status,
+          stateChanged: result.stateChanged,
+          tokenConfigured: result.tokenConfigured,
+          keychainService: result.keychain.service,
+          keychainAccount: result.keychain.account,
+          command: result.command,
+          message: result.message,
+        },
+      });
+      writeLine(result.ok ? io.stdout : io.stderr, renderMcpMacosKeychainResult(result));
+      return result.ok ? 0 : 1;
+    }
+
+    if (authAction.kind === "init") {
       try {
         const result = initializeMcpAuthEnvFile(report, { env, cwd: io.cwd });
         tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
           type: auditType,
-          profileId: authProfileId,
+          profileId: authAction.profileId,
           ok: true,
           details: {
             ...auditDetails,
@@ -1901,7 +1951,7 @@ function runMcpCommand(
         const message = error instanceof Error ? error.message : String(error);
         tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
           type: auditType,
-          profileId: authProfileId,
+          profileId: authAction.profileId,
           ok: false,
           details: {
             ...auditDetails,
@@ -1915,13 +1965,13 @@ function runMcpCommand(
 
     tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
       type: auditType,
-      profileId: authProfileId,
+      profileId: authAction.profileId,
       ok: true,
       details: auditDetails,
     });
     writeLine(
       io.stdout,
-      authAction === "setup"
+      authAction.kind === "setup"
         ? renderMcpProfileAuthSetup(report)
         : renderMcpProfileAuthReport(report),
     );
@@ -2042,10 +2092,15 @@ function runMcpCommand(
       return 1;
     }
 
+    const credential = await resolveMcpBearerCredential(profileId, {
+      env,
+      platform: io.mcpKeychainPlatform,
+      runner: io.mcpKeychainRunner,
+    });
     return callRemoteMcpTool(profileId, toolName, parsedArgs.value, {
       ...registryOptions,
       fetch: io.mcpCallFetch,
-      authToken: resolveMcpBearerToken(profileId, env),
+      authToken: credential.token,
     }).then((result) => {
       tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
         type: "mcp.tool.call_attempt",
@@ -2069,6 +2124,9 @@ function runMcpCommand(
           contentTypes: result.content?.map((item) => item.type),
           error: result.error,
           message: result.message,
+          credentialSource: credential.source,
+          keychainAttempted: credential.keychainAttempted,
+          keychainStatus: credential.keychainStatus,
         },
       });
       writeLine(result.ok ? io.stdout : io.stderr, formatMcpToolCallResult(result));
@@ -2375,19 +2433,66 @@ function runMcpCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: orx mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
   return 1;
 }
 
-function parseMcpAuthAction(value: string | undefined): "status" | "setup" | "init" {
-  if (value === "setup" || value === "env") {
-    return "setup";
+type ParsedMcpAuthArgs =
+  | { kind: "status"; profileId: string }
+  | { kind: "setup"; profileId: string }
+  | { kind: "init"; profileId: string }
+  | { kind: "keychain"; action: "status" | "set" | "delete"; profileId: string };
+
+function parseMcpAuthArgs(args: string[]): ParsedMcpAuthArgs | string {
+  const action = args[1]?.toLowerCase();
+  if (!action) {
+    return mcpAuthUsage();
   }
-  if (value === "init" || value === "env-file") {
-    return "init";
+
+  if (action === "setup" || action === "env") {
+    const profileId = args[2];
+    return profileId && args.length === 3 ? { kind: "setup", profileId } : mcpAuthUsage();
   }
-  return "status";
+
+  if (action === "init" || action === "env-file") {
+    const profileId = args[2];
+    return profileId && args.length === 3 ? { kind: "init", profileId } : mcpAuthUsage();
+  }
+
+  if (action === "keychain" || action === "macos-keychain") {
+    const keychainAction = normalizeMcpKeychainAction(args[2]);
+    if (keychainAction) {
+      const profileId = args[3];
+      return profileId && args.length === 4
+        ? { kind: "keychain", action: keychainAction, profileId }
+        : mcpAuthUsage();
+    }
+
+    const profileId = args[2];
+    return profileId && args.length === 3
+      ? { kind: "keychain", action: "status", profileId }
+      : mcpAuthUsage();
+  }
+
+  return args.length === 2 ? { kind: "status", profileId: args[1] } : mcpAuthUsage();
+}
+
+function normalizeMcpKeychainAction(value: string | undefined): "status" | "set" | "delete" | undefined {
+  if (value === "status" || value === "show" || value === "inspect") {
+    return "status";
+  }
+  if (value === "set" || value === "store" || value === "add" || value === "update") {
+    return "set";
+  }
+  if (value === "delete" || value === "remove" || value === "rm") {
+    return "delete";
+  }
+  return undefined;
+}
+
+function mcpAuthUsage(): string {
+  return "Usage: orx mcp auth <profile> | orx mcp auth setup <profile> | orx mcp auth env <profile> | orx mcp auth init <profile> | orx mcp auth env-file <profile> | orx mcp auth keychain [status|set|delete] <profile>";
 }
 
 function parseMcpPresetInspectArgs(
@@ -2871,6 +2976,8 @@ async function runAskCommand(
     hookEnv?: NodeJS.ProcessEnv;
     mcpAuditLogPath?: string;
     mcpConfigPath?: string;
+    mcpKeychainPlatform?: NodeJS.Platform;
+    mcpKeychainRunner?: McpMacosKeychainCommandRunner;
     mcpProfileCatalogPath?: string;
     pluginHooksAuditLogPath?: string;
     pluginHooksConfigPath?: string;
@@ -2915,6 +3022,8 @@ async function runAskCommand(
               authEnv: options.hookEnv,
               configPath: options.mcpConfigPath,
               fetch: io.mcpCallFetch,
+              keychainPlatform: options.mcpKeychainPlatform,
+              keychainRunner: options.mcpKeychainRunner,
               profileCatalogPath: options.mcpProfileCatalogPath,
               pluginRegistryPath: options.pluginRegistryPath,
             }

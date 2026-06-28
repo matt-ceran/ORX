@@ -18,7 +18,10 @@ import {
   type AgentContextBudget,
   type SessionDiffState,
 } from "../agent/index.js";
-import { resetMcpProfileRuntimeState } from "../mcp/index.js";
+import {
+  resetMcpProfileRuntimeState,
+  type McpMacosKeychainCommandRunner,
+} from "../mcp/index.js";
 import {
   completeSlashCommandLine,
   handleSlashCommand,
@@ -113,7 +116,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
-  assert.match(output, /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(output, /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
@@ -128,7 +131,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -225,7 +228,10 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mcp auth e"), [["env ", "env-file "], "e"]);
   assert.deepEqual(completeSlashCommandLine("/mcp auth s"), [["setup "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/mcp auth i"), [["init "], "i"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp auth k"), [["keychain "], "k"]);
   assert.deepEqual(completeSlashCommandLine("/mcp auth env-"), [["env-file "], "env-"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp auth keychain s"), [["status ", "set "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp auth keychain set o"), [["openrouter "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/mcp auth setup o"), [["openrouter "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/mcp auth init o"), [["openrouter "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/mcp inspect o"), [["openrouter "], "o"]);
@@ -379,7 +385,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-  assert.match(alias.stdout(), /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(alias.stdout(), /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -1556,11 +1562,25 @@ test("mcp inspect renders profile metadata and audits without network", async ()
   }
 });
 
-test("mcp auth renders env-only readiness without network or secret leakage", async () => {
+test("mcp auth renders bearer readiness without network or secret leakage", async () => {
   let fetchCalls = 0;
   const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-auth-status-"));
   const auditLogPath = join(cwd, "audit", "mcp.jsonl");
   const authEnvDir = join(cwd, "mcp", "auth-env");
+  const keychainCalls: Array<{ args: string[]; stdio: string }> = [];
+  const keychainRunner: McpMacosKeychainCommandRunner = async (args, options) => {
+    keychainCalls.push({ args, stdio: options.stdio });
+    if (args[0] === "find-generic-password") {
+      return { code: 0, stdout: "keychain item metadata\n", stderr: "" };
+    }
+    if (args[0] === "add-generic-password") {
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    if (args[0] === "delete-generic-password") {
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    return { code: 1, stdout: "", stderr: "unexpected keychain command" };
+  };
   const harness = createSlashHarness({
     cwd,
     mcpAuditLogPath: auditLogPath,
@@ -1572,6 +1592,8 @@ test("mcp auth renders env-only readiness without network or secret leakage", as
       fetchCalls += 1;
       throw new Error("fetch should not be called");
     },
+    mcpKeychainPlatform: "darwin",
+    mcpKeychainRunner: keychainRunner,
   });
 
   try {
@@ -1580,13 +1602,14 @@ test("mcp auth renders env-only readiness without network or secret leakage", as
     assert.match(harness.stdout(), /MCP auth: openrouter/);
     assert.match(harness.stdout(), /auth_required: yes/);
     assert.match(harness.stdout(), /auth_status: configured/);
-    assert.match(harness.stdout(), /credential_mode: env_only_bearer/);
+    assert.match(harness.stdout(), /credential_mode: env_bearer_then_optional_macos_keychain/);
     assert.match(harness.stdout(), /profile_env: ORX_MCP_BEARER_OPENROUTER status=set/);
     assert.match(harness.stdout(), /fallback_env: ORX_MCP_BEARER_TOKEN status=unset/);
     assert.match(harness.stdout(), /effective_bearer: configured/);
     assert.match(harness.stdout(), new RegExp(`managed_env_file: ${escapeRegExp(join(authEnvDir, "openrouter.env"))}`));
     assert.match(harness.stdout(), /oauth: not managed by ORX yet/);
-    assert.match(harness.stdout(), /storage: ORX does not persist MCP bearer token values/);
+    assert.match(harness.stdout(), /macos_keychain: supported=(yes|no) opt_in=disabled status=not_checked/);
+    assert.match(harness.stdout(), /storage: env vars are not persisted; optional macOS Keychain stores bearer values only after explicit keychain setup/);
     assert.doesNotMatch(harness.stdout(), /mcp-secret-token/);
 
     const events = readAuditEvents(auditLogPath);
@@ -1646,6 +1669,29 @@ test("mcp auth renders env-only readiness without network or secret leakage", as
     assert.equal(initEvents[2].ok, true);
     assert.equal(initEvents[2].details.ready, true);
     assert.doesNotMatch(JSON.stringify(initEvents[2]), /mcp-secret-token/);
+
+    assert.equal(await handleSlashCommand("/mcp auth keychain status openrouter", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP auth keychain status: openrouter/);
+    assert.match(harness.stdout(), /token_value: never shown/);
+
+    assert.equal(await handleSlashCommand("/mcp auth keychain set openrouter", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP auth keychain set: openrouter/);
+    assert.match(harness.stdout(), /entered in macOS security prompt; never printed by ORX/);
+    assert.equal(keychainCalls.at(-1)?.stdio, "inherit");
+    assert.equal(keychainCalls.at(-1)?.args.at(-1), "-w");
+
+    assert.equal(await handleSlashCommand("/mcp auth keychain delete openrouter", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP auth keychain delete: openrouter/);
+    assert.doesNotMatch(harness.stdout(), /mcp-secret-token|keychain-secret-token/);
+
+    const keychainEvents = readAuditEvents(auditLogPath).filter((event) => event.type === "mcp.profile.auth_keychain");
+    assert.equal(keychainEvents.length, 3);
+    assert.deepEqual(
+      keychainEvents.map((event) => event.details.action),
+      ["status", "set", "delete"],
+    );
+    assert.equal(keychainEvents[0].details.keychainService, "orx.mcp.bearer");
+    assert.doesNotMatch(JSON.stringify(keychainEvents), /mcp-secret-token|keychain-secret-token/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -2085,16 +2131,51 @@ test("mcp call executes allowed remote tools only with auth and audits without r
     assert.match(harness.stdout(), /secret=\[redacted\]/);
     assert.doesNotMatch(harness.stdout(), /secret=abc123/);
 
+    const keychainHarness = createSlashHarness({
+      mcpAuditLogPath: auditLogPath,
+      mcpConfigPath: configPath,
+      mcpAuthEnv: {
+        ORX_MCP_KEYCHAIN: "1",
+      },
+      mcpKeychainPlatform: "darwin",
+      mcpKeychainRunner: async (args) => {
+        assert.deepEqual(args, ["find-generic-password", "-w", "-a", "openrouter", "-s", "orx.mcp.bearer"]);
+        return { code: 0, stdout: "keychain-secret-token\n", stderr: "" };
+      },
+      mcpCallFetch: async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit);
+        seenRequests.push({
+          authorization: headers.get("authorization"),
+          body: String(init?.body),
+        });
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-tools-call-1",
+            result: { content: [{ type: "text", text: "keychain ok" }] },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    assert.equal(await handleSlashCommand("/mcp call openrouter models-list {}", keychainHarness.context), "continue");
+    assert.equal(seenRequests.length, 2);
+    assert.equal(seenRequests[1].authorization, "Bearer keychain-secret-token");
+    assert.doesNotMatch(keychainHarness.stdout(), /keychain-secret-token/);
+
     const events = readAuditEvents(auditLogPath);
     assert.deepEqual(
       events.map((event) => event.type),
-      ["mcp.tool.call_attempt", "mcp.profile.enable_attempt", "mcp.tool.call_attempt"],
+      ["mcp.tool.call_attempt", "mcp.profile.enable_attempt", "mcp.tool.call_attempt", "mcp.tool.call_attempt"],
     );
     assert.equal(events[0].ok, false);
     assert.equal(events[2].ok, true);
     assert.equal(events[2].details.status, "ok");
+    assert.equal(events[2].details.credentialSource, "profile_env");
+    assert.equal(events[3].details.credentialSource, "macos_keychain");
+    assert.equal(events[3].details.keychainStatus, "configured");
     assert.match(String(events[2].details.resultHash), /^sha256:[a-f0-9]{64}$/);
-    assert.doesNotMatch(JSON.stringify(events), /secret=abc123|mcp-secret-token/);
+    assert.doesNotMatch(JSON.stringify(events), /secret=abc123|mcp-secret-token|keychain-secret-token/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -4133,6 +4214,8 @@ function createSlashHarness(
     mcpRemoteToolsFetch?: typeof fetch;
     mcpCallFetch?: typeof fetch;
     mcpAuthEnv?: NodeJS.ProcessEnv;
+    mcpKeychainRunner?: McpMacosKeychainCommandRunner;
+    mcpKeychainPlatform?: NodeJS.Platform;
     mcpResolveHost?: SlashCommandContext["mcpResolveHost"];
     modelMcpEnabled?: boolean;
     webFetch?: typeof fetch;
@@ -4192,6 +4275,8 @@ function createSlashHarness(
       mcpRemoteToolsFetch: options.mcpRemoteToolsFetch,
       mcpCallFetch: options.mcpCallFetch,
       mcpAuthEnv: options.mcpAuthEnv,
+      mcpKeychainRunner: options.mcpKeychainRunner,
+      mcpKeychainPlatform: options.mcpKeychainPlatform,
       mcpResolveHost: options.mcpResolveHost,
       webFetch: options.webFetch,
       webSearchFetch: options.webSearchFetch,
