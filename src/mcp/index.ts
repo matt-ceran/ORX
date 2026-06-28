@@ -9,6 +9,12 @@ export {
   type McpToolCallStatus,
 } from "./call.js";
 export {
+  getMcpProfileAuthReport,
+  renderMcpProfileAuthReport,
+  type McpProfileAuthReport,
+  type McpProfileAuthReportOptions,
+} from "./auth.js";
+export {
   discoverMcpProfile,
   formatMcpDiscoveryResult,
   type McpDiscoveryOptions,

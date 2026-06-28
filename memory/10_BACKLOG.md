@@ -101,11 +101,9 @@ Completed:
 
 Next:
 
-- Add authenticated OpenRouter MCP schema/tool listing after OAuth or dedicated expiring MCP key handling is designed.
-- Add guarded MCP `tools/call` runtime only after per-tool grants are paired with auth/secret-forwarding, output redaction/truncation, audit logging, and model-loop exposure controls.
+- Add managed OAuth/provider auth setup beyond the current env-only MCP bearer readiness path.
 - Add OpenRouter delegate adapter and ORX-owned `delegate_task` tool only after budget, timeout, credential, and result-truncation policy is designed.
-- Add MCP policy engine outside the model loop.
-- Add secret redaction and minimal env forwarding for MCP child processes.
+- Add secret redaction and minimal env forwarding for future stdio/child-process MCP runners if ORX adds them beyond the current remote HTTP path.
 
 ## P4
 
@@ -125,6 +123,7 @@ Next:
   - Add local user MCP catalog management commands: `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands, private catalog writes, declared-tool editing, and preservation of existing `servers`-shape declarations.
   - Add built-in MCP provider preset inspect/install UX: `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, `/mcp presets`, `/mcp presets inspect <preset>`, and `/mcp add-preset <preset>` review templates or install disabled local user catalog declarations for `context7`, `microsoft-learn`, `github-readonly`, `sentry-readonly`, `figma`, `browser`, `cloudflare-docs`, and `cloudflare-api`.
   - Add profile-level risk and write-capable metadata to MCP provider presets, and preserve stricter existing same-name tool declarations during remote tool import so remote metadata cannot downgrade local risk/auth/billable policy. High-risk/write-capable profiles skip undeclared remote tools until the operator manually declares an explicit risk.
+  - Add MCP auth readiness inspection: `orx mcp auth <profile>` and `/mcp auth <profile>` render profile-specific/fallback bearer env status, effective readiness, hash state, OAuth limitation, and no-secret-persistence guidance without network calls.
   - Add plugin markdown prompt-command activation: enabled-plugin-only `components.commands` discovery from cached manifests, metadata-only `/prompts list`, explicit `/prompts activate <id>`, activated prompt provenance in sessions, and untrusted prompt system messages; later derived aliases activate the same prompts, and manifest-defined exec aliases are now implemented separately as trusted-bin wrappers.
   - Add plugin markdown rule activation: enabled-plugin-only `components.rules` discovery from cached manifests, metadata-only `/rules list`, explicit `/rules activate <id>`, activated rule provenance in sessions, and untrusted advisory rule system messages; later slices added separately trusted bin, hook, and MCP execution surfaces.
   - Add inert plugin manifest metadata: sanitized homepage/docs/license/trust tier/auth/privacy/runtime fields, `/plugins inspect` risk/requirements rendering, summary trust/auth state, and secret/control-character rejection while metadata remains display-only.

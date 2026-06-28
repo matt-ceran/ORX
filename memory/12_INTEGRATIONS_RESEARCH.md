@@ -1,6 +1,6 @@
 # MCP, Plugins, And Integrations Research
 
-Last updated: 2026-06-25
+Last updated: 2026-06-28
 
 ## Research Summary
 
@@ -56,7 +56,7 @@ Install/runtime shape:
 - Keep plugin binaries scoped to ORX execution; do not add them to the user's global `PATH`.
 - Current implementation supports local manifest paths, local catalog manifest paths, and pinned git catalog entries. Git catalog installs require a full commit pin, clone with shell-disabled bounded `git`, checkout that exact commit, normalize cached manifest provenance to the catalog pin, and then register the plugin disabled/inert.
 - Current implementation supports local plugin catalog inspect/editor/update-check commands, `orx plugins catalog inspect|updates|add-local|add-git|remove` and `/plugins catalog inspect|updates|add-local|add-git|remove`, as private local declaration review, local pinned-commit comparison, and management only. They do not fetch remotes, install, enable, trust, grant, or execute plugin surfaces.
-- Current implementation also supports local user MCP profile catalogs at `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. These are operator-controlled `remote-http` declarations namespaced as `user:<profile-id>` and routed through the same MCP enable/trust/tool-grant/model-grant gates as built-in and plugin profiles. `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` commands edit that private local catalog without hand-writing JSON. `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, and matching slash commands review or install disabled provider templates for `context7`, `microsoft-learn`, `github-readonly`, `sentry-readonly`, `figma`, `browser`, `cloudflare-docs`, and `cloudflare-api` into the same catalog. Presets can carry profile-level risk/write-capable metadata; remote tool import preserves stricter existing declarations and skips undeclared remote tools on high-risk/write-capable profiles.
+- Current implementation also supports local user MCP profile catalogs at `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. These are operator-controlled `remote-http` declarations namespaced as `user:<profile-id>` and routed through the same MCP enable/trust/tool-grant/model-grant gates as built-in and plugin profiles. `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` commands edit that private local catalog without hand-writing JSON. `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, and matching slash commands review or install disabled provider templates for `context7`, `microsoft-learn`, `github-readonly`, `sentry-readonly`, `figma`, `browser`, `cloudflare-docs`, and `cloudflare-api` into the same catalog. Presets can carry profile-level risk/write-capable metadata; remote tool import preserves stricter existing declarations and skips undeclared remote tools on high-risk/write-capable profiles. `orx mcp auth <profile>` and `/mcp auth <profile>` provide no-network env-only bearer readiness checks without persisting or printing secrets.
 - Support GitHub shorthand, richer marketplace JSON, update checks, and optional signing/provenance layers later.
 - Maintain a lockfile with source, resolved commit, integrity, install time, and enabled components.
 

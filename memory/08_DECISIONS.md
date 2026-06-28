@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: MCP Auth Readiness Is Secretless And Env-Only
+
+Decision: ORX may provide `orx mcp auth <profile>` and `/mcp auth <profile>` as readiness inspection commands for MCP bearer credentials. These commands may report profile-specific env names, fallback env names, set/unset status, effective configured/missing state, auth-required tool counts, and profile hash state, but they must not fetch, start OAuth, persist tokens, print token values, or include bearer/credential values in audit logs. Managed OAuth remains a future explicit design.
+
+Reasoning: MCP setup needs a comfortable way to see which credential name a profile expects before running discovery or calls. Keeping the command read-only and value-free improves usability without creating a new secret store or implying that ORX can safely manage every provider's OAuth flow yet.
+
 ## 2026-06-28: Remote MCP Tool Import Cannot Weaken Local Risk
 
 Decision: Reviewed remote MCP tool import may refresh local `user:` catalog declarations from provider `tools/list` metadata, but it must never downgrade an existing same-name local declaration. Existing stricter risk, auth-required, and billable state win over imported defaults. For profiles marked high-risk or write-capable, import may only refresh tools that already have a local declaration; undeclared remote tool names must be skipped until the operator manually adds them with an explicit risk.

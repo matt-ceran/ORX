@@ -37,6 +37,7 @@ import {
   formatMcpRemoteToolImportResult,
   formatMcpRemoteToolsResult,
   getMcpProfileToolPolicyReport,
+  getMcpProfileAuthReport,
   getMcpStatusSummary,
   hashMcpProfile,
   importRemoteMcpTools,
@@ -45,6 +46,7 @@ import {
   listRemoteMcpTools,
   renderMcpProviderPresetInspect,
   renderMcpProviderPresets,
+  renderMcpProfileAuthReport,
   renderMcpProfileInspect,
   renderMcpProfileTools,
   renderMcpStatus,
@@ -363,6 +365,7 @@ const MCP_SUBCOMMAND_COMPLETIONS = [
   "remove-tool",
   "model",
   "inspect",
+  "auth",
   "tools",
   "call",
   "remote-tools",
@@ -975,7 +978,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|catalog|presets [inspect]|add-preset|add-profile|add-tool|model|inspect|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
+    usage: "/mcp [list|catalog|presets [inspect]|add-preset|add-profile|add-tool|model|inspect|auth|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
     description: "Show and manage MCP profiles, local user catalogs, remote metadata, and tool grants",
     group: "Integrations",
     tier: "advanced",
@@ -1546,6 +1549,7 @@ function isTerminalTheme(value: string | undefined): value is OrxTheme {
 function isMcpProfileSubcommand(subcommand: string | undefined): boolean {
   return (
     subcommand === "inspect" ||
+    subcommand === "auth" ||
     subcommand === "tools" ||
     subcommand === "call" ||
     subcommand === "remote-tools" ||
@@ -2995,6 +2999,46 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
     return;
   }
 
+  if (subcommand === "auth") {
+    if (!profileId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /mcp auth <profile>");
+      return;
+    }
+
+    const report = getMcpProfileAuthReport(profileId, {
+      ...registryOptions,
+      env: context.mcpAuthEnv,
+    });
+    tryWriteMcpAuditEvent(context, {
+      type: "mcp.profile.auth_status",
+      profileId,
+      ok: Boolean(report),
+      details: report
+        ? {
+            state: report.profile.state,
+            authRequired: report.profile.authRequired,
+            profileEnvName: report.profileEnvName,
+            profileEnvSet: report.profileEnvSet,
+            fallbackEnvName: report.fallbackEnvName,
+            fallbackEnvSet: report.fallbackEnvSet,
+            ready: report.authReady,
+            authRequiredToolCount: report.authRequiredToolCount,
+            profileHash: report.profileHash,
+            trustedProfileHash: report.trustedProfileHash,
+            schemaChangePending: report.schemaChangePending,
+          }
+        : undefined,
+    });
+
+    if (!report) {
+      writeLine(context.io.stderr, `Unknown MCP profile: ${profileId}`);
+      return;
+    }
+
+    writeLine(context.io.stdout, renderMcpProfileAuthReport(report));
+    return;
+  }
+
   if (subcommand === "tools") {
     if (!profileId || command.args.length !== 2) {
       writeLine(context.io.stderr, "Usage: /mcp tools <profile>");
@@ -3467,7 +3511,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: /mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|auth <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
 }
 

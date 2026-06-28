@@ -112,7 +112,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
-  assert.match(output, /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(output, /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
@@ -127,7 +127,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -203,6 +203,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect s"), [["sentry-readonly "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets b"), [["browser "], "b"]);
   assert.deepEqual(completeSlashCommandLine("/mcp allow-m"), [["allow-model-tool "], "allow-m"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp auth o"), [["openrouter "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/mcp inspect o"), [["openrouter "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog ", "commands "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/plugins catalog check-"), [["check-updates "], "check-"]);
@@ -335,7 +336,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-    assert.match(alias.stdout(), /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(alias.stdout(), /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -1265,6 +1266,84 @@ test("mcp inspect renders profile metadata and audits without network", async ()
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("mcp auth renders env-only readiness without network or secret leakage", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-auth-status-"));
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const harness = createSlashHarness({
+    mcpAuditLogPath: auditLogPath,
+    mcpAuthEnv: {
+      ORX_MCP_BEARER_OPENROUTER: "mcp-secret-token",
+    },
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand("/mcp auth openrouter", harness.context), "continue");
+    assert.equal(fetchCalls, 0);
+    assert.match(harness.stdout(), /MCP auth: openrouter/);
+    assert.match(harness.stdout(), /auth_required: yes/);
+    assert.match(harness.stdout(), /auth_status: configured/);
+    assert.match(harness.stdout(), /credential_mode: env_only_bearer/);
+    assert.match(harness.stdout(), /profile_env: ORX_MCP_BEARER_OPENROUTER status=set/);
+    assert.match(harness.stdout(), /fallback_env: ORX_MCP_BEARER_TOKEN status=unset/);
+    assert.match(harness.stdout(), /effective_bearer: configured/);
+    assert.match(harness.stdout(), /oauth: not managed by ORX yet/);
+    assert.match(harness.stdout(), /storage: ORX does not persist MCP bearer token values/);
+    assert.doesNotMatch(harness.stdout(), /mcp-secret-token/);
+
+    const events = readAuditEvents(auditLogPath);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, "mcp.profile.auth_status");
+    assert.equal(events[0].profileId, "openrouter");
+    assert.equal(events[0].ok, true);
+    assert.equal(events[0].details.profileEnvName, "ORX_MCP_BEARER_OPENROUTER");
+    assert.equal(events[0].details.profileEnvSet, true);
+    assert.equal(events[0].details.ready, true);
+    assert.doesNotMatch(JSON.stringify(events[0]), /mcp-secret-token/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp auth reports no-auth profiles as ready in audit", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-auth-noauth-"));
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const harness = createSlashHarness({
+    mcpAuditLogPath: auditLogPath,
+    mcpProfileCatalogPath: join(cwd, "mcp", "profile-catalog.json"),
+    mcpConfigPath: join(cwd, "mcp", "profiles.json"),
+  });
+
+  try {
+    assert.equal(await handleSlashCommand("/mcp add-preset context7 --id docs --no-auth", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/mcp auth user:docs", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP auth: user:docs/);
+    assert.match(harness.stdout(), /auth_required: no/);
+    assert.match(harness.stdout(), /auth_status: not_required/);
+    assert.match(harness.stdout(), /effective_bearer: missing/);
+    assert.match(harness.stdout(), /next_step: no bearer token required by current local declarations/);
+
+    const events = readAuditEvents(auditLogPath);
+    const authEvent = events.find((event) => event.type === "mcp.profile.auth_status");
+    assert.equal(authEvent?.profileId, "user:docs");
+    assert.equal(authEvent?.details.ready, true);
+    assert.equal(authEvent?.details.authRequired, false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp invalid subcommand usage includes auth", async () => {
+  const harness = createSlashHarness();
+
+  assert.equal(await handleSlashCommand("/mcp nope", harness.context), "continue");
+  assert.match(harness.stderr(), /auth <profile>/);
 });
 
 test("mcp tools renders declared tool policy without network", async () => {

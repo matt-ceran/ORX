@@ -33,6 +33,7 @@ Urgent UX recovery additions from user testing:
 - Local user MCP catalog management commands are implemented through `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands. They write private local catalog files, preserve existing array/object/legacy `servers` declarations during edits, and avoid manual JSON editing for common remote MCP setup.
 - Built-in MCP provider presets are implemented through `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, `/mcp presets`, `/mcp presets inspect <preset>`, and `/mcp add-preset <preset>`. Templates now include `context7`, `microsoft-learn`, `github-readonly`, `sentry-readonly`, `figma`, `browser`, `cloudflare-docs`, and `cloudflare-api`, and inspect/install flows leave enablement, trust, grants, calls, and model exposure as separate explicit steps.
 - Reviewed remote MCP tool import is implemented through `orx mcp import-remote-tools <profile>` and `/mcp import-remote-tools <profile>`. It is limited to local `user:` catalog profiles, uses the existing enabled/trusted/unchanged guarded `tools/list` path, stores sanitized read-only non-billable declarations only, skips unsupported names, audits hashes only, and leaves newly changed profiles behind the pending schema-change retrust gate.
+- MCP auth readiness inspection is implemented through `orx mcp auth <profile>` and `/mcp auth <profile>`. It shows profile-specific and fallback bearer env names, set/unset status, effective readiness, profile hashes, and OAuth limitations without network calls or secret persistence.
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` or the derived `/plugin:<plugin-id>:command:<slug>` alias as untrusted context. Manifest-defined executable command schemas are discoverable through `components.commandSchemas` and exposed as `/plugin:<plugin-id>:exec:<slug>` aliases that can only run referenced trusted current bins.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
@@ -79,6 +80,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented MCP auth readiness inspection:
+
+- Added `orx mcp auth <profile>` and `/mcp auth <profile>` as no-network readiness checks for built-in, plugin, and user MCP profiles.
+- Auth output shows profile state, auth requirement, profile-specific bearer env name, fallback bearer env status, effective readiness, auth-required tool count, profile hash/trust state, OAuth limitation, and a no-secret-persistence note.
+- Auth checks use the same `ORX_MCP_BEARER_<PROFILE>` / `ORX_MCP_BEARER_TOKEN` resolution as real MCP calls, but render only set/unset/configured state and audit neutral metadata without bearer values.
+- Verification: `npm run typecheck`, `git diff --check`, focused MCP/CLI/slash source tests with 186 tests, full build-backed `npm test` with 426 tests, isolated built-CLI auth/audit dogfood, and independent verifier recheck pass.
+- Next likely plugin/MCP work: actual managed OAuth/provider auth setup beyond env-only bearer readiness, richer catalog provenance/signing, broader research/browser integrations, or final install/dogfood hardening.
 
 Expanded built-in MCP provider presets and tightened import risk preservation:
 

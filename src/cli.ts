@@ -30,6 +30,7 @@ import {
   formatMcpRemoteToolImportResult,
   formatMcpRemoteToolsResult,
   formatMcpToolCallResult,
+  getMcpProfileAuthReport,
   getMcpProfileToolPolicyReport,
   getMcpStatusSummary,
   hashMcpProfile,
@@ -39,6 +40,7 @@ import {
   listRemoteMcpTools,
   renderMcpProviderPresetInspect,
   renderMcpProviderPresets,
+  renderMcpProfileAuthReport,
   renderMcpProfileInspect,
   renderMcpProfileTools,
   renderMcpStatus,
@@ -1163,6 +1165,46 @@ function runMcpCommand(
     return 0;
   }
 
+  if (subcommand === "auth") {
+    if (!profileId || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx mcp auth <profile>");
+      return 1;
+    }
+
+    const report = getMcpProfileAuthReport(profileId, {
+      ...registryOptions,
+      env,
+    });
+    tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+      type: "mcp.profile.auth_status",
+      profileId,
+      ok: Boolean(report),
+      details: report
+        ? {
+            state: report.profile.state,
+            authRequired: report.profile.authRequired,
+            profileEnvName: report.profileEnvName,
+            profileEnvSet: report.profileEnvSet,
+            fallbackEnvName: report.fallbackEnvName,
+            fallbackEnvSet: report.fallbackEnvSet,
+            ready: report.authReady,
+            authRequiredToolCount: report.authRequiredToolCount,
+            profileHash: report.profileHash,
+            trustedProfileHash: report.trustedProfileHash,
+            schemaChangePending: report.schemaChangePending,
+          }
+        : undefined,
+    });
+
+    if (!report) {
+      writeLine(io.stderr, `Unknown MCP profile: ${profileId}`);
+      return 1;
+    }
+
+    writeLine(io.stdout, renderMcpProfileAuthReport(report));
+    return 0;
+  }
+
   if (subcommand === "tools") {
     if (!profileId || args.length !== 2) {
       writeLine(io.stderr, "Usage: orx mcp tools <profile>");
@@ -1610,7 +1652,7 @@ function runMcpCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: orx mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
   return 1;
 }

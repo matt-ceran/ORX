@@ -1,6 +1,6 @@
 # ORX Memory Index
 
-Last updated: 2026-06-27
+Last updated: 2026-06-28
 
 This directory is the durable memory system for ORX. New Codex sessions should use this file as the routing table, then open only the memory files needed for the task.
 

@@ -367,6 +367,31 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     assert.equal(await runCli(["node", "cli", "mcp", "enable", "openrouter"], env, enabled.io), 0);
     assert.match(enabled.stdout(), /MCP profile openrouter enabled/);
 
+    const missingAuth = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "auth", "openrouter"], env, missingAuth.io), 0);
+    assert.match(missingAuth.stdout(), /MCP auth: openrouter/);
+    assert.match(missingAuth.stdout(), /auth_status: missing/);
+    assert.match(missingAuth.stdout(), /profile_env: ORX_MCP_BEARER_OPENROUTER status=unset/);
+    assert.match(missingAuth.stdout(), /fallback_env: ORX_MCP_BEARER_TOKEN status=unset/);
+    assert.match(missingAuth.stdout(), /effective_bearer: missing/);
+    assert.match(missingAuth.stdout(), /storage: ORX does not persist MCP bearer token values/);
+
+    const configuredAuth = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "mcp", "auth", "openrouter"],
+        {
+          ...env,
+          ORX_MCP_BEARER_OPENROUTER: "mcp-secret-token",
+        },
+        configuredAuth.io,
+      ),
+      0,
+    );
+    assert.match(configuredAuth.stdout(), /auth_status: configured/);
+    assert.match(configuredAuth.stdout(), /profile_env: ORX_MCP_BEARER_OPENROUTER status=set/);
+    assert.doesNotMatch(configuredAuth.stdout(), /mcp-secret-token/);
+
     const modelAllowed = createIo({ cwd });
     assert.equal(
       await runCli(
@@ -551,8 +576,10 @@ test("cli mcp commands use user MCP profile catalog", async () => {
 test("cli mcp provider presets install local catalog profiles", async () => {
   const cwd = createTempDir();
   const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
   const env = {
     ORX_MCP_PROFILE_CATALOG_PATH: profileCatalogPath,
+    ORX_MCP_AUDIT_PATH: auditLogPath,
   };
 
   try {
@@ -614,6 +641,26 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(inspected.stdout(), /url: https:\/\/mcp\.context7\.com\/mcp/);
     assert.match(inspected.stdout(), /resolve-library-id risk=read auth=no billable=no/);
     assert.match(inspected.stdout(), /query-docs risk=read auth=no billable=no/);
+
+    const noAuth = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "auth", "user:docs"], env, noAuth.io), 0);
+    assert.match(noAuth.stdout(), /auth_status: not_required/);
+    assert.match(noAuth.stdout(), /effective_bearer: missing/);
+    assert.match(noAuth.stdout(), /next_step: no bearer token required by current local declarations/);
+
+    const events = readFileSync(auditLogPath, "utf8")
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { type: string; profileId?: string; details?: Record<string, unknown> });
+    assert.ok(
+      events.some(
+        (event) =>
+          event.type === "mcp.profile.auth_status" &&
+          event.profileId === "user:docs" &&
+          event.details?.ready === true,
+      ),
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
