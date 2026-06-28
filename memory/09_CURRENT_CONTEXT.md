@@ -70,6 +70,15 @@ Current files:
 
 ## Latest Work
 
+Implemented native test target commands:
+
+- Added `src/testing/` for operator-invoked test target discovery and execution.
+- `orx tests list|run` and `/tests list|run` discover safe `package.json` `test*` scripts, default to `script:test` when present, and fall back to direct Node `*.test.*` / `*.spec.*` files when no package `test` script exists.
+- Test runs use the shared process runner with shell disabled, output caps, timeouts, sanitized extra arguments, secret redaction in rendered stdout/stderr, redacted omitted script paths, and safe absolute paths for root dash-leading Node test files.
+- `/status` and `orx status` now show `test_targets`, `test_default_target`, `test_package_scripts`, and `test_node_targets`.
+- Verification: implementor full suite passed with 371 tests; verifier rechecked redaction, unsafe omitted script names, no-key operation, command-injection probe, and dash-leading Node test fallback with no findings after fixes.
+- Next likely programming-power-pack work: richer code intelligence such as tree-sitter repo maps, ast-grep previews, or framework-specific Vitest/Jest/Playwright adapters; model-visible `run_tests` remains future work.
+
 Implemented namespaced plugin command aliases:
 
 - Added `src/plugins/command-aliases.ts` to derive `/plugin:<plugin-id>:command:<slug>` prompt aliases and `/plugin:<plugin-id>:bin:<file>` bin aliases from enabled cached plugin surfaces.
