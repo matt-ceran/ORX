@@ -6,6 +6,7 @@ export type McpAuditEventType =
   | "mcp.profile.status"
   | "mcp.profile.inspect"
   | "mcp.profile.tools"
+  | "mcp.profile.remote_tools_attempt"
   | "mcp.profile.discovery_attempt"
   | "mcp.profile.enable_attempt"
   | "mcp.profile.disable_attempt";

@@ -28,9 +28,11 @@ import {
   discoverMcpProfile,
   findMcpProfile,
   formatMcpDiscoveryResult,
+  formatMcpRemoteToolsResult,
   getMcpProfileToolPolicyReport,
   getMcpStatusSummary,
   hashMcpProfile,
+  listRemoteMcpTools,
   renderMcpProfileInspect,
   renderMcpProfileTools,
   renderMcpStatus,
@@ -197,6 +199,7 @@ export interface SlashCommandContext {
   loadedConfig: LoadedConfig;
   fetch?: typeof fetch;
   mcpDiscoveryFetch?: typeof fetch;
+  mcpRemoteToolsFetch?: typeof fetch;
   mcpResolveHost?: ResolveMcpHost;
   webFetch?: typeof fetch;
   webSearchFetch?: typeof fetch;
@@ -290,6 +293,7 @@ const MCP_SUBCOMMAND_COMPLETIONS = [
   "status",
   "inspect",
   "tools",
+  "remote-tools",
   "discover",
   "enable",
   "disable",
@@ -785,8 +789,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|inspect|tools|discover|enable|disable]",
-    description: "Show MCP profile policy state and gated discovery",
+    usage: "/mcp [list|inspect|tools|remote-tools|discover|enable|disable]",
+    description: "Show MCP profile policy state, gated discovery, and remote tool metadata",
     group: "Integrations",
     tier: "advanced",
     handler: async (command, context): Promise<SlashResult> => {
@@ -1300,6 +1304,7 @@ function isMcpProfileSubcommand(subcommand: string | undefined): boolean {
   return (
     subcommand === "inspect" ||
     subcommand === "tools" ||
+    subcommand === "remote-tools" ||
     subcommand === "discover" ||
     subcommand === "enable" ||
     subcommand === "disable"
@@ -2236,6 +2241,62 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
     return;
   }
 
+  if (subcommand === "remote-tools") {
+    if (!profileId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /mcp remote-tools <profile>");
+      return;
+    }
+
+    const result = await listRemoteMcpTools(profileId, {
+      configPath: context.mcpConfigPath,
+      pluginRegistryPath: context.pluginRegistryPath,
+      fetch: context.mcpRemoteToolsFetch,
+      resolveHost: context.mcpResolveHost,
+    });
+    tryWriteMcpAuditEvent(context, {
+      type: "mcp.profile.remote_tools_attempt",
+      profileId,
+      ok: result.ok,
+      details: {
+        status: result.status,
+        networkAttempted: result.networkAttempted,
+        transport: result.transport,
+        url: result.url,
+        authRequired: result.authRequired,
+        profileHash: result.profileHash,
+        trustedProfileHash: result.trustedProfileHash,
+        schemaChangePending: result.schemaChangePending,
+        httpStatus: result.httpStatus,
+        toolCount: result.toolCount,
+        nextCursorPresent: result.nextCursorPresent,
+        truncated: result.truncated,
+        toolHashes: result.tools?.map((tool) => ({
+          name: tool.name,
+          toolHash: tool.toolHash,
+          inputSchemaHash: tool.inputSchemaHash,
+          outputSchemaHash: tool.outputSchemaHash,
+        })),
+        error: result.error,
+        message: result.message,
+      },
+    });
+
+    const output = formatMcpRemoteToolsResult(result);
+    if (
+      result.status === "not_found" ||
+      result.status === "network_error" ||
+      result.status === "remote_error" ||
+      result.status === "invalid_response" ||
+      result.status === "too_many_pages"
+    ) {
+      writeLine(context.io.stderr, output);
+      return;
+    }
+
+    writeLine(context.io.stdout, output);
+    return;
+  }
+
   if (subcommand === "discover") {
     if (!profileId || command.args.length !== 2) {
       writeLine(context.io.stderr, "Usage: /mcp discover <profile>");
@@ -2344,7 +2405,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /mcp [list|inspect <profile>|tools <profile>|discover <profile>|enable <profile>|disable <profile>]",
+    "Usage: /mcp [list|inspect <profile>|tools <profile>|remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>]",
   );
 }
 

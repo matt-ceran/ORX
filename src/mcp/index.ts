@@ -4,9 +4,20 @@ export {
   type McpDiscoveryOptions,
   type McpDiscoveryResult,
   type McpDiscoveryStatus,
+} from "./discovery.js";
+export {
+  formatMcpRemoteToolsResult,
+  listRemoteMcpTools,
+  type McpRemoteToolSummary,
+  type McpRemoteToolsOptions,
+  type McpRemoteToolsResult,
+  type McpRemoteToolsStatus,
+} from "./remote-tools.js";
+export {
+  type McpRemoteHttpOptions,
   type ResolveMcpHost,
   type ResolvedMcpHostAddress,
-} from "./discovery.js";
+} from "./transport.js";
 export {
   OPENROUTER_MCP_PROFILE,
   findMcpProfile,

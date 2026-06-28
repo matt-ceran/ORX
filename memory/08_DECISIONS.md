@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Remote MCP Tool Listing Is Metadata Only
+
+Decision: ORX may expose `/mcp remote-tools <profile>` to call `tools/list` for enabled, trusted, unchanged `remote-http` MCP profiles through the guarded DNS-vetted MCP transport. The command renders only bounded untrusted tool metadata, annotation keys, and SHA-256 hashes of tool/input/output schemas; it does not render raw schemas, call `tools/call`, persist remote schemas as trusted state, or expose remote MCP tools to the model loop. Results are audited with tool/schema hashes and redacted errors.
+
+Reasoning: Live `tools/list` is needed before MCP execution can be designed, but remote tool names, descriptions, schemas, and annotations are untrusted integration data. Hashing and bounded rendering give operators visibility into remote schema shape and drift without letting remote metadata authorize tool use or change ORX's execution surface.
+
 ## 2026-06-28: Plugin MCP Discovery Uses Profile Trust And Guarded Transport
 
 Decision: Enabled plugin MCP profiles may be discovered with `/mcp discover <profile>` only after the profile is enabled, has a trusted current profile hash, has no pending schema change, and uses `remote-http`. Discovery uses ORX's URL guard plus a production Node transport that resolves and vets DNS results before connecting and binds the request to a public resolved address while preserving the original host for HTTP/SNI behavior. Discovery performs only the minimal JSON-RPC initialize handshake, reports auth/network/schema states, audits the result, and does not list, execute, or expose plugin MCP tools to the model loop.

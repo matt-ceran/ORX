@@ -16,9 +16,11 @@ import {
   discoverMcpProfile,
   evaluateMcpToolPolicy,
   formatMcpDiscoveryResult,
+  formatMcpRemoteToolsResult,
   getMcpStatusSummary,
   getMcpProfileToolPolicyReport,
   hashMcpProfile,
+  listRemoteMcpTools,
   loadMcpProfilesConfig,
   renderMcpProfileTools,
   redactSecrets,
@@ -347,6 +349,320 @@ test("plugin MCP discovery vets DNS before native endpoint requests", async () =
     assert.equal(result.status, "network_error");
     assert.equal(result.networkAttempted, true);
     assert.match(result.error ?? "", /Blocked resolved local or private IP address: 127\.0\.0\.1/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tools/list does not fetch disabled profiles", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-remote-tools-disabled-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+
+  try {
+    const result = await listRemoteMcpTools("openrouter", {
+      configPath,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    assert.equal(fetchCalls, 0);
+    assert.equal(result.status, "disabled");
+    assert.equal(result.networkAttempted, false);
+    assert.match(formatMcpRemoteToolsResult(result), /Enable and trust it with \/mcp enable openrouter/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tools/list reads bounded untrusted tool metadata without executing tools", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-remote-tools-ok-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const seenRequests: string[] = [];
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const result = await listRemoteMcpTools("openrouter", {
+      configPath,
+      fetch: async (input, init) => {
+        seenRequests.push(`${String(input)} ${init?.method ?? ""} ${String(init?.body)}`);
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-tools-list-1",
+            result: {
+              tools: [
+                {
+                  name: "models-list",
+                  title: "List models",
+                  description: "List OpenRouter models",
+                  inputSchema: {
+                    type: "object",
+                    properties: {
+                      query: { type: "string" },
+                    },
+                  },
+                  annotations: {
+                    readOnlyHint: true,
+                    destructiveHint: false,
+                  },
+                },
+                {
+                  name: "chat-send",
+                  description: "Send a billable chat request",
+                  inputSchema: {
+                    type: "object",
+                    properties: {
+                      prompt: { type: "string" },
+                    },
+                  },
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    assert.equal(seenRequests.length, 1);
+    assert.match(seenRequests[0], /^https:\/\/mcp\.openrouter\.ai\/mcp POST /);
+    assert.match(seenRequests[0], /"method":"tools\/list"/);
+    assert.doesNotMatch(seenRequests[0], /tools\/call/);
+    assert.equal(result.status, "ok");
+    assert.equal(result.networkAttempted, true);
+    assert.equal(result.toolCount, 2);
+    assert.equal(result.tools?.[0].name, "models-list");
+    assert.match(result.tools?.[0].toolHash ?? "", /^sha256:[a-f0-9]{64}$/);
+    assert.match(result.tools?.[0].inputSchemaHash ?? "", /^sha256:[a-f0-9]{64}$/);
+    assert.deepEqual(result.tools?.[0].annotationKeys, ["destructiveHint", "readOnlyHint"]);
+    const formatted = formatMcpRemoteToolsResult(result);
+    assert.match(formatted, /trust_boundary: remote tool metadata is untrusted/);
+    assert.match(formatted, /tool_execution: not implemented/);
+    assert.doesNotMatch(formatted, /"type":"object"/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tools/list paginates and locally truncates without executing tools", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-remote-tools-page-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const requestBodies: string[] = [];
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const result = await listRemoteMcpTools("openrouter", {
+      configPath,
+      maxTools: 2,
+      fetch: async (_input, init) => {
+        requestBodies.push(String(init?.body));
+        const page = requestBodies.length;
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: `orx-tools-list-${page}`,
+            result: {
+              tools: [{ name: `tool-${page}-a` }, { name: `tool-${page}-b` }],
+              nextCursor: page === 1 ? "next-page" : undefined,
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    assert.equal(requestBodies.length, 1);
+    assert.doesNotMatch(requestBodies.join("\n"), /tools\/call/);
+    assert.equal(result.status, "ok");
+    assert.equal(result.toolCount, 2);
+    assert.equal(result.truncated, true);
+    assert.equal(result.nextCursorPresent, true);
+    assert.deepEqual(result.tools?.map((tool) => tool.name), ["tool-1-a", "tool-1-b"]);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tools/list blocks guarded plugin URLs before fetch", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-mcp-remote-tools-blocked-"));
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const manifestPath = writePluginWithMcpProfile(cwd, "http://127.0.0.1/mcp");
+  const profileId = "plugin:acme.mcp-plugin@1.0.0:context7";
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.mcp-plugin@1.0.0", true, { registryPath });
+    setMcpProfilePersistentState(profileId, "enabled", {
+      configPath,
+      pluginRegistryPath: registryPath,
+    });
+
+    const result = await listRemoteMcpTools(profileId, {
+      configPath,
+      pluginRegistryPath: registryPath,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    assert.equal(fetchCalls, 0);
+    assert.equal(result.status, "blocked_url");
+    assert.equal(result.networkAttempted, false);
+    assert.match(formatMcpRemoteToolsResult(result), /Blocked local or private IPv4 address/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tools/list blocks untrusted and pending schema profiles without network", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-remote-tools-gates-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+
+  try {
+    mkdirSync(join(cwd, "mcp"), { recursive: true });
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        profiles: {
+          openrouter: {
+            id: "openrouter",
+            state: "enabled",
+            updatedAt: "2026-06-28T12:00:00.000Z",
+          },
+        },
+      }),
+    );
+
+    const untrusted = await listRemoteMcpTools("openrouter", {
+      configPath,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        profiles: {
+          openrouter: {
+            id: "openrouter",
+            state: "enabled",
+            trustedProfileHash: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            updatedAt: "2026-06-28T12:01:00.000Z",
+          },
+        },
+      }),
+    );
+
+    const pending = await listRemoteMcpTools("openrouter", {
+      configPath,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    assert.equal(fetchCalls, 0);
+    assert.equal(untrusted.status, "untrusted");
+    assert.equal(untrusted.networkAttempted, false);
+    assert.equal(pending.status, "schema_change_pending");
+    assert.equal(pending.networkAttempted, false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tools/list sanitizes auth and remote errors", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-remote-tools-auth-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const authRequired = await listRemoteMcpTools("openrouter", {
+      configPath,
+      fetch: async () => new Response("Bearer sk-or-v1-secret", { status: 403 }),
+    });
+    assert.equal(authRequired.status, "auth_required");
+    assert.doesNotMatch(JSON.stringify(authRequired), /sk-or-v1-secret/);
+
+    const remoteError = await listRemoteMcpTools("openrouter", {
+      configPath,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-tools-list-1",
+            error: {
+              code: -32000,
+              message: "bad Bearer sk-or-v1-secret access_token=abcd1234",
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+    assert.equal(remoteError.status, "remote_error");
+    assert.match(remoteError.error ?? "", /\[redacted\]/);
+    assert.doesNotMatch(formatMcpRemoteToolsResult(remoteError), /sk-or-v1-secret/);
+    assert.doesNotMatch(formatMcpRemoteToolsResult(remoteError), /access_token=abcd1234/);
+    assert.match(formatMcpRemoteToolsResult(remoteError), /access_token=\[redacted\]/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tools/list renders remote-controlled text as sanitized single-line metadata", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-remote-tools-line-safe-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const result = await listRemoteMcpTools("openrouter", {
+      configPath,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-tools-list-1",
+            result: {
+              tools: [
+                {
+                  name: "safe\nstatus: forged",
+                  title: "title\tsecret=abc123",
+                  description: "desc\r\naccess_token=abcd1234",
+                  annotations: {
+                    "key\nforged": true,
+                  },
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+
+    const formatted = formatMcpRemoteToolsResult(result);
+    assert.equal(result.status, "ok");
+    assert.doesNotMatch(formatted, /\nstatus: forged/);
+    assert.doesNotMatch(formatted, /secret=abc123/);
+    assert.doesNotMatch(formatted, /access_token=abcd1234/);
+    assert.match(formatted, /safe status: forged/);
+    assert.match(formatted, /secret=\[redacted\]/);
+    assert.match(formatted, /access_token=\[redacted\]/);
+    assert.match(formatted, /annotation_keys=key forged/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
