@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Remote MCP Tool Import Stores Names, Not Authority
+
+Decision: ORX may provide `orx mcp import-remote-tools <profile>` and `/mcp import-remote-tools <profile>` to import reviewed remote `tools/list` metadata into local `user:` MCP catalog declarations. The import flow is limited to local user catalog profiles, requires the existing enabled/trusted/unchanged guarded `tools/list` path to succeed, stores only sanitized tool names as read-only non-billable declarations with profile-inherited auth, skips unsupported names, and audits the result with hashes only. It must not import raw schemas as trusted state, edit built-in or plugin profiles, grant tools, grant model access, call `tools/call`, or preserve trust across the resulting profile-hash change.
+
+Reasoning: Zero-static-tool providers such as GitHub read-only need a comfortable way to become callable after the operator reviews provider metadata. Importing only reviewed names into the user-owned catalog reduces hand-entry friction while preserving the MCP authority boundary: remote metadata remains untrusted, local declarations become visible configuration, and the changed profile hash forces explicit re-review before execution or model exposure.
+
 ## 2026-06-28: MCP Provider Presets Are Local Templates Only
 
 Decision: ORX may ship built-in MCP provider presets such as `context7`, `microsoft-learn`, and `github-readonly`, exposed through `orx mcp presets`, `orx mcp add-preset <preset>`, and matching `/mcp` commands. Installing a preset writes sanitized disabled declarations into the local user MCP catalog only. It must not enable a profile, trust a profile hash, grant tools, expose model MCP, fetch remote metadata, or bypass the existing guarded discovery/call/audit gates.

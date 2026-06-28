@@ -24,6 +24,15 @@ export {
   type McpRemoteToolsStatus,
 } from "./remote-tools.js";
 export {
+  formatMcpRemoteToolImportResult,
+  importRemoteMcpTools,
+  type ImportedRemoteMcpTool,
+  type McpRemoteToolImportOptions,
+  type McpRemoteToolImportResult,
+  type McpRemoteToolImportStatus,
+  type SkippedRemoteMcpTool,
+} from "./remote-tool-import.js";
+export {
   type McpRemoteHttpOptions,
   type ResolveMcpHost,
   type ResolvedMcpHostAddress,
@@ -105,13 +114,16 @@ export {
   removeUserMcpProfileTool,
   renderUserMcpProfileCatalog,
   resolveMcpProfileCatalogPath,
+  upsertUserMcpProfileTools,
   upsertUserMcpProfileTool,
   upsertUserMcpRemoteProfile,
+  validateUserMcpToolName,
   type UserMcpProfileCatalogIoOptions,
   type UserMcpProfileCatalogLoadResult,
   type UserMcpProfileCatalogPathOptions,
   type UserMcpProfileOmission,
   type UserMcpProfileCatalogMutationResult,
+  type UserMcpProfileToolsMutationResult,
   type UserMcpRemoteProfileInput,
   type UserMcpToolInput,
 } from "./user-profiles.js";

@@ -64,6 +64,10 @@ export interface UserMcpProfileCatalogMutationResult {
   message: string;
 }
 
+export interface UserMcpProfileToolsMutationResult extends UserMcpProfileCatalogMutationResult {
+  toolNames: string[];
+}
+
 const MAX_USER_MCP_PROFILES = 128;
 const MAX_USER_MCP_FILE_BYTES = 256 * 1024;
 const MAX_USER_MCP_TOOLS = 128;
@@ -321,6 +325,75 @@ export function upsertUserMcpProfileTool(
     toolName: tool.name,
     profile,
     message: `User MCP tool ${profile.id}/${tool.name} stored in ${path}.`,
+  };
+}
+
+export function upsertUserMcpProfileTools(
+  profileId: string,
+  inputs: UserMcpToolInput[],
+  options: UserMcpProfileCatalogIoOptions = {},
+): UserMcpProfileToolsMutationResult {
+  const path = options.profileCatalogPath ?? defaultMcpProfileCatalogPath();
+  const serverId = normalizeUserProfileId(profileId);
+  const catalog = loadEditableUserMcpProfileCatalog(path);
+  const existing = catalog.profiles[serverId];
+  if (!isPlainObject(existing)) {
+    return {
+      ok: false,
+      path,
+      profileId: `user:${serverId}`,
+      toolNames: inputs.map((input) => input.name),
+      message: `No user MCP profile stored for user:${serverId}.`,
+    };
+  }
+
+  const profileAuthRequired =
+    optionalBoolean(existing.authRequired, "profile.authRequired") ?? false;
+  const importedByName = new Map<string, McpDeclaredTool>();
+  for (const [index, input] of inputs.entries()) {
+    const tool = sanitizeTool(
+      {
+        name: input.name,
+        risk: input.risk,
+        authRequired: input.authRequired,
+        billable: input.billable,
+      },
+      index,
+      profileAuthRequired,
+    );
+    importedByName.set(tool.name, tool);
+  }
+
+  const importedTools = [...importedByName.values()].sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
+  const importedNames = new Set(importedTools.map((tool) => tool.name));
+  const currentTools = Array.isArray(existing.tools) ? existing.tools : [];
+  const nextTools = [
+    ...currentTools.filter(
+      (entry) => !(isPlainObject(entry) && importedNames.has(String(entry.name))),
+    ),
+    ...importedTools,
+  ];
+  const declaration = {
+    ...existing,
+    tools: nextTools.sort((left, right) => {
+      const leftName = isPlainObject(left) && typeof left.name === "string" ? left.name : "";
+      const rightName = isPlainObject(right) && typeof right.name === "string" ? right.name : "";
+      return leftName.localeCompare(rightName);
+    }),
+  };
+  const profile = sanitizeUserMcpProfile(serverId, declaration, path);
+  catalog.profiles[serverId] = toEditableUserMcpProfileDeclaration(serverId, declaration, path);
+  saveEditableUserMcpProfileCatalog(path, catalog);
+
+  return {
+    ok: true,
+    path,
+    profileId: profile.id,
+    toolNames: importedTools.map((tool) => tool.name),
+    profile,
+    message: `${importedTools.length} user MCP tools stored for ${profile.id} in ${path}.`,
   };
 }
 
@@ -702,6 +775,14 @@ function sanitizeServerId(value: string): string {
     );
   }
   return value;
+}
+
+export function validateUserMcpToolName(toolName: string): string {
+  const safeToolName = requiredSafeString(toolName, "profile.tool.name", 1, 128);
+  if (!MCP_TOOL_NAME_PATTERN.test(safeToolName)) {
+    throw new Error("profile.tool.name contains unsupported characters");
+  }
+  return safeToolName;
 }
 
 function requiredToolRisk(value: unknown, field: string): McpToolRisk {

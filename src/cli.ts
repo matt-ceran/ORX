@@ -23,12 +23,18 @@ import {
   allowMcpModelToolGrant,
   allowMcpToolGrant,
   callRemoteMcpTool,
+  discoverMcpProfile,
+  formatMcpDiscoveryResult,
+  formatMcpRemoteToolImportResult,
+  formatMcpRemoteToolsResult,
   formatMcpToolCallResult,
   getMcpProfileToolPolicyReport,
   getMcpStatusSummary,
   hashMcpProfile,
+  importRemoteMcpTools,
   installMcpProviderPreset,
   loadUserMcpProfileCatalog,
+  listRemoteMcpTools,
   renderMcpProviderPresets,
   renderMcpProfileInspect,
   renderMcpProfileTools,
@@ -125,6 +131,8 @@ interface CliIo {
   stderr: Pick<NodeJS.WriteStream, "write">;
   cwd: string;
   fetch?: typeof fetch;
+  mcpDiscoveryFetch?: typeof fetch;
+  mcpRemoteToolsFetch?: typeof fetch;
   mcpCallFetch?: typeof fetch;
   browserSnapshot?: BrowserSnapshotDriver;
 }
@@ -1127,6 +1135,151 @@ function runMcpCommand(
     });
   }
 
+  if (subcommand === "remote-tools") {
+    if (!profileId || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx mcp remote-tools <profile>");
+      return 1;
+    }
+
+    return listRemoteMcpTools(profileId, {
+      ...registryOptions,
+      fetch: io.mcpRemoteToolsFetch,
+    }).then((result) => {
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: "mcp.profile.remote_tools_attempt",
+        profileId,
+        ok: result.ok,
+        details: {
+          status: result.status,
+          networkAttempted: result.networkAttempted,
+          transport: result.transport,
+          url: result.url,
+          authRequired: result.authRequired,
+          profileHash: result.profileHash,
+          trustedProfileHash: result.trustedProfileHash,
+          schemaChangePending: result.schemaChangePending,
+          httpStatus: result.httpStatus,
+          toolCount: result.toolCount,
+          nextCursorPresent: result.nextCursorPresent,
+          truncated: result.truncated,
+          toolHashes: result.tools?.map((tool) => ({
+            name: tool.name,
+            toolHash: tool.toolHash,
+            inputSchemaHash: tool.inputSchemaHash,
+            outputSchemaHash: tool.outputSchemaHash,
+          })),
+          error: result.error,
+          message: result.message,
+        },
+      });
+
+      const output = formatMcpRemoteToolsResult(result);
+      const stream =
+        result.status === "not_found" ||
+        result.status === "network_error" ||
+        result.status === "remote_error" ||
+        result.status === "invalid_response" ||
+        result.status === "too_many_pages"
+          ? io.stderr
+          : io.stdout;
+      writeLine(stream, output);
+      return result.ok ? 0 : 1;
+    });
+  }
+
+  if (subcommand === "import-remote-tools" || subcommand === "import-tools") {
+    const parsed = parseMcpImportRemoteToolsArgs(args);
+    if (typeof parsed === "string") {
+      writeLine(io.stderr, parsed);
+      return 1;
+    }
+
+    return importRemoteMcpTools(parsed.profileId, {
+      ...registryOptions,
+      fetch: io.mcpRemoteToolsFetch,
+      maxTools: parsed.limit,
+    }).then((result) => {
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: "mcp.profile.remote_tools_import_attempt",
+        profileId: result.profileId,
+        ok: result.ok,
+        details: {
+          status: result.status,
+          networkAttempted: result.networkAttempted,
+          profileHashBefore: result.profileHashBefore,
+          trustedProfileHashBefore: result.trustedProfileHashBefore,
+          profileHashAfter: result.profileHashAfter,
+          trustedProfileHashAfter: result.trustedProfileHashAfter,
+          schemaChangePendingAfter: result.schemaChangePendingAfter,
+          remoteStatus: result.remoteToolsResult?.status,
+          remoteHttpStatus: result.remoteToolsResult?.httpStatus,
+          remoteToolCount: result.remoteToolsResult?.toolCount,
+          importedTools: result.importedTools?.map((tool) => ({
+            name: tool.name,
+            risk: tool.risk,
+            authRequired: tool.authRequired,
+            billable: tool.billable,
+            remoteToolHash: tool.remoteToolHash,
+          })),
+          skippedTools: result.skippedTools?.map((tool) => ({
+            name: tool.name,
+            reason: tool.reason,
+            remoteToolHash: tool.remoteToolHash,
+          })),
+          message: result.message,
+        },
+      });
+
+      writeLine(result.ok ? io.stdout : io.stderr, formatMcpRemoteToolImportResult(result));
+      return result.ok ? 0 : 1;
+    });
+  }
+
+  if (subcommand === "discover") {
+    if (!profileId || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx mcp discover <profile>");
+      return 1;
+    }
+
+    return discoverMcpProfile(profileId, {
+      ...registryOptions,
+      fetch: io.mcpDiscoveryFetch,
+    }).then((result) => {
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: "mcp.profile.discovery_attempt",
+        profileId,
+        ok: result.ok,
+        details: {
+          status: result.status,
+          networkAttempted: result.networkAttempted,
+          transport: result.transport,
+          url: result.url,
+          authRequired: result.authRequired,
+          profileHash: result.profileHash,
+          trustedProfileHash: result.trustedProfileHash,
+          schemaChangePending: result.schemaChangePending,
+          httpStatus: result.httpStatus,
+          serverInfo: result.serverInfo,
+          protocolVersion: result.protocolVersion,
+          capabilityKeys: result.capabilityKeys,
+          error: result.error,
+          message: result.message,
+        },
+      });
+
+      const output = formatMcpDiscoveryResult(result);
+      const stream =
+        result.status === "not_found" ||
+        result.status === "network_error" ||
+        result.status === "remote_error" ||
+        result.status === "invalid_response"
+          ? io.stderr
+          : io.stdout;
+      writeLine(stream, output);
+      return result.ok ? 0 : 1;
+    });
+  }
+
   if (subcommand === "allow-tool") {
     if (!profileId || !toolName || args.length !== 3) {
       writeLine(io.stderr, "Usage: orx mcp allow-tool <profile> <tool>");
@@ -1281,7 +1434,7 @@ function runMcpCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx mcp [list|catalog|presets|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: orx mcp [list|catalog|presets|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
   return 1;
 }
@@ -1335,6 +1488,43 @@ function parseMcpAddPresetArgs(args: string[]):
       continue;
     }
     return "Unknown add-preset option.";
+  }
+
+  return parsed;
+}
+
+function parseMcpImportRemoteToolsArgs(args: string[]):
+  | {
+      profileId: string;
+      limit?: number;
+    }
+  | string {
+  const profileId = args[1];
+  if (!profileId) {
+    return "Usage: orx mcp import-remote-tools <profile> [--limit <n>]";
+  }
+
+  const parsed: {
+    profileId: string;
+    limit?: number;
+  } = { profileId };
+  const rest = args.slice(2);
+  for (let index = 0; index < rest.length; index += 1) {
+    const flag = rest[index];
+    if (flag === "--limit") {
+      const value = rest[index + 1];
+      if (!value) {
+        return "Usage: --limit requires a value";
+      }
+      const limit = Number(value);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 128) {
+        return "Usage: --limit must be an integer from 1 to 128";
+      }
+      parsed.limit = limit;
+      index += 1;
+      continue;
+    }
+    return "Unknown import-remote-tools option.";
   }
 
   return parsed;

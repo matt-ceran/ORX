@@ -29,6 +29,7 @@ Urgent UX recovery additions from user testing:
 - Local user MCP profile catalogs are implemented through `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. Declarations are namespaced as `user:<profile-id>`, currently support sanitized `remote-http` transports, appear in `/mcp`, `orx mcp`, `/status`, interactive chat, and `orx ask --mcp-tools`, and share the same enable/trusted-hash/schema-change/tool-grant/model-grant/auth/audit gates as built-in and plugin MCP profiles.
 - Local user MCP catalog management commands are implemented through `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands. They write private local catalog files, preserve existing array/object/legacy `servers` declarations during edits, and avoid manual JSON editing for common remote MCP setup.
 - Built-in MCP provider presets are implemented through `orx mcp presets`, `orx mcp add-preset <preset>`, `/mcp presets`, and `/mcp add-preset <preset>`. Initial templates include `context7`, `microsoft-learn`, and `github-readonly`, and install into the same local user catalog without enabling or trusting profiles.
+- Reviewed remote MCP tool import is implemented through `orx mcp import-remote-tools <profile>` and `/mcp import-remote-tools <profile>`. It is limited to local `user:` catalog profiles, uses the existing enabled/trusted/unchanged guarded `tools/list` path, stores sanitized read-only non-billable declarations only, skips unsupported names, audits hashes only, and leaves newly changed profiles behind the pending schema-change retrust gate.
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` or the derived `/plugin:<plugin-id>:command:<slug>` alias as untrusted context. Manifest-defined executable command schemas are discoverable through `components.commandSchemas` and exposed as `/plugin:<plugin-id>:exec:<slug>` aliases that can only run referenced trusted current bins.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
@@ -75,6 +76,16 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented reviewed remote MCP tool import:
+
+- Added `src/mcp/remote-tool-import.ts` plus bulk user-catalog tool upsert helpers. The import flow uses guarded `tools/list`, refuses built-in/plugin profiles before network, imports only sanitized tool names into local `user:` catalogs as read-only/free declarations with profile-inherited auth, skips unsupported names, and reports before/after profile hashes plus pending schema-change state.
+- Added `orx mcp remote-tools` and `orx mcp discover` noninteractive CLI parity for the existing slash paths, using dedicated MCP transport hooks and audit events.
+- Added `orx mcp import-remote-tools <profile> [--limit <n>]`, alias `import-tools`, and matching slash commands. Imports do not enable profiles, trust changed hashes, grant tools, expose model MCP, persist raw schemas, or call `tools/call`.
+- Extended MCP redaction for provider token shapes such as `ghp_`, `github_pat_`, `glpat-`, and Slack-style `xox*` tokens so skipped remote tool names and audit payloads do not leak token-looking metadata.
+- Updated README and decisions for the reviewed import workflow.
+- Verification: `npm run typecheck`, `npm run build`, `git diff --check`, focused build-backed MCP/CLI/slash tests with 177 tests, full build-backed `npm test` with 406 tests, and isolated CLI dogfood for preset add/enable/inspect plus built-in import rejection all pass. Independent verifier Hume found no blocking issues; independent verifier Aristotle found a skipped-name token redaction gap, which was fixed and regression-tested.
+- Next likely plugin/MCP work: prompt-injection boundary hardening for MCP/research outputs, richer catalog/marketplace UX, plugin authoring docs, or broader provider preset packs.
 
 Implemented MCP provider preset templates:
 

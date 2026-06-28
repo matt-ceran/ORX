@@ -132,6 +132,8 @@ Next:
   - Add automatic trusted plugin lifecycle hook dispatch: trusted current hook hashes run on `session_start`, `user_prompt_submit`, `pre_tool_use`, `post_tool_use`, `pre_compact`, `post_compact`, and `stop`, while untrusted/pending hooks are skipped and failures are visible/audited.
   - Add trusted plugin MCP endpoint discovery: enabled/trusted/unchanged plugin `remote-http` profiles can run a guarded DNS-vetted `/mcp discover` initialize handshake without listing/executing tools or exposing them to the model loop.
   - Add read-only remote MCP tool listing: `/mcp remote-tools <profile>` calls guarded `tools/list` for enabled/trusted/unchanged profiles, renders bounded untrusted metadata plus schema hashes, audits results, and does not call `tools/call`.
+  - Add reviewed remote MCP tool import: `orx mcp import-remote-tools <profile>` and `/mcp import-remote-tools <profile>` use guarded `tools/list` metadata to import sanitized read-only/free tool names into local `user:` catalog profiles only, then require profile retrust if the declaration hash changed.
+  - Add noninteractive MCP discovery/listing parity: `orx mcp discover` and `orx mcp remote-tools` now use the same guarded/audited behavior as the slash commands.
   - Add MCP per-tool grant policy storage: `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` persist profile-hash-bound grants for billable/write/destructive declared tools, render active/stale grant state, audit mutations, and still do not execute MCP tools.
   - Add explicit operator MCP tool calls: `/mcp call` and `orx mcp call` execute guarded `tools/call` only for enabled/trusted/unchanged profiles with allowed declared-tool policy, env-only bearer auth, redacted/truncated untrusted output, and audit logs without raw arguments/output.
   - Add session-local model MCP read-only bridge: `/mcp model enable` exposes one native `mcp_call` model tool for read-only non-billable declared MCP tools, later narrowed by active model-tool grants; broad/billable/write model-loop MCP exposure remains inactive.
@@ -146,7 +148,6 @@ Next:
 - Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
 - Follow `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md` for the full-stack plugin/MCP/research build order.
 - Extend documented provider preset packs/templates beyond the initial `context7`, `microsoft-learn`, and `github-readonly` set: `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
-- Add an explicit reviewed-tools import flow from `/mcp remote-tools` into local declared tools so no-static-tool presets can become callable after operator review.
 - Extend the plugin system beyond the registry/CLI/cache/catalog/git-source substrate with richer marketplace/catalog UX, update checks, authoring docs, and optional stronger provenance/signing.
 - Extend manifest-defined executable command schemas with richer argument forms only if they can stay bin-backed and operator-explicit.
 - Extend model-loop MCP controls with clearer prompt-injection boundaries and optional operator grants for any future billable/write model exposure.

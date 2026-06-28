@@ -112,7 +112,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
-  assert.match(output, /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(output, /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog\|list\|commands\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
@@ -127,7 +127,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -326,7 +326,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-  assert.match(alias.stdout(), /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+    assert.match(alias.stdout(), /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -1872,6 +1872,69 @@ test("mcp remote-tools calls tools/list for enabled trusted profile and does not
     assert.equal(events[1].details.toolCount, 1);
     const toolHashes = events[1].details.toolHashes as Array<{ inputSchemaHash?: string }>;
     assert.match(String(toolHashes[0].inputSchemaHash), /^sha256:[a-f0-9]{64}$/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp import-remote-tools imports reviewed remote metadata into user catalog", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-remote-tool-import-slash-"));
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+  const seenRequests: string[] = [];
+  const harness = createSlashHarness({
+    mcpAuditLogPath: auditLogPath,
+    mcpConfigPath: configPath,
+    mcpProfileCatalogPath: profileCatalogPath,
+    mcpRemoteToolsFetch: async (_input, init) => {
+      seenRequests.push(String(init?.body));
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: "orx-tools-list-1",
+          result: {
+            tools: [
+              {
+                name: "get_file_contents",
+                description: "Read files",
+                inputSchema: { type: "object" },
+              },
+              {
+                name: "list_issues",
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand("/mcp add-preset github-readonly", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/mcp enable user:github-readonly", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/mcp import-remote-tools github-readonly", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/mcp inspect user:github-readonly", harness.context), "continue");
+
+    assert.equal(seenRequests.length, 1);
+    assert.match(seenRequests[0], /"method":"tools\/list"/);
+    assert.doesNotMatch(seenRequests[0], /tools\/call/);
+    assert.match(harness.stdout(), /MCP remote tool import: user:github-readonly/);
+    assert.match(harness.stdout(), /imported_tools: 2/);
+    assert.match(harness.stdout(), /schema_change_after: pending/);
+    assert.match(harness.stdout(), /get_file_contents risk=read auth=yes billable=no policy=blocked_by_schema_change/);
+    assert.match(harness.stdout(), /list_issues risk=read auth=yes billable=no policy=blocked_by_schema_change/);
+
+    const events = readAuditEvents(auditLogPath);
+    assert.deepEqual(
+      events.map((event) => event.type),
+      ["mcp.profile.enable_attempt", "mcp.profile.remote_tools_import_attempt", "mcp.profile.inspect"],
+    );
+    assert.equal(events[1].details.status, "ok");
+    assert.equal(events[1].details.schemaChangePendingAfter, true);
+    const importedTools = events[1].details.importedTools as Array<{ remoteToolHash?: string }>;
+    assert.match(String(importedTools[0].remoteToolHash), /^sha256:[a-f0-9]{64}$/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

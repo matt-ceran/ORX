@@ -21,7 +21,9 @@ import {
   evaluateMcpToolPolicy,
   formatMcpToolCallResult,
   formatMcpDiscoveryResult,
+  formatMcpRemoteToolImportResult,
   formatMcpRemoteToolsResult,
+  importRemoteMcpTools,
   installMcpProviderPreset,
   getMcpModelToolGrantRecord,
   getMcpToolGrantRecord,
@@ -823,6 +825,163 @@ test("remote MCP tools/list reads bounded untrusted tool metadata without execut
       /tool_execution: explicit \/mcp call or orx mcp call; tools\/list metadata is untrusted operator output; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only/,
     );
     assert.doesNotMatch(formatted, /"type":"object"/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tool import stores reviewed names in user catalog and requires retrust", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-remote-tool-import-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+  const seenRequests: string[] = [];
+
+  try {
+    const preset = installMcpProviderPreset("github-readonly", { profileCatalogPath });
+    assert.equal(preset.ok, true);
+    assert.equal(setMcpProfilePersistentState("user:github-readonly", "enabled", {
+      configPath,
+      profileCatalogPath,
+    }).ok, true);
+
+    const result = await importRemoteMcpTools("github-readonly", {
+      configPath,
+      profileCatalogPath,
+      fetch: async (_input, init) => {
+        seenRequests.push(String(init?.body));
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-tools-list-1",
+            result: {
+              tools: [
+                {
+                  name: "get_file_contents",
+                  description: "Read files from a repository",
+                  inputSchema: { type: "object" },
+                },
+                {
+                  name: "list_issues",
+                  annotations: { readOnlyHint: true },
+                },
+                {
+                  name: "bad tool name",
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    assert.equal(seenRequests.length, 1);
+    assert.match(seenRequests[0], /"method":"tools\/list"/);
+    assert.doesNotMatch(seenRequests[0], /tools\/call/);
+    assert.equal(result.status, "ok");
+    assert.equal(result.profileId, "user:github-readonly");
+    assert.equal(result.importedTools?.length, 2);
+    assert.deepEqual(result.importedTools?.map((tool) => tool.name), [
+      "get_file_contents",
+      "list_issues",
+    ]);
+    assert.equal(result.importedTools?.[0].risk, "read");
+    assert.equal(result.importedTools?.[0].authRequired, true);
+    assert.equal(result.importedTools?.[0].billable, false);
+    assert.equal(result.skippedTools?.length, 1);
+    assert.equal(result.schemaChangePendingAfter, true);
+    assert.notEqual(result.profileHashBefore, result.profileHashAfter);
+
+    const report = getMcpProfileToolPolicyReport("user:github-readonly", {
+      configPath,
+      profileCatalogPath,
+    });
+    assert.ok(report);
+    assert.equal(report.schemaChangePending, true);
+    assert.deepEqual(report.profile.tools.map((tool) => tool.name), [
+      "get_file_contents",
+      "list_issues",
+    ]);
+    assert.deepEqual(report.profile.tools.map((tool) => tool.risk), ["read", "read"]);
+    assert.deepEqual(report.profile.tools.map((tool) => tool.authRequired), [true, true]);
+
+    const formatted = formatMcpRemoteToolImportResult(result);
+    assert.match(formatted, /MCP remote tool import: user:github-readonly/);
+    assert.match(formatted, /schema_change_after: pending/);
+    assert.match(formatted, /risk_default: read/);
+    assert.match(formatted, /bad tool name/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tool import rejects built-in profiles before network", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-remote-tool-import-builtin-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+    const result = await importRemoteMcpTools("openrouter", {
+      configPath,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    assert.equal(fetchCalls, 0);
+    assert.equal(result.status, "unsupported_profile");
+    assert.equal(result.ok, false);
+    assert.equal(result.networkAttempted, false);
+    assert.match(result.message, /only edits local user catalog profiles/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tool import redacts skipped secret-like remote names", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-remote-tool-import-redact-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+
+  try {
+    const preset = installMcpProviderPreset("github-readonly", { profileCatalogPath });
+    assert.equal(preset.ok, true);
+    assert.equal(setMcpProfilePersistentState("user:github-readonly", "enabled", {
+      configPath,
+      profileCatalogPath,
+    }).ok, true);
+
+    const result = await importRemoteMcpTools("github-readonly", {
+      configPath,
+      profileCatalogPath,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-tools-list-1",
+            result: {
+              tools: [
+                { name: "ghp_fakeSecretToken1234567890" },
+                { name: "github_pat_fakeSecretToken_1234567890" },
+                { name: "glpat-fakeSecretToken1234567890" },
+                { name: "xoxb-fakeSecretToken1234567890" },
+              ],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+
+    assert.equal(result.status, "no_importable_tools");
+    assert.equal(result.importedTools?.length, 0);
+    assert.equal(result.skippedTools?.length, 4);
+    const serialized = JSON.stringify(result);
+    const formatted = formatMcpRemoteToolImportResult(result);
+    assert.doesNotMatch(serialized, /fakeSecretToken|ghp_|github_pat_|glpat-|xoxb-/);
+    assert.doesNotMatch(formatted, /fakeSecretToken|ghp_|github_pat_|glpat-|xoxb-/);
+    assert.match(formatted, /\[redacted\]/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

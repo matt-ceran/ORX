@@ -32,10 +32,12 @@ import {
   discoverMcpProfile,
   formatMcpToolCallResult,
   formatMcpDiscoveryResult,
+  formatMcpRemoteToolImportResult,
   formatMcpRemoteToolsResult,
   getMcpProfileToolPolicyReport,
   getMcpStatusSummary,
   hashMcpProfile,
+  importRemoteMcpTools,
   installMcpProviderPreset,
   loadUserMcpProfileCatalog,
   listRemoteMcpTools,
@@ -346,6 +348,7 @@ const MCP_SUBCOMMAND_COMPLETIONS = [
   "tools",
   "call",
   "remote-tools",
+  "import-remote-tools",
   "discover",
   "enable",
   "disable",
@@ -925,7 +928,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|catalog|presets|add-preset|add-profile|add-tool|model|inspect|tools|call|remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
+    usage: "/mcp [list|catalog|presets|add-preset|add-profile|add-tool|model|inspect|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
     description: "Show and manage MCP profiles, local user catalogs, remote metadata, and tool grants",
     group: "Integrations",
     tier: "advanced",
@@ -1483,6 +1486,7 @@ function isMcpProfileSubcommand(subcommand: string | undefined): boolean {
     subcommand === "tools" ||
     subcommand === "call" ||
     subcommand === "remote-tools" ||
+    subcommand === "import-remote-tools" ||
     subcommand === "discover" ||
     subcommand === "enable" ||
     subcommand === "disable" ||
@@ -2919,6 +2923,57 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
     return;
   }
 
+  if (subcommand === "import-remote-tools" || subcommand === "import-tools") {
+    const parsed = parseMcpImportRemoteToolsArgs(command.args);
+    if (typeof parsed === "string") {
+      writeLine(context.io.stderr, parsed.replace(/^Usage: orx mcp /, "Usage: /mcp "));
+      return;
+    }
+
+    const result = await importRemoteMcpTools(parsed.profileId, {
+      ...registryOptions,
+      fetch: context.mcpRemoteToolsFetch,
+      resolveHost: context.mcpResolveHost,
+      maxTools: parsed.limit,
+    });
+    tryWriteMcpAuditEvent(context, {
+      type: "mcp.profile.remote_tools_import_attempt",
+      profileId: result.profileId,
+      ok: result.ok,
+      details: {
+        status: result.status,
+        networkAttempted: result.networkAttempted,
+        profileHashBefore: result.profileHashBefore,
+        trustedProfileHashBefore: result.trustedProfileHashBefore,
+        profileHashAfter: result.profileHashAfter,
+        trustedProfileHashAfter: result.trustedProfileHashAfter,
+        schemaChangePendingAfter: result.schemaChangePendingAfter,
+        remoteStatus: result.remoteToolsResult?.status,
+        remoteHttpStatus: result.remoteToolsResult?.httpStatus,
+        remoteToolCount: result.remoteToolsResult?.toolCount,
+        importedTools: result.importedTools?.map((tool) => ({
+          name: tool.name,
+          risk: tool.risk,
+          authRequired: tool.authRequired,
+          billable: tool.billable,
+          remoteToolHash: tool.remoteToolHash,
+        })),
+        skippedTools: result.skippedTools?.map((tool) => ({
+          name: tool.name,
+          reason: tool.reason,
+          remoteToolHash: tool.remoteToolHash,
+        })),
+        message: result.message,
+      },
+    });
+
+    writeLine(
+      result.ok ? context.io.stdout : context.io.stderr,
+      formatMcpRemoteToolImportResult(result),
+    );
+    return;
+  }
+
   if (subcommand === "discover") {
     if (!profileId || command.args.length !== 2) {
       writeLine(context.io.stderr, "Usage: /mcp discover <profile>");
@@ -3187,7 +3242,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /mcp [list|catalog|presets|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: /mcp [list|catalog|presets|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
 }
 
@@ -3285,6 +3340,43 @@ function parseMcpAddPresetArgs(args: string[]):
       continue;
     }
     return "Unknown add-preset option.";
+  }
+
+  return parsed;
+}
+
+function parseMcpImportRemoteToolsArgs(args: string[]):
+  | {
+      profileId: string;
+      limit?: number;
+    }
+  | string {
+  const profileId = args[1];
+  if (!profileId) {
+    return "Usage: orx mcp import-remote-tools <profile> [--limit <n>]";
+  }
+
+  const parsed: {
+    profileId: string;
+    limit?: number;
+  } = { profileId };
+  const rest = args.slice(2);
+  for (let index = 0; index < rest.length; index += 1) {
+    const flag = rest[index];
+    if (flag === "--limit") {
+      const value = rest[index + 1];
+      if (!value) {
+        return "Usage: --limit requires a value";
+      }
+      const limit = Number(value);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 128) {
+        return "Usage: --limit must be an integer from 1 to 128";
+      }
+      parsed.limit = limit;
+      index += 1;
+      continue;
+    }
+    return "Unknown import-remote-tools option.";
   }
 
   return parsed;

@@ -584,6 +584,94 @@ test("cli mcp provider presets install local catalog profiles", async () => {
   }
 });
 
+test("cli mcp remote-tools and import-remote-tools use reviewed metadata for user catalog profiles", async () => {
+  const cwd = createTempDir();
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+  const mcpConfigPath = join(cwd, "mcp", "profiles.json");
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const env = {
+    ORX_MCP_PROFILE_CATALOG_PATH: profileCatalogPath,
+    ORX_MCP_CONFIG_PATH: mcpConfigPath,
+    ORX_MCP_AUDIT_PATH: auditLogPath,
+  };
+  const makeRemoteToolsFetch = (seenRequests: string[]): typeof fetch => async (_input, init) => {
+    seenRequests.push(String(init?.body));
+    return new Response(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: "orx-tools-list-1",
+        result: {
+          tools: [
+            {
+              name: "get_file_contents",
+              description: "Read files",
+              inputSchema: { type: "object" },
+            },
+            {
+              name: "list_issues",
+            },
+          ],
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+
+  try {
+    const added = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "add-preset", "github-readonly"], env, added.io), 0);
+
+    const enabled = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "enable", "user:github-readonly"], env, enabled.io), 0);
+
+    const remoteRequests: string[] = [];
+    const remote = createIo({
+      cwd,
+      fetch: async () => {
+        throw new Error("general fetch should not be used");
+      },
+      mcpRemoteToolsFetch: makeRemoteToolsFetch(remoteRequests),
+    });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "remote-tools", "user:github-readonly"], env, remote.io),
+      0,
+    );
+    assert.equal(remoteRequests.length, 1);
+    assert.match(remoteRequests[0], /"method":"tools\/list"/);
+    assert.doesNotMatch(remoteRequests[0], /tools\/call/);
+    assert.match(remote.stdout(), /MCP remote tools: user:github-readonly/);
+    assert.match(remote.stdout(), /get_file_contents description="Read files"/);
+
+    const importRequests: string[] = [];
+    const imported = createIo({
+      cwd,
+      mcpRemoteToolsFetch: makeRemoteToolsFetch(importRequests),
+    });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "import-remote-tools", "github-readonly"], env, imported.io),
+      0,
+    );
+    assert.equal(importRequests.length, 1);
+    assert.match(imported.stdout(), /MCP remote tool import: user:github-readonly/);
+    assert.match(imported.stdout(), /imported_tools: 2/);
+    assert.match(imported.stdout(), /schema_change_after: pending/);
+
+    const inspected = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "inspect", "user:github-readonly"], env, inspected.io), 0);
+    assert.match(inspected.stdout(), /schema_change: pending trusted baseline differs/);
+    assert.match(inspected.stdout(), /get_file_contents risk=read auth=yes billable=no policy=blocked_by_schema_change/);
+    assert.match(inspected.stdout(), /list_issues risk=read auth=yes billable=no policy=blocked_by_schema_change/);
+
+    const audit = readFileSync(auditLogPath, "utf8");
+    assert.match(audit, /"type":"mcp.profile.remote_tools_attempt"/);
+    assert.match(audit, /"type":"mcp.profile.remote_tools_import_attempt"/);
+    assert.match(audit, /"remoteToolHash":"sha256:[a-f0-9]{64}"/);
+    assert.doesNotMatch(audit, /"type":"object"/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("cli mcp call executes allowed remote tools through dedicated auth and transport", async () => {
   let generalFetchCalls = 0;
   const seenRequests: Array<{ authorization: string | null; body: string }> = [];
@@ -2526,6 +2614,8 @@ test("chat prints visible tool start and result summaries", async () => {
 function createIo(
   options: {
     fetch?: typeof fetch;
+    mcpDiscoveryFetch?: typeof fetch;
+    mcpRemoteToolsFetch?: typeof fetch;
     mcpCallFetch?: typeof fetch;
     stdin?: NodeJS.ReadableStream;
     cwd?: string;
@@ -2556,6 +2646,8 @@ function createIo(
       },
       cwd: options.cwd ?? "/tmp/orx-test",
       fetch: options.fetch ?? globalThis.fetch,
+      mcpDiscoveryFetch: options.mcpDiscoveryFetch,
+      mcpRemoteToolsFetch: options.mcpRemoteToolsFetch,
       mcpCallFetch: options.mcpCallFetch,
     },
     stdout() {
