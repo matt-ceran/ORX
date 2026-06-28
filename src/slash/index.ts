@@ -2001,7 +2001,10 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
   const profileId = command.args[1];
 
   if (subcommand === "list" || subcommand === "status") {
-    const summary = getMcpStatusSummary({ configPath: context.mcpConfigPath });
+    const summary = getMcpStatusSummary({
+      configPath: context.mcpConfigPath,
+      pluginRegistryPath: context.pluginRegistryPath,
+    });
     tryWriteMcpAuditEvent(context, {
       type: "mcp.profile.status",
       ok: true,
@@ -2021,8 +2024,14 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
       return;
     }
 
-    const summary = getMcpStatusSummary({ configPath: context.mcpConfigPath });
-    const profile = findMcpProfile(profileId, { configPath: context.mcpConfigPath });
+    const summary = getMcpStatusSummary({
+      configPath: context.mcpConfigPath,
+      pluginRegistryPath: context.pluginRegistryPath,
+    });
+    const profile = findMcpProfile(profileId, {
+      configPath: context.mcpConfigPath,
+      pluginRegistryPath: context.pluginRegistryPath,
+    });
     tryWriteMcpAuditEvent(context, {
       type: "mcp.profile.inspect",
       profileId,
@@ -2062,7 +2071,10 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
       return;
     }
 
-    const report = getMcpProfileToolPolicyReport(profileId, { configPath: context.mcpConfigPath });
+    const report = getMcpProfileToolPolicyReport(profileId, {
+      configPath: context.mcpConfigPath,
+      pluginRegistryPath: context.pluginRegistryPath,
+    });
     tryWriteMcpAuditEvent(context, {
       type: "mcp.profile.tools",
       profileId,
@@ -2099,6 +2111,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
     const result = await discoverMcpProfile(profileId, {
       configPath: context.mcpConfigPath,
+      pluginRegistryPath: context.pluginRegistryPath,
       fetch: context.fetch,
     });
     tryWriteMcpAuditEvent(context, {
@@ -2149,7 +2162,10 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
       result = setMcpProfilePersistentState(
         profileId,
         subcommand === "enable" ? "enabled" : "disabled",
-        { configPath: context.mcpConfigPath },
+        {
+          configPath: context.mcpConfigPath,
+          pluginRegistryPath: context.pluginRegistryPath,
+        },
       );
     } catch (error) {
       tryWriteMcpAuditEvent(context, {

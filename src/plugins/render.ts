@@ -69,6 +69,9 @@ export function renderPluginInspect(plugin: InstalledPluginRecord): string {
     `    mcp: ${formatPermissionValues(plugin.manifest.permissions.mcp)}`,
     "  metadata:",
     ...formatMetadataLines(plugin),
+    plugin.manifest.components.mcpServers
+      ? "  mcp_profiles: discoverable via /mcp list when plugin is enabled; execution inactive"
+      : "  mcp_profiles: none declared",
     "  executable_surfaces: hooks=inactive bins=inactive mcp=inactive commands=inactive",
     "  plugin_code_execution: disabled in this scaffold",
   ].join("\n");

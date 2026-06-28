@@ -312,6 +312,8 @@ export function formatMcpProfile(
     `state=${profile.state}`,
     `transport=${profile.transport.kind}`,
     profile.transport.url ? `url=${profile.transport.url}` : undefined,
+    `source=${profile.source?.kind ?? "builtin"}`,
+    profile.source?.pluginId ? `plugin=${profile.source.pluginId}` : undefined,
     `risk=${profile.riskLevel}`,
     `auth=${profile.authRequired ? "yes" : "no"}`,
     `write=${profile.writeCapable ? "yes" : "no"}`,
@@ -348,6 +350,7 @@ export function renderMcpProfileInspect(
     `  state: ${profile.state}`,
     `  transport: ${profile.transport.kind}`,
     profile.transport.url ? `  url: ${profile.transport.url}` : undefined,
+    `  source: ${formatMcpProfileSource(profile)}`,
     `  risk: ${profile.riskLevel}`,
     `  auth_required: ${profile.authRequired ? "yes" : "no"}`,
     profile.authRequired
@@ -448,4 +451,22 @@ function countToolPolicyDecisions(
 
 function quotePolicyReason(reason: string): string {
   return JSON.stringify(reason);
+}
+
+function formatMcpProfileSource(profile: McpProfile): string {
+  const source = profile.source;
+  if (!source || source.kind === "builtin") {
+    return "builtin";
+  }
+
+  return [
+    "plugin",
+    source.pluginId ? `plugin=${source.pluginId}` : undefined,
+    source.manifestHash ? `manifest_hash=${source.manifestHash}` : undefined,
+    source.componentPath ? `component_path=${source.componentPath}` : undefined,
+    source.componentHash ? `component_hash=${source.componentHash}` : undefined,
+    "execution=inactive",
+  ]
+    .filter((part): part is string => typeof part === "string")
+    .join(" ");
 }

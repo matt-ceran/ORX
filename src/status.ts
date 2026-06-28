@@ -7,6 +7,7 @@ import {
   getEnabledPluginPromptSummary,
   getEnabledPluginRuleSummary,
   getEnabledPluginSkillSummary,
+  getEnabledPluginMcpProfileSummary,
   getPluginStatusSummary,
 } from "./plugins/index.js";
 import { getProfileStatusSummary } from "./profiles/index.js";
@@ -35,11 +36,15 @@ export function formatStatus({
 }: StatusOptions): string {
   const renderer = createTerminalRenderer(renderOptions);
   const { config } = loadedConfig;
-  const mcpStatus = getMcpStatusSummary({ configPath: mcpConfigPath });
+  const mcpStatus = getMcpStatusSummary({
+    configPath: mcpConfigPath,
+    pluginRegistryPath,
+  });
   const pluginStatus = getPluginStatusSummary({ registryPath: pluginRegistryPath });
   const pluginSkillStatus = getEnabledPluginSkillSummary({ registryPath: pluginRegistryPath });
   const pluginPromptStatus = getEnabledPluginPromptSummary({ registryPath: pluginRegistryPath });
   const pluginRuleStatus = getEnabledPluginRuleSummary({ registryPath: pluginRegistryPath });
+  const pluginMcpStatus = getEnabledPluginMcpProfileSummary({ registryPath: pluginRegistryPath });
   const profileStatus = getProfileStatusSummary({ configPath: profileConfigPath });
   const delegationStatus =
     delegationState === undefined ? undefined : getDelegationStatusSummary(delegationState);
@@ -82,6 +87,9 @@ export function formatStatus({
     `plugin_enabled_hooks: ${pluginStatus.enabledHookCount}`,
     `plugin_enabled_bins: ${pluginStatus.enabledBinCount}`,
     `plugin_enabled_mcp: ${pluginStatus.enabledMcpCount}`,
+    `plugin_mcp_presets: ${pluginMcpStatus.profileCount}${
+      pluginMcpStatus.truncated ? " (truncated)" : ""
+    }`,
     `plugin_enabled_skills: ${pluginSkillStatus.skillCount}${
       pluginSkillStatus.truncated ? " (truncated)" : ""
     }`,

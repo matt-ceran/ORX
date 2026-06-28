@@ -1612,6 +1612,54 @@ test("plugins register, list, inspect, enable, and disable without network or ex
   }
 });
 
+test("mcp slash commands show plugin-provided presets without endpoint discovery", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-mcp-slash-"));
+  const registryPath = join(cwd, "registry", "plugins.json");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const manifestPath = writePluginMcpPresetFixture(cwd);
+  const profileId = "plugin:acme.mcp-slash-plugin@1.0.0:docs";
+  const harness = createSlashHarness({
+    pluginRegistryPath: registryPath,
+    mcpConfigPath: configPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand(`/plugins install ${manifestPath}`, harness.context), "continue");
+    assert.equal(handleSlashCommand("/plugins enable acme.mcp-slash-plugin@1.0.0", harness.context), "continue");
+
+    assert.equal(handleSlashCommand("/status", harness.context), "continue");
+    assert.match(harness.stdout(), /plugin_mcp_presets: 1/);
+    assert.match(harness.stdout(), /mcp_profile: profile=plugin:acme\.mcp-slash-plugin@1\.0\.0:docs state=disabled/);
+
+    assert.equal(await handleSlashCommand("/mcp list", harness.context), "continue");
+    assert.match(harness.stdout(), /profile=plugin:acme\.mcp-slash-plugin@1\.0\.0:docs state=disabled/);
+    assert.match(harness.stdout(), /source=plugin plugin=acme\.mcp-slash-plugin@1\.0\.0/);
+
+    assert.equal(await handleSlashCommand(`/mcp inspect ${profileId}`, harness.context), "continue");
+    assert.match(harness.stdout(), /source: plugin plugin=acme\.mcp-slash-plugin@1\.0\.0/);
+    assert.match(harness.stdout(), /component_path=mcp.json/);
+    assert.match(harness.stdout(), /remote_tool_execution: not implemented/);
+
+    assert.equal(await handleSlashCommand(`/mcp tools ${profileId}`, harness.context), "continue");
+    assert.match(harness.stdout(), /lookup-docs risk=read auth=no billable=no policy=blocked_by_profile/);
+
+    assert.equal(await handleSlashCommand(`/mcp enable ${profileId}`, harness.context), "continue");
+    assert.match(harness.stdout(), /MCP profile plugin:acme\.mcp-slash-plugin@1\.0\.0:docs enabled/);
+
+    assert.equal(await handleSlashCommand(`/mcp discover ${profileId}`, harness.context), "continue");
+    assert.equal(fetchCalls, 0);
+    assert.match(harness.stdout(), /status: plugin_discovery_disabled/);
+    assert.match(harness.stdout(), /render-only/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("plugins catalog lists and installs local catalog entries without network", async () => {
   let fetchCalls = 0;
   const cwd = mkdtempSync(join(tmpdir(), "orx-plugins-catalog-slash-"));
@@ -2581,6 +2629,59 @@ function exampleEvidenceSource(): EvidenceSource {
 const publicBrowserResolveHost: ResolveBrowserHost = async () => [
   { address: "93.184.216.34", family: 4 },
 ];
+
+function writePluginMcpPresetFixture(cwd: string): string {
+  const pluginDirectory = join(cwd, "plugin");
+  const manifestPath = join(pluginDirectory, "orx-plugin.json");
+  mkdirSync(pluginDirectory, { recursive: true });
+  writeFileSync(
+    join(pluginDirectory, "mcp.json"),
+    JSON.stringify({
+      servers: {
+        docs: {
+          name: "Docs MCP",
+          transport: {
+            kind: "remote-http",
+            url: "https://mcp.docs.example/mcp",
+          },
+          authRequired: false,
+          tools: [
+            {
+              name: "lookup-docs",
+              risk: "read",
+              authRequired: false,
+              billable: false,
+            },
+          ],
+        },
+      },
+    }),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "mcp-slash-plugin",
+      version: "1.0.0",
+      description: "Declares a slash-visible MCP preset.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        mcpServers: "./mcp.json",
+      },
+      permissions: {
+        filesystem: [],
+        network: ["mcp.docs.example"],
+        env: [],
+        mcp: ["docs"],
+      },
+    }),
+  );
+  return manifestPath;
+}
 
 function baseConfig(): OrxConfig {
   return {

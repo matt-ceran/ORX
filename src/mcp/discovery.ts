@@ -8,6 +8,7 @@ export type McpDiscoveryStatus =
   | "disabled"
   | "untrusted"
   | "schema_change_pending"
+  | "plugin_discovery_disabled"
   | "unsupported_transport"
   | "not_found"
   | "remote_error"
@@ -100,6 +101,17 @@ export async function discoverMcpProfile(
       ok: true,
       networkAttempted: false,
       message: `MCP profile ${profileId} has a pending schema change. Review /mcp inspect ${profileId} and re-enable it before discovery.`,
+    };
+  }
+
+  if (profile.source?.kind === "plugin") {
+    return {
+      ...base,
+      status: "plugin_discovery_disabled",
+      ok: true,
+      networkAttempted: false,
+      message:
+        "Plugin-provided MCP discovery is render-only in this slice. ORX will not contact plugin-declared MCP endpoints until an explicit runtime trust policy exists.",
     };
   }
 

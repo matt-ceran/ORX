@@ -73,7 +73,7 @@ orx plugins enable acme.example@1.0.0
 orx plugins disable acme.example@1.0.0
 ```
 
-Plugin install/register stores an inert local registry record plus an ORX-owned cache snapshot of the sanitized manifest and declared components. By default the registry lives at `~/.orx/plugins/registry.json`, the cache at `~/.orx/plugins/cache`, and the optional local catalog at `~/.orx/plugins/catalog.json`; use `ORX_PLUGIN_REGISTRY_PATH`, `ORX_PLUGIN_CACHE_DIR`, and `ORX_PLUGIN_CATALOG_PATH` to isolate them. Enabling a plugin only enables its metadata, skills, prompt-command, and rules surfaces where supported; hooks, bins, plugin MCP servers, executable plugin commands, and plugin code execution remain inactive in the current scaffold.
+Plugin install/register stores an inert local registry record plus an ORX-owned cache snapshot of the sanitized manifest and declared components. By default the registry lives at `~/.orx/plugins/registry.json`, the cache at `~/.orx/plugins/cache`, and the optional local catalog at `~/.orx/plugins/catalog.json`; use `ORX_PLUGIN_REGISTRY_PATH`, `ORX_PLUGIN_CACHE_DIR`, and `ORX_PLUGIN_CATALOG_PATH` to isolate them. Enabling a plugin only enables its metadata, skills, prompt-command, rules, and render-only MCP preset surfaces where supported; hooks, bins, executable plugin commands, plugin endpoint discovery, plugin MCP tool execution, and plugin code execution remain inactive in the current scaffold.
 
 Catalog files are local JSON:
 
@@ -92,6 +92,8 @@ Catalog files are local JSON:
 ```
 
 Plugin manifests may include optional inert `metadata` for risk display, such as `trustTier`, `homepage`, `documentation`, `license`, `auth`, `privacy`, and `runtime`. ORX sanitizes those fields for `/plugins inspect`; they do not grant permissions or activate executable surfaces.
+
+Enabled plugins can declare MCP presets through `components.mcpServers`. ORX reads these declarations from the cached plugin snapshot, namespaces them as `plugin:<plugin-id>:<server-id>`, includes them in `/mcp list`, `/mcp inspect`, `/mcp tools`, and `/status`, and hashes plugin manifest/component provenance for schema-change visibility. `/mcp discover` does not contact plugin-declared endpoints yet.
 
 Send one non-interactive streaming request with:
 

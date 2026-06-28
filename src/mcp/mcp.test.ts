@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   OPENROUTER_MCP_PROFILE,
   discoverMcpProfile,
@@ -27,6 +27,11 @@ import {
   writeMcpAuditEvent,
   type McpProfile,
 } from "./index.js";
+import {
+  loadPluginRegistry,
+  registerPluginManifest,
+  setPluginEnabledState,
+} from "../plugins/index.js";
 
 test("openrouter mcp profile declares current official tools and billable chat-send", () => {
   assert.deepEqual(
@@ -85,6 +90,174 @@ test("mcp profile hash changes when operator-facing notes change", () => {
   };
 
   assert.notEqual(hashMcpProfile(changed), hashMcpProfile(OPENROUTER_MCP_PROFILE));
+});
+
+test("enabled plugin MCP declarations become disabled namespaced profiles", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-mcp-profile-"));
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const manifestPath = writePluginWithMcpProfile(cwd);
+  const profileId = "plugin:acme.mcp-plugin@1.0.0:context7";
+
+  try {
+    registerPluginManifest(manifestPath, {
+      registryPath,
+      now: () => new Date("2026-06-27T12:00:00.000Z"),
+    });
+
+    let summary = getMcpStatusSummary({ pluginRegistryPath: registryPath });
+    assert.equal(summary.profiles.some((profile) => profile.id === profileId), false);
+
+    setPluginEnabledState("acme.mcp-plugin@1.0.0", true, {
+      registryPath,
+      now: () => new Date("2026-06-27T12:01:00.000Z"),
+    });
+    summary = getMcpStatusSummary({ pluginRegistryPath: registryPath });
+    const profile = summary.profiles.find((candidate) => candidate.id === profileId);
+
+    assert.ok(profile);
+    assert.equal(profile.state, "disabled");
+    assert.equal(profile.source?.kind, "plugin");
+    assert.equal(profile.source?.pluginId, "acme.mcp-plugin@1.0.0");
+    assert.equal(profile.source?.componentPath, "mcp.json");
+    assert.match(profile.source?.componentHash ?? "", /^sha256:[a-f0-9]{64}$/);
+    assert.equal(profile.transport.kind, "remote-http");
+    assert.equal(profile.transport.url, "https://mcp.context7.example/mcp");
+    assert.deepEqual(
+      profile.tools.map((tool) => `${tool.name}:${tool.risk}:${tool.billable ? "billable" : "free"}`),
+      ["resolve-library-id:read:free", "write-doc-cache:write:free"],
+    );
+    assert.match(summary.profileHashes[profileId], /^sha256:[a-f0-9]{64}$/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugin MCP profiles use persisted trust state and policy gates", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-mcp-policy-"));
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const manifestPath = writePluginWithMcpProfile(cwd);
+  const profileId = "plugin:acme.mcp-plugin@1.0.0:context7";
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.mcp-plugin@1.0.0", true, { registryPath });
+    const enabled = setMcpProfilePersistentState(profileId, "enabled", {
+      configPath,
+      pluginRegistryPath: registryPath,
+      now: () => new Date("2026-06-27T12:00:00.000Z"),
+    });
+
+    assert.equal(enabled.ok, true);
+    assert.match(enabled.trustedProfileHash ?? "", /^sha256:[a-f0-9]{64}$/);
+
+    const readTool = evaluateMcpToolPolicy(profileId, "resolve-library-id", {
+      configPath,
+      pluginRegistryPath: registryPath,
+    });
+    const writeTool = evaluateMcpToolPolicy(profileId, "write-doc-cache", {
+      configPath,
+      pluginRegistryPath: registryPath,
+    });
+    const summary = getMcpStatusSummary({ configPath, pluginRegistryPath: registryPath });
+
+    assert.equal(readTool.decision, "allowed");
+    assert.equal(writeTool.decision, "denied");
+    assert.match(writeTool.reason, /write MCP tools require an explicit future allowlist/);
+    assert.deepEqual(summary.activeProfileIds, [profileId]);
+    assert.equal(summary.policyAllowedToolCount, 1);
+    assert.equal(summary.policyDeniedToolCount, 1);
+    assert.equal(summary.configuredRiskyToolCount, 2);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugin MCP profile hash changes when cached component declarations change", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-mcp-schema-change-"));
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const manifestPath = writePluginWithMcpProfile(cwd);
+  const profileId = "plugin:acme.mcp-plugin@1.0.0:context7";
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.mcp-plugin@1.0.0", true, { registryPath });
+    setMcpProfilePersistentState(profileId, "enabled", {
+      configPath,
+      pluginRegistryPath: registryPath,
+    });
+    const before = getMcpStatusSummary({ configPath, pluginRegistryPath: registryPath });
+    const cachedPlugin = loadPluginRegistry({ registryPath }).plugins["acme.mcp-plugin@1.0.0"];
+    writeFileSync(
+      join(dirname(cachedPlugin.lock.source.manifestPath), "mcp.json"),
+      JSON.stringify({
+        servers: {
+          context7: {
+            name: "Context7 docs",
+            transport: {
+              kind: "remote-http",
+              url: "https://mcp.context7.example/mcp",
+            },
+            tools: [
+              {
+                name: "resolve-library-id",
+                risk: "read",
+                authRequired: false,
+                billable: false,
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    const after = getMcpStatusSummary({ configPath, pluginRegistryPath: registryPath });
+    const readTool = evaluateMcpToolPolicy(profileId, "resolve-library-id", {
+      configPath,
+      pluginRegistryPath: registryPath,
+    });
+
+    assert.notEqual(after.profileHashes[profileId], before.profileHashes[profileId]);
+    assert.deepEqual(after.pendingSchemaChangeProfileIds, [profileId]);
+    assert.equal(readTool.decision, "blocked_by_schema_change");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugin MCP discovery is render-only and never contacts plugin endpoints", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-mcp-discovery-"));
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const manifestPath = writePluginWithMcpProfile(cwd);
+  const profileId = "plugin:acme.mcp-plugin@1.0.0:context7";
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.mcp-plugin@1.0.0", true, { registryPath });
+    setMcpProfilePersistentState(profileId, "enabled", {
+      configPath,
+      pluginRegistryPath: registryPath,
+    });
+
+    const result = await discoverMcpProfile(profileId, {
+      configPath,
+      pluginRegistryPath: registryPath,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    assert.equal(fetchCalls, 0);
+    assert.equal(result.status, "plugin_discovery_disabled");
+    assert.equal(result.networkAttempted, false);
+    assert.match(formatMcpDiscoveryResult(result), /render-only/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("mcp profile hashing is deterministic for duplicate declared tool names", () => {
@@ -763,3 +936,63 @@ test("mcp discovery bounds long thrown network errors", async () => {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+function writePluginWithMcpProfile(cwd: string): string {
+  const pluginDirectory = join(cwd, "plugin");
+  const manifestPath = join(pluginDirectory, "orx-plugin.json");
+  mkdirSync(pluginDirectory, { recursive: true });
+  writeFileSync(
+    join(pluginDirectory, "mcp.json"),
+    JSON.stringify({
+      servers: {
+        context7: {
+          name: "Context7 docs",
+          transport: {
+            kind: "remote-http",
+            url: "https://mcp.context7.example/mcp",
+          },
+          authRequired: false,
+          tools: [
+            {
+              name: "resolve-library-id",
+              risk: "read",
+              authRequired: false,
+              billable: false,
+            },
+            {
+              name: "write-doc-cache",
+              risk: "write",
+              authRequired: false,
+              billable: false,
+            },
+          ],
+          notes: "Docs lookup profile declared by a local plugin.",
+        },
+      },
+    }),
+  );
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: "1",
+      name: "mcp-plugin",
+      version: "1.0.0",
+      description: "Declares an MCP profile.",
+      publisher: "acme",
+      source: {
+        type: "local",
+        path: ".",
+      },
+      components: {
+        mcpServers: "./mcp.json",
+      },
+      permissions: {
+        filesystem: [],
+        network: ["mcp.context7.example"],
+        env: [],
+        mcp: ["context7"],
+      },
+    }),
+  );
+  return manifestPath;
+}

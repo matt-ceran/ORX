@@ -108,3 +108,9 @@ export {
   type PluginRuleOmission,
   type PluginRulesDiscovery,
 } from "./rules.js";
+export {
+  discoverEnabledPluginMcpProfiles,
+  getEnabledPluginMcpProfileSummary,
+  type PluginMcpProfileOmission,
+  type PluginMcpProfilesDiscovery,
+} from "./mcp-presets.js";

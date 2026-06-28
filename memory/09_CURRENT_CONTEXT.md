@@ -28,6 +28,7 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` as untrusted context; executable plugin commands remain inactive.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
+- Enabled plugin `components.mcpServers` JSON can contribute render-only MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, and `/status`; `/mcp discover` refuses plugin-sourced profiles and no plugin MCP tools execute.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -62,6 +63,15 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented render-only plugin MCP presets routed through MCP policy:
+
+- Added `src/plugins/mcp-presets.ts` for bounded discovery of enabled-plugin `components.mcpServers` JSON from the ORX-owned cached manifest path only.
+- Plugin MCP presets are namespaced as `plugin:<plugin-id>:<server-id>`, include plugin manifest/component provenance in MCP profile hashes, and flow through `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp enable`, and `/status`.
+- Plugin-sourced profiles default disabled and remain non-executable. `/mcp discover` returns `plugin_discovery_disabled` without contacting plugin-declared endpoints.
+- `/status` now shows `plugin_mcp_presets` while `plugin_enabled_mcp` remains `0` for executable/plugin-server runtime.
+- Focused verification: `npm run typecheck` and `npm run build && node --test dist/plugins/registry.test.js dist/mcp/mcp.test.js dist/cli.test.js dist/slash/index.test.js dist/tui/chat.test.js` pass with 156 tests.
+- Next likely plugin work: executable slash-command design or hook hash-trust; plugin MCP endpoint discovery/tool execution still needs a separate runtime trust policy.
 
 Implemented inert plugin metadata fields:
 

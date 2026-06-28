@@ -4,6 +4,12 @@ Last updated: 2026-06-27
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-27: Plugin MCP Presets Are Policy Metadata Before Runtime
+
+Decision: Enabled ORX plugins may contribute MCP preset declarations from cached `components.mcpServers` JSON, and ORX may show those profiles through `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp enable`, and `/status` using namespaced ids and profile hashes that include plugin manifest/component provenance. Plugin-sourced profiles remain render-only: `/mcp discover` refuses to contact plugin-declared endpoints, and no plugin MCP tools are exposed to the model loop or executable runtime.
+
+Reasoning: Plugin MCP declarations are useful integration metadata, but plugin-controlled endpoint URLs, transports, schemas, and tool descriptions are supply-chain and prompt-injection surface. Routing declarations through the existing MCP policy vocabulary gives operators visibility into auth, transport, risk, tool policy, trust hashes, and schema changes without letting a plugin install or enable event create network calls or executable tools.
+
 ## 2026-06-27: Saved Profiles Are Local Config Snapshots Only
 
 Decision: ORX saved profiles should persist local configuration snapshots outside repositories at `~/.orx/profiles.json`, with `ORX_PROFILE_CONFIG_PATH` for isolated runs. A profile can store model, mode, Fusion preset, TTY theme, and permission posture, but must not store API keys. Applying a profile changes the active local config and labels the session with `activeProfile`; it must not by itself enable MCP tools, plugin executable surfaces, hooks, bins, delegates, or network permissions.

@@ -18,6 +18,13 @@ export interface McpProfileHashInput {
     authRequired: boolean;
     billable: boolean;
   }>;
+  source?: {
+    kind: string;
+    pluginId?: string;
+    manifestHash?: string;
+    componentPath?: string;
+    componentHash?: string;
+  };
 }
 
 export function mcpProfileHashInput(profile: McpProfile): McpProfileHashInput {
@@ -40,6 +47,15 @@ export function mcpProfileHashInput(profile: McpProfile): McpProfileHashInput {
         billable: tool.billable,
       }))
       .sort(compareToolHashInput),
+    source: profile.source
+      ? {
+          kind: profile.source.kind,
+          pluginId: profile.source.pluginId,
+          manifestHash: profile.source.manifestHash,
+          componentPath: profile.source.componentPath,
+          componentHash: profile.source.componentHash,
+        }
+      : undefined,
   };
 }
 

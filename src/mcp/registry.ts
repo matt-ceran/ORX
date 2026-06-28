@@ -4,6 +4,7 @@ import {
   type McpProfilesConfig,
 } from "./config.js";
 import { hashMcpProfile } from "./schema.js";
+import { discoverEnabledPluginMcpProfiles } from "../plugins/mcp-presets.js";
 
 export type McpTransportKind = "remote-http" | "stdio";
 export type McpProfileState = "disabled" | "enabled";
@@ -15,6 +16,14 @@ export interface McpDeclaredTool {
   risk: McpToolRisk;
   authRequired: boolean;
   billable: boolean;
+}
+
+export interface McpProfileSource {
+  kind: "builtin" | "plugin";
+  pluginId?: string;
+  manifestHash?: string;
+  componentPath?: string;
+  componentHash?: string;
 }
 
 export interface McpProfile {
@@ -30,11 +39,13 @@ export interface McpProfile {
   writeCapable: boolean;
   tools: McpDeclaredTool[];
   notes: string;
+  source?: McpProfileSource;
 }
 
 export interface McpRegistryOptions {
   config?: McpProfilesConfig;
   configPath?: string;
+  pluginRegistryPath?: string;
 }
 
 export const OPENROUTER_MCP_PROFILE: McpProfile = {
@@ -134,7 +145,7 @@ export const OPENROUTER_MCP_PROFILE: McpProfile = {
 
 export function listMcpProfiles(options: McpRegistryOptions = {}): McpProfile[] {
   const config = options.config ?? loadMcpProfilesConfig({ configPath: options.configPath });
-  return [applyPersistedState(OPENROUTER_MCP_PROFILE, config)];
+  return getConfiguredMcpProfiles(options).map((profile) => applyPersistedState(profile, config));
 }
 
 export function getActiveMcpProfiles(options: McpRegistryOptions = {}): McpProfile[] {
@@ -161,7 +172,7 @@ export function setMcpProfilePersistentState(
   options: McpRegistryOptions & { now?: () => Date } = {},
 ): McpProfileStateChange {
   const config = options.config ?? loadMcpProfilesConfig({ configPath: options.configPath });
-  const configuredProfile = getConfiguredMcpProfile(id);
+  const configuredProfile = getConfiguredMcpProfile(id, options);
   if (!configuredProfile) {
     return {
       ok: false,
@@ -216,8 +227,24 @@ export function getMcpToolNames(profile: McpProfile): string[] {
   return profile.tools.map((tool) => tool.name);
 }
 
-function getConfiguredMcpProfile(id: string): McpProfile | undefined {
-  return OPENROUTER_MCP_PROFILE.id === id ? OPENROUTER_MCP_PROFILE : undefined;
+function getConfiguredMcpProfile(
+  id: string,
+  options: Pick<McpRegistryOptions, "pluginRegistryPath"> = {},
+): McpProfile | undefined {
+  return getConfiguredMcpProfiles(options).find((profile) => profile.id === id);
+}
+
+function getConfiguredMcpProfiles(
+  options: Pick<McpRegistryOptions, "pluginRegistryPath"> = {},
+): McpProfile[] {
+  if (!options.pluginRegistryPath) {
+    return [OPENROUTER_MCP_PROFILE];
+  }
+
+  return [
+    OPENROUTER_MCP_PROFILE,
+    ...discoverEnabledPluginMcpProfiles({ registryPath: options.pluginRegistryPath }).profiles,
+  ];
 }
 
 function applyPersistedState(profile: McpProfile, config: McpProfilesConfig): McpProfile {
@@ -228,5 +255,6 @@ function applyPersistedState(profile: McpProfile, config: McpProfilesConfig): Mc
       ...profile.transport,
     },
     tools: profile.tools.map((tool) => ({ ...tool })),
+    source: profile.source ? { ...profile.source } : undefined,
   };
 }

@@ -93,7 +93,7 @@ Acceptance:
 
 Goal: create the ORX plugin substrate without enabling risky components by default.
 
-Current status as of 2026-06-27: local registry, cache, catalog install-by-id, skills/prompts/rules loaders, and inert manifest metadata are implemented. Plugin manifests can include sanitized display-only homepage/docs/license/trust tier/auth/privacy/runtime metadata rendered by `/plugins inspect`; executable plugin commands, hooks, bins, and plugin MCP remain inactive.
+Current status as of 2026-06-27: local registry, cache, catalog install-by-id, skills/prompts/rules loaders, inert manifest metadata, and render-only plugin MCP presets are implemented. Plugin manifests can include sanitized display-only homepage/docs/license/trust tier/auth/privacy/runtime metadata rendered by `/plugins inspect`. Enabled plugin `components.mcpServers` JSON can declare namespaced `plugin:<plugin-id>:<server-id>` profiles that flow through `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp enable`, and `/status`; `/mcp discover` refuses plugin-sourced profiles and no plugin MCP tools execute. Executable plugin commands, hooks, bins, plugin endpoint discovery, and plugin MCP tool execution remain inactive.
 
 Implement:
 
@@ -166,7 +166,7 @@ Acceptance:
 
 Goal: add deterministic reusable workflows and guardrails.
 
-Current status as of 2026-06-27: markdown prompt commands and markdown rules have explicit progressive loaders. ORX discovers enabled plugin `components.commands` and `components.rules` markdown from cached manifests, surfaces compact metadata through `/prompts list`, `/rules list`, `/status`, and ephemeral model context, and loads full content only through `/prompts activate <id>` or `/rules activate <id>` as untrusted session context with provenance. Executable plugin slash commands, hooks, bins, plugin MCP, and plugin code execution remain inactive.
+Current status as of 2026-06-27: markdown prompt commands and markdown rules have explicit progressive loaders. ORX discovers enabled plugin `components.commands` and `components.rules` markdown from cached manifests, surfaces compact metadata through `/prompts list`, `/rules list`, `/status`, and ephemeral model context, and loads full content only through `/prompts activate <id>` or `/rules activate <id>` as untrusted session context with provenance. Render-only plugin MCP presets are also visible through MCP policy surfaces. Executable plugin slash commands, hooks, bins, plugin endpoint discovery, plugin MCP tool execution, and plugin code execution remain inactive.
 
 Implement:
 

@@ -16,6 +16,7 @@ export {
   setMcpProfileRuntimeState,
   type McpDeclaredTool,
   type McpProfile,
+  type McpProfileSource,
   type McpRegistryOptions,
   type McpProfileState,
   type McpRiskLevel,
