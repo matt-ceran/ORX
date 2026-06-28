@@ -200,6 +200,8 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mcp presets i"), [["inspect ", "info "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect g"), [["github-readonly "], "g"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets show m"), [["microsoft-learn "], "m"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets inspect s"), [["sentry-readonly "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets b"), [["browser "], "b"]);
   assert.deepEqual(completeSlashCommandLine("/mcp allow-m"), [["allow-model-tool "], "allow-m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp inspect o"), [["openrouter "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog ", "commands "], "c"]);
@@ -2377,6 +2379,9 @@ test("mcp slash commands install provider presets", async () => {
     assert.equal(await handleSlashCommand("/mcp presets", harness.context), "continue");
     assert.match(harness.stdout(), /MCP provider presets/);
     assert.match(harness.stdout(), /id=context7/);
+    assert.match(harness.stdout(), /id=browser/);
+    assert.match(harness.stdout(), /id=figma/);
+    assert.match(harness.stdout(), /id=sentry-readonly/);
 
     assert.equal(await handleSlashCommand("/mcp presets inspect github-readonly", harness.context), "continue");
     assert.match(harness.stdout(), /MCP Provider Preset: github-readonly/);
@@ -2386,6 +2391,12 @@ test("mcp slash commands install provider presets", async () => {
     assert.equal(await handleSlashCommand("/mcp presets microsoft-learn", harness.context), "continue");
     assert.match(harness.stdout(), /MCP Provider Preset: microsoft-learn/);
     assert.match(harness.stdout(), /microsoft_docs_search risk=read auth=no billable=no/);
+
+    assert.equal(await handleSlashCommand("/mcp presets cloudflare-api", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP Provider Preset: cloudflare-api/);
+    assert.match(harness.stdout(), /risk_level: high/);
+    assert.match(harness.stdout(), /write_capable: yes/);
+    assert.match(harness.stdout(), /execute risk=destructive auth=yes billable=no/);
 
     assert.equal(
       await handleSlashCommand("/mcp add-preset microsoft-learn --id mslearn", harness.context),

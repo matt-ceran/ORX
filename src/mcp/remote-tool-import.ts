@@ -1,4 +1,4 @@
-import type { McpRegistryOptions, McpToolRisk } from "./registry.js";
+import type { McpDeclaredTool, McpProfile, McpRegistryOptions, McpToolRisk } from "./registry.js";
 import {
   listRemoteMcpTools,
   type McpRemoteToolSummary,
@@ -111,6 +111,7 @@ export async function importRemoteMcpTools(
   const { importedTools, skippedTools } = buildImportTools(
     remoteToolsResult.tools ?? [],
     remoteToolsResult.authRequired ?? profile.authRequired,
+    profile,
   );
 
   if (importedTools.length === 0) {
@@ -244,23 +245,41 @@ export function formatMcpRemoteToolImportResult(result: McpRemoteToolImportResul
 function buildImportTools(
   tools: McpRemoteToolSummary[],
   authRequired: boolean,
+  profile: McpProfile,
 ): {
   importedTools: ImportedRemoteMcpTool[];
   skippedTools: SkippedRemoteMcpTool[];
 } {
   const importedByName = new Map<string, ImportedRemoteMcpTool>();
   const skippedTools: SkippedRemoteMcpTool[] = [];
+  const existingToolsByName = new Map(profile.tools.map((tool) => [tool.name, tool]));
+  const requireExistingDeclaration = profile.writeCapable || profile.riskLevel === "high";
 
   for (const tool of tools) {
     try {
       const name = validateUserMcpToolName(tool.name);
-      importedByName.set(name, {
-        name,
-        risk: "read",
-        authRequired,
-        billable: false,
-        remoteToolHash: tool.toolHash,
-      });
+      const existingTool = existingToolsByName.get(name);
+      if (requireExistingDeclaration && !existingTool) {
+        skippedTools.push({
+          name,
+          reason:
+            "profile is high-risk or write-capable; add this tool manually with an explicit risk before import can refresh it",
+          remoteToolHash: tool.toolHash,
+        });
+        continue;
+      }
+
+      const importedTool = mergeImportedToolWithExisting(
+        {
+          name,
+          risk: "read",
+          authRequired,
+          billable: false,
+          remoteToolHash: tool.toolHash,
+        },
+        existingTool,
+      );
+      importedByName.set(name, importedTool);
     } catch (error) {
       skippedTools.push({
         name: sanitizeSkippedRemoteToolName(tool.name),
@@ -277,6 +296,33 @@ function buildImportTools(
     skippedTools,
   };
 }
+
+function mergeImportedToolWithExisting(
+  importedTool: ImportedRemoteMcpTool,
+  existingTool: McpDeclaredTool | undefined,
+): ImportedRemoteMcpTool {
+  if (!existingTool) {
+    return importedTool;
+  }
+
+  return {
+    ...importedTool,
+    risk: stricterMcpToolRisk(existingTool.risk, importedTool.risk),
+    authRequired: existingTool.authRequired || importedTool.authRequired,
+    billable: existingTool.billable || importedTool.billable,
+  };
+}
+
+function stricterMcpToolRisk(left: McpToolRisk, right: McpToolRisk): McpToolRisk {
+  return MCP_TOOL_RISK_RANK[left] >= MCP_TOOL_RISK_RANK[right] ? left : right;
+}
+
+const MCP_TOOL_RISK_RANK: Record<McpToolRisk, number> = {
+  read: 0,
+  billable: 1,
+  write: 2,
+  destructive: 3,
+};
 
 function normalizeImportProfileId(profileId: string): string {
   const trimmed = profileId.trim();

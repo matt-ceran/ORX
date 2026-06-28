@@ -31,7 +31,7 @@ Urgent UX recovery additions from user testing:
 - Local plugin catalog inspect/editor/update-check commands are implemented through `orx plugins catalog inspect|updates|add-local|add-git|remove` and `/plugins catalog inspect|updates|add-local|add-git|remove`. They review local declarations or compare installed registry provenance against local catalog pins only, preserving install/enable/trust/grant/fetch/execution as separate explicit steps.
 - Local user MCP profile catalogs are implemented through `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. Declarations are namespaced as `user:<profile-id>`, currently support sanitized `remote-http` transports, appear in `/mcp`, `orx mcp`, `/status`, interactive chat, and `orx ask --mcp-tools`, and share the same enable/trusted-hash/schema-change/tool-grant/model-grant/auth/audit gates as built-in and plugin MCP profiles.
 - Local user MCP catalog management commands are implemented through `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands. They write private local catalog files, preserve existing array/object/legacy `servers` declarations during edits, and avoid manual JSON editing for common remote MCP setup.
-- Built-in MCP provider presets are implemented through `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, `/mcp presets`, `/mcp presets inspect <preset>`, and `/mcp add-preset <preset>`. Initial templates include `context7`, `microsoft-learn`, and `github-readonly`, and inspect/install flows leave enablement, trust, grants, calls, and model exposure as separate explicit steps.
+- Built-in MCP provider presets are implemented through `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, `/mcp presets`, `/mcp presets inspect <preset>`, and `/mcp add-preset <preset>`. Templates now include `context7`, `microsoft-learn`, `github-readonly`, `sentry-readonly`, `figma`, `browser`, `cloudflare-docs`, and `cloudflare-api`, and inspect/install flows leave enablement, trust, grants, calls, and model exposure as separate explicit steps.
 - Reviewed remote MCP tool import is implemented through `orx mcp import-remote-tools <profile>` and `/mcp import-remote-tools <profile>`. It is limited to local `user:` catalog profiles, uses the existing enabled/trusted/unchanged guarded `tools/list` path, stores sanitized read-only non-billable declarations only, skips unsupported names, audits hashes only, and leaves newly changed profiles behind the pending schema-change retrust gate.
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` or the derived `/plugin:<plugin-id>:command:<slug>` alias as untrusted context. Manifest-defined executable command schemas are discoverable through `components.commandSchemas` and exposed as `/plugin:<plugin-id>:exec:<slug>` aliases that can only run referenced trusted current bins.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
@@ -79,6 +79,15 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Expanded built-in MCP provider presets and tightened import risk preservation:
+
+- Added hosted remote HTTP preset templates for `browser`, `cloudflare-api`, `cloudflare-docs`, `figma`, and `sentry-readonly`, alongside existing `context7`, `microsoft-learn`, and `github-readonly`.
+- Provider preset inspect now renders profile-level `risk_level` and `write_capable`; installing presets persists those local user-catalog risk signals while keeping profiles disabled.
+- `cloudflare-api` statically declares `search` as read-only and `execute` as destructive. `figma` is high/write-capable with zero static tools so the operator must manually declare reviewed tools with the correct risk.
+- Reviewed remote MCP tool import now preserves stricter existing same-name declarations and skips undeclared remote tools for high-risk/write-capable profiles. Remote metadata can refresh known declarations, but it cannot downgrade destructive/write/billable/auth state or create new read-only tools for write-capable providers.
+- Verification: `npm run typecheck`, `npm run build`, `git diff --check`, focused MCP/CLI/slash source tests with 183 tests, full build-backed `npm test` with 423 tests, built CLI temp-catalog dogfood for Cloudflare/Figma inspect/install, and independent verifier recheck pass.
+- Next likely plugin/MCP work: richer catalog provenance/signing, remote OAuth/auth flow design, broader docs/research provider polish, or final install/dogfood hardening.
 
 Implemented no-side-effect plugin catalog update checks:
 

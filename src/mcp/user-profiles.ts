@@ -45,6 +45,8 @@ export interface UserMcpRemoteProfileInput {
   name?: string;
   url: string;
   authRequired?: boolean;
+  riskLevel?: McpRiskLevel;
+  writeCapable?: boolean;
   notes?: string;
 }
 
@@ -208,6 +210,10 @@ export function upsertUserMcpRemoteProfile(
   const existingTools = Array.isArray(existingRecord.tools) ? existingRecord.tools : [];
   const safeName = optionalSafeString(input.name, "profile.name", 1, MAX_NAME_LENGTH);
   const safeNotes = optionalSafeString(input.notes, "profile.notes", 1, MAX_NOTE_LENGTH);
+  const riskLevel =
+    input.riskLevel ?? optionalRiskLevel(existingRecord.riskLevel, "profile.riskLevel");
+  const writeCapable =
+    input.writeCapable ?? optionalBoolean(existingRecord.writeCapable, "profile.writeCapable");
   const declaration = {
     ...existingRecord,
     ...(typeof safeName === "undefined" ? {} : { name: safeName }),
@@ -215,10 +221,12 @@ export function upsertUserMcpRemoteProfile(
       kind: "remote-http",
       url: input.url,
     }),
+    ...(typeof riskLevel === "undefined" ? {} : { riskLevel }),
     authRequired:
       input.authRequired ??
       optionalBoolean(existingRecord.authRequired, "profile.authRequired") ??
       false,
+    ...(typeof writeCapable === "undefined" ? {} : { writeCapable }),
     tools: existingTools,
     ...(typeof safeNotes === "undefined" ? {} : { notes: safeNotes }),
   };
@@ -364,11 +372,29 @@ export function upsertUserMcpProfileTools(
     importedByName.set(tool.name, tool);
   }
 
+  const currentTools = Array.isArray(existing.tools) ? existing.tools : [];
+  for (const [index, currentTool] of currentTools.entries()) {
+    if (!isPlainObject(currentTool) || typeof currentTool.name !== "string") {
+      continue;
+    }
+
+    const importedTool = importedByName.get(currentTool.name);
+    if (!importedTool) {
+      continue;
+    }
+
+    try {
+      const existingTool = sanitizeTool(currentTool, index, profileAuthRequired);
+      importedByName.set(importedTool.name, mergeMcpDeclaredTools(existingTool, importedTool));
+    } catch {
+      // Invalid existing declarations are not allowed to override sanitized imports.
+    }
+  }
+
   const importedTools = [...importedByName.values()].sort((left, right) =>
     left.name.localeCompare(right.name),
   );
   const importedNames = new Set(importedTools.map((tool) => tool.name));
-  const currentTools = Array.isArray(existing.tools) ? existing.tools : [];
   const nextTools = [
     ...currentTools.filter(
       (entry) => !(isPlainObject(entry) && importedNames.has(String(entry.name))),
@@ -396,6 +422,29 @@ export function upsertUserMcpProfileTools(
     message: `${importedTools.length} user MCP tools stored for ${profile.id} in ${path}.`,
   };
 }
+
+function mergeMcpDeclaredTools(
+  existingTool: McpDeclaredTool,
+  importedTool: McpDeclaredTool,
+): McpDeclaredTool {
+  return {
+    name: importedTool.name,
+    risk: stricterMcpToolRisk(existingTool.risk, importedTool.risk),
+    authRequired: existingTool.authRequired || importedTool.authRequired,
+    billable: existingTool.billable || importedTool.billable,
+  };
+}
+
+function stricterMcpToolRisk(left: McpToolRisk, right: McpToolRisk): McpToolRisk {
+  return MCP_TOOL_RISK_RANK[left] >= MCP_TOOL_RISK_RANK[right] ? left : right;
+}
+
+const MCP_TOOL_RISK_RANK: Record<McpToolRisk, number> = {
+  read: 0,
+  billable: 1,
+  write: 2,
+  destructive: 3,
+};
 
 export function removeUserMcpProfileTool(
   profileId: string,

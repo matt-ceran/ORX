@@ -3,7 +3,7 @@ import {
   upsertUserMcpRemoteProfile,
   type UserMcpProfileCatalogIoOptions,
 } from "./user-profiles.js";
-import type { McpToolRisk } from "./registry.js";
+import type { McpRiskLevel, McpToolRisk } from "./registry.js";
 
 export interface McpProviderPresetTool {
   name: string;
@@ -18,6 +18,8 @@ export interface McpProviderPreset {
   profileId: string;
   url: string;
   authRequired: boolean;
+  riskLevel?: McpRiskLevel;
+  writeCapable?: boolean;
   tools: McpProviderPresetTool[];
   notes: string;
   tags: string[];
@@ -43,11 +45,62 @@ const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
 
 export const MCP_PROVIDER_PRESETS: McpProviderPreset[] = [
   {
+    id: "browser",
+    name: "Cloudflare Browser Rendering",
+    profileId: "browser",
+    url: "https://browser.mcp.cloudflare.com/mcp",
+    authRequired: true,
+    riskLevel: "medium",
+    tools: [],
+    notes:
+      "Cloudflare hosted browser rendering MCP. Browser output is untrusted remote content; review provider tool metadata before adding specific read-only tools.",
+    tags: ["browser", "cloudflare", "research", "auth"],
+  },
+  {
+    id: "cloudflare-api",
+    name: "Cloudflare API",
+    profileId: "cloudflare-api",
+    url: "https://mcp.cloudflare.com/mcp",
+    authRequired: true,
+    riskLevel: "high",
+    writeCapable: true,
+    tools: [
+      {
+        name: "search",
+        risk: "read",
+        authRequired: true,
+        billable: false,
+      },
+      {
+        name: "execute",
+        risk: "destructive",
+        authRequired: true,
+        billable: false,
+      },
+    ],
+    notes:
+      "Cloudflare broad account API MCP. The execute tool can make account changes, so ORX marks it destructive and requires explicit grants before calls.",
+    tags: ["cloud", "cloudflare", "auth", "destructive"],
+  },
+  {
+    id: "cloudflare-docs",
+    name: "Cloudflare Docs",
+    profileId: "cloudflare-docs",
+    url: "https://docs.mcp.cloudflare.com/mcp",
+    authRequired: true,
+    riskLevel: "medium",
+    tools: [],
+    notes:
+      "Cloudflare docs MCP. Review remote tool metadata before declaring tools; fetched docs remain untrusted context.",
+    tags: ["docs", "cloudflare", "read-only", "auth"],
+  },
+  {
     id: "context7",
     name: "Context7 docs",
     profileId: "context7",
     url: "https://mcp.context7.com/mcp",
     authRequired: false,
+    riskLevel: "low",
     tools: [
       {
         name: "resolve-library-id",
@@ -72,6 +125,7 @@ export const MCP_PROVIDER_PRESETS: McpProviderPreset[] = [
     profileId: "microsoft-learn",
     url: "https://learn.microsoft.com/api/mcp",
     authRequired: false,
+    riskLevel: "low",
     tools: [
       {
         name: "microsoft_docs_search",
@@ -97,15 +151,41 @@ export const MCP_PROVIDER_PRESETS: McpProviderPreset[] = [
     tags: ["docs", "microsoft", "read-only"],
   },
   {
+    id: "figma",
+    name: "Figma remote MCP",
+    profileId: "figma",
+    url: "https://mcp.figma.com/mcp",
+    authRequired: true,
+    riskLevel: "high",
+    writeCapable: true,
+    tools: [],
+    notes:
+      "Figma remote MCP. Provider tools can inspect or modify design files; manually declare reviewed tools with the correct risk.",
+    tags: ["design", "figma", "auth"],
+  },
+  {
     id: "github-readonly",
     name: "GitHub read-only",
     profileId: "github-readonly",
     url: "https://api.githubcopilot.com/mcp/readonly",
     authRequired: true,
+    riskLevel: "medium",
     tools: [],
     notes:
       "GitHub hosted MCP read-only endpoint. Auth is required; use remote-tools after enable/trust to inspect current provider tool metadata before declaring tools.",
     tags: ["github", "repo", "read-only", "auth"],
+  },
+  {
+    id: "sentry-readonly",
+    name: "Sentry read-only",
+    profileId: "sentry-readonly",
+    url: "https://mcp.sentry.dev/mcp",
+    authRequired: true,
+    riskLevel: "medium",
+    tools: [],
+    notes:
+      "Sentry hosted MCP for debugging context. Review remote tool metadata and declare only read-only tools unless you intentionally add stricter risk flags.",
+    tags: ["observability", "sentry", "read-only", "auth"],
   },
 ];
 
@@ -147,6 +227,8 @@ export function renderMcpProviderPresetInspect(preset: McpProviderPreset): strin
     `  profile_id: user:${preset.profileId}`,
     `  url: ${preset.url}`,
     `  auth_required: ${preset.authRequired ? "yes" : "no"}`,
+    `  risk_level: ${preset.riskLevel ?? "auto"}`,
+    `  write_capable: ${preset.writeCapable ? "yes" : "no"}`,
     `  tags: ${preset.tags.length > 0 ? preset.tags.join(",") : "none"}`,
     `  notes: ${preset.notes}`,
     `  static_tools: ${preset.tools.length}`,
@@ -209,6 +291,8 @@ export function installMcpProviderPreset(
       name: preset.name,
       url: options.url ?? preset.url,
       authRequired: options.authRequired ?? preset.authRequired,
+      riskLevel: preset.riskLevel,
+      writeCapable: preset.writeCapable,
       notes: preset.notes,
     },
     options,

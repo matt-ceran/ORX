@@ -322,9 +322,14 @@ test("MCP provider presets install local user catalog profiles", () => {
 
   try {
     const rendered = renderMcpProviderPresets();
+    assert.match(rendered, /id=browser/);
+    assert.match(rendered, /id=cloudflare-api/);
+    assert.match(rendered, /id=cloudflare-docs/);
     assert.match(rendered, /id=context7/);
+    assert.match(rendered, /id=figma/);
     assert.match(rendered, /id=github-readonly/);
     assert.match(rendered, /id=microsoft-learn/);
+    assert.match(rendered, /id=sentry-readonly/);
 
     const inspected = renderMcpProviderPresetInspect(listMcpProviderPresets()[0]!);
     assert.match(inspected, /MCP Provider Preset:/);
@@ -353,6 +358,40 @@ test("MCP provider presets install local user catalog profiles", () => {
         "microsoft_docs_search:read:false",
       ],
     );
+
+    const cloudflareResult = installMcpProviderPreset("cloudflare-api", {
+      profileCatalogPath,
+    });
+    assert.equal(cloudflareResult.ok, true);
+    assert.equal(cloudflareResult.profileId, "user:cloudflare-api");
+    assert.equal(cloudflareResult.toolCount, 2);
+
+    const loadedWithCloudflare = loadUserMcpProfileCatalog({ profileCatalogPath });
+    const cloudflareProfile = loadedWithCloudflare.profiles.find(
+      (profile) => profile.id === "user:cloudflare-api",
+    );
+    assert.ok(cloudflareProfile);
+    assert.equal(cloudflareProfile.transport.url, "https://mcp.cloudflare.com/mcp");
+    assert.equal(cloudflareProfile.riskLevel, "high");
+    assert.equal(cloudflareProfile.writeCapable, true);
+    assert.deepEqual(
+      cloudflareProfile.tools.map((tool) => `${tool.name}:${tool.risk}:${tool.authRequired}`),
+      ["execute:destructive:true", "search:read:true"],
+    );
+
+    const figmaResult = installMcpProviderPreset("figma", {
+      profileCatalogPath,
+    });
+    assert.equal(figmaResult.ok, true);
+    assert.equal(figmaResult.profileId, "user:figma");
+    assert.equal(figmaResult.toolCount, 0);
+
+    const loadedWithFigma = loadUserMcpProfileCatalog({ profileCatalogPath });
+    const figmaProfile = loadedWithFigma.profiles.find((profile) => profile.id === "user:figma");
+    assert.ok(figmaProfile);
+    assert.equal(figmaProfile.riskLevel, "high");
+    assert.equal(figmaProfile.writeCapable, true);
+    assert.equal(figmaProfile.tools.length, 0);
 
     const unknown = installMcpProviderPreset("missing", { profileCatalogPath });
     assert.equal(unknown.ok, false);
@@ -918,6 +957,129 @@ test("remote MCP tool import stores reviewed names in user catalog and requires 
     assert.match(formatted, /schema_change_after: pending/);
     assert.match(formatted, /risk_default: read/);
     assert.match(formatted, /bad tool name/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tool import preserves stricter existing risk declarations", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-remote-tool-import-risk-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+
+  try {
+    const preset = installMcpProviderPreset("cloudflare-api", { profileCatalogPath });
+    assert.equal(preset.ok, true);
+    assert.equal(setMcpProfilePersistentState("user:cloudflare-api", "enabled", {
+      configPath,
+      profileCatalogPath,
+    }).ok, true);
+
+    const result = await importRemoteMcpTools("cloudflare-api", {
+      configPath,
+      profileCatalogPath,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-tools-list-1",
+            result: {
+              tools: [
+                { name: "execute", description: "Run a Cloudflare API operation" },
+                { name: "search", description: "Search Cloudflare API resources" },
+                { name: "delete_zone", description: "Undeclared dynamic write-like tool" },
+              ],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+
+    assert.equal(result.status, "ok");
+    assert.deepEqual(result.importedTools?.map((tool) => `${tool.name}:${tool.risk}`), [
+      "execute:destructive",
+      "search:read",
+    ]);
+    assert.deepEqual(result.skippedTools?.map((tool) => tool.name), ["delete_zone"]);
+    assert.match(result.skippedTools?.[0]?.reason ?? "", /high-risk or write-capable/);
+
+    const pendingReport = getMcpProfileToolPolicyReport("user:cloudflare-api", {
+      configPath,
+      profileCatalogPath,
+    });
+    assert.ok(pendingReport);
+    assert.deepEqual(
+      pendingReport.profile.tools.map((tool) => `${tool.name}:${tool.risk}:${tool.authRequired}`),
+      ["execute:destructive:true", "search:read:true"],
+    );
+
+    assert.equal(setMcpProfilePersistentState("user:cloudflare-api", "enabled", {
+      configPath,
+      profileCatalogPath,
+    }).ok, true);
+    const executeModelGrant = allowMcpModelToolGrant("user:cloudflare-api", "execute", {
+      configPath,
+      profileCatalogPath,
+    });
+    assert.equal(executeModelGrant.ok, false);
+    assert.match(executeModelGrant.message, /destructive MCP tools require an explicit MCP tool grant/);
+
+    const executeToolPolicy = evaluateMcpToolPolicy("user:cloudflare-api", "execute", {
+      configPath,
+      profileCatalogPath,
+    });
+    assert.equal(executeToolPolicy.decision, "denied");
+    assert.match(executeToolPolicy.reason, /explicit MCP tool grant/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tool import skips undeclared dynamic tools for write-capable profiles", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-remote-tool-import-write-capable-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+
+  try {
+    const preset = installMcpProviderPreset("figma", { profileCatalogPath });
+    assert.equal(preset.ok, true);
+    assert.equal(setMcpProfilePersistentState("user:figma", "enabled", {
+      configPath,
+      profileCatalogPath,
+    }).ok, true);
+
+    const result = await importRemoteMcpTools("figma", {
+      configPath,
+      profileCatalogPath,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-tools-list-1",
+            result: {
+              tools: [{ name: "get_design_context" }, { name: "modify_variable" }],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+
+    assert.equal(result.status, "no_importable_tools");
+    assert.deepEqual(result.importedTools, []);
+    assert.deepEqual(result.skippedTools?.map((tool) => tool.name), [
+      "get_design_context",
+      "modify_variable",
+    ]);
+    assert.match(result.skippedTools?.[0]?.reason ?? "", /high-risk or write-capable/);
+
+    const report = getMcpProfileToolPolicyReport("user:figma", {
+      configPath,
+      profileCatalogPath,
+    });
+    assert.ok(report);
+    assert.equal(report.profile.riskLevel, "high");
+    assert.equal(report.profile.writeCapable, true);
+    assert.equal(report.profile.tools.length, 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

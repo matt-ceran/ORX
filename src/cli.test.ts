@@ -559,8 +559,12 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     const listed = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "presets"], env, listed.io), 0);
     assert.match(listed.stdout(), /MCP provider presets/);
+    assert.match(listed.stdout(), /id=browser/);
+    assert.match(listed.stdout(), /id=cloudflare-api/);
     assert.match(listed.stdout(), /id=context7/);
+    assert.match(listed.stdout(), /id=figma/);
     assert.match(listed.stdout(), /id=microsoft-learn/);
+    assert.match(listed.stdout(), /id=sentry-readonly/);
 
     const presetInspect = createIo({ cwd });
     assert.equal(
@@ -578,6 +582,16 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(shorthandInspect.stdout(), /MCP Provider Preset: github-readonly/);
     assert.match(shorthandInspect.stdout(), /tools: none/);
     assert.match(shorthandInspect.stdout(), /remote_tool_review:/);
+
+    const cloudflareInspect = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "presets", "inspect", "cloudflare-api"], env, cloudflareInspect.io),
+      0,
+    );
+    assert.match(cloudflareInspect.stdout(), /MCP Provider Preset: cloudflare-api/);
+    assert.match(cloudflareInspect.stdout(), /risk_level: high/);
+    assert.match(cloudflareInspect.stdout(), /write_capable: yes/);
+    assert.match(cloudflareInspect.stdout(), /execute risk=destructive auth=yes billable=no/);
 
     const pluginList = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "catalog"], env, pluginList.io), 0);

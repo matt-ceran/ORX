@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Remote MCP Tool Import Cannot Weaken Local Risk
+
+Decision: Reviewed remote MCP tool import may refresh local `user:` catalog declarations from provider `tools/list` metadata, but it must never downgrade an existing same-name local declaration. Existing stricter risk, auth-required, and billable state win over imported defaults. For profiles marked high-risk or write-capable, import may only refresh tools that already have a local declaration; undeclared remote tool names must be skipped until the operator manually adds them with an explicit risk.
+
+Reasoning: Remote MCP metadata is untrusted provider data and cannot become an authority boundary. This is especially important for broad providers such as Cloudflare API, where a known `execute` tool must remain destructive, and for dynamic write-capable providers such as Figma, where ORX cannot safely infer tool risk from a name alone. The operator-owned catalog remains the source of tool authority.
+
 ## 2026-06-28: Plugin Catalog Update Checks Are Local Pin Comparisons
 
 Decision: ORX may provide `orx plugins catalog updates [id]` and `/plugins catalog updates [id]` to compare installed plugin registry provenance against the local plugin catalog's pinned git entries. These checks must be read-only and local-only: they may load the catalog and registry, but must not fetch remotes, install plugins, enable plugins, trust hashes, grant tools, execute plugin surfaces, or mutate registry/cache/catalog state.
@@ -42,7 +48,7 @@ Reasoning: Zero-static-tool providers such as GitHub read-only need a comfortabl
 
 ## 2026-06-28: MCP Provider Presets Are Local Templates Only
 
-Decision: ORX may ship built-in MCP provider presets such as `context7`, `microsoft-learn`, and `github-readonly`, exposed through `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, and matching `/mcp` commands. Inspecting a preset is display-only, and installing a preset writes sanitized disabled declarations into the local user MCP catalog only. These commands must not enable a profile, trust a profile hash, grant tools, expose model MCP, fetch remote metadata, or bypass the existing guarded discovery/call/audit gates.
+Decision: ORX may ship built-in MCP provider presets such as `context7`, `microsoft-learn`, `github-readonly`, `sentry-readonly`, `figma`, `browser`, `cloudflare-docs`, and `cloudflare-api`, exposed through `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, and matching `/mcp` commands. Inspecting a preset is display-only, and installing a preset writes sanitized disabled declarations into the local user MCP catalog only. These commands must not enable a profile, trust a profile hash, grant tools, expose model MCP, fetch remote metadata, or bypass the existing guarded discovery/call/audit gates. Presets may carry profile-level risk/write-capable metadata and static tools only when the provider surface is stable enough to classify conservatively.
 
 Reasoning: Provider presets make real MCP setup comfortable without making provider metadata an authority boundary. Keeping presets as local declaration templates preserves the existing operator-owned flow: review the profile, enable/trust the current hash, inspect remote tools when needed, grant specific tools, and only then call tools or expose read-only model MCP.
 

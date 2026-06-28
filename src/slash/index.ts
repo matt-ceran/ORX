@@ -377,7 +377,16 @@ const MCP_SUBCOMMAND_COMPLETIONS = [
 ] as const;
 const MCP_MODEL_SUBCOMMAND_COMPLETIONS = ["status", "enable", "disable"] as const;
 const MCP_PROFILE_COMPLETIONS = ["openrouter"] as const;
-const MCP_PROVIDER_PRESET_COMPLETIONS = ["context7", "github-readonly", "microsoft-learn"] as const;
+const MCP_PROVIDER_PRESET_COMPLETIONS = [
+  "browser",
+  "cloudflare-api",
+  "cloudflare-docs",
+  "context7",
+  "figma",
+  "github-readonly",
+  "microsoft-learn",
+  "sentry-readonly",
+] as const;
 const MCP_PROVIDER_PRESET_ACTION_COMPLETIONS = [
   "inspect",
   "show",
