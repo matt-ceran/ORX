@@ -99,6 +99,7 @@ import {
   installPlugin,
   isPluginCommandAliasName,
   loadPluginCatalog,
+  parsePluginScaffoldArgs,
   renderPluginBinInspect,
   renderPluginBinRunResult,
   renderPluginBins,
@@ -111,12 +112,14 @@ import {
   renderPluginList,
   renderPluginPromptList,
   renderPluginRuleList,
+  renderPluginScaffoldResult,
   renderPluginSkillList,
   renderPromptActivation,
   renderRuleActivation,
   renderSkillActivation,
   runPluginBin,
   runPluginHook,
+  scaffoldPlugin,
   setPluginEnabledState,
   trustPluginBin,
   trustPluginHook,
@@ -366,6 +369,7 @@ const PLUGIN_SUBCOMMAND_COMPLETIONS = [
   "list",
   "status",
   "commands",
+  "scaffold",
   "inspect",
   "register",
   "install",
@@ -938,7 +942,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/plugins": {
-    usage: "/plugins [catalog|list|commands|inspect|register|install|enable|disable]",
+    usage: "/plugins [catalog|list|commands|scaffold|inspect|register|install|enable|disable]",
     description: "Show catalog entries and update inert plugin registry state",
     group: "Integrations",
     tier: "advanced",
@@ -2090,6 +2094,17 @@ async function handlePluginsCommand(
     return;
   }
 
+  if (subcommand === "scaffold") {
+    try {
+      const options = parsePluginScaffoldArgs(command.args.slice(1), context.io.cwd);
+      writeLine(context.io.stdout, renderPluginScaffoldResult(scaffoldPlugin(options)));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeLine(context.io.stderr, message);
+    }
+    return;
+  }
+
   if (subcommand === "inspect") {
     if (!pluginId || command.args.length !== 2) {
       writeLine(context.io.stderr, "Usage: /plugins inspect <id>");
@@ -2156,7 +2171,7 @@ async function handlePluginsCommand(
 
   writeLine(
     context.io.stderr,
-    "Usage: /plugins [catalog|list|commands|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: /plugins [catalog|list|commands|scaffold <directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
 }
 

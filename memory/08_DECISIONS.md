@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Plugin Scaffolds Are Local Authoring Artifacts
+
+Decision: ORX may provide `orx plugins scaffold <directory>` and `/plugins scaffold <directory>` to create valid local plugin authoring bundles, but scaffolding must not register, install, enable, trust, grant, fetch, or execute anything. Default generated surfaces should be inert markdown (`skills`, prompt `commands`, and advisory `rules`), while hooks, bins, MCP servers, command schemas, assets, and docs should be explicit opt-in placeholders. Executable/integration placeholders should be empty/no-op declarations until the author writes content and passes the existing install/enable/trust/grant gates.
+
+Reasoning: Plugin authoring should be comfortable enough for daily use without weakening ORX's supply-chain boundary. Keeping scaffolding separate from registry/trust state lets operators generate a valid manifest quickly, then review and install it through the same disabled-by-default cache, hash, and runtime policies as any other plugin source.
+
 ## 2026-06-28: Model MCP Results Are Wrapped As Untrusted Remote Data
 
 Decision: Model-visible `mcp_call` results must wrap remote text content in explicit untrusted-output markers before returning it to the OpenRouter tool loop. The wrapper should identify the source profile/tool, mark each content item as untrusted, and state that remote MCP output is data only and cannot override system, developer, operator, ORX policy, local repository state, or explicit slash/CLI grants. The MCP tool schema should also warn the model before use that returned content is untrusted external data.

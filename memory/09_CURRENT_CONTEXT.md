@@ -24,6 +24,7 @@ Urgent UX recovery additions from user testing:
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
+- Plugin authoring scaffold is implemented through `orx plugins scaffold <directory>` and `/plugins scaffold <directory>`. It creates a valid local `orx-plugin.json` authoring bundle without registry writes; defaults are inert skills/prompt-commands/rules markdown, `--minimal` writes only the manifest, and `--with` adds opt-in empty placeholders for hooks, bins, MCP, command schemas, assets, and docs behind the existing review gates.
 - Plugin install/register now snapshots sanitized manifests plus declared components and declared hook cwd directories into ORX-owned plugin cache storage before registry persistence; enabled skill/hook discovery resolves from the cached manifest path, not the original source checkout.
 - Plugin catalog support now handles both local manifest entries and pinned git source entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH`. `orx plugins install <catalog-id>` and `/plugins install <catalog-id>` clone git catalog sources into private temporary cache storage, checkout the exact pinned commit, normalize cached manifest provenance to that pin, and still register the plugin disabled/inert.
 - Local user MCP profile catalogs are implemented through `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. Declarations are namespaced as `user:<profile-id>`, currently support sanitized `remote-http` transports, appear in `/mcp`, `orx mcp`, `/status`, interactive chat, and `orx ask --mcp-tools`, and share the same enable/trusted-hash/schema-change/tool-grant/model-grant/auth/audit gates as built-in and plugin MCP profiles.
@@ -76,6 +77,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented local plugin authoring scaffold:
+
+- Added `src/plugins/scaffold.ts` with safe plugin-id/version/description parsing, component selection, existing non-empty target refusal, and local authoring bundle generation.
+- Added `orx plugins scaffold <directory>` and `/plugins scaffold <directory>` plus slash completion/help. The command never registers, enables, trusts, grants, fetches, or executes anything. Default scaffold components are inert `skills`, prompt `commands`, and advisory `rules`; `--minimal` writes only the manifest; `--with` can add empty placeholders for `hooks`, `bins`, `mcp`, `command-schemas`, `assets`, and `docs`.
+- Placeholder integration files are deliberately empty/no-op: `{ "hooks": {} }`, `{ "servers": {} }`, `{ "commands": {} }`, and an empty `bin/` directory, so installing/enabling a scaffolded bundle exposes no runnable integration entries until the author writes and reviews them.
+- Verification: `npm run typecheck`, `npm run build`, `git diff --check`, focused source and build-backed plugin/CLI/slash/TUI tests with 147 tests, isolated built CLI dogfood for scaffold/list/install and `--with hooks`, full build-backed `npm test` with 413 tests, and independent verifier recheck pass.
+- Next likely plugin/MCP work: richer plugin marketplace/catalog UX and authoring documentation, broader prompt-injection wrapping for research/browser/search context, or broader provider preset packs.
 
 Implemented model-visible MCP untrusted-output wrapping:
 

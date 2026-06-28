@@ -1,7 +1,7 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -113,7 +113,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
-  assert.match(output, /\/plugins \[catalog\|list\|commands\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(output, /\/plugins \[catalog\|list\|commands\|scaffold\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(output, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
@@ -147,7 +147,7 @@ test("command palette renderer is a pure grouped listing surface", () => {
 
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
-  assert.match(palette, /\/plugins \[catalog\|list\|commands\|inspect\|register\|install/);
+  assert.match(palette, /\/plugins \[catalog\|list\|commands\|scaffold\|inspect\|register\|ins/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -165,7 +165,7 @@ test("compact command palette renderer bounds TTY-oriented command discovery", (
   });
 
   assert.match(palette, /^Command palette matching "plugin" \(7\)/);
-  assert.match(palette, /\/plugins \[catalog\|list\|commands\|inspect\|register\|install/);
+  assert.match(palette, /\/plugins \[catalog\|list\|commands\|scaffold\|inspect\|register\|ins/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -202,6 +202,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog ", "commands "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/plugins en"), [["enable "], "en"]);
   assert.deepEqual(completeSlashCommandLine("/plugins i"), [["inspect ", "install "], "i"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins s"), [["status ", "scaffold "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/plugin s"), [["status "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/bins t"), [["trust "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/bins r"), [["run "], "r"]);
@@ -315,7 +316,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.equal(handleSlashCommand("/commands plugin", harness.context), "continue");
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
-  assert.match(harness.stdout(), /\/plugins \[catalog\|list\|commands\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(harness.stdout(), /\/plugins \[catalog\|list\|commands\|scaffold\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(harness.stdout(), /\/plugin \[list\|status\]/);
   assert.match(harness.stdout(), /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(harness.stdout(), /\/skills \[list\|status\|activate <id>\]/);
@@ -2162,6 +2163,48 @@ test("plugins register, list, inspect, enable, and disable without network or ex
     );
     assert.match(harness.stdout(), /Plugin acme\.demo-plugin@1\.0\.0 disabled/);
     assert.match(readFileSync(registryPath, "utf8"), /"enabled": false/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugins scaffold creates an installable bundle without registry changes", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugins-scaffold-slash-"));
+  const registryPath = join(cwd, "registry", "plugins.json");
+  const targetDirectory = join(cwd, "slash-plugin");
+  let fetchCalls = 0;
+  const harness = createSlashHarness({
+    cwd,
+    pluginRegistryPath: registryPath,
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("plugin scaffold should not call fetch");
+    },
+  });
+
+  try {
+    assert.equal(
+      await handleSlashCommand(
+        "/plugins scaffold slash-plugin --name slash-plugin --publisher acme --minimal",
+        harness.context,
+      ),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Plugin scaffolded: acme\.slash-plugin@0\.1\.0/);
+    assert.match(harness.stdout(), /components: none/);
+    assert.match(harness.stdout(), /registry_state: unchanged/);
+    assert.equal(fetchCalls, 0);
+    assert.equal(existsSync(registryPath), false);
+
+    assert.equal(
+      await handleSlashCommand(
+        `/plugins install ${join(targetDirectory, "orx-plugin.json")}`,
+        harness.context,
+      ),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Plugin acme\.slash-plugin@0\.1\.0 registered disabled/);
     assert.equal(fetchCalls, 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });

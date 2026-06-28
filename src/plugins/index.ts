@@ -42,6 +42,14 @@ export {
   type PluginInstallResult,
 } from "./installer.js";
 export {
+  parsePluginScaffoldArgs,
+  renderPluginScaffoldResult,
+  scaffoldPlugin,
+  PluginScaffoldError,
+  type PluginScaffoldOptions,
+  type PluginScaffoldResult,
+} from "./scaffold.js";
+export {
   createPluginLockRecord,
   type PluginComponentHash,
   type PluginLockOptions,

@@ -25,7 +25,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /Commands:/);
     assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
     assert.match(help.stdout(), /mcp\s+List, edit, inspect, enable, disable, and grant MCP tool policy/);
-    assert.match(help.stdout(), /plugins\s+List catalog entries, command aliases, inspect, install, enable, or disable plugins/);
+    assert.match(help.stdout(), /plugins\s+List catalog entries, scaffold, inspect, install, enable, or disable plugins/);
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
@@ -928,6 +928,67 @@ test("cli plugins install list inspect enable and disable without an API key", a
     );
     assert.doesNotMatch(unsafeMissing.stderr(), /\u001b/);
     assert.match(unsafeMissing.stderr(), /Unknown plugin: \[invalid plugin id\]/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli plugins scaffold creates an installable disabled plugin bundle", async () => {
+  const cwd = createTempDir();
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const targetDirectory = join(cwd, "new-plugin");
+  const env = { ORX_PLUGIN_REGISTRY_PATH: registryPath };
+  let fetchCalls = 0;
+  const createNoFetchIo = () =>
+    createIo({
+      cwd,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("plugin scaffold should not call fetch");
+      },
+    });
+
+  try {
+    const scaffolded = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        [
+          "node",
+          "cli",
+          "plugins",
+          "scaffold",
+          "new-plugin",
+          "--name",
+          "new-plugin",
+          "--publisher",
+          "acme",
+          "--with",
+          "skills,commands,rules,mcp",
+        ],
+        env,
+        scaffolded.io,
+      ),
+      0,
+    );
+    assert.match(scaffolded.stdout(), /Plugin scaffolded: acme\.new-plugin@0\.1\.0/);
+    assert.match(scaffolded.stdout(), /registry_state: unchanged/);
+    assert.equal(readFileSync(join(targetDirectory, "mcp.json"), "utf8"), '{\n  "servers": {}\n}\n');
+
+    const listed = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "plugins", "list"], env, listed.io), 0);
+    assert.match(listed.stdout(), /installed: 0/);
+
+    const installed = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "install", join(targetDirectory, "orx-plugin.json")],
+        env,
+        installed.io,
+      ),
+      0,
+    );
+    assert.match(installed.stdout(), /Plugin acme\.new-plugin@0\.1\.0 registered disabled/);
     assert.equal(fetchCalls, 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });

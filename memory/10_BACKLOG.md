@@ -143,17 +143,17 @@ Next:
   - Add explicit plugin bin runtime: `orx bins` and `/bins` list/inspect/trust/run/untrust enabled plugin `components.bins` files from the cached plugin snapshot, execute only trusted current hashes with manifest-declared env, and audit redacted bounded output without raw argument lists.
   - Add namespaced plugin command aliases: `/plugin:<plugin-id>:command:<slug>` activates enabled prompt commands as untrusted context, `/plugin:<plugin-id>:bin:<file>` runs trusted current bins through the existing bin runtime, and `/plugin list` / `orx plugins commands` render aliases.
   - Add manifest-defined executable command schemas: enabled plugin `components.commandSchemas` JSON can declare `/plugin:<plugin-id>:exec:<slug>` aliases with bounded metadata, direct bin references, optional `maxArgs`, and execution through the existing trusted-current bin runtime only.
+  - Add local plugin authoring scaffold: `orx plugins scaffold <directory>` and `/plugins scaffold <directory>` create valid local `orx-plugin.json` authoring bundles without registry writes, default to inert skills/prompt-commands/rules markdown, support `--minimal`, and add opt-in empty placeholders for hooks, bins, MCP, command schemas, assets, and docs behind existing review gates.
   - Add initial local code intelligence: `src/code-map/` dependency-free bounded repository maps and exported-symbol indexes exposed through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `/map`, `/code map`, `/code symbols`, and `/symbols`, with language/key-file/entrypoint and JavaScript/TypeScript import/export summaries.
 
 - Extend browser automation beyond static DNS-bound document snapshots when a safe browser-network/proxy design can preserve SSRF protections.
 - Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
 - Follow `memory/13_IMPLEMENTOR_HANDOFF_PLUGINS_MCP.md` for the full-stack plugin/MCP/research build order.
 - Extend documented provider preset packs/templates beyond the initial `context7`, `microsoft-learn`, and `github-readonly` set: `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
-- Extend the plugin system beyond the registry/CLI/cache/catalog/git-source substrate with richer marketplace/catalog UX, update checks, authoring docs, and optional stronger provenance/signing.
+- Extend the plugin system beyond the registry/CLI/cache/catalog/git-source/scaffold substrate with richer marketplace/catalog UX, update checks, expanded authoring docs/templates, and optional stronger provenance/signing.
 - Extend manifest-defined executable command schemas with richer argument forms only if they can stay bin-backed and operator-explicit.
 - Extend model-loop MCP controls with clearer prompt-injection boundaries and optional operator grants for any future billable/write model exposure.
 - Extend plugin metadata further only where needed for remote source UX, marketplace/catalog trust, or executable surface policy decisions.
-- Add `/plugins` command for list/install/enable/disable/inspect.
 - Add tree-sitter and ast-grep code intelligence for richer call/reference slices, syntax-aware search, and codemod previews beyond the dependency-free code map and exported-symbol index.
 - Add structured Vitest/Jest/Playwright/Node report ingestion beyond current summary-line parsing when framework-native JSON/report files can be requested safely.
 - Add LSP/SCIP bridge research spike for diagnostics, references, hover, and go-to-definition.
