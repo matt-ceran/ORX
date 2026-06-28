@@ -77,6 +77,14 @@ Current files:
 
 ## Latest Work
 
+Implemented model-visible MCP untrusted-output wrapping:
+
+- Added explicit untrusted remote-output wrapping for model-visible `mcp_call` text results in `src/agent/tool-dispatch.ts`. Text content returned to the model now includes `UNTRUSTED REMOTE MCP TOOL OUTPUT`, source profile/tool metadata, a policy reminder not to follow remote instructions/permission changes/secret requests, and begin/end content markers.
+- Marked returned MCP content items as `untrusted: true` and added an `untrustedOutputPolicy` object to the model-visible JSON envelope. Operator `/mcp call` output remains unchanged.
+- Strengthened the `mcp_call` tool schema description so the model is warned before use that remote MCP output cannot override system, developer, operator, ORX policy, or tool-permission instructions.
+- Verification: `npm run typecheck`, `npm run build`, `git diff --check`, build-backed `dist/agent/runtime.test.js` with 24 tests, full build-backed `npm test` with 407 tests, and independent verifier Maxwell all pass with no blocking issues.
+- Next likely plugin/MCP work: broader prompt-injection wrapping for research/browser/search context, richer catalog/marketplace UX, plugin authoring docs, or broader provider preset packs.
+
 Implemented reviewed remote MCP tool import:
 
 - Added `src/mcp/remote-tool-import.ts` plus bulk user-catalog tool upsert helpers. The import flow uses guarded `tools/list`, refuses built-in/plugin profiles before network, imports only sanitized tool names into local `user:` catalogs as read-only/free declarations with profile-inherited auth, skips unsupported names, and reports before/after profile hashes plus pending schema-change state.

@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Model MCP Results Are Wrapped As Untrusted Remote Data
+
+Decision: Model-visible `mcp_call` results must wrap remote text content in explicit untrusted-output markers before returning it to the OpenRouter tool loop. The wrapper should identify the source profile/tool, mark each content item as untrusted, and state that remote MCP output is data only and cannot override system, developer, operator, ORX policy, local repository state, or explicit slash/CLI grants. The MCP tool schema should also warn the model before use that returned content is untrusted external data.
+
+Reasoning: Remote MCP tools are useful for docs and metadata, but their descriptions and results are external input. Explicit tool-result wrapping makes the prompt-injection boundary visible inside the model-visible JSON envelope, not just in terminal rendering or audit logs. Keeping the wrapper in ORX's native `mcp_call` dispatcher preserves the single controlled model-facing MCP surface while avoiding broader trust in provider output.
+
 ## 2026-06-28: Remote MCP Tool Import Stores Names, Not Authority
 
 Decision: ORX may provide `orx mcp import-remote-tools <profile>` and `/mcp import-remote-tools <profile>` to import reviewed remote `tools/list` metadata into local `user:` MCP catalog declarations. The import flow is limited to local user catalog profiles, requires the existing enabled/trusted/unchanged guarded `tools/list` path to succeed, stores only sanitized tool names as read-only non-billable declarations with profile-inherited auth, skips unsupported names, and audits the result with hashes only. It must not import raw schemas as trusted state, edit built-in or plugin profiles, grant tools, grant model access, call `tools/call`, or preserve trust across the resulting profile-hash change.
