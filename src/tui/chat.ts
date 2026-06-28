@@ -249,6 +249,7 @@ export async function runChat({
           },
           mcpAuditLogPath,
           mcpConfigPath,
+          mcpAuthEnv: hookEnv,
           pluginCacheDirectory,
           pluginCatalogPath,
           pluginHooksAuditLogPath,

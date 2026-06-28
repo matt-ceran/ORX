@@ -106,7 +106,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/orchestrator \[openrouter <model>\|clear\]/);
   assert.match(output, /\/delegate <add\|remove\|clear>/);
   assert.match(output, /\/delegates/);
-  assert.match(output, /\/mcp \[list\|inspect\|tools\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
+  assert.match(output, /\/mcp \[list\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
   assert.match(output, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/skills \[list\|status\|activate <id>\]/);
   assert.match(output, /\/prompts \[list\|status\|activate <id>\]/);
@@ -118,7 +118,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|inspect\|tools\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -224,7 +224,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-  assert.match(alias.stdout(), /\/mcp \[list\|inspect\|tools\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
+  assert.match(alias.stdout(), /\/mcp \[list\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -1135,7 +1135,10 @@ test("mcp inspect renders profile metadata and audits without network", async ()
     assert.match(harness.stdout(), /MCP profile: openrouter/);
     assert.match(harness.stdout(), /profile_hash: sha256:[a-f0-9]{64}/);
     assert.match(harness.stdout(), /auth_status: required \(OAuth or dedicated expiring MCP key\)/);
-    assert.match(harness.stdout(), /remote_tool_execution: not implemented; not exposed to the model loop/);
+    assert.match(
+      harness.stdout(),
+      /remote_tool_execution: explicit \/mcp call or orx mcp call only; not exposed to the model loop/,
+    );
     assert.match(harness.stdout(), /normal_inference: direct OpenRouter REST API/);
     assert.match(harness.stdout(), /model-get risk=read auth=yes billable=no/);
     assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes/);
@@ -1174,7 +1177,7 @@ test("mcp tools renders declared tool policy without network", async () => {
     assert.match(harness.stdout(), /decisions: allowed=0 denied=0 blocked_by_profile=13/);
     assert.match(harness.stdout(), /models-list risk=read auth=yes billable=no policy=blocked_by_profile/);
     assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes policy=blocked_by_profile/);
-    assert.match(harness.stdout(), /remote_tool_execution: not implemented/);
+    assert.match(harness.stdout(), /remote_tool_execution: explicit \/mcp call or orx mcp call only/);
 
     const events = readAuditEvents(auditLogPath);
     assert.equal(events.length, 1);
@@ -1331,7 +1334,7 @@ test("mcp allow-tool and revoke-tool persist tool grants without network", async
     assert.equal(await handleSlashCommand("/mcp enable openrouter", harness.context), "continue");
     assert.equal(await handleSlashCommand("/mcp allow-tool openrouter chat-send", harness.context), "continue");
     assert.match(harness.stdout(), /MCP tool grant stored for openrouter\/chat-send/);
-    assert.match(harness.stdout(), /Remote tool execution remains unimplemented/);
+    assert.match(harness.stdout(), /Execution is available only through explicit operator calls/);
     assert.match(readFileSync(configPath, "utf8"), /"toolGrants"/);
     assert.match(readFileSync(configPath, "utf8"), /"toolName": "chat-send"/);
 
@@ -1413,6 +1416,78 @@ test("mcp persisted enable and disable are visible across slash status contexts"
   }
 });
 
+test("mcp call executes allowed remote tools only with auth and audits without raw output", async () => {
+  let generalFetchCalls = 0;
+  const seenRequests: Array<{ authorization: string | null; body: string }> = [];
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-call-slash-"));
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const harness = createSlashHarness({
+    mcpAuditLogPath: auditLogPath,
+    mcpConfigPath: configPath,
+    mcpAuthEnv: {
+      ORX_MCP_BEARER_OPENROUTER: "mcp-secret-token",
+    },
+    fetch: async () => {
+      generalFetchCalls += 1;
+      throw new Error("general fetch should not be used for MCP calls");
+    },
+    mcpCallFetch: async (_input, init) => {
+      const headers = new Headers(init?.headers as HeadersInit);
+      seenRequests.push({
+        authorization: headers.get("authorization"),
+        body: String(init?.body),
+      });
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: "orx-tools-call-1",
+          result: {
+            content: [{ type: "text", text: "hello\nsecret=abc123" }],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+  });
+
+  try {
+    assert.equal(await handleSlashCommand("/mcp call openrouter models-list {}", harness.context), "continue");
+    assert.match(harness.stderr(), /profile openrouter is disabled/);
+    assert.equal(seenRequests.length, 0);
+
+    assert.equal(await handleSlashCommand("/mcp enable openrouter", harness.context), "continue");
+    assert.equal(
+      await handleSlashCommand('/mcp call openrouter models-list {"query":"claude"}', harness.context),
+      "continue",
+    );
+
+    assert.equal(generalFetchCalls, 0);
+    assert.equal(seenRequests.length, 1);
+    assert.equal(seenRequests[0].authorization, "Bearer mcp-secret-token");
+    assert.match(seenRequests[0].body, /"method":"tools\/call"/);
+    assert.match(seenRequests[0].body, /"name":"models-list"/);
+    assert.match(seenRequests[0].body, /"query":"claude"/);
+    assert.match(harness.stdout(), /MCP tool call: openrouter\/models-list/);
+    assert.match(harness.stdout(), /status: ok/);
+    assert.match(harness.stdout(), /secret=\[redacted\]/);
+    assert.doesNotMatch(harness.stdout(), /secret=abc123/);
+
+    const events = readAuditEvents(auditLogPath);
+    assert.deepEqual(
+      events.map((event) => event.type),
+      ["mcp.tool.call_attempt", "mcp.profile.enable_attempt", "mcp.tool.call_attempt"],
+    );
+    assert.equal(events[0].ok, false);
+    assert.equal(events[2].ok, true);
+    assert.equal(events[2].details.status, "ok");
+    assert.match(String(events[2].details.resultHash), /^sha256:[a-f0-9]{64}$/);
+    assert.doesNotMatch(JSON.stringify(events), /secret=abc123|mcp-secret-token/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("mcp discover blocks disabled profiles without network and audits the gate", async () => {
   let fetchCalls = 0;
   const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-discover-disabled-"));
@@ -1484,7 +1559,7 @@ test("mcp discover calls fetch for enabled trusted profile and does not execute 
     assert.doesNotMatch(seenRequests[0], /tools\/call|chat-send/);
     assert.match(harness.stdout(), /status: ok/);
     assert.match(harness.stdout(), /server_name: openrouter/);
-    assert.match(harness.stdout(), /tool_execution: not implemented/);
+    assert.match(harness.stdout(), /tool_execution: explicit \/mcp call only/);
 
     const events = readAuditEvents(auditLogPath);
     assert.deepEqual(
@@ -1624,7 +1699,7 @@ test("mcp remote-tools calls tools/list for enabled trusted profile and does not
     assert.match(harness.stdout(), /models-list description="List models" tool_hash=sha256:[a-f0-9]{64}/);
     assert.match(harness.stdout(), /input_schema_hash=sha256:[a-f0-9]{64}/);
     assert.match(harness.stdout(), /trust_boundary: remote tool metadata is untrusted/);
-    assert.match(harness.stdout(), /tool_execution: not implemented/);
+    assert.match(harness.stdout(), /tool_execution: explicit \/mcp call only/);
     assert.doesNotMatch(harness.stdout(), /"type":"object"/);
 
     const events = readAuditEvents(auditLogPath);
@@ -1917,7 +1992,7 @@ test("mcp slash commands discover trusted plugin-provided remote-http presets", 
     assert.equal(await handleSlashCommand(`/mcp inspect ${profileId}`, harness.context), "continue");
     assert.match(harness.stdout(), /source: plugin plugin=acme\.mcp-slash-plugin@1\.0\.0/);
     assert.match(harness.stdout(), /component_path=mcp.json/);
-    assert.match(harness.stdout(), /remote_tool_execution: not implemented/);
+    assert.match(harness.stdout(), /remote_tool_execution: explicit \/mcp call or orx mcp call only/);
 
     assert.equal(await handleSlashCommand(`/mcp tools ${profileId}`, harness.context), "continue");
     assert.match(harness.stdout(), /lookup-docs risk=read auth=no billable=no policy=blocked_by_profile/);
@@ -1929,7 +2004,7 @@ test("mcp slash commands discover trusted plugin-provided remote-http presets", 
     assert.equal(fetchCalls, 1);
     assert.match(harness.stdout(), /status: ok/);
     assert.match(harness.stdout(), /server_name: plugin-docs/);
-    assert.match(harness.stdout(), /tool_execution: not implemented/);
+    assert.match(harness.stdout(), /tool_execution: explicit \/mcp call only/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -2811,6 +2886,8 @@ function createSlashHarness(
     fetch?: typeof fetch;
     mcpDiscoveryFetch?: typeof fetch;
     mcpRemoteToolsFetch?: typeof fetch;
+    mcpCallFetch?: typeof fetch;
+    mcpAuthEnv?: NodeJS.ProcessEnv;
     mcpResolveHost?: SlashCommandContext["mcpResolveHost"];
     webFetch?: typeof fetch;
     webSearchFetch?: typeof fetch;
@@ -2864,6 +2941,8 @@ function createSlashHarness(
       fetch: options.fetch,
       mcpDiscoveryFetch: options.mcpDiscoveryFetch,
       mcpRemoteToolsFetch: options.mcpRemoteToolsFetch,
+      mcpCallFetch: options.mcpCallFetch,
+      mcpAuthEnv: options.mcpAuthEnv,
       mcpResolveHost: options.mcpResolveHost,
       webFetch: options.webFetch,
       webSearchFetch: options.webSearchFetch,

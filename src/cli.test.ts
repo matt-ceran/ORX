@@ -303,6 +303,90 @@ test("cli mcp commands manage local profile and tool grant policy without an API
   }
 });
 
+test("cli mcp call executes allowed remote tools through dedicated auth and transport", async () => {
+  let generalFetchCalls = 0;
+  const seenRequests: Array<{ authorization: string | null; body: string }> = [];
+  const cwd = createTempDir();
+  const mcpConfigPath = join(cwd, "mcp", "profiles.json");
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  const env = {
+    ORX_MCP_CONFIG_PATH: mcpConfigPath,
+    ORX_MCP_AUDIT_PATH: auditLogPath,
+    ORX_MCP_BEARER_OPENROUTER: "mcp-secret-token",
+  };
+
+  try {
+    const blocked = createIo({
+      cwd,
+      fetch: async () => {
+        generalFetchCalls += 1;
+        throw new Error("general fetch should not be used");
+      },
+      mcpCallFetch: async () => {
+        throw new Error("MCP call fetch should not run before enablement");
+      },
+    });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "call", "openrouter", "models-list", "{}"], env, blocked.io),
+      1,
+    );
+    assert.match(blocked.stderr(), /profile openrouter is disabled/);
+
+    const enabled = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "enable", "openrouter"], env, enabled.io), 0);
+
+    const called = createIo({
+      cwd,
+      fetch: async () => {
+        generalFetchCalls += 1;
+        throw new Error("general fetch should not be used");
+      },
+      mcpCallFetch: async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit);
+        seenRequests.push({
+          authorization: headers.get("authorization"),
+          body: String(init?.body),
+        });
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-tools-call-1",
+            result: {
+              content: [{ type: "text", text: "ok access_token=abcd1234" }],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "mcp", "call", "openrouter", "models-list", '{"query":"claude"}'],
+        env,
+        called.io,
+      ),
+      0,
+    );
+
+    assert.equal(generalFetchCalls, 0);
+    assert.equal(seenRequests.length, 1);
+    assert.equal(seenRequests[0].authorization, "Bearer mcp-secret-token");
+    assert.match(seenRequests[0].body, /"method":"tools\/call"/);
+    assert.match(seenRequests[0].body, /"query":"claude"/);
+    assert.match(called.stdout(), /MCP tool call: openrouter\/models-list/);
+    assert.match(called.stdout(), /status: ok/);
+    assert.match(called.stdout(), /access_token=\[redacted\]/);
+    assert.doesNotMatch(called.stdout(), /abcd1234|mcp-secret-token/);
+
+    const audit = readFileSync(auditLogPath, "utf8");
+    assert.match(audit, /"type":"mcp.tool.call_attempt"/);
+    assert.match(audit, /"resultHash":"sha256:[a-f0-9]{64}"/);
+    assert.doesNotMatch(audit, /abcd1234|mcp-secret-token/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("cli status reflects plugin registry override without enabling executable surfaces", async () => {
   const cwd = createTempDir();
   const registryPath = join(cwd, "plugins", "registry.json");
@@ -1815,7 +1899,13 @@ test("chat prints visible tool start and result summaries", async () => {
 });
 
 function createIo(
-  options: { fetch?: typeof fetch; stdin?: NodeJS.ReadableStream; cwd?: string; tty?: boolean } = {},
+  options: {
+    fetch?: typeof fetch;
+    mcpCallFetch?: typeof fetch;
+    stdin?: NodeJS.ReadableStream;
+    cwd?: string;
+    tty?: boolean;
+  } = {},
 ) {
   let stdoutText = "";
   let stderrText = "";
@@ -1841,6 +1931,7 @@ function createIo(
       },
       cwd: options.cwd ?? "/tmp/orx-test",
       fetch: options.fetch ?? globalThis.fetch,
+      mcpCallFetch: options.mcpCallFetch,
     },
     stdout() {
       return stdoutText;

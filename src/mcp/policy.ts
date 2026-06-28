@@ -431,8 +431,8 @@ export function allowMcpToolGrant(
     previousGrant,
     grant,
     message: previousGrant
-      ? `MCP tool grant updated for ${profile.id}/${tool.name}. Remote tool execution remains unimplemented.`
-      : `MCP tool grant stored for ${profile.id}/${tool.name}. Remote tool execution remains unimplemented.`,
+      ? `MCP tool grant updated for ${profile.id}/${tool.name}. Execution is available only through explicit operator calls and policy gates.`
+      : `MCP tool grant stored for ${profile.id}/${tool.name}. Execution is available only through explicit operator calls and policy gates.`,
   };
 }
 
@@ -565,7 +565,7 @@ export function renderMcpProfileInspect(
       ? "  auth_status: required (OAuth or dedicated expiring MCP key)"
       : "  auth_status: not required",
     `  write_capable: ${profile.writeCapable ? "yes" : "no"}`,
-    "  remote_tool_execution: not implemented; not exposed to the model loop",
+    "  remote_tool_execution: explicit /mcp call or orx mcp call only; not exposed to the model loop",
     "  normal_inference: direct OpenRouter REST API",
     `  profile_hash: ${currentHash}`,
     options.trustedProfileHash ? `  trusted_hash: ${options.trustedProfileHash}` : undefined,
@@ -599,7 +599,7 @@ export function renderMcpProfileTools(report: McpProfileToolPolicyReport): strin
     `  tool_grants: ${report.toolGrantCount}`,
     `  stale_tool_grants: ${report.staleToolGrantCount}`,
     `  decisions: allowed=${counts.allowed} denied=${counts.denied} blocked_by_profile=${counts.blocked_by_profile} blocked_by_trust=${counts.blocked_by_trust} blocked_by_schema_change=${counts.blocked_by_schema_change}`,
-    "  remote_tool_execution: not implemented; this is a future-use policy evaluation only",
+    "  remote_tool_execution: explicit /mcp call or orx mcp call only; not exposed to the model loop",
     "  tools:",
     ...report.evaluations.map((evaluation) => `    - ${formatMcpToolPolicyEvaluation(evaluation)}`),
   ];

@@ -4,9 +4,15 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: MCP Tool Calls Are Explicit Operator Commands
+
+Decision: ORX may execute remote MCP `tools/call` only through explicit operator commands, `/mcp call <profile> <tool> [arguments-json]` and `orx mcp call <profile> <tool> [arguments-json]`. Calls require an enabled profile, trusted current profile hash, no pending schema change, an `allowed` declared-tool policy decision, guarded DNS-vetted remote HTTP transport, and env-only bearer auth for auth-bearing profiles/tools through `ORX_MCP_BEARER_<PROFILE>` or `ORX_MCP_BEARER_TOKEN`. Output is rendered as bounded, redacted, untrusted content with result hashes. Audit events record status, policy, result hashes, and content types, but not raw arguments, raw output, bearer tokens, or schemas. MCP tools remain unavailable to the model loop.
+
+Reasoning: Operators need to actually use trusted MCP integrations, but model-autonomous remote tool execution is a larger authority boundary. Explicit commands validate transport, auth, redaction, and audit behavior while preserving the existing policy model: profile/schema drift invalidates grants, risky tools require per-tool grants, and remote output cannot authorize new permissions.
+
 ## 2026-06-28: MCP Tool Grants Bind To Trusted Profile Hashes
 
-Decision: ORX may persist explicit MCP tool grants for billable, write, or destructive declared tools only after the profile is enabled, has a trusted current profile hash, and has no pending schema change. Grants are stored in the private MCP profile config as profile id, tool name, profile hash, risk, billable flag, and granted timestamp. A grant whose stored profile hash differs from the current configured profile hash is stale, visible in status/tool output, and denied. `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` mutate only this local policy state; MCP `tools/call` and model-loop exposure remain unimplemented.
+Decision: ORX may persist explicit MCP tool grants for billable, write, or destructive declared tools only after the profile is enabled, has a trusted current profile hash, and has no pending schema change. Grants are stored in the private MCP profile config as profile id, tool name, profile hash, risk, billable flag, and granted timestamp. A grant whose stored profile hash differs from the current configured profile hash is stale, visible in status/tool output, and denied. `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` mutate only this local policy state. At this checkpoint MCP `tools/call` and model-loop exposure remained unimplemented; a later 2026-06-28 decision added explicit operator-only `tools/call` while keeping model-loop exposure absent.
 
 Reasoning: MCP tool execution needs an operator-owned allow boundary before remote tools can run. Binding grants to the trusted profile hash prevents a changed plugin/server declaration from inheriting approval, and keeping grant records minimal avoids persisting schemas, secrets, or remote-controlled metadata as authority.
 

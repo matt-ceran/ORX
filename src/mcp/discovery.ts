@@ -160,7 +160,7 @@ export function formatMcpDiscoveryResult(result: McpDiscoveryResult): string {
       : undefined,
     result.error ? `  error: ${result.error}` : undefined,
     `  detail: ${result.message}`,
-    "  tool_execution: not implemented; remote MCP tools are not exposed to the model loop",
+    "  tool_execution: explicit /mcp call only; remote MCP tools are not exposed to the model loop",
   ];
 
   return lines.filter((line): line is string => typeof line === "string").join("\n");

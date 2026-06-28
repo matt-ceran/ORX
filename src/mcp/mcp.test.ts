@@ -14,8 +14,10 @@ import { dirname, join } from "node:path";
 import {
   OPENROUTER_MCP_PROFILE,
   allowMcpToolGrant,
+  callRemoteMcpTool,
   discoverMcpProfile,
   evaluateMcpToolPolicy,
+  formatMcpToolCallResult,
   formatMcpDiscoveryResult,
   formatMcpRemoteToolsResult,
   getMcpToolGrantRecord,
@@ -283,7 +285,7 @@ test("plugin MCP discovery contacts enabled trusted remote-http endpoints withou
     assert.equal(result.status, "ok");
     assert.equal(result.networkAttempted, true);
     assert.equal(result.serverInfo?.name, "context7");
-    assert.match(formatMcpDiscoveryResult(result), /tool_execution: not implemented/);
+    assert.match(formatMcpDiscoveryResult(result), /tool_execution: explicit \/mcp call only/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -444,7 +446,7 @@ test("remote MCP tools/list reads bounded untrusted tool metadata without execut
     assert.deepEqual(result.tools?.[0].annotationKeys, ["destructiveHint", "readOnlyHint"]);
     const formatted = formatMcpRemoteToolsResult(result);
     assert.match(formatted, /trust_boundary: remote tool metadata is untrusted/);
-    assert.match(formatted, /tool_execution: not implemented/);
+    assert.match(formatted, /tool_execution: explicit \/mcp call only/);
     assert.doesNotMatch(formatted, /"type":"object"/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -671,6 +673,212 @@ test("remote MCP tools/list renders remote-controlled text as sanitized single-l
   }
 });
 
+test("remote MCP tools/call requires auth tokens before network", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-call-auth-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const result = await callRemoteMcpTool("openrouter", "models-list", {}, {
+      configPath,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("fetch should not be called without auth");
+      },
+    });
+
+    assert.equal(result.status, "auth_required");
+    assert.equal(result.networkAttempted, false);
+    assert.equal(result.policyDecision, "allowed");
+    assert.match(result.message, /ORX_MCP_BEARER_OPENROUTER/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tools/call sends JSON-RPC call and sanitizes returned content", async () => {
+  const seenRequests: Array<{ url: string; authorization: string | null; body: string }> = [];
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-call-ok-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const result = await callRemoteMcpTool(
+      "openrouter",
+      "models-list",
+      { query: "claude" },
+      {
+        configPath,
+        authToken: "mcp-secret-token",
+        fetch: async (input, init) => {
+          const headers = new Headers(init?.headers as HeadersInit);
+          seenRequests.push({
+            url: String(input),
+            authorization: headers.get("authorization"),
+            body: String(init?.body),
+          });
+          return new Response(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: "orx-tools-call-1",
+              result: {
+                content: [
+                  {
+                    type: "text",
+                    text: "model list\naccess_token=abcd1234",
+                  },
+                ],
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        },
+      },
+    );
+    const formatted = formatMcpToolCallResult(result);
+
+    assert.equal(seenRequests.length, 1);
+    assert.equal(seenRequests[0].url, "https://mcp.openrouter.ai/mcp");
+    assert.equal(seenRequests[0].authorization, "Bearer mcp-secret-token");
+    assert.match(seenRequests[0].body, /"method":"tools\/call"/);
+    assert.match(seenRequests[0].body, /"name":"models-list"/);
+    assert.match(seenRequests[0].body, /"query":"claude"/);
+    assert.equal(result.status, "ok");
+    assert.equal(result.ok, true);
+    assert.equal(result.networkAttempted, true);
+    assert.match(result.resultHash ?? "", /^sha256:[a-f0-9]{64}$/);
+    assert.doesNotMatch(formatted, /access_token=abcd1234/);
+    assert.doesNotMatch(formatted, /\naccess_token/);
+    assert.match(formatted, /access_token=\[redacted\]/);
+    assert.match(formatted, /model_exposure: not exposed to the model loop/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tools/call does not send bearer token to non-auth profiles", async () => {
+  const seenHeaders: Array<string | null> = [];
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-call-no-auth-plugin-"));
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const manifestPath = writePluginWithMcpProfile(cwd);
+  const profileId = "plugin:acme.mcp-plugin@1.0.0:context7";
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.mcp-plugin@1.0.0", true, { registryPath });
+    setMcpProfilePersistentState(profileId, "enabled", {
+      configPath,
+      pluginRegistryPath: registryPath,
+    });
+
+    const result = await callRemoteMcpTool(profileId, "resolve-library-id", { library: "react" }, {
+      authToken: "global-token-that-must-not-be-forwarded",
+      configPath,
+      pluginRegistryPath: registryPath,
+      fetch: async (_input, init) => {
+        const headers = new Headers(init?.headers as HeadersInit);
+        seenHeaders.push(headers.get("authorization"));
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-tools-call-1",
+            result: { content: [{ type: "text", text: "ok" }] },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    assert.equal(result.status, "ok");
+    assert.deepEqual(seenHeaders, [null]);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tools/call denies billable tools until granted", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-call-billable-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const denied = await callRemoteMcpTool("openrouter", "chat-send", { prompt: "hi" }, {
+      configPath,
+      authToken: "mcp-secret-token",
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("fetch should not be called before grant");
+      },
+    });
+    assert.equal(denied.status, "policy_denied");
+    assert.equal(denied.networkAttempted, false);
+    assert.equal(fetchCalls, 0);
+
+    allowMcpToolGrant("openrouter", "chat-send", { configPath });
+    const allowed = await callRemoteMcpTool("openrouter", "chat-send", { prompt: "hi" }, {
+      configPath,
+      authToken: "mcp-secret-token",
+      fetch: async () => {
+        fetchCalls += 1;
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "orx-tools-call-1",
+            result: { content: [{ type: "text", text: "sent" }] },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    assert.equal(allowed.status, "ok");
+    assert.equal(allowed.policyDecision, "allowed");
+    assert.equal(fetchCalls, 1);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("remote MCP tools/call denies stale grants before network", async () => {
+  let fetchCalls = 0;
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-call-stale-grant-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+    allowMcpToolGrant("openrouter", "chat-send", { configPath });
+    const stored = JSON.parse(readFileSync(configPath, "utf8")) as {
+      toolGrants: Record<string, { profileHash: string }>;
+    };
+    stored.toolGrants["openrouter/chat-send"].profileHash =
+      "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    writeFileSync(configPath, `${JSON.stringify(stored, null, 2)}\n`);
+
+    const result = await callRemoteMcpTool("openrouter", "chat-send", {}, {
+      configPath,
+      authToken: "mcp-secret-token",
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("fetch should not be called for stale grants");
+      },
+    });
+
+    assert.equal(result.status, "policy_denied");
+    assert.match(result.message, /stale/);
+    assert.equal(result.networkAttempted, false);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("mcp profile hashing is deterministic for duplicate declared tool names", () => {
   const profile: McpProfile = {
     ...OPENROUTER_MCP_PROFILE,
@@ -864,7 +1072,7 @@ test("mcp tool grants persist and allow risky tools for the current trusted prof
     const rendered = renderMcpProfileTools(report);
 
     assert.equal(result.ok, true);
-    assert.match(result.message, /Remote tool execution remains unimplemented/);
+    assert.match(result.message, /Execution is available only through explicit operator calls/);
     assert.equal(grant?.toolName, "chat-send");
     assert.equal(grant?.profileHash, hashMcpProfile(OPENROUTER_MCP_PROFILE));
     assert.equal(grant?.risk, "billable");
@@ -1060,7 +1268,7 @@ test("mcp tools renderer includes risk auth billable and policy decisions", () =
 
     const rendered = renderMcpProfileTools(report);
     assert.match(rendered, /MCP tools: openrouter/);
-    assert.match(rendered, /remote_tool_execution: not implemented/);
+    assert.match(rendered, /remote_tool_execution: explicit \/mcp call or orx mcp call only/);
     assert.match(rendered, /decisions: allowed=12 denied=1/);
     assert.match(rendered, /models-list risk=read auth=yes billable=no policy=allowed/);
     assert.match(rendered, /chat-send risk=billable auth=yes billable=yes policy=denied/);
@@ -1383,7 +1591,7 @@ test("mcp discovery calls provided fetch for enabled trusted remote-http profile
     assert.equal(result.networkAttempted, true);
     assert.equal(result.serverInfo?.name, "openrouter");
     assert.deepEqual(result.capabilityKeys, ["resources", "tools"]);
-    assert.match(formatMcpDiscoveryResult(result), /tool_execution: not implemented/);
+    assert.match(formatMcpDiscoveryResult(result), /tool_execution: explicit \/mcp call only/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -28,8 +28,9 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` as untrusted context; executable plugin commands remain inactive.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
-- Enabled plugin `components.mcpServers` JSON can contribute MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`; trusted unchanged `remote-http` plugin profiles can be discovered and can list remote tool metadata through guarded DNS-vetted handshakes, but no plugin MCP tools execute.
-- MCP tool grants are implemented for policy state only: `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` persist per-tool grants for billable/write/destructive declared tools only on enabled/trusted/unchanged profiles. Grants bind to the current trusted profile hash; stale grants are visible and denied. `tools/call` and model-loop MCP tool exposure remain unimplemented.
+- Enabled plugin `components.mcpServers` JSON can contribute MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp call`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`; trusted unchanged `remote-http` plugin profiles can be discovered, list remote tool metadata, and run explicit operator `tools/call` through guarded policy gates only. Plugin MCP tools are still not exposed to the model loop.
+- MCP tool grants are implemented: `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` persist per-tool grants for billable/write/destructive declared tools only on enabled/trusted/unchanged profiles. Grants bind to the current trusted profile hash; stale grants are visible and denied before explicit calls can reach the network.
+- Explicit MCP `tools/call` is implemented for operator commands only: `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` require enabled/trusted/unchanged profiles, allowed declared-tool policy, env-only bearer auth for auth-bearing tools, guarded DNS-vetted transport, redacted/truncated untrusted output, and audit logs without raw arguments/output. MCP tools are still not exposed to the model loop.
 - Enabled plugin `components.hooks` JSON can contribute hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run manually through `hooks run` / `/hooks run` or automatically on matching lifecycle events with minimal env/cwd and JSONL audit logging.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
@@ -66,13 +67,23 @@ Current files:
 
 ## Latest Work
 
+Implemented explicit operator MCP `tools/call` runtime:
+
+- Added `src/mcp/call.ts` for guarded `tools/call` requests on enabled/trusted/unchanged `remote-http` profiles when `evaluateMcpToolPolicy()` returns `allowed`.
+- Added env-only bearer auth lookup through `ORX_MCP_BEARER_<PROFILE>` or `ORX_MCP_BEARER_TOKEN`; auth-bearing profiles/tools do not attempt network calls without a token.
+- Added `/mcp call <profile> <tool> [arguments-json]` and `orx mcp call <profile> <tool> [arguments-json]` with dedicated MCP call fetch hooks for tests. The general OpenRouter fetch hook is not used for live MCP calls.
+- Result rendering is bounded, redacted, marked untrusted, and explicitly not exposed to the model loop. Audit events record status/policy/result hashes/content types without raw arguments, raw output, bearer tokens, or schemas.
+- Billable/write/destructive tools still require active profile-hash-bound grants; stale grants deny before network.
+- Verification: verifier recheck reported no findings. `npm run typecheck`, `git diff --check`, focused MCP/slash/CLI tests with 146 tests, full `npm test` with 344 tests, and `npm run dev -- status` pass.
+- Next likely MCP work: controlled model-loop exposure for an allowlisted subset of MCP tools, or executable plugin slash commands/bins.
+
 Implemented MCP per-tool grant policy storage:
 
 - Added private MCP config `toolGrants` records for profile id, tool name, current profile hash, risk, billable flag, and granted timestamp.
 - Added policy evaluation support for active versus stale grants. Read-only declared tools remain allowed on enabled/trusted/unchanged profiles, while billable/write/destructive tools require an active grant; stale grants render visibly and are denied.
 - Added `/mcp allow-tool <profile> <tool>` and `/mcp revoke-tool <profile> <tool>` plus matching `orx mcp allow-tool|revoke-tool` noninteractive commands. `orx mcp list|inspect|tools|enable|disable` now gives local no-key access to MCP policy/profile state.
 - Added grant counts to `/status`, `orx status`, and `/mcp tools`, plus redacted audit events for grant allow/revoke attempts.
-- No MCP `tools/call`, remote execution, or model-loop exposure was added.
+- At that checkpoint no MCP `tools/call`, remote execution, or model-loop exposure was added; explicit operator `tools/call` was implemented later while model-loop exposure remains absent.
 - Verification: verifier found and rechecked fixes for audit assignment redaction and grant-aware inspect output with no remaining findings; `npm run typecheck`, `git diff --check`, focused MCP/slash/CLI tests with 139 tests, full `npm test` with 337 tests, and `npm run dev -- status` pass.
 - Next likely MCP work: implement a guarded, audit-first `tools/call` runtime for explicitly granted read/billable tools, or design executable plugin slash commands/bins.
 
@@ -80,7 +91,7 @@ Implemented read-only remote MCP `tools/list` metadata:
 
 - Added shared `src/mcp/transport.ts` for guarded MCP JSON-RPC POSTs so initialize discovery and tools/list share URL guarding, DNS vetting, address binding, timeout coverage, bounded response reads, and test-only injected fetches.
 - Added `src/mcp/remote-tools.ts` and `/mcp remote-tools <profile>` for enabled/trusted/unchanged `remote-http` profiles.
-- `remote-tools` calls only JSON-RPC `tools/list`, supports bounded pagination, renders tool names/descriptions plus schema/tool hashes, marks metadata as untrusted, and explicitly keeps `tools/call` and model exposure unimplemented.
+- `remote-tools` calls only JSON-RPC `tools/list`, supports bounded pagination, renders tool names/descriptions plus schema/tool hashes, and marks metadata as untrusted. Later work added explicit operator `tools/call`; model-loop exposure remains unimplemented.
 - Slash wiring uses `mcpRemoteToolsFetch` for tests only; live ORX does not use the general OpenRouter fetch hook for MCP remote tools.
 - Added redacted `mcp.profile.remote_tools_attempt` audit events with tool/schema hashes.
 - Verification: verifier recheck found no remaining findings, focused MCP/slash/CLI tests pass, `npm run typecheck`, `git diff --check`, full `npm test` with 331 tests, and `npm run dev -- status` pass.
@@ -91,7 +102,7 @@ Implemented trusted plugin MCP endpoint discovery:
 - `/mcp discover <profile>` now supports plugin-provided `remote-http` MCP profiles after the profile is enabled, has a trusted current hash, and has no pending schema change.
 - Plugin discovery uses the same explicit profile trust gates as built-in MCP discovery, plus URL guarding before any network attempt.
 - Production MCP discovery now uses a Node-native guarded POST transport: DNS is resolved and vetted before connecting, local/private/reserved/metadata results are rejected, requests are bound to a vetted address, responses are byte-bounded, and injected `fetch` is reserved for tests.
-- Discovery performs only a minimal JSON-RPC `initialize` handshake. It reports server/protocol/capability summary, auth-required, blocked URL, DNS/network, and schema states, and it still renders `tool_execution: not implemented`.
+- Discovery performs only a minimal JSON-RPC `initialize` handshake. It reports server/protocol/capability summary, auth-required, blocked URL, DNS/network, and schema states. Later work changed the rendered execution note to explicit `/mcp call` only, still not model-loop exposure.
 - Slash command wiring now separates MCP discovery test hooks from the general OpenRouter fetch hook, so live `/mcp discover` does not accidentally use generic `globalThis.fetch`.
 - Focused verification: `npm run typecheck` and `npm run build && node --test dist/mcp/mcp.test.js dist/slash/index.test.js` pass with 99 tests.
 - That slice's next likely remote-tool-listing and policy-storage work is now complete; next likely MCP work is a guarded, audit-first `tools/call` runtime or executable plugin slash-command design.
@@ -415,7 +426,7 @@ Implemented and verified the Phase 8 official OpenRouter MCP discovery scaffold:
 - Added `/mcp discover <profile>` for manual profile discovery/status; it only attempts network discovery when the persisted profile exists, is enabled/trusted, has no pending schema change, and uses `remote-http`.
 - Disabled, untrusted, and pending-schema-change profiles return explanatory no-network results.
 - `401`/`403` discovery responses are treated as `auth_required` for OpenRouter OAuth or dedicated expiring MCP keys, with sanitized bounded errors and no secret leakage.
-- Remote MCP tool execution remains unimplemented and is explicitly rendered in `/mcp inspect` and discovery output; normal chat/ask inference and REST metadata commands still use direct OpenRouter APIs.
+- At that checkpoint remote MCP tool execution remained unimplemented and was explicitly rendered in `/mcp inspect` and discovery output; later work added explicit operator `tools/call` while normal chat/ask inference and REST metadata commands still use direct OpenRouter APIs.
 - Updated the OpenRouter MCP declared tools to the current documented surface: `models-list`, `model-get`, `model-endpoints`, `providers-list`, `rankings-daily`, `app-rankings`, `credits-get`, `generation-get`, `benchmarks`, `docs-search`, `view-skill`, `ping`, and billable `chat-send`.
 - Added redacted MCP audit events for discovery attempts/results.
 - Added tests for discovery gating, mocked enabled discovery, auth-required handling, secret redaction, slash audit output, and REST metadata independence.

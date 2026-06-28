@@ -123,6 +123,7 @@ Next:
   - Add trusted plugin MCP endpoint discovery: enabled/trusted/unchanged plugin `remote-http` profiles can run a guarded DNS-vetted `/mcp discover` initialize handshake without listing/executing tools or exposing them to the model loop.
   - Add read-only remote MCP tool listing: `/mcp remote-tools <profile>` calls guarded `tools/list` for enabled/trusted/unchanged profiles, renders bounded untrusted metadata plus schema hashes, audits results, and does not call `tools/call`.
   - Add MCP per-tool grant policy storage: `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` persist profile-hash-bound grants for billable/write/destructive declared tools, render active/stale grant state, audit mutations, and still do not execute MCP tools.
+  - Add explicit operator MCP tool calls: `/mcp call` and `orx mcp call` execute guarded `tools/call` only for enabled/trusted/unchanged profiles with allowed declared-tool policy, env-only bearer auth, redacted/truncated untrusted output, and audit logs without raw arguments/output.
 
 - Extend browser automation beyond static DNS-bound document snapshots when a safe browser-network/proxy design can preserve SSRF protections.
 - Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
@@ -130,7 +131,7 @@ Next:
 - Add MCP presets: `openrouter`, `context7`, `github-readonly`, `browser`, `sentry-readonly`, `figma`, `db-dev`, `cloud-readonly`, and `cloud-write`.
 - Extend the plugin system beyond the local registry/CLI/cache/catalog substrate with remote source fetching, lockfile pins for remote sources, richer metadata, and namespacing.
 - Add executable slash command design after the prompt/rule metadata, explicit activation surfaces, and trusted lifecycle hook runtime.
-- Add plugin MCP tool execution only after the grant policy is paired with a guarded `tools/call` runtime, secret-forwarding rules, result redaction/truncation, audit logging, and model-loop exposure controls.
+- Add controlled model-loop MCP tool exposure only after explicit operator `tools/call` is paired with model-visible allowlists, prompt-injection boundaries, result truncation, audit logging, and per-session/profile controls.
 - Extend plugin metadata further only where needed for remote source UX, marketplace/catalog trust, or executable surface policy decisions.
 - Add `/plugins` command for list/install/enable/disable/inspect.
 - Add tree-sitter and ast-grep code intelligence for repo maps, symbol slices, syntax-aware search, and codemod previews.

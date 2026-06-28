@@ -20,6 +20,8 @@ import {
 } from "./openrouter/live.js";
 import {
   allowMcpToolGrant,
+  callRemoteMcpTool,
+  formatMcpToolCallResult,
   getMcpProfileToolPolicyReport,
   getMcpStatusSummary,
   hashMcpProfile,
@@ -27,6 +29,7 @@ import {
   renderMcpProfileTools,
   renderMcpStatus,
   resolveMcpConfigPath,
+  resolveMcpBearerToken,
   revokeMcpToolGrant,
   setMcpProfilePersistentState,
   writeMcpAuditEvent,
@@ -90,6 +93,7 @@ interface CliIo {
   stderr: Pick<NodeJS.WriteStream, "write">;
   cwd: string;
   fetch?: typeof fetch;
+  mcpCallFetch?: typeof fetch;
   browserSnapshot?: BrowserSnapshotDriver;
 }
 
@@ -206,6 +210,7 @@ export async function runCli(
     return runMcpCommand(
       args.slice(1),
       io,
+      env,
       mcpConfigPath,
       pluginRegistryPath,
       env.ORX_MCP_AUDIT_PATH,
@@ -592,10 +597,11 @@ function runPluginsCommand(
 function runMcpCommand(
   args: string[],
   io: CliIo,
+  env: NodeJS.ProcessEnv,
   mcpConfigPath: string,
   pluginRegistryPath: string,
   mcpAuditLogPath?: string,
-): number {
+): number | Promise<number> {
   const subcommand = args[0]?.toLowerCase() ?? "list";
   const profileId = args[1];
   const toolName = args[2];
@@ -769,6 +775,63 @@ function runMcpCommand(
     }
   }
 
+  if (subcommand === "call") {
+    if (!profileId || !toolName || args.length < 3) {
+      writeLine(io.stderr, "Usage: orx mcp call <profile> <tool> [arguments-json]");
+      return 1;
+    }
+
+    const parsedArgs = parseMcpCallArgumentsText(args.slice(3).join(" ").trim());
+    if (!parsedArgs.ok) {
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: "mcp.tool.call_attempt",
+        profileId,
+        ok: false,
+        details: {
+          toolName,
+          status: "invalid_arguments",
+          message: parsedArgs.message,
+        },
+      });
+      writeLine(io.stderr, parsedArgs.message);
+      return 1;
+    }
+
+    return callRemoteMcpTool(profileId, toolName, parsedArgs.value, {
+      configPath: mcpConfigPath,
+      pluginRegistryPath,
+      fetch: io.mcpCallFetch,
+      authToken: resolveMcpBearerToken(profileId, env),
+    }).then((result) => {
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: "mcp.tool.call_attempt",
+        profileId,
+        ok: result.ok,
+        details: {
+          toolName,
+          status: result.status,
+          networkAttempted: result.networkAttempted,
+          transport: result.transport,
+          url: result.url,
+          authRequired: result.authRequired,
+          profileHash: result.profileHash,
+          trustedProfileHash: result.trustedProfileHash,
+          schemaChangePending: result.schemaChangePending,
+          policyDecision: result.policyDecision,
+          httpStatus: result.httpStatus,
+          toolError: result.toolError,
+          resultHash: result.resultHash,
+          contentCount: result.content?.length,
+          contentTypes: result.content?.map((item) => item.type),
+          error: result.error,
+          message: result.message,
+        },
+      });
+      writeLine(result.ok ? io.stdout : io.stderr, formatMcpToolCallResult(result));
+      return result.ok ? 0 : 1;
+    });
+  }
+
   if (subcommand === "allow-tool") {
     if (!profileId || !toolName || args.length !== 3) {
       writeLine(io.stderr, "Usage: orx mcp allow-tool <profile> <tool>");
@@ -853,7 +916,7 @@ function runMcpCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx mcp [list|inspect <profile>|tools <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>]",
+    "Usage: orx mcp [list|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>]",
   );
   return 1;
 }
@@ -1202,6 +1265,39 @@ function parseAskArgs(args: string[]): AskCommand | string {
 
 function formatProfileIdForMessage(profileId: string): string {
   return profileId.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim().toLowerCase().slice(0, 80);
+}
+
+function parseMcpCallArgumentsText(rawArguments: string):
+  | { ok: true; value: Record<string, unknown> }
+  | { ok: false; message: string } {
+  if (!rawArguments) {
+    return {
+      ok: true,
+      value: {},
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawArguments) as unknown;
+  } catch {
+    return {
+      ok: false,
+      message: "MCP tool arguments must be valid JSON object text.",
+    };
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {
+      ok: false,
+      message: "MCP tool arguments must be a JSON object.",
+    };
+  }
+
+  return {
+    ok: true,
+    value: parsed as Record<string, unknown>,
+  };
 }
 
 function tryWriteCliMcpAuditEvent(

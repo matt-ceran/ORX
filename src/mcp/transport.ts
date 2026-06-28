@@ -14,6 +14,7 @@ export interface McpRemoteHttpOptions {
   resolveHost?: ResolveMcpHost;
   signal?: AbortSignal;
   timeoutMs?: number;
+  headers?: Record<string, string>;
 }
 
 export interface ResolvedMcpHostAddress {
@@ -37,6 +38,7 @@ export async function postMcpJsonRpc(
         method: "POST",
         redirect: "manual",
         headers: {
+          ...options.headers,
           Accept: "application/json",
           "Content-Type": "application/json",
         },
@@ -48,6 +50,7 @@ export async function postMcpJsonRpc(
     return postWithNativeTransport(guardedUrl, body, {
       resolveHost: options.resolveHost ?? defaultResolveMcpHost,
       signal,
+      headers: options.headers,
     });
   });
 }
@@ -58,9 +61,11 @@ async function postWithNativeTransport(
   {
     resolveHost,
     signal,
+    headers,
   }: {
     resolveHost: ResolveMcpHost;
     signal: AbortSignal;
+    headers?: Record<string, string>;
   },
 ): Promise<Response> {
   throwIfAborted(signal);
@@ -78,6 +83,7 @@ async function postWithNativeTransport(
         method: "POST",
         signal,
         headers: {
+          ...headers,
           Accept: "application/json",
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(body).toString(),

@@ -26,7 +26,9 @@ import {
 } from "../delegation/index.js";
 import {
   allowMcpToolGrant,
+  callRemoteMcpTool,
   discoverMcpProfile,
+  formatMcpToolCallResult,
   formatMcpDiscoveryResult,
   formatMcpRemoteToolsResult,
   getMcpProfileToolPolicyReport,
@@ -36,6 +38,7 @@ import {
   renderMcpProfileInspect,
   renderMcpProfileTools,
   renderMcpStatus,
+  resolveMcpBearerToken,
   revokeMcpToolGrant,
   setMcpProfilePersistentState,
   writeMcpAuditEvent,
@@ -201,6 +204,8 @@ export interface SlashCommandContext {
   fetch?: typeof fetch;
   mcpDiscoveryFetch?: typeof fetch;
   mcpRemoteToolsFetch?: typeof fetch;
+  mcpCallFetch?: typeof fetch;
+  mcpAuthEnv?: NodeJS.ProcessEnv;
   mcpResolveHost?: ResolveMcpHost;
   webFetch?: typeof fetch;
   webSearchFetch?: typeof fetch;
@@ -294,6 +299,7 @@ const MCP_SUBCOMMAND_COMPLETIONS = [
   "status",
   "inspect",
   "tools",
+  "call",
   "remote-tools",
   "discover",
   "enable",
@@ -792,7 +798,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|inspect|tools|remote-tools|discover|enable|disable|allow-tool|revoke-tool]",
+    usage: "/mcp [list|inspect|tools|call|remote-tools|discover|enable|disable|allow-tool|revoke-tool]",
     description: "Show MCP profile policy state, gated discovery, remote metadata, and tool grants",
     group: "Integrations",
     tier: "advanced",
@@ -1307,6 +1313,7 @@ function isMcpProfileSubcommand(subcommand: string | undefined): boolean {
   return (
     subcommand === "inspect" ||
     subcommand === "tools" ||
+    subcommand === "call" ||
     subcommand === "remote-tools" ||
     subcommand === "discover" ||
     subcommand === "enable" ||
@@ -2247,6 +2254,66 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
     return;
   }
 
+  if (subcommand === "call") {
+    const toolName = command.args[2];
+    if (!profileId || !toolName || command.args.length < 3) {
+      writeLine(context.io.stderr, "Usage: /mcp call <profile> <tool> [arguments-json]");
+      return;
+    }
+
+    const parsedArgs = parseMcpCallArguments(command);
+    if (!parsedArgs.ok) {
+      tryWriteMcpAuditEvent(context, {
+        type: "mcp.tool.call_attempt",
+        profileId,
+        ok: false,
+        details: {
+          toolName,
+          status: "invalid_arguments",
+          message: parsedArgs.message,
+        },
+      });
+      writeLine(context.io.stderr, parsedArgs.message);
+      return;
+    }
+
+    const result = await callRemoteMcpTool(profileId, toolName, parsedArgs.value, {
+      configPath: context.mcpConfigPath,
+      pluginRegistryPath: context.pluginRegistryPath,
+      fetch: context.mcpCallFetch,
+      resolveHost: context.mcpResolveHost,
+      authToken: resolveMcpBearerToken(profileId, context.mcpAuthEnv),
+    });
+    tryWriteMcpAuditEvent(context, {
+      type: "mcp.tool.call_attempt",
+      profileId,
+      ok: result.ok,
+      details: {
+        toolName,
+        status: result.status,
+        networkAttempted: result.networkAttempted,
+        transport: result.transport,
+        url: result.url,
+        authRequired: result.authRequired,
+        profileHash: result.profileHash,
+        trustedProfileHash: result.trustedProfileHash,
+        schemaChangePending: result.schemaChangePending,
+        policyDecision: result.policyDecision,
+        httpStatus: result.httpStatus,
+        toolError: result.toolError,
+        resultHash: result.resultHash,
+        contentCount: result.content?.length,
+        contentTypes: result.content?.map((item) => item.type),
+        error: result.error,
+        message: result.message,
+      },
+    });
+
+    const output = formatMcpToolCallResult(result);
+    writeLine(result.ok ? context.io.stdout : context.io.stderr, output);
+    return;
+  }
+
   if (subcommand === "remote-tools") {
     if (!profileId || command.args.length !== 2) {
       writeLine(context.io.stderr, "Usage: /mcp remote-tools <profile>");
@@ -2499,8 +2566,44 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /mcp [list|inspect <profile>|tools <profile>|remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>]",
+    "Usage: /mcp [list|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>]",
   );
+}
+
+function parseMcpCallArguments(command: SlashCommand):
+  | { ok: true; value: Record<string, unknown> }
+  | { ok: false; message: string } {
+  const rawArguments = command.argText
+    .replace(/^call\s+\S+\s+\S+/i, "")
+    .trim();
+  if (!rawArguments) {
+    return {
+      ok: true,
+      value: {},
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawArguments) as unknown;
+  } catch {
+    return {
+      ok: false,
+      message: "MCP tool arguments must be valid JSON object text.",
+    };
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {
+      ok: false,
+      message: "MCP tool arguments must be a JSON object.",
+    };
+  }
+
+  return {
+    ok: true,
+    value: parsed as Record<string, unknown>,
+  };
 }
 
 function formatErrorForMcpAudit(error: unknown): string {
