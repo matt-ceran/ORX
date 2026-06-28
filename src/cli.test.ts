@@ -28,6 +28,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
+    assert.match(help.stdout(), /code map\s+Render a bounded local repository code map/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
   }
@@ -130,6 +131,40 @@ test("cli tests commands list and run package scripts without an API key", async
     const unknown = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "tests", "unknown"], {}, unknown.io), 1);
     assert.match(unknown.stderr(), /Usage: orx tests/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli code map renders a bounded repository overview without an API key", async () => {
+  const cwd = createTempDir();
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(
+      join(cwd, "package.json"),
+      JSON.stringify({
+        main: "./dist/index.js",
+        scripts: { test: "node --test" },
+      }),
+    );
+    writeFileSync(
+      join(cwd, "src", "index.ts"),
+      "import './side-effect.js';\nexport function start() { return 'ok'; }\n",
+    );
+
+    const mapped = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "code", "map"], {}, mapped.io), 0);
+    assert.match(mapped.stdout(), /Code Map/);
+    assert.match(mapped.stdout(), /TypeScript: 1/);
+    assert.match(mapped.stdout(), /kind=package label="main"/);
+    assert.match(mapped.stdout(), /path="src\/index\.ts"/);
+    assert.match(mapped.stdout(), /exports="start"/);
+    assert.equal(mapped.stderr(), "");
+
+    const alias = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "map", "src"], {}, alias.io), 0);
+    assert.match(alias.stdout(), /root: .*src/);
+    assert.match(alias.stdout(), /source_files: 1/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

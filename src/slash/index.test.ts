@@ -73,6 +73,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.match(output, /\/theme \[default\|mono\|vivid\]\s+Show or set the TTY color theme/);
   assert.match(output, /\/profile \[list\|save\|use\|inspect\|delete\]\s+Manage saved local config profiles/);
   assert.match(output, /\/tests \[list\|run <target-id>\]\s+Discover or run native test targets \(aliases: \/test\)/);
+  assert.match(output, /\/map \[path\]\s+Render a bounded local repository code map/);
   assert.match(output, /\/model <id-or-search>\s+Resolve and switch OpenRouter model \(aliases: \/m\)/);
   assert.match(output, /\/quit\s+Leave chat \(aliases: \/q, \/exit\)/);
   assert.doesNotMatch(output, /Advanced chat commands:/);
@@ -83,7 +84,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.doesNotMatch(output, /^Chat commands:/m);
 
   const commandLines = output.split("\n").filter((line) => line.startsWith("  /"));
-  assert.ok(commandLines.length <= 15, `expected concise common help, got ${commandLines.length}`);
+  assert.ok(commandLines.length <= 16, `expected concise common help, got ${commandLines.length}`);
 });
 
 test("help all shows common commands first plus advanced surfaces", () => {
@@ -108,6 +109,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/delegate <add\|remove\|clear>/);
   assert.match(output, /\/delegates/);
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
+  assert.match(output, /\/code \[map\]/);
   assert.match(output, /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog\|list\|commands\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
@@ -179,7 +181,7 @@ test("slash command completer suggests command names, aliases, and deterministic
 
   const [modelMatches, modelFragment] = completeSlashCommandLine("/m");
   assert.equal(modelFragment, "/m");
-  assert.deepEqual(modelMatches, ["/m ", "/mcp ", "/mode ", "/model ", "/models "]);
+  assert.deepEqual(modelMatches, ["/m ", "/map ", "/mcp ", "/mode ", "/model ", "/models "]);
 
   assert.deepEqual(completeSlashCommandLine("/mode "), [["auto ", "fusion "], ""]);
   assert.deepEqual(completeSlashCommandLine("/mode a"), [["auto "], "a"]);
@@ -204,6 +206,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/hooks t"), [["trust "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/hooks r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/tests r"), [["run "], "r"]);
+  assert.deepEqual(completeSlashCommandLine("/code m"), [["map "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/prompts a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/rules a"), [["activate "], "a"]);
@@ -223,6 +226,36 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/model claude"), [[], "/model claude"]);
   assert.deepEqual(completeSlashCommandLine("/plugins enable "), [[], "/plugins enable "]);
   assert.deepEqual(completeSlashCommandLine("plain text"), [[], "plain text"]);
+});
+
+test("map slash command renders a local code map", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-slash-map-"));
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(
+      join(cwd, "package.json"),
+      JSON.stringify({ scripts: { test: "node --test" } }),
+    );
+    writeFileSync(
+      join(cwd, "src", "index.ts"),
+      "import value from './value.js';\nexport const start = value;\n",
+    );
+
+    const harness = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/map", harness.context), "continue");
+    assert.match(harness.stdout(), /Code Map/);
+    assert.match(harness.stdout(), /TypeScript: 1/);
+    assert.match(harness.stdout(), /path="src\/index\.ts"/);
+    assert.match(harness.stdout(), /exports="start"/);
+    assert.equal(harness.stderr(), "");
+
+    const scoped = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/code map src", scoped.context), "continue");
+    assert.match(scoped.stdout(), /source_files: 1/);
+    assert.match(scoped.stdout(), /root: .*src/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("tests slash command lists and runs package scripts", async () => {

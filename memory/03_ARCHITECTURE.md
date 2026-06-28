@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-06-27
+Last updated: 2026-06-28
 
 ## Target Stack
 
@@ -24,6 +24,7 @@ src/tui/                   terminal rendering and input handling
 src/agent/                 agent loop, messages, tool dispatch, compaction
 src/openrouter/            API client, models, routing modes, cost tracking
 src/tools/                 local tools: files, shell, search, git, patch
+src/code-map/              bounded local repository overview and source import/export summaries
 src/slash/                 slash command registry and handlers
 src/terminal/              ANSI style helpers and deterministic ASCII meters
 src/permissions/           permission policy, YOLO defaults, future safe modes
@@ -80,6 +81,8 @@ Keep research provenance behind `src/research/` so search results, fetched pages
 
 `src/testing/` owns operator-invoked test target discovery and execution. It discovers safe package `test*` scripts, falls back to direct Node test files when no `test` package script exists, renders `orx tests` / `/tests` output, and reuses the shared process runner with bounded output and argument sanitation. It is not yet model-autonomous.
 
+`src/code-map/` owns operator-invoked local code-map rendering. It scans a bounded local tree, skips generated/vendor directories, summarizes languages, key files, package/config/source entrypoints, and top JavaScript/TypeScript imports/exports, and redacts secret-like rendered paths or symbols. It is exposed through `orx code map`, `orx map`, `orx code-map`, `/map`, and `/code map` without requiring an OpenRouter API key.
+
 `src/agent/` now owns OpenRouter-compatible native tool schemas, native tool dispatch, bounded tool-result envelopes, and the guarded multi-turn tool-call loop used by `orx ask` and `orx chat`.
 
 `src/plugins/` now owns the inert plugin substrate plus progressive text-component loaders: sanitized ORX plugin manifests, optional display-only manifest metadata, stable plugin ids, manifest hashes, local lock-style records, local component hashes, ORX-owned install cache, local catalog metadata, private registry persistence, installed/enabled state separation, `/plugins` rendering, bounded enabled-plugin-only `SKILL.md` discovery, bounded markdown prompt/rule discovery, compact metadata rendering, plugin command alias discovery, plugin MCP preset discovery, bin discovery/trust/manual runtime, hook discovery/trust state, trusted-hook manual runtime, automatic trusted lifecycle hook dispatch, and explicit skill/prompt/rule activation. Plugin enablement is only a persisted state marker plus metadata/preset/review eligibility; prompt aliases activate existing prompt commands as untrusted context, trusted current bins can run through explicit `bins run` / `/bins run` or namespaced `/plugin:<plugin-id>:bin:<file>` aliases, and trusted current hooks can run through explicit `hooks run` / `/hooks run` or matching lifecycle events. Plugin-declared MCP tools require separate MCP profile enablement/trust and explicit/read-only model MCP gates before execution; custom manifest-defined executable command schemas and other plugin code execution remain inactive.
@@ -92,4 +95,4 @@ Keep research provenance behind `src/research/` so search results, fetched pages
 
 `src/research/` now owns the Phase 10 direct research foundation: evidence source types, source ids, stable content/text hashes, conservative HTML/plain-text extraction, untrusted context message formatting, `/sources` rendering, deterministic metadata-only citation/bibliography formatting, a layered SSRF-style URL guard, and a Node-native DNS-vetted web fetch transport. Production fetch resolves and vets every hostname before connecting, binds the request to an allowed address, rechecks redirects, covers body reads with the same timeout, and strips terminal control characters before rendering or context insertion. `orx chat` stores evidence source metadata in session `evidenceSources`; bounded extracted text is represented by an explicit untrusted user-role context message in the transcript. `/cite <source-id>` and `/bibliography` render only source metadata, hashes, provenance, and the trust boundary; they do not render fetched text or perform network calls. Research fetch is currently reachable only through explicit operator slash commands, not model tool calls.
 
-The next programming power-pack work should add richer code intelligence such as tree-sitter repo maps, ast-grep previews, LSP/SCIP diagnostics, or framework-specific adapters beyond the initial package-script/Node test runner.
+The next programming power-pack work should add richer code intelligence such as tree-sitter-backed symbol slices, ast-grep previews, LSP/SCIP diagnostics, or framework-specific adapters beyond the initial package-script/Node test runner and dependency-free code map.

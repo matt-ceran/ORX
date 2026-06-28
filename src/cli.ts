@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BIN_NAME } from "./constants.js";
 import { formatToolCallStart, formatToolResult, runAgentTurn } from "./agent/index.js";
+import { createCodeMap, renderCodeMap } from "./code-map/index.js";
 import { loadConfig, validateApiKey } from "./config/index.js";
 import type { LoadedConfig, OrxConfig, OrxMode } from "./config/types.js";
 import type { AskRequestOverrides } from "./openrouter/request.js";
@@ -260,6 +261,14 @@ export async function runCli(
     return runTestsCommand(args.slice(1), io);
   }
 
+  if (first === "code") {
+    return runCodeCommand(args.slice(1), io);
+  }
+
+  if (first === "map" || first === "code-map") {
+    return runCodeMapCommand(args.slice(1), io);
+  }
+
   const apiKeyError = validateApiKey(loadedConfig);
   if (apiKeyError) {
     writeLine(io.stderr, apiKeyError);
@@ -330,6 +339,7 @@ function helpText(): string {
     "  bins          List, inspect, trust, untrust, or run plugin bins",
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  tests         Discover or run native test targets",
+    "  code map      Render a bounded local repository code map",
     "  status        Show runtime status and config defaults",
     "  help          Show this help message",
     "  version       Show the current version",
@@ -466,6 +476,22 @@ async function runTestsCommand(args: string[], io: CliIo): Promise<number> {
 
   writeLine(io.stderr, "Usage: orx tests [list|run [target-id] [-- args...]]");
   return 1;
+}
+
+function runCodeCommand(args: string[], io: CliIo): number {
+  const subcommand = args[0]?.toLowerCase() ?? "map";
+  if (subcommand === "map") {
+    return runCodeMapCommand(args.slice(1), io);
+  }
+
+  writeLine(io.stderr, "Usage: orx code map [path]");
+  return 1;
+}
+
+function runCodeMapCommand(args: string[], io: CliIo): number {
+  const targetPath = args.join(" ").trim() || undefined;
+  writeLine(io.stdout, renderCodeMap(createCodeMap({ cwd: io.cwd, targetPath })));
+  return 0;
 }
 
 function runProfileCommand(

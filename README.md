@@ -45,6 +45,8 @@ orx --version
 orx status
 orx tests list
 orx tests run
+orx code map
+orx map src
 OPENROUTER_API_KEY=... orx
 ```
 
@@ -72,6 +74,16 @@ orx tests run script:test:unit -- --watch=false
 ```
 
 The adapter discovers local `package.json` scripts whose names start with `test` and falls back to Node's built-in test runner for `*.test.js`, `*.test.mjs`, `*.test.cjs`, `*.spec.js`, `*.spec.mjs`, and `*.spec.cjs` files when no `test` package script exists.
+
+Local code-map discovery is also available without an OpenRouter API key:
+
+```sh
+orx code map
+orx map src
+orx code-map src
+```
+
+The code map scans a bounded local tree, skips generated/vendor directories such as `node_modules`, `.git`, `.orx`, `dist`, `build`, and `coverage`, summarizes languages, key files, package/config/source entrypoints, and top JavaScript/TypeScript source imports/exports, and redacts secret-like rendered paths or symbols.
 
 Plugin registry management is also available outside chat:
 
@@ -163,6 +175,8 @@ The chat UI keeps in-session message history for the current process, streams as
 /theme [default|mono|vivid]
 /profile [list|save|use|inspect|delete]
 /tests [list|run]
+/map [path]
+/code [map]
 /plugins [catalog|list|commands|inspect|register|install|enable|disable]
 /plugin [list|status]
 /bins [list|inspect|trust|untrust|run]

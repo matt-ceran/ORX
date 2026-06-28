@@ -35,6 +35,8 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin `components.hooks` JSON can contribute hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run manually through `hooks run` / `/hooks run` or automatically on matching lifecycle events with minimal env/cwd and JSONL audit logging.
 - Enabled plugin `components.bins` directories can contribute explicit operator-run bins. Regular cached bin files appear as `plugin:<plugin-id>:bin:<file>` in `orx bins`, `/bins`, and `/status`; trusted bin hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run only through explicit `bins run` / `/bins run` with cached-plugin cwd, manifest-declared env, redacted/truncated output, and JSONL audit logs without raw argument lists.
 - Enabled plugin prompt commands and bins now produce namespaced aliases visible through `/plugin list`, `orx plugins commands`, and `/status`. `/plugin:<plugin-id>:command:<slug>` activates the matching prompt as untrusted context; `/plugin:<plugin-id>:bin:<file> [args...]` runs the matching bin through the same trusted-hash gates as `/bins run`.
+- Native test target commands are implemented through `orx tests list|run`, `/tests list|run`, `/test`, package `test*` script discovery, direct Node test/spec fallback, bounded shell-disabled execution, and status counts.
+- Dependency-free local code maps are implemented through `orx code map`, `orx map`, `orx code-map`, `/map`, and `/code map`; output is local-only/no-key and includes bounded language, key-file, entrypoint, and JavaScript/TypeScript import/export summaries.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -69,6 +71,16 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented dependency-free local code maps:
+
+- Added `src/code-map/` for operator-invoked local repository maps.
+- `orx code map [path]`, `orx map [path]`, `orx code-map [path]`, `/map [path]`, and `/code map [path]` work without an OpenRouter API key.
+- The scanner bounds files, entries, depth, and source bytes; skips `.git`, `.orx`, `node_modules`, `dist`, `build`, `coverage`, and similar generated/vendor directories; skips symlinks; and reports omissions/truncation.
+- Rendered output includes language counts, key files, package/config/source entrypoints, and top JavaScript/TypeScript source files with imports/exports while redacting secret-like rendered paths and symbols.
+- Import/export extraction is line-oriented and tracks block comments/template literals to avoid counting example code inside comments or template strings.
+- Verification: implementor focused tests pass with 107 tests; full `npm test` passes with 375 tests; `npm run typecheck`, `npm run build`, `git diff --check`, and dogfood `npm run dev -- code map` pass. External verifier agent could not complete because the subagent usage limit was reached, so a local verifier-style pass added the comment/template-literal regression coverage before commit.
+- Next likely programming-power-pack work: tree-sitter-backed symbol slices, ast-grep search/codemod previews, framework-specific Vitest/Jest/Playwright adapters, richer test reports, and eventual model-visible `run_tests`.
 
 Implemented native test target commands:
 

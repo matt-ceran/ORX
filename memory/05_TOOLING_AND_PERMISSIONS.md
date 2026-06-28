@@ -72,6 +72,15 @@ Implemented under `src/testing/`:
 
 The test adapter is currently operator-invoked, not model-autonomous. Runs use the shared process runner with shell disabled, bounded output, timeout coverage, and sanitized extra arguments. `/status` and `orx status` show discovered target counts and the default target.
 
+Implemented under `src/code-map/`:
+
+- bounded local tree scanning for repository overview
+- generated/vendor directory skips for `.git`, `.orx`, `node_modules`, `dist`, `build`, `coverage`, and similar caches
+- language, key-file, package/config/source entrypoint, and JavaScript/TypeScript import/export summaries
+- explicit operator commands `orx code map`, `orx map`, `orx code-map`, `/map`, and `/code map`
+
+The code-map adapter is local-only, no-key, and not model-autonomous. It reads bounded local file metadata/content, redacts secret-like rendered paths and symbols, skips symlinks, and reports omissions/truncation instead of following unbounded trees.
+
 ## MCP And Third-Party Tool Policy
 
 - Keep core local coding tools native: file reads, file writes, search, shell, patches, and local git.

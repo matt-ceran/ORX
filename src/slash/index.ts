@@ -7,6 +7,7 @@ import {
   type AgentContextBudget,
   type SessionDiffState,
 } from "../agent/index.js";
+import { createCodeMap, renderCodeMap } from "../code-map/index.js";
 import type { LoadedConfig, OrxConfig, OrxTheme } from "../config/types.js";
 import {
   DEFAULT_THEME,
@@ -354,6 +355,7 @@ const PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS = ["list", "status"] as const;
 const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
+const CODE_SUBCOMMAND_COMPLETIONS = ["map"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const RULE_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -377,6 +379,7 @@ const COMMON_GROUP_ORDER: SlashCommandGroup[] = [
 ];
 const ADVANCED_GROUP_ORDER: SlashCommandGroup[] = [
   "Account & metadata",
+  "Workspace",
   "Sessions",
   "Research",
   "Orchestration",
@@ -535,6 +538,40 @@ const COMMANDS: Record<string, SlashDefinition> = {
     aliases: ["/test"],
     handler: async (command, context): Promise<SlashResult> => {
       await handleTestsCommand(command, context);
+      return "continue";
+    },
+  },
+  "/map": {
+    usage: "/map [path]",
+    description: "Render a bounded local repository code map",
+    group: "Workspace",
+    tier: "common",
+    handler: (command, context): SlashResult => {
+      writeLine(
+        context.io.stdout,
+        renderCodeMap(createCodeMap({ cwd: context.io.cwd, targetPath: command.argText || undefined })),
+      );
+      return "continue";
+    },
+  },
+  "/code": {
+    usage: "/code [map]",
+    description: "Run local code intelligence commands",
+    group: "Workspace",
+    tier: "advanced",
+    handler: (command, context): SlashResult => {
+      const subcommand = command.args[0]?.toLowerCase() ?? "map";
+      if (subcommand !== "map") {
+        writeLine(context.io.stderr, "Usage: /code [map] [path]");
+        return "continue";
+      }
+      writeLine(
+        context.io.stdout,
+        renderCodeMap(createCodeMap({
+          cwd: context.io.cwd,
+          targetPath: command.args.slice(1).join(" ").trim() || undefined,
+        })),
+      );
       return "continue";
     },
   },
@@ -1353,6 +1390,8 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       return argIndex === 0 ? [...HOOK_SUBCOMMAND_COMPLETIONS] : [];
     case "/tests":
       return argIndex === 0 ? [...TEST_SUBCOMMAND_COMPLETIONS] : [];
+    case "/code":
+      return argIndex === 0 ? [...CODE_SUBCOMMAND_COMPLETIONS] : [];
     case "/skills":
       return argIndex === 0 ? [...SKILL_SUBCOMMAND_COMPLETIONS] : [];
     case "/prompts":
