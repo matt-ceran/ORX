@@ -30,6 +30,7 @@ export interface PluginRegistryPathOptions {
 export interface PluginRegistryIoOptions {
   registryPath?: string;
   cacheDirectory?: string;
+  readOnly?: boolean;
 }
 
 export interface InstalledPluginRecord {

@@ -29,6 +29,7 @@ Urgent UX recovery additions from user testing:
 - Plugin install/register now snapshots sanitized manifests plus declared components and declared hook cwd directories into ORX-owned plugin cache storage before registry persistence; enabled skill/hook discovery resolves from the cached manifest path, not the original source checkout.
 - Plugin catalog support now handles both local manifest entries and pinned git source entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH`. `orx plugins install <catalog-id>` and `/plugins install <catalog-id>` clone git catalog sources into private temporary cache storage, checkout the exact pinned commit, normalize cached manifest provenance to that pin, and still register the plugin disabled/inert.
 - Local plugin catalog inspect/editor/update-check/apply commands are implemented through `orx plugins catalog inspect|updates|update|add-local|add-git|remove` and `/plugins catalog inspect|updates|update|add-local|add-git|remove`. They review local declarations, compare installed registry provenance against local catalog pins, apply explicit pinned git catalog updates when available, or edit local catalog declarations while preserving enable/trust/grant/fetch/execution as separate explicit steps.
+- Plugin review/doctor/audit is implemented through `orx plugins review` and `/plugins review`, with `doctor` and `audit` aliases. It summarizes installed/enabled state, local catalog pin drift, bin/hook trust, plugin MCP profiles, command aliases, omissions, and concrete next commands without network calls, execution, state mutation, or chmod side effects.
 - Local user MCP profile catalogs are implemented through `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. Declarations are namespaced as `user:<profile-id>`, currently support sanitized `remote-http` transports, appear in `/mcp`, `orx mcp`, `/status`, interactive chat, and `orx ask --mcp-tools`, and share the same enable/trusted-hash/schema-change/tool-grant/model-grant/auth/audit gates as built-in and plugin MCP profiles.
 - Local user MCP catalog management commands are implemented through `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands. They write private local catalog files, preserve existing array/object/legacy `servers` declarations during edits, and avoid manual JSON editing for common remote MCP setup.
 - Built-in MCP provider presets are implemented through `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, `/mcp presets`, `/mcp presets inspect <preset>`, and `/mcp add-preset <preset>`. Templates now include `context7`, `microsoft-learn`, `github-readonly`, `sentry-readonly`, `figma`, `browser`, `cloudflare-docs`, and `cloudflare-api`, and inspect/install flows leave enablement, trust, grants, calls, and model exposure as separate explicit steps.
@@ -80,6 +81,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented read-only plugin review/doctor/audit:
+
+- Added `orx plugins review` plus `doctor`/`audit` aliases and matching `/plugins review|doctor|audit` slash commands.
+- Review aggregates installed/enabled/disabled counts, local catalog pin drift, bin and hook trust state, plugin MCP profile counts, plugin command aliases, omissions/truncation, and concrete next commands.
+- Review uses read-only registry/trust loading and does not fetch, install, enable, trust, grant, execute plugin surfaces, mutate registry/cache/catalog/trust state, or tighten existing file permissions.
+- Verification: `npm run typecheck`, `git diff --check`, focused plugin/CLI/slash tests with 143 tests, full build-backed `npm test` with 428 tests, isolated built-CLI review/audit dogfood with mode checks, and independent verifier recheck pass.
+- Next likely plugin/MCP work: actual managed OAuth/provider auth setup beyond env-only bearer readiness, richer catalog provenance/signing or remote update discovery policy, broader provider/research/code-intelligence integrations, or final install/dogfood hardening.
 
 Implemented explicit plugin catalog update apply:
 

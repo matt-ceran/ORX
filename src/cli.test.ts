@@ -1695,6 +1695,25 @@ test("cli plugins install supports pinned git catalog entries without fetch", as
     assert.match(updates.stdout(), /fetch_install_enable_trust_grant_execute: separate_explicit_steps/);
     assert.equal(readFileSync(registryPath, "utf8"), registryText);
 
+    const review = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "plugins", "review"], env, review.io), 0);
+    assert.match(review.stdout(), /Plugin Review/);
+    assert.match(review.stdout(), /installed: 1/);
+    assert.match(review.stdout(), /enabled: 1/);
+    assert.match(review.stdout(), /catalog_updates_available: 1/);
+    assert.match(review.stdout(), /id=acme\.git-cli-plugin@1\.0\.0 enabled=yes source=git catalog=update_available/);
+    assert.match(review.stdout(), /command: orx plugins catalog update acme\.git-cli-plugin@1\.0\.0/);
+    assert.match(review.stdout(), /network: none/);
+    assert.match(review.stdout(), /execution: none/);
+    assert.match(review.stdout(), /install_enable_trust_grant_fetch_execute: separate_explicit_steps/);
+    assert.equal(readFileSync(registryPath, "utf8"), registryText);
+
+    const doctor = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "plugins", "doctor"], env, doctor.io), 0);
+    assert.match(doctor.stdout(), /Plugin Review/);
+    assert.match(doctor.stdout(), /catalog_updates_available: 1/);
+    assert.equal(readFileSync(registryPath, "utf8"), registryText);
+
     const applied = createNoFetchIo();
     assert.equal(
       await runCli(

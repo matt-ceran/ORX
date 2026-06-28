@@ -10,7 +10,12 @@ import {
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { OpenRouterMessage } from "../openrouter/types.js";
 import { sha256 } from "./hash.js";
-import { loadPluginRegistry, type InstalledPluginRecord, type PluginRegistryIoOptions } from "./registry.js";
+import {
+  loadPluginRegistry,
+  loadPluginRegistryReadOnly,
+  type InstalledPluginRecord,
+  type PluginRegistryIoOptions,
+} from "./registry.js";
 
 export interface PluginPromptMetadata {
   id: string;
@@ -66,7 +71,9 @@ const WHITESPACE_PATTERN = /\s+/g;
 export function discoverEnabledPluginPrompts(
   options: PluginRegistryIoOptions = {},
 ): PluginPromptsDiscovery {
-  const registry = loadPluginRegistry({ registryPath: options.registryPath });
+  const registry = options.readOnly
+    ? loadPluginRegistryReadOnly({ registryPath: options.registryPath })
+    : loadPluginRegistry({ registryPath: options.registryPath });
   const enabledPlugins = Object.values(registry.plugins)
     .filter((plugin) => plugin.enabled)
     .sort((left, right) => left.id.localeCompare(right.id));

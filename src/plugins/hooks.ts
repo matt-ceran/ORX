@@ -14,6 +14,7 @@ import { shellTool } from "../tools/shell.js";
 import { canonicalJson, sha256 } from "./hash.js";
 import {
   loadPluginRegistry,
+  loadPluginRegistryReadOnly,
   type InstalledPluginRecord,
   type PluginRegistryIoOptions,
 } from "./registry.js";
@@ -269,6 +270,22 @@ export function loadPluginHooksTrustConfig(
   }
 }
 
+export function loadPluginHooksTrustConfigReadOnly(
+  options: { configPath?: string } = {},
+): PluginHooksTrustConfig {
+  const path = options.configPath ?? defaultPluginHooksConfigPath();
+  if (!existsSync(path)) {
+    return emptyPluginHooksTrustConfig();
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+    return sanitizePluginHooksTrustConfig(parsed);
+  } catch {
+    return emptyPluginHooksTrustConfig();
+  }
+}
+
 export function savePluginHooksTrustConfig(
   config: PluginHooksTrustConfig,
   options: { configPath?: string } = {},
@@ -291,7 +308,9 @@ export function savePluginHooksTrustConfig(
 export function discoverEnabledPluginHooks(
   options: PluginRegistryIoOptions = {},
 ): PluginHooksDiscovery {
-  const registry = loadPluginRegistry({ registryPath: options.registryPath });
+  const registry = options.readOnly
+    ? loadPluginRegistryReadOnly({ registryPath: options.registryPath })
+    : loadPluginRegistry({ registryPath: options.registryPath });
   const enabledPlugins = Object.values(registry.plugins)
     .filter((plugin) => plugin.enabled)
     .sort((left, right) => left.id.localeCompare(right.id));

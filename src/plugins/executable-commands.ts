@@ -1,7 +1,12 @@
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { canonicalJson, sha256 } from "./hash.js";
-import { loadPluginRegistry, type InstalledPluginRecord, type PluginRegistryIoOptions } from "./registry.js";
+import {
+  loadPluginRegistry,
+  loadPluginRegistryReadOnly,
+  type InstalledPluginRecord,
+  type PluginRegistryIoOptions,
+} from "./registry.js";
 
 export interface PluginExecutableCommandDefinition {
   id: string;
@@ -45,7 +50,9 @@ const SECRET_LIKE_PATTERN =
 export function discoverEnabledPluginExecutableCommands(
   options: PluginRegistryIoOptions = {},
 ): PluginExecutableCommandsDiscovery {
-  const registry = loadPluginRegistry({ registryPath: options.registryPath });
+  const registry = options.readOnly
+    ? loadPluginRegistryReadOnly({ registryPath: options.registryPath })
+    : loadPluginRegistry({ registryPath: options.registryPath });
   const enabledPlugins = Object.values(registry.plugins)
     .filter((plugin) => plugin.enabled)
     .sort((left, right) => left.id.localeCompare(right.id));

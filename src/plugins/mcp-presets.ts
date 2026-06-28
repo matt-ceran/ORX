@@ -11,6 +11,7 @@ import type {
 import { sha256 } from "./hash.js";
 import {
   loadPluginRegistry,
+  loadPluginRegistryReadOnly,
   type InstalledPluginRecord,
   type PluginRegistryIoOptions,
 } from "./registry.js";
@@ -41,7 +42,9 @@ const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
 export function discoverEnabledPluginMcpProfiles(
   options: PluginRegistryIoOptions = {},
 ): PluginMcpProfilesDiscovery {
-  const registry = loadPluginRegistry({ registryPath: options.registryPath });
+  const registry = options.readOnly
+    ? loadPluginRegistryReadOnly({ registryPath: options.registryPath })
+    : loadPluginRegistry({ registryPath: options.registryPath });
   const enabledPlugins = Object.values(registry.plugins)
     .filter((plugin) => plugin.enabled)
     .sort((left, right) => left.id.localeCompare(right.id));

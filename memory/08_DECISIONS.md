@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Plugin Review Is A Read-Only Local Audit Surface
+
+Decision: ORX may provide `orx plugins review` and `/plugins review`, with `doctor` and `audit` aliases, to summarize installed/enabled plugin state, local catalog pin drift, bin and hook trust state, plugin MCP profiles, plugin command aliases, omissions, and concrete next commands. Review must be local and read-only: it must not fetch, install, enable, trust, grant, execute plugin surfaces, mutate registry/cache/catalog/trust files, or tighten existing file permissions.
+
+Reasoning: A comfortable plugin system needs one command that tells the operator what is installed, stale, untrusted, exposed through MCP, or available as an alias. That command is guidance, not authority. Keeping it strictly read-only preserves the established boundary where install, enable, trust, grants, network calls, and execution remain separate explicit operator steps.
+
 ## 2026-06-28: Plugin Catalog Updates Register Disabled Snapshots
 
 Decision: ORX may provide `orx plugins catalog update <id>` and `/plugins catalog update <id>` to apply a local pinned git catalog update only when `plugins catalog updates` reports `update_available`. Apply reuses the existing pinned git install path and registers the updated cached snapshot disabled, even if the previous install was enabled. Current, not-installed, local-only, source-mismatch, and unknown entries must refuse without mutating registry/cache/catalog runtime state. Update apply must not fetch remote update discovery, preserve enabled state, trust hooks/bins, grant MCP tools, expose model MCP, or execute plugin surfaces.

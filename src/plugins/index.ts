@@ -107,6 +107,12 @@ export {
   renderPluginList,
 } from "./render.js";
 export {
+  createPluginReview,
+  renderPluginReview,
+  type PluginReview,
+  type PluginReviewOptions,
+} from "./review.js";
+export {
   activatePluginSkill,
   createEnabledPluginSkillsSystemMessage,
   discoverEnabledPluginSkills,
@@ -163,6 +169,7 @@ export {
   formatBinIdForMessage,
   getPluginBinTrustSummary,
   loadPluginBinsTrustConfig,
+  loadPluginBinsTrustConfigReadOnly,
   renderPluginBinInspect,
   renderPluginBinRunResult,
   renderPluginBins,
@@ -219,6 +226,7 @@ export {
   formatHookIdForMessage,
   getPluginHookTrustSummary,
   loadPluginHooksTrustConfig,
+  loadPluginHooksTrustConfigReadOnly,
   renderPluginHookInspect,
   renderPluginHookLifecycleResult,
   renderPluginHookRunResult,

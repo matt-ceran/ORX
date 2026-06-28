@@ -84,6 +84,7 @@ import {
   activatePluginPrompt,
   activatePluginRule,
   activatePluginSkill,
+  createPluginReview,
   discoverEnabledPluginBins,
   discoverEnabledPluginCommandAliases,
   discoverEnabledPluginHooks,
@@ -125,6 +126,7 @@ import {
   renderPluginInspect,
   renderPluginList,
   renderPluginPromptList,
+  renderPluginReview,
   renderPluginRuleList,
   renderPluginScaffoldResult,
   renderPluginSkillList,
@@ -403,6 +405,9 @@ const PLUGIN_SUBCOMMAND_COMPLETIONS = [
   "catalog",
   "list",
   "status",
+  "review",
+  "doctor",
+  "audit",
   "commands",
   "scaffold",
   "validate",
@@ -993,7 +998,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/plugins": {
-    usage: "/plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|commands|scaffold|validate|inspect|register|install|enable|disable]",
+    usage: "/plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold|validate|inspect|register|install|enable|disable]",
     description: "Show catalog entries and update inert plugin registry state",
     group: "Integrations",
     tier: "advanced",
@@ -2141,6 +2146,21 @@ async function handlePluginsCommand(
     return;
   }
 
+  if (subcommand === "review" || subcommand === "doctor" || subcommand === "audit") {
+    writeLine(
+      context.io.stdout,
+      renderPluginReview(
+        createPluginReview({
+          registryPath: context.pluginRegistryPath,
+          catalogPath: context.pluginCatalogPath,
+          binsConfigPath: context.pluginBinsConfigPath,
+          hooksConfigPath: context.pluginHooksConfigPath,
+        }),
+      ),
+    );
+    return;
+  }
+
   if (subcommand === "search") {
     writeLine(
       context.io.stdout,
@@ -2261,7 +2281,7 @@ async function handlePluginsCommand(
 
   writeLine(
     context.io.stderr,
-    "Usage: /plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: /plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
 }
 

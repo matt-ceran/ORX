@@ -63,6 +63,7 @@ import {
   createEnabledPluginPromptsSystemMessage,
   createEnabledPluginRulesSystemMessage,
   createEnabledPluginSkillsSystemMessage,
+  createPluginReview,
   discoverEnabledPluginBins,
   discoverEnabledPluginCommandAliases,
   discoverEnabledPluginHooks,
@@ -100,6 +101,7 @@ import {
   renderPluginCatalog,
   renderPluginInspect,
   renderPluginList,
+  renderPluginReview,
   resolvePluginBinsAuditLogPath,
   resolvePluginBinsConfigPath,
   resolvePluginHooksAuditLogPath,
@@ -695,6 +697,21 @@ async function runPluginsCommand(
     return 0;
   }
 
+  if (subcommand === "review" || subcommand === "doctor" || subcommand === "audit") {
+    writeLine(
+      io.stdout,
+      renderPluginReview(
+        createPluginReview({
+          registryPath: pluginRegistryPath,
+          catalogPath: pluginCatalogPath,
+          binsConfigPath: pluginBinsConfigPath,
+          hooksConfigPath: pluginHooksConfigPath,
+        }),
+      ),
+    );
+    return 0;
+  }
+
   if (subcommand === "search") {
     writeLine(io.stdout, renderPluginCatalog(loadPluginCatalog({ catalogPath: pluginCatalogPath })));
     return 0;
@@ -818,7 +835,7 @@ async function runPluginsCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
   );
   return 1;
 }

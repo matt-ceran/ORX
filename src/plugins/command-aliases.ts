@@ -1,6 +1,7 @@
 import {
   discoverEnabledPluginBins,
   loadPluginBinsTrustConfig,
+  loadPluginBinsTrustConfigReadOnly,
 } from "./bins.js";
 import {
   discoverEnabledPluginPrompts,
@@ -59,6 +60,7 @@ export interface PluginCommandAliasSummary {
 
 export interface PluginCommandAliasOptions extends PluginRegistryIoOptions {
   binsConfigPath?: string;
+  readOnly?: boolean;
 }
 
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
@@ -68,10 +70,21 @@ const SECRET_LIKE_PATTERN =
 export function discoverEnabledPluginCommandAliases(
   options: PluginCommandAliasOptions = {},
 ): PluginCommandAliasesDiscovery {
-  const promptDiscovery = discoverEnabledPluginPrompts({ registryPath: options.registryPath });
-  const binDiscovery = discoverEnabledPluginBins({ registryPath: options.registryPath });
-  const execDiscovery = discoverEnabledPluginExecutableCommands({ registryPath: options.registryPath });
-  const binTrust = loadPluginBinsTrustConfig({ configPath: options.binsConfigPath });
+  const promptDiscovery = discoverEnabledPluginPrompts({
+    registryPath: options.registryPath,
+    readOnly: options.readOnly,
+  });
+  const binDiscovery = discoverEnabledPluginBins({
+    registryPath: options.registryPath,
+    readOnly: options.readOnly,
+  });
+  const execDiscovery = discoverEnabledPluginExecutableCommands({
+    registryPath: options.registryPath,
+    readOnly: options.readOnly,
+  });
+  const binTrust = options.readOnly
+    ? loadPluginBinsTrustConfigReadOnly({ configPath: options.binsConfigPath })
+    : loadPluginBinsTrustConfig({ configPath: options.binsConfigPath });
 
   const promptAliases: PluginCommandAlias[] = promptDiscovery.prompts.map((prompt) => ({
     alias: `/${prompt.id}`,

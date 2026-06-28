@@ -113,7 +113,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
-  assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(output, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
@@ -147,7 +147,7 @@ test("command palette renderer is a pure grouped listing surface", () => {
 
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
-  assert.match(palette, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|reg/);
+  assert.match(palette, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold\|validate\|inspect\|reg/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -206,6 +206,8 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mcp auth o"), [["openrouter "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/mcp inspect o"), [["openrouter "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog ", "commands "], "c"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins r"), [["review ", "register "], "r"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins d"), [["doctor ", "disable "], "d"]);
   assert.deepEqual(completeSlashCommandLine("/plugins catalog check-"), [["check-updates "], "check-"]);
   assert.deepEqual(completeSlashCommandLine("/plugins catalog u"), [
     ["updates ", "update ", "upgrade ", "update-check "],
@@ -328,7 +330,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.equal(handleSlashCommand("/commands plugin", harness.context), "continue");
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
-  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(harness.stdout(), /\/plugin \[list\|status\]/);
   assert.match(harness.stdout(), /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(harness.stdout(), /\/skills \[list\|status\|activate <id>\]/);
@@ -2956,6 +2958,23 @@ test("plugins install supports pinned git catalog entries without fetch", async 
     assert.match(harness.stdout(), new RegExp(`installed_commit=${commit.slice(0, 12)}`));
     assert.match(harness.stdout(), /command: orx plugins catalog update acme\.git-slash-plugin@1\.0\.0/);
     assert.match(harness.stdout(), /fetch_install_enable_trust_grant_execute: separate_explicit_steps/);
+    assert.equal(readFileSync(registryPath, "utf8"), registryText);
+
+    assert.equal(await handleSlashCommand("/plugins review", harness.context), "continue");
+    assert.match(harness.stdout(), /Plugin Review/);
+    assert.match(harness.stdout(), /installed: 1/);
+    assert.match(harness.stdout(), /enabled: 1/);
+    assert.match(harness.stdout(), /catalog_updates_available: 1/);
+    assert.match(harness.stdout(), /id=acme\.git-slash-plugin@1\.0\.0 enabled=yes source=git catalog=update_available/);
+    assert.match(harness.stdout(), /command: orx plugins catalog update acme\.git-slash-plugin@1\.0\.0/);
+    assert.match(harness.stdout(), /network: none/);
+    assert.match(harness.stdout(), /execution: none/);
+    assert.match(harness.stdout(), /install_enable_trust_grant_fetch_execute: separate_explicit_steps/);
+    assert.equal(readFileSync(registryPath, "utf8"), registryText);
+
+    assert.equal(await handleSlashCommand("/plugins audit", harness.context), "continue");
+    assert.match(harness.stdout(), /Plugin Review/);
+    assert.match(harness.stdout(), /catalog_updates_available: 1/);
     assert.equal(readFileSync(registryPath, "utf8"), registryText);
 
     assert.equal(
