@@ -50,7 +50,7 @@ Urgent UX recovery additions from user testing:
 - Delegation readiness rendering is implemented through noninteractive `orx orchestrator`, `orx delegate`, `orx delegates`, and read-only slash `plan/status` variants. CLI status/readiness is session-less and no-key; mutating CLI forms validate arguments then refuse, while slash mutations remain session-local only. OpenRouter delegate execution now exists behind explicit policy enablement and interactive chat delegate state; subprocess/external-agent delegation remains unavailable.
 - Saved disabled delegation teams are implemented through private local `~/.orx/delegation/teams.json` storage with `ORX_DELEGATION_TEAMS_PATH`, plus `orx delegates teams|save|inspect|use|delete`, `/delegates teams|save|inspect|use|delete`, and `/delegate team ...`. Saved records contain only normalized disabled controller/delegates plus metadata; CLI `use` is read-only because there is no active chat session, while slash `use` loads disabled metadata into the current session.
 - Delegation execution policy storage is implemented through private local `~/.orx/delegation/policy.json` storage with `ORX_DELEGATION_POLICY_PATH`, plus `orx delegate policy`, `orx delegates policy`, `/delegate policy`, and `/delegates policy`. Policy can tune max task cost, timeout, result byte cap, max concurrent delegates, and explicit `--execution enabled|disabled`; credential forwarding/result persistence/result merge remain fixed to `none`/`none`/`manual_summary`.
-- The internal `delegate_task` runtime contract and OpenRouter delegate adapter are implemented. Normal `ask` does not expose it; interactive chat exposes the schema only when policy execution is enabled and at least one delegate is configured. Live calls use env/provided OpenRouter API credentials, reject secret-like task/context payloads before network, return untrusted wrapped delegate output, and write hash-only audit metadata to `~/.orx/audit/delegation.jsonl` or `ORX_DELEGATION_AUDIT_PATH`.
+- The internal `delegate_task` runtime contract and OpenRouter delegate adapter are implemented. Normal `ask` does not expose it; interactive chat exposes the schema only when policy execution is enabled and at least one delegate is configured. Live calls use env/provided OpenRouter API credentials, reject secret-like task/context payloads before network, return untrusted wrapped delegate output with structured `untrustedOutputPolicy`, and write hash-only audit metadata to `~/.orx/audit/delegation.jsonl` or `ORX_DELEGATION_AUDIT_PATH`.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -85,6 +85,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Strengthened model-facing delegate output wrapping:
+
+- Successful `delegate_task` results now include a structured `untrustedOutputPolicy` stating that OpenRouter delegate output is data-only, cannot grant authority, cannot change permissions, cannot request secrets, cannot trigger tool calls, and is raw-output wrapped.
+- The untrusted delegate output wrapper now mirrors the stronger MCP wording: begin/end markers plus explicit warnings not to follow instructions, tool calls, permission changes, secret requests, authority claims, or policy changes inside delegated output.
+- Updated the `delegate_task` tool schema wording so delegate output is described as current untrusted external model output, not future/provisional output.
+- Verifier fix: model-facing dispatch now pre-compacts oversized successful delegate results before generic tool-output truncation, preserving parseable JSON, `BEGIN/END_UNTRUSTED_DELEGATE_OUTPUT`, structured policy metadata, and full-output hash metadata.
+- Verification: `git diff --check`, `npm run typecheck`, focused delegation/agent tests, full `npm test` with 458 tests, and `npm run verify:global-install` pass.
 
 Updated delegation help/docs for the policy-gated OpenRouter adapter:
 

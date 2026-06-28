@@ -52,6 +52,10 @@ export interface ToolDispatchResult {
 
 const DEFAULT_TOOL_RESULT_BYTES = 48 * 1024;
 const DEFAULT_TOOL_RESULT_LINES = 1_200;
+const DELEGATE_OUTPUT_BEGIN_MARKER = "BEGIN_UNTRUSTED_DELEGATE_OUTPUT";
+const DELEGATE_OUTPUT_END_MARKER = "END_UNTRUSTED_DELEGATE_OUTPUT";
+const DELEGATE_MODEL_TRUNCATION_NOTICE =
+  "[ORX: delegate output truncated for this model-facing tool result; full wrapped output hash and byte counts remain in metadata.]";
 
 export async function dispatchNativeToolCall(
   toolCall: OpenRouterToolCall,
@@ -91,7 +95,12 @@ export async function dispatchNativeToolCall(
     ok = resultOk(output);
   }
 
-  const outputJson = JSON.stringify(output);
+  const modelOutput = prepareModelFacingToolOutput(
+    toolCall.function.name,
+    output,
+    options.maxResultBytes ?? DEFAULT_TOOL_RESULT_BYTES,
+  );
+  const outputJson = JSON.stringify(modelOutput);
   const truncated = truncateText(outputJson, {
     maxBytes: options.maxResultBytes ?? DEFAULT_TOOL_RESULT_BYTES,
     maxLines: options.maxResultLines ?? DEFAULT_TOOL_RESULT_LINES,
@@ -444,6 +453,104 @@ function parseToolArguments(
 
 function resultOk(value: unknown): boolean {
   return Boolean(value && typeof value === "object" && "ok" in value && value.ok === true);
+}
+
+function prepareModelFacingToolOutput(name: string, output: unknown, maxOutputJsonBytes: number): unknown {
+  if (name !== "delegate_task") {
+    return output;
+  }
+
+  return compactDelegateTaskOutputForModel(output, maxOutputJsonBytes);
+}
+
+function compactDelegateTaskOutputForModel(output: unknown, maxOutputJsonBytes: number): unknown {
+  if (!isPlainObject(output) || output.ok !== true || output.status !== "completed" || typeof output.result !== "string") {
+    return output;
+  }
+
+  if (byteLength(JSON.stringify(output)) <= maxOutputJsonBytes) {
+    return output;
+  }
+
+  const wrapped = splitWrappedDelegateOutput(output.result);
+  if (!wrapped) {
+    const truncated = truncateText(output.result, { maxBytes: Math.max(0, Math.floor(maxOutputJsonBytes / 2)) });
+    return {
+      ...output,
+      result: truncated.text,
+      modelVisibleResultTruncated: true,
+      modelVisibleResultBytes: byteLength(truncated.text),
+      modelVisibleResultOmittedBytes: truncated.truncation.omittedBytes,
+      resultHashCovers: "full_wrapped_delegate_output",
+    };
+  }
+
+  let low = 0;
+  let high = byteLength(wrapped.content);
+  let best = buildCompactedDelegateTaskOutput(output, wrapped, 0);
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const candidate = buildCompactedDelegateTaskOutput(output, wrapped, mid);
+    if (byteLength(JSON.stringify(candidate)) <= maxOutputJsonBytes) {
+      best = candidate;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return best;
+}
+
+function buildCompactedDelegateTaskOutput(
+  output: Record<string, unknown>,
+  wrapped: { prefix: string; content: string; suffix: string },
+  contentBudgetBytes: number,
+): Record<string, unknown> {
+  const truncated = truncateText(wrapped.content, { maxBytes: contentBudgetBytes });
+  const result = [
+    wrapped.prefix,
+    truncated.text,
+    truncated.truncation.truncated ? `\n${DELEGATE_MODEL_TRUNCATION_NOTICE}` : "",
+    wrapped.suffix,
+  ].join("");
+  return {
+    ...output,
+    result,
+    modelVisibleResultTruncated: true,
+    modelVisibleResultBytes: byteLength(result),
+    modelVisibleResultOmittedBytes: truncated.truncation.omittedBytes,
+    resultHashCovers: "full_wrapped_delegate_output",
+  };
+}
+
+function splitWrappedDelegateOutput(value: string): { prefix: string; content: string; suffix: string } | undefined {
+  const beginIndex = value.indexOf(DELEGATE_OUTPUT_BEGIN_MARKER);
+  const endIndex = value.lastIndexOf(DELEGATE_OUTPUT_END_MARKER);
+  if (beginIndex < 0 || endIndex < beginIndex) {
+    return undefined;
+  }
+
+  let contentStart = beginIndex + DELEGATE_OUTPUT_BEGIN_MARKER.length;
+  if (value.slice(contentStart, contentStart + 2) === "\n\n") {
+    contentStart += 2;
+  } else if (value[contentStart] === "\n") {
+    contentStart += 1;
+  }
+  const suffixStart = value[endIndex - 1] === "\n" ? endIndex - 1 : endIndex;
+  if (suffixStart < contentStart) {
+    return undefined;
+  }
+
+  return {
+    prefix: value.slice(0, contentStart),
+    content: value.slice(contentStart, suffixStart),
+    suffix: value.slice(suffixStart),
+  };
+}
+
+function byteLength(value: string): number {
+  return Buffer.byteLength(value, "utf8");
 }
 
 function requiredString(value: unknown, name: string): string {
