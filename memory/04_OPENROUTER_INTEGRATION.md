@@ -49,7 +49,7 @@ plugins: [{ id: "fusion", preset: "general-budget" }]
 - `orx ask "prompt" --model <slug>` selects an exact model for that request.
 - `orx ask "prompt" --mode auto` selects `openrouter/auto` for that request.
 - `orx ask "prompt" --mode fusion --fusion <preset>` selects `openrouter/fusion` with plugin config for that request.
-- `orx ask "prompt" --mcp-tools` exposes the read-only non-billable `mcp_call` model bridge for that one request.
+- `orx ask "prompt" --mcp-tools` exposes the model-granted read-only non-billable `mcp_call` bridge for that one request.
 - `/mode auto` selects `openrouter/auto`.
 - `/mode fusion` selects `openrouter/fusion`.
 - `/model <slug>` selects an exact model.
@@ -105,7 +105,8 @@ Current implementation checkpoint:
 - The declared OpenRouter MCP tools are `models-list`, `model-get`, `model-endpoints`, `providers-list`, `rankings-daily`, `app-rankings`, `credits-get`, `generation-get`, `benchmarks`, `docs-search`, `view-skill`, `ping`, and billable `chat-send`.
 - `/mcp remote-tools <profile>` can call guarded `tools/list` for enabled/trusted/unchanged remote HTTP profiles and render bounded untrusted metadata plus schema hashes.
 - `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` can call guarded `tools/call` only when the declared tool policy is allowed and required bearer auth is supplied through `ORX_MCP_BEARER_<PROFILE>` or `ORX_MCP_BEARER_TOKEN`. Remote output is redacted/truncated and audited without raw arguments/output.
-- Interactive `/mcp model enable` adds the ORX-owned `mcp_call` native model tool for the current chat session only. `orx ask --mcp-tools` adds the same bridge for one noninteractive request. It is limited to read-only non-billable declared MCP tools and returns redacted bounded remote output as untrusted tool context. Direct REST continues to power `/models`, `/credits`, `/generation`, `orx models`, `orx credits`, `orx generation`, and normal OpenRouter inference.
+- `/mcp allow-model-tool <profile> <tool>` and `orx mcp allow-model-tool <profile> <tool>` persist profile-hash-bound model grants for read-only non-billable declared MCP tools only; stale model grants are visible and denied before network.
+- Interactive `/mcp model enable` adds the ORX-owned `mcp_call` native model tool for the current chat session only. `orx ask --mcp-tools` adds the same bridge for one noninteractive request. It is limited to read-only non-billable declared MCP tools with active model-tool grants and returns redacted bounded remote output as untrusted tool context. Direct REST continues to power `/models`, `/credits`, `/generation`, `orx models`, `orx credits`, `orx generation`, and normal OpenRouter inference.
 
 ## Cost Tracking
 

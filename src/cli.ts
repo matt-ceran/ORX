@@ -19,6 +19,7 @@ import {
   listOpenRouterModels,
 } from "./openrouter/live.js";
 import {
+  allowMcpModelToolGrant,
   allowMcpToolGrant,
   callRemoteMcpTool,
   formatMcpToolCallResult,
@@ -30,6 +31,7 @@ import {
   renderMcpStatus,
   resolveMcpConfigPath,
   resolveMcpBearerToken,
+  revokeMcpModelToolGrant,
   revokeMcpToolGrant,
   setMcpProfilePersistentState,
   writeMcpAuditEvent,
@@ -292,7 +294,7 @@ function helpText(): string {
     "  --model <slug>          Use an exact OpenRouter model slug",
     "  --mode <auto|fusion|exact>",
     "  --fusion <preset>       Use an OpenRouter Fusion preset",
-    "  --mcp-tools             Expose read-only non-billable MCP tools to the model",
+    "  --mcp-tools             Expose model-granted read-only non-billable MCP tools",
     "",
     "Global options:",
     "  --profile <id>          Apply a saved ORX profile for this invocation",
@@ -625,6 +627,8 @@ function runMcpCommand(
         policyDeniedToolCount: summary.policyDeniedToolCount,
         toolGrantCount: summary.toolGrantCount,
         staleToolGrantCount: summary.staleToolGrantCount,
+        modelToolGrantCount: summary.modelToolGrantCount,
+        staleModelToolGrantCount: summary.staleModelToolGrantCount,
         pendingSchemaChangeCount: summary.pendingSchemaChangeCount,
       },
     });
@@ -660,6 +664,8 @@ function runMcpCommand(
             schemaChangePending: report.schemaChangePending,
             toolGrantCount: report.toolGrantCount,
             staleToolGrantCount: report.staleToolGrantCount,
+            modelToolGrantCount: report.modelToolGrantCount,
+            staleModelToolGrantCount: report.staleModelToolGrantCount,
           }
         : undefined,
     });
@@ -678,6 +684,8 @@ function runMcpCommand(
         toolEvaluations: report.evaluations,
         toolGrantCount: report.toolGrantCount,
         staleToolGrantCount: report.staleToolGrantCount,
+        modelToolGrantCount: report.modelToolGrantCount,
+        staleModelToolGrantCount: report.staleModelToolGrantCount,
       }),
     );
     return 0;
@@ -710,6 +718,8 @@ function runMcpCommand(
               .length,
             toolGrantCount: report.toolGrantCount,
             staleToolGrantCount: report.staleToolGrantCount,
+            modelToolGrantCount: report.modelToolGrantCount,
+            staleModelToolGrantCount: report.staleModelToolGrantCount,
           }
         : undefined,
     });
@@ -879,6 +889,88 @@ function runMcpCommand(
     }
   }
 
+  if (subcommand === "allow-model-tool") {
+    if (!profileId || !toolName || args.length !== 3) {
+      writeLine(io.stderr, "Usage: orx mcp allow-model-tool <profile> <tool>");
+      return 1;
+    }
+
+    try {
+      const result = allowMcpModelToolGrant(profileId, toolName, {
+        configPath: mcpConfigPath,
+        pluginRegistryPath,
+      });
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: "mcp.model_tool.allow_attempt",
+        profileId,
+        ok: result.ok,
+        details: {
+          toolName,
+          profileHash: result.profileHash,
+          risk: result.tool?.risk,
+          billable: result.tool?.billable,
+          grantProfileHash: result.grant?.profileHash,
+          previousGrantProfileHash: result.previousGrant?.profileHash,
+          message: result.message,
+        },
+      });
+      writeLine(result.ok ? io.stdout : io.stderr, result.message);
+      return result.ok ? 0 : 1;
+    } catch (error) {
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: "mcp.model_tool.allow_attempt",
+        profileId,
+        ok: false,
+        details: {
+          toolName,
+          message: "Unable to persist model MCP tool grant.",
+          error: formatErrorForMcpAudit(error),
+        },
+      });
+      writeLine(io.stderr, `Unable to persist model MCP tool grant${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
+  if (subcommand === "revoke-model-tool") {
+    if (!profileId || !toolName || args.length !== 3) {
+      writeLine(io.stderr, "Usage: orx mcp revoke-model-tool <profile> <tool>");
+      return 1;
+    }
+
+    try {
+      const result = revokeMcpModelToolGrant(profileId, toolName, {
+        configPath: mcpConfigPath,
+        pluginRegistryPath,
+      });
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: "mcp.model_tool.revoke_attempt",
+        profileId,
+        ok: result.ok,
+        details: {
+          toolName,
+          previousGrantProfileHash: result.previousGrant?.profileHash,
+          message: result.message,
+        },
+      });
+      writeLine(result.ok ? io.stdout : io.stderr, result.message);
+      return result.ok ? 0 : 1;
+    } catch (error) {
+      tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
+        type: "mcp.model_tool.revoke_attempt",
+        profileId,
+        ok: false,
+        details: {
+          toolName,
+          message: "Unable to persist model MCP tool grant.",
+          error: formatErrorForMcpAudit(error),
+        },
+      });
+      writeLine(io.stderr, `Unable to persist model MCP tool grant${formatErrorCode(error)}.`);
+      return 1;
+    }
+  }
+
   if (subcommand === "revoke-tool") {
     if (!profileId || !toolName || args.length !== 3) {
       writeLine(io.stderr, "Usage: orx mcp revoke-tool <profile> <tool>");
@@ -920,7 +1012,7 @@ function runMcpCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx mcp [list|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>]",
+    "Usage: orx mcp [list|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
   return 1;
 }

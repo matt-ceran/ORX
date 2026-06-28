@@ -19,16 +19,20 @@ export interface McpToolGrantRecord {
   grantedAt: string;
 }
 
+export interface McpModelToolGrantRecord extends McpToolGrantRecord {}
+
 export interface McpProfilesConfig {
   version: 1;
   profiles: Record<string, McpProfileConfigRecord>;
   toolGrants: Record<string, McpToolGrantRecord>;
+  modelToolGrants: Record<string, McpModelToolGrantRecord>;
 }
 
 export interface McpProfilesConfigInput {
   version: 1;
   profiles: Record<string, McpProfileConfigRecord>;
   toolGrants?: Record<string, McpToolGrantRecord>;
+  modelToolGrants?: Record<string, McpModelToolGrantRecord>;
 }
 
 export interface McpConfigPathOptions {
@@ -61,6 +65,7 @@ export function emptyMcpProfilesConfig(): McpProfilesConfig {
     version: CONFIG_VERSION,
     profiles: {},
     toolGrants: {},
+    modelToolGrants: {},
   };
 }
 
@@ -116,6 +121,18 @@ export function getMcpToolGrantRecord(
   return config.toolGrants[mcpToolGrantKey(profileId, toolName)];
 }
 
+export function mcpModelToolGrantKey(profileId: string, toolName: string): string {
+  return `${encodeURIComponent(profileId)}/${encodeURIComponent(toolName)}`;
+}
+
+export function getMcpModelToolGrantRecord(
+  config: McpProfilesConfig,
+  profileId: string,
+  toolName: string,
+): McpModelToolGrantRecord | undefined {
+  return config.modelToolGrants[mcpModelToolGrantKey(profileId, toolName)];
+}
+
 function sanitizeMcpProfilesConfig(value: unknown): McpProfilesConfig {
   if (!value || typeof value !== "object") {
     return emptyMcpProfilesConfig();
@@ -124,8 +141,10 @@ function sanitizeMcpProfilesConfig(value: unknown): McpProfilesConfig {
   const input = value as Record<string, unknown>;
   const rawProfiles = input.profiles;
   const rawToolGrants = input.toolGrants;
+  const rawModelToolGrants = input.modelToolGrants;
   const profiles: Record<string, McpProfileConfigRecord> = {};
   const toolGrants: Record<string, McpToolGrantRecord> = {};
+  const modelToolGrants: Record<string, McpModelToolGrantRecord> = {};
 
   if (rawProfiles && typeof rawProfiles === "object" && !Array.isArray(rawProfiles)) {
     for (const [key, rawRecord] of Object.entries(rawProfiles as Record<string, unknown>)) {
@@ -145,10 +164,24 @@ function sanitizeMcpProfilesConfig(value: unknown): McpProfilesConfig {
     }
   }
 
+  if (
+    rawModelToolGrants &&
+    typeof rawModelToolGrants === "object" &&
+    !Array.isArray(rawModelToolGrants)
+  ) {
+    for (const rawRecord of Object.values(rawModelToolGrants as Record<string, unknown>)) {
+      const record = sanitizeMcpToolGrantRecord(rawRecord);
+      if (record) {
+        modelToolGrants[mcpModelToolGrantKey(record.profileId, record.toolName)] = record;
+      }
+    }
+  }
+
   return {
     version: CONFIG_VERSION,
     profiles,
     toolGrants,
+    modelToolGrants,
   };
 }
 

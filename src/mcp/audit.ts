@@ -12,6 +12,8 @@ export type McpAuditEventType =
   | "mcp.profile.disable_attempt"
   | "mcp.tool.allow_attempt"
   | "mcp.tool.revoke_attempt"
+  | "mcp.model_tool.allow_attempt"
+  | "mcp.model_tool.revoke_attempt"
   | "mcp.tool.call_attempt";
 
 export interface McpAuditEvent {

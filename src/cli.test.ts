@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { runCli } from "./cli.js";
-import { setMcpProfilePersistentState } from "./mcp/index.js";
+import { allowMcpModelToolGrant, setMcpProfilePersistentState } from "./mcp/index.js";
 import {
   discoverEnabledPluginHooks,
   registerPluginManifest,
@@ -58,6 +58,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /mcp_configured_billable_tools: 1/);
     assert.match(status.stdout(), /mcp_configured_risky_tools: 1/);
     assert.match(status.stdout(), /mcp_tool_grants: 0/);
+    assert.match(status.stdout(), /mcp_model_tool_grants: 0/);
     assert.match(status.stdout(), /mcp_stale_tool_grants: 0/);
     assert.match(status.stdout(), /mcp_registry_hash: sha256:[a-f0-9]{64}/);
     assert.match(status.stdout(), /mcp_pending_schema_changes: none/);
@@ -215,6 +216,7 @@ test("cli status reflects persisted MCP profile config", async () => {
     assert.match(status.stdout(), /mcp_policy_allowed_tools: 12/);
     assert.match(status.stdout(), /mcp_policy_denied_tools: 1/);
     assert.match(status.stdout(), /mcp_tool_grants: 0/);
+    assert.match(status.stdout(), /mcp_model_tool_grants: 0/);
     assert.match(status.stdout(), /mcp_profile: profile=openrouter state=enabled/);
     assert.match(status.stdout(), /trusted_hash=sha256:[a-f0-9]{64}/);
   } finally {
@@ -244,9 +246,32 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     );
     assert.match(blocked.stderr(), /Cannot grant MCP tool openrouter\/chat-send: profile is disabled/);
 
+    const blockedModel = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "mcp", "allow-model-tool", "openrouter", "models-list"],
+        env,
+        blockedModel.io,
+      ),
+      1,
+    );
+    assert.match(blockedModel.stderr(), /Cannot grant model MCP tool openrouter\/models-list: profile is disabled/);
+
     const enabled = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "enable", "openrouter"], env, enabled.io), 0);
     assert.match(enabled.stdout(), /MCP profile openrouter enabled/);
+
+    const modelAllowed = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "mcp", "allow-model-tool", "openrouter", "models-list"],
+        env,
+        modelAllowed.io,
+      ),
+      0,
+    );
+    assert.match(modelAllowed.stdout(), /Model MCP tool grant stored for openrouter\/models-list/);
+    assert.match(readFileSync(mcpConfigPath, "utf8"), /"modelToolGrants"/);
 
     const allowed = createIo({ cwd });
     assert.equal(
@@ -259,18 +284,24 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     const inspected = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "inspect", "openrouter"], env, inspected.io), 0);
     assert.match(inspected.stdout(), /tool_grants: 1/);
+    assert.match(inspected.stdout(), /model_tool_grants: 1/);
+    assert.match(inspected.stdout(), /models-list risk=read auth=yes billable=no model_grant=active model_policy=allowed policy=allowed/);
     assert.match(inspected.stdout(), /chat-send risk=billable auth=yes billable=yes grant=active policy=allowed/);
 
     const tools = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "tools", "openrouter"], env, tools.io), 0);
     assert.match(tools.stdout(), /tool_grants: 1/);
+    assert.match(tools.stdout(), /model_tool_grants: 1/);
     assert.match(tools.stdout(), /chat-send risk=billable auth=yes billable=yes grant=active policy=allowed/);
 
     const stored = JSON.parse(readFileSync(mcpConfigPath, "utf8")) as {
       toolGrants: Record<string, { profileHash: string }>;
+      modelToolGrants: Record<string, { profileHash: string }>;
     };
     stored.toolGrants["openrouter/chat-send"].profileHash =
       "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    stored.modelToolGrants["openrouter/models-list"].profileHash =
+      "sha256:2222222222222222222222222222222222222222222222222222222222222222";
     writeFileSync(mcpConfigPath, `${JSON.stringify(stored, null, 2)}\n`);
 
     const staleInspect = createIo({ cwd });
@@ -279,7 +310,20 @@ test("cli mcp commands manage local profile and tool grant policy without an API
       0,
     );
     assert.match(staleInspect.stdout(), /stale_tool_grants: 1/);
+    assert.match(staleInspect.stdout(), /stale_model_tool_grants: 1/);
+    assert.match(staleInspect.stdout(), /models-list risk=read auth=yes billable=no model_grant=stale model_policy=denied policy=allowed/);
     assert.match(staleInspect.stdout(), /chat-send risk=billable auth=yes billable=yes grant=stale policy=denied/);
+
+    const modelRevoked = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "mcp", "revoke-model-tool", "openrouter", "models-list"],
+        env,
+        modelRevoked.io,
+      ),
+      0,
+    );
+    assert.match(modelRevoked.stdout(), /Model MCP tool grant revoked for openrouter\/models-list/);
 
     const revoked = createIo({ cwd });
     assert.equal(
@@ -293,10 +337,13 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     assert.match(status.stdout(), /mcp_policy_allowed_tools: 12/);
     assert.match(status.stdout(), /mcp_policy_denied_tools: 1/);
     assert.match(status.stdout(), /mcp_tool_grants: 0/);
+    assert.match(status.stdout(), /mcp_model_tool_grants: 0/);
 
     const audit = readFileSync(auditLogPath, "utf8");
     assert.match(audit, /"type":"mcp.tool.allow_attempt"/);
     assert.match(audit, /"type":"mcp.tool.revoke_attempt"/);
+    assert.match(audit, /"type":"mcp.model_tool.allow_attempt"/);
+    assert.match(audit, /"type":"mcp.model_tool.revoke_attempt"/);
     assert.doesNotMatch(audit, /sk-or-v1/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -895,6 +942,10 @@ test("ask --mcp-tools exposes read-only MCP calls through dedicated transport", 
 
   try {
     setMcpProfilePersistentState("openrouter", "enabled", { configPath: mcpConfigPath });
+    const modelGrant = allowMcpModelToolGrant("openrouter", "models-list", {
+      configPath: mcpConfigPath,
+    });
+    assert.equal(modelGrant.ok, true);
     const capture = createIo({
       cwd,
       fetch: async (_input, init) => {

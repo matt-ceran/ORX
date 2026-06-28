@@ -16,7 +16,11 @@ import {
 } from "./index.js";
 import { dispatchNativeToolCall, type ToolDispatchResult } from "./tool-dispatch.js";
 import type { OrxConfig } from "../config/types.js";
-import { allowMcpToolGrant, setMcpProfilePersistentState } from "../mcp/index.js";
+import {
+  allowMcpModelToolGrant,
+  allowMcpToolGrant,
+  setMcpProfilePersistentState,
+} from "../mcp/index.js";
 import type { OpenRouterToolCall } from "../openrouter/types.js";
 import type { TextTruncation } from "../tools/types.js";
 
@@ -144,6 +148,8 @@ test("dispatchNativeToolCall executes model MCP read tools with auth and redacte
 
   try {
     setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+    const modelGrant = allowMcpModelToolGrant("openrouter", "models-list", { configPath });
+    assert.equal(modelGrant.ok, true);
 
     const result = await dispatchNativeToolCall(
       {
@@ -211,6 +217,59 @@ test("dispatchNativeToolCall executes model MCP read tools with auth and redacte
     assert.match(auditText, /"source":"model_loop"/);
     assert.match(auditText, /"status":"ok"/);
     assert.doesNotMatch(auditText, /mcp-secret-token|remote-secret|claude/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("dispatchNativeToolCall denies model MCP reads before network without model grant", async () => {
+  const cwd = createTempDir();
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const auditLogPath = join(cwd, "audit", "mcp.jsonl");
+  let networkCalls = 0;
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const result = await dispatchNativeToolCall(
+      {
+        id: "call_mcp_without_model_grant",
+        type: "function",
+        function: {
+          name: "mcp_call",
+          arguments: JSON.stringify({
+            profile: "openrouter",
+            tool: "models-list",
+            arguments: {},
+          }),
+        },
+      },
+      {
+        cwd,
+        maxResultBytes: 20_000,
+        mcp: {
+          enabled: true,
+          auditLogPath,
+          configPath,
+          fetch: async () => {
+            networkCalls += 1;
+            throw new Error("model MCP call should not reach network without grant");
+          },
+        },
+      },
+    );
+
+    assert.equal(networkCalls, 0);
+    assert.equal(result.ok, false);
+    const envelope = JSON.parse(String(result.message.content));
+    const output = JSON.parse(envelope.output);
+    assert.equal(output.status, "model_policy_denied");
+    assert.equal(output.policyDecision, "denied");
+    assert.match(output.error.message, /explicit model-tool grant/);
+
+    const auditText = readFileSync(auditLogPath, "utf8");
+    assert.match(auditText, /"status":"model_policy_denied"/);
+    assert.match(auditText, /"networkAttempted":false/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

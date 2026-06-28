@@ -13,13 +13,16 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   OPENROUTER_MCP_PROFILE,
+  allowMcpModelToolGrant,
   allowMcpToolGrant,
   callRemoteMcpTool,
   discoverMcpProfile,
+  evaluateMcpModelToolPolicy,
   evaluateMcpToolPolicy,
   formatMcpToolCallResult,
   formatMcpDiscoveryResult,
   formatMcpRemoteToolsResult,
+  getMcpModelToolGrantRecord,
   getMcpToolGrantRecord,
   getMcpStatusSummary,
   getMcpProfileToolPolicyReport,
@@ -28,6 +31,7 @@ import {
   loadMcpProfilesConfig,
   renderMcpProfileTools,
   redactSecrets,
+  revokeMcpModelToolGrant,
   revokeMcpToolGrant,
   saveMcpProfilesConfig,
   setMcpProfilePersistentState,
@@ -287,7 +291,7 @@ test("plugin MCP discovery contacts enabled trusted remote-http endpoints withou
     assert.equal(result.serverInfo?.name, "context7");
     assert.match(
       formatMcpDiscoveryResult(result),
-      /tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+      /tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only/,
     );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -451,7 +455,7 @@ test("remote MCP tools/list reads bounded untrusted tool metadata without execut
     assert.match(formatted, /trust_boundary: remote tool metadata is untrusted/);
     assert.match(
       formatted,
-      /tool_execution: explicit \/mcp call or orx mcp call; tools\/list metadata is untrusted operator output; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+      /tool_execution: explicit \/mcp call or orx mcp call; tools\/list metadata is untrusted operator output; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only/,
     );
     assert.doesNotMatch(formatted, /"type":"object"/);
   } finally {
@@ -911,7 +915,7 @@ test("mcp persistent profile config stores only state and trusted hash baseline"
     assert.equal(result.trustedProfileHash, hashMcpProfile(OPENROUTER_MCP_PROFILE));
 
     const raw = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(raw).sort(), ["profiles", "toolGrants", "version"]);
+    assert.deepEqual(Object.keys(raw).sort(), ["modelToolGrants", "profiles", "toolGrants", "version"]);
     const profiles = raw.profiles as Record<string, Record<string, unknown>>;
     assert.deepEqual(Object.keys(profiles.openrouter).sort(), [
       "id",
@@ -1217,6 +1221,125 @@ test("mcp tool grant revoke removes stored grant", () => {
   }
 });
 
+test("mcp model tool grants persist and gate read-only model exposure", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-model-policy-grant-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+
+    const missingGrant = evaluateMcpModelToolPolicy("openrouter", "models-list", { configPath });
+    const grant = allowMcpModelToolGrant("openrouter", "models-list", {
+      configPath,
+      now: () => new Date("2026-06-28T13:00:00.000Z"),
+    });
+    const loaded = loadMcpProfilesConfig({ configPath });
+    const storedGrant = getMcpModelToolGrantRecord(loaded, "openrouter", "models-list");
+    const allowed = evaluateMcpModelToolPolicy("openrouter", "models-list", { configPath });
+    const summary = getMcpStatusSummary({ configPath });
+    const report = getMcpProfileToolPolicyReport("openrouter", { configPath });
+    assert.ok(report);
+    const rendered = renderMcpProfileTools(report);
+
+    assert.equal(missingGrant.decision, "denied");
+    assert.match(missingGrant.reason, /explicit model-tool grant/);
+    assert.equal(grant.ok, true);
+    assert.match(grant.message, /Model MCP tool grant stored/);
+    assert.equal(storedGrant?.toolName, "models-list");
+    assert.equal(storedGrant?.profileHash, hashMcpProfile(OPENROUTER_MCP_PROFILE));
+    assert.equal(storedGrant?.risk, "read");
+    assert.equal(storedGrant?.billable, false);
+    assert.equal(storedGrant?.grantedAt, "2026-06-28T13:00:00.000Z");
+    assert.equal(allowed.decision, "allowed");
+    assert.equal(allowed.modelGrantStatus, "active");
+    assert.match(allowed.reason, /explicit model MCP tool grant permits/);
+    assert.equal(summary.modelToolGrantCount, 1);
+    assert.equal(summary.staleModelToolGrantCount, 0);
+    assert.equal(report.modelToolGrantCount, 1);
+    assert.equal(report.staleModelToolGrantCount, 0);
+    assert.match(rendered, /model_tool_grants: 1/);
+    assert.match(rendered, /models-list risk=read auth=yes billable=no model_grant=active model_policy=allowed policy=allowed/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp model tool grants reject billable tools and stale grants are denied", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-model-policy-stale-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+    allowMcpToolGrant("openrouter", "chat-send", { configPath });
+
+    const billable = allowMcpModelToolGrant("openrouter", "chat-send", { configPath });
+    assert.equal(billable.ok, false);
+    assert.match(billable.message, /read-only non-billable/);
+
+    saveMcpProfilesConfig(
+      {
+        version: 1,
+        profiles: {
+          openrouter: {
+            id: "openrouter",
+            state: "enabled",
+            trustedProfileHash: hashMcpProfile(OPENROUTER_MCP_PROFILE),
+            updatedAt: "2026-06-28T13:00:00.000Z",
+          },
+        },
+        modelToolGrants: {
+          "openrouter/models-list": {
+            profileId: "openrouter",
+            toolName: "models-list",
+            profileHash: "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            risk: "read",
+            billable: false,
+            grantedAt: "2026-06-28T13:01:00.000Z",
+          },
+        },
+      },
+      { configPath },
+    );
+
+    const stale = evaluateMcpModelToolPolicy("openrouter", "models-list", { configPath });
+    const summary = getMcpStatusSummary({ configPath });
+    const report = getMcpProfileToolPolicyReport("openrouter", { configPath });
+    assert.ok(report);
+
+    assert.equal(stale.decision, "denied");
+    assert.equal(stale.modelGrantStatus, "stale");
+    assert.match(stale.reason, /stale for the current profile hash/);
+    assert.equal(summary.modelToolGrantCount, 1);
+    assert.equal(summary.staleModelToolGrantCount, 1);
+    assert.equal(report.modelToolGrantCount, 1);
+    assert.equal(report.staleModelToolGrantCount, 1);
+    assert.match(renderMcpProfileTools(report), /models-list risk=read auth=yes billable=no model_grant=stale model_policy=denied policy=allowed/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp model tool grant revoke removes stored grant", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-model-policy-revoke-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+    allowMcpModelToolGrant("openrouter", "models-list", { configPath });
+
+    const revoked = revokeMcpModelToolGrant("openrouter", "models-list", { configPath });
+    const missing = revokeMcpModelToolGrant("openrouter", "models-list", { configPath });
+    const modelPolicy = evaluateMcpModelToolPolicy("openrouter", "models-list", { configPath });
+
+    assert.equal(revoked.ok, true);
+    assert.match(revoked.message, /revoked/);
+    assert.equal(missing.ok, false);
+    assert.match(missing.message, /No model MCP tool grant stored/);
+    assert.equal(getMcpModelToolGrantRecord(loadMcpProfilesConfig({ configPath }), "openrouter", "models-list"), undefined);
+    assert.equal(modelPolicy.decision, "denied");
+    assert.match(modelPolicy.reason, /explicit model-tool grant/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("mcp tool policy blocks pending schema changes before tool risk checks", () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-policy-pending-"));
   const configPath = join(cwd, "mcp", "profiles.json");
@@ -1276,7 +1399,7 @@ test("mcp tools renderer includes risk auth billable and policy decisions", () =
     assert.match(rendered, /MCP tools: openrouter/);
     assert.match(
       rendered,
-      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only/,
     );
     assert.match(rendered, /decisions: allowed=12 denied=1/);
     assert.match(rendered, /models-list risk=read auth=yes billable=no policy=allowed/);
@@ -1352,6 +1475,17 @@ test("mcp config loader drops unrelated fields instead of preserving secrets", (
             token: "secret",
           },
         },
+        modelToolGrants: {
+          bad: {
+            profileId: "openrouter",
+            toolName: "models-list",
+            profileHash: "not-a-hash",
+            risk: "read",
+            billable: false,
+            grantedAt: "2026-06-28T12:00:00.000Z",
+            token: "secret",
+          },
+        },
       }),
     );
 
@@ -1363,6 +1497,7 @@ test("mcp config loader drops unrelated fields instead of preserving secrets", (
       "updatedAt",
     ]);
     assert.deepEqual(loaded.toolGrants, {});
+    assert.deepEqual(loaded.modelToolGrants, {});
     assert.doesNotMatch(JSON.stringify(loaded), /sk-or-v1-secret|token|secret/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -1602,7 +1737,7 @@ test("mcp discovery calls provided fetch for enabled trusted remote-http profile
     assert.deepEqual(result.capabilityKeys, ["resources", "tools"]);
     assert.match(
       formatMcpDiscoveryResult(result),
-      /tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+      /tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only/,
     );
   } finally {
     rmSync(cwd, { recursive: true, force: true });

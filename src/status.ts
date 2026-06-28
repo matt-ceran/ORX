@@ -87,6 +87,8 @@ export function formatStatus({
     `mcp_configured_risky_tools: ${mcpStatus.configuredRiskyToolCount}`,
     `mcp_tool_grants: ${mcpStatus.toolGrantCount}`,
     `mcp_stale_tool_grants: ${mcpStatus.staleToolGrantCount}`,
+    `mcp_model_tool_grants: ${mcpStatus.modelToolGrantCount}`,
+    `mcp_stale_model_tool_grants: ${mcpStatus.staleModelToolGrantCount}`,
     `mcp_risky_transports: ${mcpStatus.riskyTransportCount}`,
     `mcp_registry_hash: ${mcpStatus.registryHash}`,
     `mcp_pending_schema_changes: ${

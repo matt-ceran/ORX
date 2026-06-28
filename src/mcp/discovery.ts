@@ -160,7 +160,7 @@ export function formatMcpDiscoveryResult(result: McpDiscoveryResult): string {
       : undefined,
     result.error ? `  error: ${result.error}` : undefined,
     `  detail: ${result.message}`,
-    "  tool_execution: explicit /mcp call or orx mcp call; /mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only",
+    "  tool_execution: explicit /mcp call or orx mcp call; /mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only",
   ];
 
   return lines.filter((line): line is string => typeof line === "string").join("\n");

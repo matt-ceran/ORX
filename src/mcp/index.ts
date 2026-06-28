@@ -47,8 +47,10 @@ export {
   type McpTransportKind,
 } from "./registry.js";
 export {
+  allowMcpModelToolGrant,
   allowMcpToolGrant,
   evaluateDeclaredMcpToolPolicy,
+  evaluateMcpModelToolPolicy,
   evaluateMcpToolPolicy,
   formatMcpToolPolicyEvaluation,
   formatMcpProfile,
@@ -58,7 +60,10 @@ export {
   renderMcpProfileInspect,
   renderMcpProfileTools,
   renderMcpStatus,
+  revokeMcpModelToolGrant,
   revokeMcpToolGrant,
+  type McpModelToolGrantChange,
+  type McpModelToolPolicyEvaluation,
   type McpProfileToolPolicyReport,
   type McpStatusSummary,
   type McpToolGrantChange,
@@ -70,8 +75,10 @@ export {
   defaultMcpConfigPath,
   emptyMcpProfilesConfig,
   getMcpProfileConfigRecord,
+  getMcpModelToolGrantRecord,
   getMcpToolGrantRecord,
   loadMcpProfilesConfig,
+  mcpModelToolGrantKey,
   mcpToolGrantKey,
   resolveMcpConfigPath,
   saveMcpProfilesConfig,
@@ -80,6 +87,7 @@ export {
   type McpProfileConfigRecord,
   type McpProfilesConfig,
   type McpProfilesConfigInput,
+  type McpModelToolGrantRecord,
   type McpToolGrantRecord,
 } from "./config.js";
 export {

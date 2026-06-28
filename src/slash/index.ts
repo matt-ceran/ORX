@@ -25,6 +25,7 @@ import {
   type DelegationState,
 } from "../delegation/index.js";
 import {
+  allowMcpModelToolGrant,
   allowMcpToolGrant,
   callRemoteMcpTool,
   discoverMcpProfile,
@@ -39,6 +40,7 @@ import {
   renderMcpProfileTools,
   renderMcpStatus,
   resolveMcpBearerToken,
+  revokeMcpModelToolGrant,
   revokeMcpToolGrant,
   setMcpProfilePersistentState,
   writeMcpAuditEvent,
@@ -309,6 +311,8 @@ const MCP_SUBCOMMAND_COMPLETIONS = [
   "disable",
   "allow-tool",
   "revoke-tool",
+  "allow-model-tool",
+  "revoke-model-tool",
 ] as const;
 const MCP_MODEL_SUBCOMMAND_COMPLETIONS = ["status", "enable", "disable"] as const;
 const MCP_PROFILE_COMPLETIONS = ["openrouter"] as const;
@@ -802,7 +806,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|model|inspect|tools|call|remote-tools|discover|enable|disable|allow-tool|revoke-tool]",
+    usage: "/mcp [list|model|inspect|tools|call|remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
     description: "Show MCP profile policy state, gated discovery, remote metadata, and tool grants",
     group: "Integrations",
     tier: "advanced",
@@ -1326,7 +1330,9 @@ function isMcpProfileSubcommand(subcommand: string | undefined): boolean {
     subcommand === "enable" ||
     subcommand === "disable" ||
     subcommand === "allow-tool" ||
-    subcommand === "revoke-tool"
+    subcommand === "revoke-tool" ||
+    subcommand === "allow-model-tool" ||
+    subcommand === "revoke-model-tool"
   );
 }
 
@@ -2174,6 +2180,10 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
       details: {
         activeProfileIds: summary.activeProfileIds,
         registryHash: summary.registryHash,
+        toolGrantCount: summary.toolGrantCount,
+        staleToolGrantCount: summary.staleToolGrantCount,
+        modelToolGrantCount: summary.modelToolGrantCount,
+        staleModelToolGrantCount: summary.staleModelToolGrantCount,
         pendingSchemaChangeCount: summary.pendingSchemaChangeCount,
       },
     });
@@ -2206,6 +2216,8 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
             schemaChangePending: report.schemaChangePending,
             toolGrantCount: report.toolGrantCount,
             staleToolGrantCount: report.staleToolGrantCount,
+            modelToolGrantCount: report.modelToolGrantCount,
+            staleModelToolGrantCount: report.staleModelToolGrantCount,
           }
         : undefined,
     });
@@ -2224,6 +2236,8 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
         toolEvaluations: report.evaluations,
         toolGrantCount: report.toolGrantCount,
         staleToolGrantCount: report.staleToolGrantCount,
+        modelToolGrantCount: report.modelToolGrantCount,
+        staleModelToolGrantCount: report.staleModelToolGrantCount,
       }),
     );
     return;
@@ -2254,6 +2268,10 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
               .length,
             deniedCount: report.evaluations.filter((evaluation) => evaluation.decision === "denied")
               .length,
+            toolGrantCount: report.toolGrantCount,
+            staleToolGrantCount: report.staleToolGrantCount,
+            modelToolGrantCount: report.modelToolGrantCount,
+            staleModelToolGrantCount: report.staleModelToolGrantCount,
           }
         : undefined,
     });
@@ -2478,6 +2496,52 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
     return;
   }
 
+  if (subcommand === "allow-model-tool") {
+    const toolName = command.args[2];
+    if (!profileId || !toolName || command.args.length !== 3) {
+      writeLine(context.io.stderr, "Usage: /mcp allow-model-tool <profile> <tool>");
+      return;
+    }
+
+    let result: ReturnType<typeof allowMcpModelToolGrant>;
+    try {
+      result = allowMcpModelToolGrant(profileId, toolName, {
+        configPath: context.mcpConfigPath,
+        pluginRegistryPath: context.pluginRegistryPath,
+      });
+    } catch (error) {
+      tryWriteMcpAuditEvent(context, {
+        type: "mcp.model_tool.allow_attempt",
+        profileId,
+        ok: false,
+        details: {
+          toolName,
+          message: "Unable to persist model MCP tool grant.",
+          error: formatErrorForMcpAudit(error),
+        },
+      });
+      writeLine(context.io.stderr, `Unable to persist model MCP tool grant${formatErrorCode(error)}.`);
+      return;
+    }
+
+    tryWriteMcpAuditEvent(context, {
+      type: "mcp.model_tool.allow_attempt",
+      profileId,
+      ok: result.ok,
+      details: {
+        toolName,
+        profileHash: result.profileHash,
+        risk: result.tool?.risk,
+        billable: result.tool?.billable,
+        grantProfileHash: result.grant?.profileHash,
+        previousGrantProfileHash: result.previousGrant?.profileHash,
+        message: result.message,
+      },
+    });
+    writeLine(result.ok ? context.io.stdout : context.io.stderr, result.message);
+    return;
+  }
+
   if (subcommand === "revoke-tool") {
     const toolName = command.args[2];
     if (!profileId || !toolName || command.args.length !== 3) {
@@ -2508,6 +2572,48 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
     tryWriteMcpAuditEvent(context, {
       type: "mcp.tool.revoke_attempt",
+      profileId,
+      ok: result.ok,
+      details: {
+        toolName,
+        previousGrantProfileHash: result.previousGrant?.profileHash,
+        message: result.message,
+      },
+    });
+    writeLine(result.ok ? context.io.stdout : context.io.stderr, result.message);
+    return;
+  }
+
+  if (subcommand === "revoke-model-tool") {
+    const toolName = command.args[2];
+    if (!profileId || !toolName || command.args.length !== 3) {
+      writeLine(context.io.stderr, "Usage: /mcp revoke-model-tool <profile> <tool>");
+      return;
+    }
+
+    let result: ReturnType<typeof revokeMcpModelToolGrant>;
+    try {
+      result = revokeMcpModelToolGrant(profileId, toolName, {
+        configPath: context.mcpConfigPath,
+        pluginRegistryPath: context.pluginRegistryPath,
+      });
+    } catch (error) {
+      tryWriteMcpAuditEvent(context, {
+        type: "mcp.model_tool.revoke_attempt",
+        profileId,
+        ok: false,
+        details: {
+          toolName,
+          message: "Unable to persist model MCP tool grant.",
+          error: formatErrorForMcpAudit(error),
+        },
+      });
+      writeLine(context.io.stderr, `Unable to persist model MCP tool grant${formatErrorCode(error)}.`);
+      return;
+    }
+
+    tryWriteMcpAuditEvent(context, {
+      type: "mcp.model_tool.revoke_attempt",
       profileId,
       ok: result.ok,
       details: {
@@ -2579,7 +2685,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /mcp [list|model <status|enable|disable>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>]",
+    "Usage: /mcp [list|model <status|enable|disable>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
 }
 
@@ -2610,12 +2716,18 @@ function handleMcpModelCommand(command: SlashCommand, context: SlashCommandConte
 
 function renderMcpModelToolState(context: SlashCommandContext): string {
   const enabled = context.getModelMcpEnabled?.() === true;
+  const summary = getMcpStatusSummary({
+    configPath: context.mcpConfigPath,
+    pluginRegistryPath: context.pluginRegistryPath,
+  });
   return [
     "MCP model tools",
     `  state: ${enabled ? "enabled" : "disabled"}`,
     "  model_tool: mcp_call",
-    "  policy: read-only non-billable declared MCP tools only",
-    "  gates: profile enabled, trusted hash, no schema change, declared-tool policy allowed",
+    "  policy: read-only non-billable model-granted declared MCP tools only",
+    `  model_tool_grants: ${summary.modelToolGrantCount}`,
+    `  stale_model_tool_grants: ${summary.staleModelToolGrantCount}`,
+    "  gates: profile enabled, trusted hash, no schema change, declared-tool policy allowed, model-tool grant active",
     "  auth: env-only bearer tokens from ORX_MCP_BEARER_<PROFILE> or ORX_MCP_BEARER_TOKEN",
     "  trust_boundary: remote MCP tool output is untrusted model context",
   ].join("\n");

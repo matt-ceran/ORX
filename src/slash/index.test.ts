@@ -106,7 +106,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/orchestrator \[openrouter <model>\|clear\]/);
   assert.match(output, /\/delegate <add\|remove\|clear>/);
   assert.match(output, /\/delegates/);
-  assert.match(output, /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
+  assert.match(output, /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog\|list\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/skills \[list\|status\|activate <id>\]/);
   assert.match(output, /\/prompts \[list\|status\|activate <id>\]/);
@@ -118,7 +118,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -184,6 +184,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/web h"), [["help "], "h"]);
   assert.deepEqual(completeSlashCommandLine("/mcp m"), [["model "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp model e"), [["enable "], "e"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp allow-m"), [["allow-model-tool "], "allow-m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp inspect o"), [["openrouter "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/plugins en"), [["enable "], "en"]);
@@ -226,7 +227,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-  assert.match(alias.stdout(), /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\]/);
+  assert.match(alias.stdout(), /\/mcp \[list\|model\|inspect\|tools\|call\|remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -1139,7 +1140,7 @@ test("mcp inspect renders profile metadata and audits without network", async ()
     assert.match(harness.stdout(), /auth_status: required \(OAuth or dedicated expiring MCP key\)/);
     assert.match(
       harness.stdout(),
-      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only/,
     );
     assert.match(harness.stdout(), /normal_inference: direct OpenRouter REST API/);
     assert.match(harness.stdout(), /model-get risk=read auth=yes billable=no/);
@@ -1181,7 +1182,7 @@ test("mcp tools renders declared tool policy without network", async () => {
     assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes policy=blocked_by_profile/);
     assert.match(
       harness.stdout(),
-      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only/,
     );
 
     const events = readAuditEvents(auditLogPath);
@@ -1204,11 +1205,13 @@ test("mcp model toggles session-local model-visible MCP tools", async () => {
   assert.match(harness.stdout(), /MCP model tools/);
   assert.match(harness.stdout(), /state: disabled/);
   assert.match(harness.stdout(), /model_tool: mcp_call/);
+  assert.match(harness.stdout(), /policy: read-only non-billable model-granted declared MCP tools only/);
+  assert.match(harness.stdout(), /model_tool_grants: 0/);
 
   assert.equal(await handleSlashCommand("/mcp model enable", harness.context), "continue");
   assert.equal(harness.modelMcpEnabled(), true);
   assert.match(harness.stdout(), /state: enabled/);
-  assert.match(harness.stdout(), /policy: read-only non-billable declared MCP tools only/);
+  assert.match(harness.stdout(), /gates: profile enabled, trusted hash, no schema change, declared-tool policy allowed, model-tool grant active/);
 
   assert.equal(handleSlashCommand("/status", harness.context), "continue");
   assert.match(harness.stdout(), /model_mcp_tools: enabled/);
@@ -1357,7 +1360,14 @@ test("mcp allow-tool and revoke-tool persist tool grants without network", async
     assert.equal(await handleSlashCommand("/mcp allow-tool openrouter chat-send", harness.context), "continue");
     assert.match(harness.stderr(), /Cannot grant MCP tool openrouter\/chat-send: profile is disabled/);
 
+    assert.equal(await handleSlashCommand("/mcp allow-model-tool openrouter models-list", harness.context), "continue");
+    assert.match(harness.stderr(), /Cannot grant model MCP tool openrouter\/models-list: profile is disabled/);
+
     assert.equal(await handleSlashCommand("/mcp enable openrouter", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/mcp allow-model-tool openrouter models-list", harness.context), "continue");
+    assert.match(harness.stdout(), /Model MCP tool grant stored for openrouter\/models-list/);
+    assert.match(readFileSync(configPath, "utf8"), /"modelToolGrants"/);
+
     assert.equal(await handleSlashCommand("/mcp allow-tool openrouter chat-send", harness.context), "continue");
     assert.match(harness.stdout(), /MCP tool grant stored for openrouter\/chat-send/);
     assert.match(harness.stdout(), /Execution is available only through explicit operator calls/);
@@ -1366,28 +1376,40 @@ test("mcp allow-tool and revoke-tool persist tool grants without network", async
 
     assert.equal(await handleSlashCommand("/mcp inspect openrouter", harness.context), "continue");
     assert.match(harness.stdout(), /tool_grants: 1/);
+    assert.match(harness.stdout(), /model_tool_grants: 1/);
+    assert.match(harness.stdout(), /models-list risk=read auth=yes billable=no model_grant=active model_policy=allowed policy=allowed/);
     assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes grant=active policy=allowed/);
 
     assert.equal(await handleSlashCommand("/mcp tools openrouter", harness.context), "continue");
     assert.match(harness.stdout(), /tool_grants: 1/);
+    assert.match(harness.stdout(), /model_tool_grants: 1/);
     assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes grant=active policy=allowed/);
 
     const stored = JSON.parse(readFileSync(configPath, "utf8")) as {
       toolGrants: Record<string, { profileHash: string }>;
+      modelToolGrants: Record<string, { profileHash: string }>;
     };
     stored.toolGrants["openrouter/chat-send"].profileHash =
       "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    stored.modelToolGrants["openrouter/models-list"].profileHash =
+      "sha256:2222222222222222222222222222222222222222222222222222222222222222";
     writeFileSync(configPath, `${JSON.stringify(stored, null, 2)}\n`);
 
     assert.equal(await handleSlashCommand("/mcp inspect openrouter", harness.context), "continue");
     assert.match(harness.stdout(), /stale_tool_grants: 1/);
+    assert.match(harness.stdout(), /stale_model_tool_grants: 1/);
+    assert.match(harness.stdout(), /models-list risk=read auth=yes billable=no model_grant=stale model_policy=denied policy=allowed/);
     assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes grant=stale policy=denied/);
+
+    assert.equal(await handleSlashCommand("/mcp revoke-model-tool openrouter models-list", harness.context), "continue");
+    assert.match(harness.stdout(), /Model MCP tool grant revoked for openrouter\/models-list/);
 
     assert.equal(await handleSlashCommand("/mcp revoke-tool openrouter chat-send", harness.context), "continue");
     assert.match(harness.stdout(), /MCP tool grant revoked for openrouter\/chat-send/);
 
     assert.equal(await handleSlashCommand("/mcp tools openrouter", harness.context), "continue");
     assert.match(harness.stdout(), /tool_grants: 0/);
+    assert.match(harness.stdout(), /model_tool_grants: 0/);
     assert.match(harness.stdout(), /chat-send risk=billable auth=yes billable=yes policy=denied/);
     assert.equal(fetchCalls, 0);
 
@@ -1396,21 +1418,28 @@ test("mcp allow-tool and revoke-tool persist tool grants without network", async
       events.map((event) => event.type),
       [
         "mcp.tool.allow_attempt",
+        "mcp.model_tool.allow_attempt",
         "mcp.profile.enable_attempt",
+        "mcp.model_tool.allow_attempt",
         "mcp.tool.allow_attempt",
         "mcp.profile.inspect",
         "mcp.profile.tools",
         "mcp.profile.inspect",
+        "mcp.model_tool.revoke_attempt",
         "mcp.tool.revoke_attempt",
         "mcp.profile.tools",
       ],
     );
     assert.equal(events[0].ok, false);
     assert.equal(events[2].ok, true);
-    assert.equal(events[2].details.toolName, "chat-send");
-    assert.match(String(events[2].details.grantProfileHash), /^sha256:[a-f0-9]{64}$/);
-    assert.equal(events[6].ok, true);
-    assert.match(String(events[6].details.previousGrantProfileHash), /^sha256:[a-f0-9]{64}$/);
+    assert.equal(events[3].details.toolName, "models-list");
+    assert.match(String(events[3].details.grantProfileHash), /^sha256:[a-f0-9]{64}$/);
+    assert.equal(events[4].details.toolName, "chat-send");
+    assert.match(String(events[4].details.grantProfileHash), /^sha256:[a-f0-9]{64}$/);
+    assert.equal(events[8].ok, true);
+    assert.match(String(events[8].details.previousGrantProfileHash), /^sha256:[a-f0-9]{64}$/);
+    assert.equal(events[9].ok, true);
+    assert.match(String(events[9].details.previousGrantProfileHash), /^sha256:[a-f0-9]{64}$/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -1587,7 +1616,7 @@ test("mcp discover calls fetch for enabled trusted profile and does not execute 
     assert.match(harness.stdout(), /server_name: openrouter/);
     assert.match(
       harness.stdout(),
-      /tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+      /tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only/,
     );
 
     const events = readAuditEvents(auditLogPath);
@@ -1730,7 +1759,7 @@ test("mcp remote-tools calls tools/list for enabled trusted profile and does not
     assert.match(harness.stdout(), /trust_boundary: remote tool metadata is untrusted/);
     assert.match(
       harness.stdout(),
-      /tool_execution: explicit \/mcp call or orx mcp call; tools\/list metadata is untrusted operator output; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+      /tool_execution: explicit \/mcp call or orx mcp call; tools\/list metadata is untrusted operator output; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only/,
     );
     assert.doesNotMatch(harness.stdout(), /"type":"object"/);
 
@@ -2026,7 +2055,7 @@ test("mcp slash commands discover trusted plugin-provided remote-http presets", 
     assert.match(harness.stdout(), /component_path=mcp.json/);
     assert.match(
       harness.stdout(),
-      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+      /remote_tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only/,
     );
 
     assert.equal(await handleSlashCommand(`/mcp tools ${profileId}`, harness.context), "continue");
@@ -2041,7 +2070,7 @@ test("mcp slash commands discover trusted plugin-provided remote-http presets", 
     assert.match(harness.stdout(), /server_name: plugin-docs/);
     assert.match(
       harness.stdout(),
-      /tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only/,
+      /tool_execution: explicit \/mcp call or orx mcp call; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only/,
     );
   } finally {
     rmSync(cwd, { recursive: true, force: true });

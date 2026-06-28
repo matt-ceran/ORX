@@ -9,10 +9,13 @@ import {
 import { hashMcpProfile, hashMcpProfiles } from "./schema.js";
 import {
   getMcpProfileConfigRecord,
+  getMcpModelToolGrantRecord,
   getMcpToolGrantRecord,
   loadMcpProfilesConfig,
+  mcpModelToolGrantKey,
   mcpToolGrantKey,
   saveMcpProfilesConfig,
+  type McpModelToolGrantRecord,
   type McpToolGrantRecord,
 } from "./config.js";
 
@@ -37,6 +40,8 @@ export interface McpStatusSummary {
   pendingSchemaChangeCount: number;
   toolGrantCount: number;
   staleToolGrantCount: number;
+  modelToolGrantCount: number;
+  staleModelToolGrantCount: number;
 }
 
 export type McpToolPolicyDecision =
@@ -56,6 +61,9 @@ export interface McpToolPolicyEvaluation {
   reason: string;
   grantStatus?: "active" | "stale";
   toolGrant?: McpToolGrantRecord;
+  modelGrantStatus?: "active" | "stale";
+  modelToolGrant?: McpModelToolGrantRecord;
+  modelPolicyDecision?: McpToolPolicyDecision;
 }
 
 export interface McpToolPolicyContext {
@@ -74,6 +82,8 @@ export interface McpProfileToolPolicyReport {
   schemaChangePending: boolean;
   toolGrantCount: number;
   staleToolGrantCount: number;
+  modelToolGrantCount: number;
+  staleModelToolGrantCount: number;
   evaluations: McpToolPolicyEvaluation[];
 }
 
@@ -86,6 +96,32 @@ export interface McpToolGrantChange {
   profileHash?: string;
   previousGrant?: McpToolGrantRecord;
   grant?: McpToolGrantRecord;
+  message: string;
+}
+
+export interface McpModelToolPolicyEvaluation {
+  profileId: string;
+  toolName: string;
+  tool?: McpDeclaredTool;
+  decision: McpToolPolicyDecision;
+  reason: string;
+  basePolicyDecision?: McpToolPolicyDecision;
+  profileHash?: string;
+  trustedProfileHash?: string;
+  schemaChangePending?: boolean;
+  modelGrantStatus?: "active" | "stale";
+  modelToolGrant?: McpModelToolGrantRecord;
+}
+
+export interface McpModelToolGrantChange {
+  ok: boolean;
+  profileId: string;
+  toolName: string;
+  profile?: McpProfile;
+  tool?: McpDeclaredTool;
+  profileHash?: string;
+  previousGrant?: McpModelToolGrantRecord;
+  grant?: McpModelToolGrantRecord;
   message: string;
 }
 
@@ -116,11 +152,17 @@ export function getMcpStatusSummary(options: McpRegistryOptions = {}): McpStatus
     })
     .map((profile) => profile.id);
   const activeGrantKeys = new Set<string>();
+  const activeModelGrantKeys = new Set<string>();
   const toolEvaluations = profiles.flatMap((profile) =>
     profile.tools.map((tool) => {
       const toolGrant = getMcpToolGrantRecord(config, profile.id, tool.name);
       if (toolGrant && toolGrant.profileHash === profileHashes[profile.id]) {
         activeGrantKeys.add(mcpToolGrantKey(profile.id, tool.name));
+      }
+
+      const modelToolGrant = getMcpModelToolGrantRecord(config, profile.id, tool.name);
+      if (modelToolGrant && modelToolGrant.profileHash === profileHashes[profile.id]) {
+        activeModelGrantKeys.add(mcpModelToolGrantKey(profile.id, tool.name));
       }
 
       return evaluateDeclaredMcpToolPolicy(profile, tool, {
@@ -133,6 +175,16 @@ export function getMcpStatusSummary(options: McpRegistryOptions = {}): McpStatus
   );
   const staleToolGrantCount = Object.entries(config.toolGrants).filter(([key, record]) => {
     if (activeGrantKeys.has(key)) {
+      return false;
+    }
+
+    const profileHash = profileHashes[record.profileId];
+    const profile = profiles.find((candidate) => candidate.id === record.profileId);
+    const tool = profile?.tools.find((candidate) => candidate.name === record.toolName);
+    return !profileHash || !tool || record.profileHash !== profileHash;
+  }).length;
+  const staleModelToolGrantCount = Object.entries(config.modelToolGrants).filter(([key, record]) => {
+    if (activeModelGrantKeys.has(key)) {
       return false;
     }
 
@@ -183,6 +235,8 @@ export function getMcpStatusSummary(options: McpRegistryOptions = {}): McpStatus
     pendingSchemaChangeCount: pendingSchemaChangeProfileIds.length,
     toolGrantCount: Object.keys(config.toolGrants).length,
     staleToolGrantCount,
+    modelToolGrantCount: Object.keys(config.modelToolGrants).length,
+    staleModelToolGrantCount,
   };
 }
 
@@ -223,6 +277,92 @@ export function evaluateMcpToolPolicy(
     ),
     futureAllowedToolIds: options.futureAllowedToolIds,
   });
+}
+
+export function evaluateMcpModelToolPolicy(
+  profileId: string,
+  toolName: string,
+  options: McpRegistryOptions = {},
+): McpModelToolPolicyEvaluation {
+  const config = options.config ?? loadMcpProfilesConfig({ configPath: options.configPath });
+  const summary = getMcpStatusSummary({ ...options, config });
+  const profile = summary.profiles.find((candidate) => candidate.id === profileId);
+  if (!profile) {
+    return {
+      profileId,
+      toolName,
+      decision: "unknown_profile",
+      reason: `Unknown MCP profile: ${profileId}`,
+    };
+  }
+
+  const tool = profile.tools.find((candidate) => candidate.name === toolName);
+  if (!tool) {
+    return {
+      profileId,
+      toolName,
+      decision: "unknown_tool",
+      reason: `Unknown MCP tool for profile ${profileId}: ${toolName}`,
+      profileHash: summary.profileHashes[profile.id],
+      trustedProfileHash: summary.trustedProfileHashes[profile.id],
+      schemaChangePending: summary.pendingSchemaChangeProfileIds.includes(profile.id),
+    };
+  }
+
+  const profileHash = summary.profileHashes[profile.id];
+  const trustedProfileHash = summary.trustedProfileHashes[profile.id];
+  const schemaChangePending = summary.pendingSchemaChangeProfileIds.includes(profile.id);
+  const modelToolGrant = getMcpModelToolGrantRecord(config, profile.id, tool.name);
+  const modelGrantStatus = getModelToolGrantStatus(profileHash, modelToolGrant);
+  const basePolicy = evaluateDeclaredMcpToolPolicy(profile, tool, {
+    profileHash,
+    trustedProfileHash,
+    schemaChangePending,
+    toolGrant: getMcpToolGrantRecord(config, profile.id, tool.name),
+  });
+  const base = {
+    profileId: profile.id,
+    toolName: tool.name,
+    tool,
+    basePolicyDecision: basePolicy.decision,
+    profileHash,
+    trustedProfileHash,
+    schemaChangePending,
+    ...formatModelGrantForEvaluation(modelToolGrant, modelGrantStatus),
+  };
+
+  if (basePolicy.decision !== "allowed") {
+    return {
+      ...base,
+      decision: basePolicy.decision,
+      reason: basePolicy.reason,
+    };
+  }
+
+  if (tool.risk !== "read" || tool.billable) {
+    return {
+      ...base,
+      decision: "denied",
+      reason: "model-visible MCP calls are limited to read-only non-billable declared tools",
+    };
+  }
+
+  if (modelGrantStatus !== "active") {
+    return {
+      ...base,
+      decision: "denied",
+      reason:
+        modelGrantStatus === "stale"
+          ? "model MCP tool grant is stale for the current profile hash"
+          : "model MCP tools require an explicit model-tool grant",
+    };
+  }
+
+  return {
+    ...base,
+    decision: "allowed",
+    reason: "explicit model MCP tool grant permits this read-only tool",
+  };
 }
 
 export function evaluateDeclaredMcpToolPolicy(
@@ -335,14 +475,33 @@ export function getMcpProfileToolPolicyReport(
       const grant = getMcpToolGrantRecord(config, profile.id, tool.name);
       return Boolean(grant && grant.profileHash !== summary.profileHashes[profile.id]);
     }).length,
+    modelToolGrantCount: profile.tools.filter((tool) =>
+      Boolean(getMcpModelToolGrantRecord(config, profile.id, tool.name)),
+    ).length,
+    staleModelToolGrantCount: profile.tools.filter((tool) => {
+      const grant = getMcpModelToolGrantRecord(config, profile.id, tool.name);
+      return Boolean(grant && grant.profileHash !== summary.profileHashes[profile.id]);
+    }).length,
     evaluations: profile.tools.map((tool) => {
-      return evaluateDeclaredMcpToolPolicy(profile, tool, {
+      const evaluation = evaluateDeclaredMcpToolPolicy(profile, tool, {
         profileHash: summary.profileHashes[profile.id],
         trustedProfileHash: summary.trustedProfileHashes[profile.id],
         schemaChangePending: summary.pendingSchemaChangeProfileIds.includes(profile.id),
         toolGrant: getMcpToolGrantRecord(config, profile.id, tool.name),
         futureAllowedToolIds: options.futureAllowedToolIds,
       });
+      const modelToolGrant = getMcpModelToolGrantRecord(config, profile.id, tool.name);
+      const modelPolicy = modelToolGrant
+        ? evaluateMcpModelToolPolicy(profile.id, tool.name, { ...options, config })
+        : undefined;
+      return {
+        ...evaluation,
+        ...formatModelGrantForEvaluation(
+          modelToolGrant,
+          getModelToolGrantStatus(summary.profileHashes[profile.id], modelToolGrant),
+        ),
+        modelPolicyDecision: modelPolicy?.decision,
+      };
     }),
   };
 }
@@ -465,6 +624,123 @@ export function revokeMcpToolGrant(
   };
 }
 
+export function allowMcpModelToolGrant(
+  profileId: string,
+  toolName: string,
+  options: McpRegistryOptions & { now?: () => Date } = {},
+): McpModelToolGrantChange {
+  const config = options.config ?? loadMcpProfilesConfig({ configPath: options.configPath });
+  const summary = getMcpStatusSummary({ ...options, config });
+  const profile = summary.profiles.find((candidate) => candidate.id === profileId);
+  if (!profile) {
+    return {
+      ok: false,
+      profileId,
+      toolName,
+      message: `Unknown MCP profile: ${profileId}`,
+    };
+  }
+
+  const tool = profile.tools.find((candidate) => candidate.name === toolName);
+  if (!tool) {
+    return {
+      ok: false,
+      profileId,
+      toolName,
+      profile,
+      message: `Unknown MCP tool for profile ${profileId}: ${toolName}`,
+    };
+  }
+
+  const profileHash = summary.profileHashes[profile.id];
+  const basePolicy = evaluateDeclaredMcpToolPolicy(profile, tool, {
+    profileHash,
+    trustedProfileHash: summary.trustedProfileHashes[profile.id],
+    schemaChangePending: summary.pendingSchemaChangeProfileIds.includes(profile.id),
+    toolGrant: getMcpToolGrantRecord(config, profile.id, tool.name),
+  });
+  if (basePolicy.decision !== "allowed") {
+    return {
+      ok: false,
+      profileId,
+      toolName,
+      profile,
+      tool,
+      profileHash,
+      message: `Cannot grant model MCP tool ${profileId}/${toolName}: ${basePolicy.reason}.`,
+    };
+  }
+
+  if (tool.risk !== "read" || tool.billable) {
+    return {
+      ok: false,
+      profileId,
+      toolName,
+      profile,
+      tool,
+      profileHash,
+      message:
+        `Cannot grant model MCP tool ${profileId}/${toolName}: model-visible MCP calls are limited to read-only non-billable declared tools.`,
+    };
+  }
+
+  const key = mcpModelToolGrantKey(profile.id, tool.name);
+  const previousGrant = config.modelToolGrants[key];
+  const grant: McpModelToolGrantRecord = {
+    profileId: profile.id,
+    toolName: tool.name,
+    profileHash,
+    risk: tool.risk,
+    billable: tool.billable,
+    grantedAt: (options.now?.() ?? new Date()).toISOString(),
+  };
+  config.modelToolGrants[key] = grant;
+  saveMcpProfilesConfig(config, { configPath: options.configPath });
+
+  return {
+    ok: true,
+    profileId,
+    toolName,
+    profile,
+    tool,
+    profileHash,
+    previousGrant,
+    grant,
+    message: previousGrant
+      ? `Model MCP tool grant updated for ${profile.id}/${tool.name}. Model-visible execution requires /mcp model enable or orx ask --mcp-tools.`
+      : `Model MCP tool grant stored for ${profile.id}/${tool.name}. Model-visible execution requires /mcp model enable or orx ask --mcp-tools.`,
+  };
+}
+
+export function revokeMcpModelToolGrant(
+  profileId: string,
+  toolName: string,
+  options: McpRegistryOptions = {},
+): McpModelToolGrantChange {
+  const config = options.config ?? loadMcpProfilesConfig({ configPath: options.configPath });
+  const key = mcpModelToolGrantKey(profileId, toolName);
+  const previousGrant = config.modelToolGrants[key];
+  if (!previousGrant) {
+    return {
+      ok: false,
+      profileId,
+      toolName,
+      message: `No model MCP tool grant stored for ${profileId}/${toolName}.`,
+    };
+  }
+
+  delete config.modelToolGrants[key];
+  saveMcpProfilesConfig(config, { configPath: options.configPath });
+
+  return {
+    ok: true,
+    profileId,
+    toolName,
+    previousGrant,
+    message: `Model MCP tool grant revoked for ${profileId}/${toolName}.`,
+  };
+}
+
 export function renderMcpStatus(summary: McpStatusSummary = getMcpStatusSummary()): string {
   const active = summary.activeProfileIds.length > 0 ? summary.activeProfileIds.join(",") : "none";
   const lines = [
@@ -482,6 +758,8 @@ export function renderMcpStatus(summary: McpStatusSummary = getMcpStatusSummary(
     `  risky_transports: ${summary.riskyTransportCount}`,
     `  tool_grants: ${summary.toolGrantCount}`,
     `  stale_tool_grants: ${summary.staleToolGrantCount}`,
+    `  model_tool_grants: ${summary.modelToolGrantCount}`,
+    `  stale_model_tool_grants: ${summary.staleModelToolGrantCount}`,
     `  registry_hash: ${summary.registryHash}`,
     `  pending_schema_changes: ${formatSchemaChanges(summary.pendingSchemaChangeCount)}`,
   ];
@@ -506,6 +784,8 @@ export interface FormatMcpProfileOptions {
   toolEvaluations?: McpToolPolicyEvaluation[];
   toolGrantCount?: number;
   staleToolGrantCount?: number;
+  modelToolGrantCount?: number;
+  staleModelToolGrantCount?: number;
 }
 
 export function formatMcpProfile(
@@ -565,7 +845,7 @@ export function renderMcpProfileInspect(
       ? "  auth_status: required (OAuth or dedicated expiring MCP key)"
       : "  auth_status: not required",
     `  write_capable: ${profile.writeCapable ? "yes" : "no"}`,
-    "  remote_tool_execution: explicit /mcp call or orx mcp call; /mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only",
+    "  remote_tool_execution: explicit /mcp call or orx mcp call; /mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only",
     "  normal_inference: direct OpenRouter REST API",
     `  profile_hash: ${currentHash}`,
     options.trustedProfileHash ? `  trusted_hash: ${options.trustedProfileHash}` : undefined,
@@ -576,6 +856,12 @@ export function renderMcpProfileInspect(
     typeof options.toolGrantCount === "number" ? `  tool_grants: ${options.toolGrantCount}` : undefined,
     typeof options.staleToolGrantCount === "number"
       ? `  stale_tool_grants: ${options.staleToolGrantCount}`
+      : undefined,
+    typeof options.modelToolGrantCount === "number"
+      ? `  model_tool_grants: ${options.modelToolGrantCount}`
+      : undefined,
+    typeof options.staleModelToolGrantCount === "number"
+      ? `  stale_model_tool_grants: ${options.staleModelToolGrantCount}`
       : undefined,
     `  notes: ${profile.notes}`,
     "  tools:",
@@ -598,8 +884,10 @@ export function renderMcpProfileTools(report: McpProfileToolPolicyReport): strin
     report.schemaChangePending ? "  schema_change: pending" : undefined,
     `  tool_grants: ${report.toolGrantCount}`,
     `  stale_tool_grants: ${report.staleToolGrantCount}`,
+    `  model_tool_grants: ${report.modelToolGrantCount}`,
+    `  stale_model_tool_grants: ${report.staleModelToolGrantCount}`,
     `  decisions: allowed=${counts.allowed} denied=${counts.denied} blocked_by_profile=${counts.blocked_by_profile} blocked_by_trust=${counts.blocked_by_trust} blocked_by_schema_change=${counts.blocked_by_schema_change}`,
-    "  remote_tool_execution: explicit /mcp call or orx mcp call; /mcp model enable or orx ask --mcp-tools exposes read-only non-billable mcp_call only",
+    "  remote_tool_execution: explicit /mcp call or orx mcp call; /mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only",
     "  tools:",
     ...report.evaluations.map((evaluation) => `    - ${formatMcpToolPolicyEvaluation(evaluation)}`),
   ];
@@ -615,6 +903,8 @@ export function formatMcpToolPolicyEvaluation(evaluation: McpToolPolicyEvaluatio
     tool ? `auth=${tool.authRequired ? "yes" : "no"}` : undefined,
     tool ? `billable=${tool.billable ? "yes" : "no"}` : undefined,
     evaluation.grantStatus ? `grant=${evaluation.grantStatus}` : undefined,
+    evaluation.modelGrantStatus ? `model_grant=${evaluation.modelGrantStatus}` : undefined,
+    evaluation.modelPolicyDecision ? `model_policy=${evaluation.modelPolicyDecision}` : undefined,
     `policy=${evaluation.decision}`,
     `reason=${quotePolicyReason(evaluation.reason)}`,
   ]
@@ -676,6 +966,33 @@ function formatGrantForEvaluation(
     ? {
         toolGrant,
         grantStatus,
+      }
+    : {};
+}
+
+function getModelToolGrantStatus(
+  profileHash: string | undefined,
+  grant: McpModelToolGrantRecord | undefined,
+): "active" | "stale" | undefined {
+  if (!grant) {
+    return undefined;
+  }
+
+  if (profileHash && grant.profileHash === profileHash) {
+    return "active";
+  }
+
+  return "stale";
+}
+
+function formatModelGrantForEvaluation(
+  modelToolGrant: McpModelToolGrantRecord | undefined,
+  modelGrantStatus: "active" | "stale" | undefined,
+): Pick<McpToolPolicyEvaluation, "modelToolGrant" | "modelGrantStatus"> {
+  return modelToolGrant && modelGrantStatus
+    ? {
+        modelToolGrant,
+        modelGrantStatus,
       }
     : {};
 }

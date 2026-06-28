@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Model MCP Requires Per-Tool Model Grants
+
+Decision: ORX model-visible MCP calls require explicit, persisted model-tool grants in addition to `/mcp model enable` or `orx ask --mcp-tools`. `/mcp allow-model-tool`, `/mcp revoke-model-tool`, and `orx mcp allow-model-tool|revoke-model-tool` store only profile id, tool name, current profile hash, risk, billable flag, and granted timestamp in the private MCP config. Grants are allowed only for read-only non-billable declared tools on enabled, trusted, unchanged profiles. Stale model grants are visible in status/tool output and denied before network. Billable, write, and destructive MCP tools remain unavailable to the model loop even if explicit operator `/mcp call` grants exist.
+
+Reasoning: Session-local model MCP opt-in prevents accidental exposure, but exposing every read-only tool from every enabled trusted profile is still broader than needed. A second, profile-hash-bound model allowlist lets the operator choose which remote tools the model can call while preserving the existing MCP trust model: profile/schema drift invalidates approval, remote output remains untrusted, and billable/write/destructive model autonomy stays out of scope.
+
 ## 2026-06-28: Model-Visible MCP Starts Session-Local And Read-Only
 
 Decision: ORX may expose one native model tool, `mcp_call`, only after the operator enables it in the current interactive chat with `/mcp model enable`. The tool is not present in normal model requests by default and `/mcp model disable`, `/new`, or `/resume` remove the session-local exposure. `mcp_call` reuses MCP profile state, trusted profile hashes, schema-change gates, declared-tool policy, env-only bearer auth, DNS-vetted transport, redaction/truncation, and MCP audit events. In this first model-loop slice, model-visible calls are limited to read-only non-billable declared tools, even if an operator has granted a billable/write/destructive tool for explicit operator calls.

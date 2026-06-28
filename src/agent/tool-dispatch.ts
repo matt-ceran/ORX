@@ -8,7 +8,7 @@ import {
 } from "../tools/index.js";
 import {
   callRemoteMcpTool,
-  evaluateMcpToolPolicy,
+  evaluateMcpModelToolPolicy,
   resolveMcpBearerToken,
   writeMcpAuditEvent,
   type McpToolCallResult,
@@ -225,28 +225,31 @@ async function runModelMcpCallTool(
     configPath: mcp.configPath,
     pluginRegistryPath: mcp.pluginRegistryPath,
   };
-  const policy = evaluateMcpToolPolicy(profileId, toolName, registryOptions);
-  if (policy.tool && (policy.tool.risk !== "read" || policy.tool.billable)) {
+  const policy = evaluateMcpModelToolPolicy(profileId, toolName, registryOptions);
+  if (policy.decision !== "allowed") {
     const output = {
       ok: false,
       status: "model_policy_denied",
       profileId,
       toolName,
       policyDecision: policy.decision,
-      toolRisk: policy.tool.risk,
-      billable: policy.tool.billable,
+      basePolicyDecision: policy.basePolicyDecision,
+      toolRisk: policy.tool?.risk,
+      billable: policy.tool?.billable,
+      modelGrantStatus: policy.modelGrantStatus,
       error: {
         code: "MCP_MODEL_TOOL_DENIED",
-        message:
-          "Model-visible MCP calls are limited to read-only non-billable declared tools.",
+        message: policy.reason,
       },
     };
     tryWriteModelMcpAudit(mcp, profileId, toolName, false, {
       source: "model_loop",
       status: "model_policy_denied",
       policyDecision: policy.decision,
-      toolRisk: policy.tool.risk,
-      billable: policy.tool.billable,
+      basePolicyDecision: policy.basePolicyDecision,
+      toolRisk: policy.tool?.risk,
+      billable: policy.tool?.billable,
+      modelGrantStatus: policy.modelGrantStatus,
       networkAttempted: false,
     });
     return output;
