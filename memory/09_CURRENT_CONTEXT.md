@@ -23,13 +23,13 @@ Urgent UX recovery additions from user testing:
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; executable plugin surfaces remain inactive.
-- Plugin install/register now snapshots sanitized manifests plus declared components into ORX-owned plugin cache storage before registry persistence; enabled skill discovery resolves from the cached manifest path, not the original source checkout.
+- Plugin install/register now snapshots sanitized manifests plus declared components and declared hook cwd directories into ORX-owned plugin cache storage before registry persistence; enabled skill/hook discovery resolves from the cached manifest path, not the original source checkout.
 - Plugin catalog support is local-only: `orx plugins catalog`, `/plugins catalog`, and `plugins install <catalog-id>` read sanitized entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH` and do not fetch remote sources.
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` as untrusted context; executable plugin commands remain inactive.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
 - Enabled plugin `components.mcpServers` JSON can contribute render-only MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, and `/status`; `/mcp discover` refuses plugin-sourced profiles and no plugin MCP tools execute.
-- Enabled plugin `components.hooks` JSON can contribute render-only hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and hook execution remains inactive.
+- Enabled plugin `components.hooks` JSON can contribute hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and explicit `hooks run` / `/hooks run` can manually execute a trusted current hash with minimal env/cwd and JSONL audit logging. Automatic lifecycle hook events are not wired yet.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -65,14 +65,17 @@ Current files:
 
 ## Latest Work
 
-Implemented render-only plugin hook discovery and hash trust:
+Implemented trusted plugin hook manual runtime:
 
 - Added `src/plugins/hooks.ts` for bounded discovery of enabled-plugin `components.hooks` JSON from the ORX-owned cached manifest path only.
 - Hook ids are namespaced as `plugin:<plugin-id>:<hook-id>` and hook hashes include sanitized hook declarations plus plugin manifest/component provenance.
-- Added private hook trust state under `~/.orx/plugins/hooks.json` with `ORX_PLUGIN_HOOKS_CONFIG_PATH`, `orx hooks list|inspect|trust|untrust`, `/hooks list|inspect|trust|untrust`, Tab completion, and `/status` hook definition/trusted/pending counts.
-- Trusted hooks still do not execute. `/status` keeps `plugin_enabled_hooks: 0` for runtime-enabled hooks while separately reporting hook definitions and trust state.
-- Focused verification: `npm run typecheck`, `git diff --check`, and `npm run build && node --test dist/plugins/hooks.test.js dist/plugins/registry.test.js dist/cli.test.js dist/slash/index.test.js dist/tui/chat.test.js` pass with 130 tests.
-- Next likely plugin work: executable slash-command design or a hook execution runtime that consumes trusted hook hashes with minimal env/cwd/audit policy.
+- Private hook trust state lives under `~/.orx/plugins/hooks.json` with `ORX_PLUGIN_HOOKS_CONFIG_PATH`; hook audit logs default to `~/.orx/audit/hooks.jsonl` with `ORX_PLUGIN_HOOKS_AUDIT_PATH`.
+- Added `orx hooks run <id>` and `/hooks run <id>` for explicit manual execution of trusted current hashes only. Unknown, untrusted, and changed-hash hooks are blocked before spawning anything.
+- Hook runs use the cached plugin root plus optional safe relative `cwd`, forward only declared env names with inherited process env disabled, apply hook/default timeout and output byte caps, redact forwarded env values from rendered/audited output, and write private JSONL audit events.
+- Declared hook cwd directories are copied into the ORX-owned cache during install, including when the hooks JSON file itself is nested inside the cwd, so trusted hooks continue to run from cached plugin state after the original source checkout is removed. Successful hook commands whose audit event cannot be persisted are treated as failed runs.
+- `/status` now shows `plugin_hook_runtime: manual_run_only`, `plugin_hooks_audit_path`, hook definitions/trusted/pending counts, and keeps `plugin_enabled_hooks: 0` because automatic lifecycle hooks are not enabled.
+- Verification: `npm run typecheck`, `npm run build && node --test dist/plugins/hooks.test.js dist/plugins/registry.test.js dist/cli.test.js dist/slash/index.test.js dist/tools/tools.test.js` with 136 focused tests, `git diff --check`, and `npm test` with 315 tests pass. Verifier rechecked audit-failure and nested hook-cwd cache probes with no remaining findings.
+- Next likely plugin work: automatic lifecycle hook event wiring, executable plugin slash-command design, or plugin MCP endpoint discovery/runtime trust policy.
 
 Implemented render-only plugin MCP presets routed through MCP policy:
 
@@ -134,7 +137,7 @@ Implemented and verified plugin management CLI ergonomics:
 
 - Added `orx plugins list|inspect|register|install|enable|disable` as a no-API-key, noninteractive wrapper around the existing private plugin registry.
 - Added `/plugins install <manifest-path>` as an operator-facing alias for the existing inert `/plugins register <manifest-path>` flow.
-- Plugin install/register still stores a local disabled registry record only; enabling a plugin persists an enabled marker but hooks, bins, plugin MCP servers, plugin commands, and plugin code execution remain inactive.
+- Plugin install/register still stores a local disabled registry record only; enabling a plugin persists an enabled marker. Later work added explicit trusted `hooks run` manual execution; automatic lifecycle hooks, bins, plugin MCP servers, plugin commands, and other plugin code execution remain inactive.
 - Updated slash completions, help/palette usage, README, and command memory for the new `install` alias and CLI plugin commands.
 - Added focused CLI coverage for install/list/inspect/enable/disable without `OPENROUTER_API_KEY`, plus updated slash completion/help assertions.
 - Verifier found and fixed plugin registry override parent chmod behavior, so existing `ORX_PLUGIN_REGISTRY_PATH` parent directories keep their mode while default/new ORX-owned registry directories remain private and registry files stay `0600`.
@@ -338,7 +341,7 @@ Implemented and verified the Phase 9 Slice 2 Agent Skills loader with progressiv
 - Skill discovery fails closed if an enabled plugin registry record lacks a safe absolute manifest path, preventing malformed registry state from resolving skills relative to the process cwd.
 - `/status` now reports `plugin_enabled_skills`.
 - Session JSON can store `activatedSkills` provenance while keeping API keys out of saved config snapshots.
-- Hooks, bins, plugin commands, plugin MCP servers, network/fetch, and plugin code execution remain inactive.
+- Later work added explicit trusted `hooks run` manual execution; automatic lifecycle hooks, bins, plugin commands, plugin MCP servers, network/fetch, and other plugin code execution remain inactive.
 - `npm run typecheck`, `git diff --check`, targeted plugin/slash/runtime/session/CLI/chat tests, and `npm test` pass with 177 tests.
 
 Implemented and verified the Phase 9 Slice 1 plugin manifest/registry/lockfile foundation:
@@ -347,7 +350,7 @@ Implemented and verified the Phase 9 Slice 1 plugin manifest/registry/lockfile f
 - Added private plugin registry persistence under `~/.orx/plugins/registry.json`, with `ORX_PLUGIN_REGISTRY_PATH` override support and `0700` directory / `0600` file writes.
 - Added installed vs enabled plugin state. Registering a local manifest stores the plugin disabled by default; enable/disable persist only an inert state marker.
 - Added `/plugins list`, `/plugins inspect <id>`, `/plugins register <manifest-path>`, `/plugins enable <id>`, and `/plugins disable <id>`.
-- `/plugins` and `/status` explicitly show that hooks, bins, plugin MCP servers, commands, and plugin code execution remain inactive in this scaffold.
+- Later work added explicit trusted `hooks run` manual execution; `/plugins` and `/status` explicitly show that automatic lifecycle hooks, bins, plugin MCP servers, commands, and other plugin code execution remain inactive in this scaffold.
 - Added status visibility for installed plugin count, enabled plugin count, enabled hooks, enabled bins, and enabled MCP count; executable counts remain `0` in this slice.
 - Hardened manifests and loaded registry records against secret-like values, terminal control characters, credential/query-bearing git URLs, unpinned git sources, poisoned display metadata, and unbounded local component hashing.
 - Added tests for local register/list/inspect/enable/disable, invalid manifest rejection, no network/fetch, secret-field dropping, private registry file modes, registry override paths, status visibility, git source pinning, bounded component hashing, and poisoned registry sanitization.

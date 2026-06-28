@@ -19,7 +19,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /Commands:/);
     assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
     assert.match(help.stdout(), /plugins\s+List catalog entries, inspect, register\/install, enable, or disable plugins/);
-    assert.match(help.stdout(), /hooks\s+List, inspect, trust, or untrust plugin hook definitions/);
+    assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
   }
@@ -345,8 +345,8 @@ test("cli plugins install list inspect enable and disable without an API key", a
       0,
     );
     assert.match(inspected.stdout(), /Plugin: acme\.cli-plugin@1\.0\.0/);
-    assert.match(inspected.stdout(), /executable_surfaces: hooks=inactive bins=inactive mcp=inactive/);
-    assert.match(inspected.stdout(), /plugin_code_execution: disabled in this scaffold/);
+    assert.match(inspected.stdout(), /executable_surfaces: hooks=manual_trust_required bins=inactive mcp=inactive/);
+    assert.match(inspected.stdout(), /plugin_code_execution: hooks run only through explicit \/hooks run/);
 
     const enabled = createNoFetchIo();
     assert.equal(
@@ -358,7 +358,7 @@ test("cli plugins install list inspect enable and disable without an API key", a
       0,
     );
     assert.match(enabled.stdout(), /Plugin acme\.cli-plugin@1\.0\.0 enabled/);
-    assert.match(enabled.stdout(), /executable surfaces remain inactive/);
+    assert.match(enabled.stdout(), /automatic executable surfaces remain inactive/);
 
     const disabled = createNoFetchIo();
     assert.equal(
@@ -391,11 +391,15 @@ test("cli plugins install list inspect enable and disable without an API key", a
   }
 });
 
-test("cli hooks list inspect trust and untrust without an API key or execution", async () => {
+test("cli hooks list inspect trust run and untrust without an API key or fetch", async () => {
   const cwd = createTempDir();
   const registryPath = join(cwd, "plugins", "registry.json");
   const hooksConfigPath = join(cwd, "hooks", "trust.json");
+  const hooksAuditLogPath = join(cwd, "audit", "hooks.jsonl");
   const manifestPath = join(cwd, "plugin", "orx-plugin.json");
+  const hookCommand = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
+    "console.log('cli=' + process.env.CI)",
+  )}`;
   let fetchCalls = 0;
   mkdirSync(join(cwd, "plugin"), { recursive: true });
   writeFileSync(
@@ -404,7 +408,7 @@ test("cli hooks list inspect trust and untrust without an API key or execution",
       hooks: {
         format: {
           event: "post_tool_use",
-          command: "npm run format",
+          command: hookCommand,
           env: ["CI"],
           timeoutMs: 5000,
         },
@@ -435,6 +439,8 @@ test("cli hooks list inspect trust and untrust without an API key or execution",
     }),
   );
   const env = {
+    CI: "cli-ci",
+    ORX_PLUGIN_HOOKS_AUDIT_PATH: hooksAuditLogPath,
     ORX_PLUGIN_HOOKS_CONFIG_PATH: hooksConfigPath,
     ORX_PLUGIN_REGISTRY_PATH: registryPath,
   };
@@ -468,23 +474,36 @@ test("cli hooks list inspect trust and untrust without an API key or execution",
     assert.equal(await runCli(["node", "cli", "hooks", "list"], env, listed.io), 0);
     assert.match(listed.stdout(), /discovered_hooks: 1/);
     assert.match(listed.stdout(), /trusted=no/);
-    assert.match(listed.stdout(), /execution=inactive/);
+    assert.match(listed.stdout(), /execution=trust-required/);
 
     const inspected = createNoFetchIo();
     assert.equal(await runCli(["node", "cli", "hooks", "inspect", hookId], env, inspected.io), 0);
     assert.match(inspected.stdout(), /Hook: plugin:acme\.hook-cli-plugin@1\.0\.0:format/);
-    assert.match(inspected.stdout(), /command: npm run format/);
-    assert.match(inspected.stdout(), /execution: inactive/);
+    assert.match(inspected.stdout(), /command: .*cli=/);
+    assert.match(inspected.stdout(), /execution: manual_run_only/);
+
+    const blocked = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "hooks", "run", hookId], env, blocked.io), 1);
+    assert.match(blocked.stderr(), /status: untrusted/);
+    assert.doesNotMatch(blocked.stderr(), /cli=cli-ci/);
 
     const trusted = createNoFetchIo();
     assert.equal(await runCli(["node", "cli", "hooks", "trust", hookId], env, trusted.io), 0);
     assert.match(trusted.stdout(), /trusted at sha256:[a-f0-9]{64}/);
     assert.match(readFileSync(hooksConfigPath, "utf8"), /plugin:acme\.hook-cli-plugin@1\.0\.0:format/);
 
+    const ran = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "hooks", "run", hookId], env, ran.io), 0);
+    assert.match(ran.stdout(), /Hook run: plugin:acme\.hook-cli-plugin@1\.0\.0:format/);
+    assert.match(ran.stdout(), /status: ok/);
+    assert.match(ran.stdout(), /stdout: "cli=\[redacted-env:CI\]\\n"/);
+    assert.match(readFileSync(hooksAuditLogPath, "utf8"), /"type":"plugin.hook.run"/);
+
     const status = createNoFetchIo();
     assert.equal(await runCli(["node", "cli", "status"], env, status.io), 0);
     assert.match(status.stdout(), /plugin_hook_definitions: 1/);
     assert.match(status.stdout(), /plugin_trusted_hooks: 1/);
+    assert.match(status.stdout(), /plugin_hook_runtime: manual_run_only/);
     assert.match(status.stdout(), /plugin_enabled_hooks: 0/);
 
     const untrusted = createNoFetchIo();

@@ -7,6 +7,7 @@ export interface ShellOptions {
   args?: string[];
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  inheritEnv?: boolean;
   timeoutMs?: number;
   maxBytes?: number;
   shell?: boolean;
@@ -33,6 +34,7 @@ export async function shellTool(options: ShellOptions): Promise<ShellResult> {
     args: options.args,
     cwd: options.cwd,
     env: options.env,
+    inheritEnv: options.inheritEnv,
     timeoutMs: options.timeoutMs,
     maxBytes: options.maxBytes ?? DEFAULT_MAX_TEXT_BYTES,
     shell: options.shell,

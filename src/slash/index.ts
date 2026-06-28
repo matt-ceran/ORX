@@ -70,6 +70,7 @@ import {
   loadPluginCatalog,
   registerPluginManifest,
   renderPluginHookInspect,
+  renderPluginHookRunResult,
   renderPluginHooks,
   renderPluginCatalog,
   renderPluginInspect,
@@ -81,6 +82,7 @@ import {
   renderRuleActivation,
   renderSkillActivation,
   resolvePluginInstallTarget,
+  runPluginHook,
   setPluginEnabledState,
   trustPluginHook,
   untrustPluginHook,
@@ -215,6 +217,7 @@ export interface SlashCommandContext {
   mcpConfigPath?: string;
   pluginCacheDirectory?: string;
   pluginCatalogPath?: string;
+  pluginHooksAuditLogPath?: string;
   pluginHooksConfigPath?: string;
   pluginRegistryPath?: string;
   profileConfigPath?: string;
@@ -296,7 +299,7 @@ const PLUGIN_SUBCOMMAND_COMPLETIONS = [
   "enable",
   "disable",
 ] as const;
-const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust"] as const;
+const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const RULE_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -793,12 +796,12 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/hooks": {
-    usage: "/hooks [list|inspect|trust|untrust]",
-    description: "Review plugin hooks and manage hash trust",
+    usage: "/hooks [list|inspect|trust|untrust|run]",
+    description: "Review, trust, or manually run plugin hooks",
     group: "Integrations",
     tier: "advanced",
-    handler: (command, context): SlashResult => {
-      handleHooksCommand(command, context);
+    handler: async (command, context): Promise<SlashResult> => {
+      await handleHooksCommand(command, context);
       return "continue";
     },
   },
@@ -1439,6 +1442,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       loadedConfig,
       mcpConfigPath: context.mcpConfigPath,
       pluginCacheDirectory: context.pluginCacheDirectory,
+      pluginHooksAuditLogPath: context.pluginHooksAuditLogPath,
       pluginHooksConfigPath: context.pluginHooksConfigPath,
       pluginRegistryPath: context.pluginRegistryPath,
       profileConfigPath: context.profileConfigPath,
@@ -1893,7 +1897,7 @@ function handlePluginsCommand(command: SlashCommand, context: SlashCommandContex
   );
 }
 
-function handleHooksCommand(command: SlashCommand, context: SlashCommandContext): void {
+async function handleHooksCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
   const subcommand = command.args[0]?.toLowerCase() ?? "list";
   const hookId = command.args[1];
 
@@ -1948,6 +1952,22 @@ function handleHooksCommand(command: SlashCommand, context: SlashCommandContext)
     return;
   }
 
+  if (subcommand === "run") {
+    if (!hookId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /hooks run <id>");
+      return;
+    }
+
+    const result = await runPluginHook(hookId, {
+      auditLogPath: context.pluginHooksAuditLogPath,
+      configPath: context.pluginHooksConfigPath,
+      env: process.env,
+      registryPath: context.pluginRegistryPath,
+    });
+    writeLine(result.ok ? context.io.stdout : context.io.stderr, renderPluginHookRunResult(result));
+    return;
+  }
+
   if (subcommand === "untrust" || subcommand === "revoke") {
     if (!hookId || command.args.length !== 2) {
       writeLine(context.io.stderr, `Usage: /hooks ${subcommand} <id>`);
@@ -1967,7 +1987,7 @@ function handleHooksCommand(command: SlashCommand, context: SlashCommandContext)
     return;
   }
 
-  writeLine(context.io.stderr, "Usage: /hooks [list|inspect <id>|trust <id>|untrust <id>]");
+  writeLine(context.io.stderr, "Usage: /hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]");
 }
 
 function handleOrchestratorCommand(command: SlashCommand, context: SlashCommandContext): void {

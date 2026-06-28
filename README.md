@@ -74,10 +74,11 @@ orx plugins disable acme.example@1.0.0
 orx hooks list
 orx hooks inspect plugin:acme.example@1.0.0:format
 orx hooks trust plugin:acme.example@1.0.0:format
+orx hooks run plugin:acme.example@1.0.0:format
 orx hooks untrust plugin:acme.example@1.0.0:format
 ```
 
-Plugin install/register stores an inert local registry record plus an ORX-owned cache snapshot of the sanitized manifest and declared components. By default the registry lives at `~/.orx/plugins/registry.json`, the cache at `~/.orx/plugins/cache`, the hook trust file at `~/.orx/plugins/hooks.json`, and the optional local catalog at `~/.orx/plugins/catalog.json`; use `ORX_PLUGIN_REGISTRY_PATH`, `ORX_PLUGIN_CACHE_DIR`, `ORX_PLUGIN_HOOKS_CONFIG_PATH`, and `ORX_PLUGIN_CATALOG_PATH` to isolate them. Enabling a plugin only enables its metadata, skills, prompt-command, rules, render-only MCP preset, and hook review/trust surfaces where supported; hooks, bins, executable plugin commands, plugin endpoint discovery, plugin MCP tool execution, and plugin code execution remain inactive in the current scaffold.
+Plugin install/register stores an inert local registry record plus an ORX-owned cache snapshot of the sanitized manifest, declared components, and declared hook cwd directories. By default the registry lives at `~/.orx/plugins/registry.json`, the cache at `~/.orx/plugins/cache`, the hook trust file at `~/.orx/plugins/hooks.json`, the hook audit log at `~/.orx/audit/hooks.jsonl`, and the optional local catalog at `~/.orx/plugins/catalog.json`; use `ORX_PLUGIN_REGISTRY_PATH`, `ORX_PLUGIN_CACHE_DIR`, `ORX_PLUGIN_HOOKS_CONFIG_PATH`, `ORX_PLUGIN_HOOKS_AUDIT_PATH`, and `ORX_PLUGIN_CATALOG_PATH` to isolate them. Enabling a plugin only enables its metadata, skills, prompt-command, rules, render-only MCP preset, and hook review/trust surfaces where supported. Hooks run only through explicit `hooks run` / `/hooks run` for trusted hashes; bins, executable plugin commands, plugin endpoint discovery, and plugin MCP tool execution remain inactive.
 
 Catalog files are local JSON:
 
@@ -99,7 +100,7 @@ Plugin manifests may include optional inert `metadata` for risk display, such as
 
 Enabled plugins can declare MCP presets through `components.mcpServers`. ORX reads these declarations from the cached plugin snapshot, namespaces them as `plugin:<plugin-id>:<server-id>`, includes them in `/mcp list`, `/mcp inspect`, `/mcp tools`, and `/status`, and hashes plugin manifest/component provenance for schema-change visibility. `/mcp discover` does not contact plugin-declared endpoints yet.
 
-Enabled plugins can declare hook definitions through `components.hooks`. ORX reads those declarations from the cached plugin snapshot, namespaces them as `plugin:<plugin-id>:<hook-id>`, shows them through `orx hooks`, `/hooks`, and `/status`, and lets the operator persist a trusted hook hash. Trusted hooks still do not run yet; changed hook hashes show as pending trust until re-trusted.
+Enabled plugins can declare hook definitions through `components.hooks`. ORX reads those declarations from the cached plugin snapshot, namespaces them as `plugin:<plugin-id>:<hook-id>`, shows them through `orx hooks`, `/hooks`, and `/status`, and lets the operator persist a trusted hook hash. `orx hooks run <id>` and `/hooks run <id>` execute only trusted current hashes, run from the cached plugin root or declared relative cwd, forward only declared env names, truncate/redact output, and append JSONL audit events. A successful hook whose audit event cannot be persisted is treated as a failed run. Changed hook hashes show as pending trust until re-trusted. Automatic lifecycle hook events are not wired yet.
 
 Send one non-interactive streaming request with:
 

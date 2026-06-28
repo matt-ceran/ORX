@@ -4,6 +4,12 @@ Last updated: 2026-06-27
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-27: Trusted Hook Runtime Is Manual Before Lifecycle Automation
+
+Decision: ORX may execute plugin hooks only through explicit operator commands, `orx hooks run <id>` or `/hooks run <id>`, and only when the enabled cached hook definition still matches a trusted hook hash. Hook runs use the cached plugin root plus optional safe relative cwd, disable inherited env, forward only hook-declared env names, cap timeout/output, redact forwarded env values from rendered/audited output, and append private JSONL audit events. A successful hook command whose audit event cannot be persisted is treated as a failed run. Automatic lifecycle hook events remain unwired.
+
+Reasoning: Manual execution validates the executable hook policy without letting plugin install/enable events or model/session lifecycle events run plugin code automatically. Hash trust, cached provenance, minimal env, cwd confinement, output truncation/redaction, and audit logs are the runtime boundary before ORX can safely wire session_start, user_prompt_submit, tool-use, compaction, or stop events.
+
 ## 2026-06-27: Hook Hash Trust Comes Before Hook Execution
 
 Decision: Enabled ORX plugins may contribute hook definitions from cached `components.hooks` JSON, and ORX may show, inspect, trust, and untrust those definitions through `orx hooks`, `/hooks`, and `/status`. Trust records persist only hook id, trusted hook hash, and trustedAt in private operator state outside repositories. Hook execution remains unimplemented and inactive even when a hook is trusted.

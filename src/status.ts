@@ -19,6 +19,7 @@ export interface StatusOptions {
   loadedConfig: LoadedConfig;
   mcpConfigPath?: string;
   pluginCacheDirectory?: string;
+  pluginHooksAuditLogPath?: string;
   pluginHooksConfigPath?: string;
   pluginRegistryPath?: string;
   profileConfigPath?: string;
@@ -31,6 +32,7 @@ export function formatStatus({
   loadedConfig,
   mcpConfigPath,
   pluginCacheDirectory,
+  pluginHooksAuditLogPath,
   pluginHooksConfigPath,
   pluginRegistryPath,
   profileConfigPath,
@@ -92,6 +94,8 @@ export function formatStatus({
     `plugin_enabled_count: ${pluginStatus.enabledCount}`,
     `plugin_cache_path: ${pluginCacheDirectory ?? "default"}`,
     `plugin_hooks_config_path: ${pluginHooksConfigPath ?? "default"}`,
+    `plugin_hooks_audit_path: ${pluginHooksAuditLogPath ?? "default"}`,
+    "plugin_hook_runtime: manual_run_only",
     `plugin_enabled_hooks: ${pluginStatus.enabledHookCount}`,
     `plugin_hook_definitions: ${pluginHookTrustStatus.hookCount}${
       pluginHookTrustStatus.truncated ? " (truncated)" : ""

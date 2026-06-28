@@ -99,6 +99,7 @@ export interface ChatOptions {
   mcpConfigPath?: string;
   pluginCacheDirectory?: string;
   pluginCatalogPath?: string;
+  pluginHooksAuditLogPath?: string;
   pluginHooksConfigPath?: string;
   pluginRegistryPath?: string;
   profileConfigPath?: string;
@@ -122,6 +123,7 @@ export async function runChat({
   mcpConfigPath,
   pluginCacheDirectory,
   pluginCatalogPath,
+  pluginHooksAuditLogPath,
   pluginHooksConfigPath,
   pluginRegistryPath,
   profileConfigPath,
@@ -243,6 +245,7 @@ export async function runChat({
           mcpConfigPath,
           pluginCacheDirectory,
           pluginCatalogPath,
+          pluginHooksAuditLogPath,
           pluginHooksConfigPath,
           pluginRegistryPath,
           profileConfigPath,

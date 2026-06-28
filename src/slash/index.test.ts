@@ -142,7 +142,7 @@ test("command palette renderer is a pure grouped listing surface", () => {
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
   assert.match(palette, /\/prompts \[list\|status\|activate <id>\]/);
   assert.match(palette, /\/rules \[list\|status\|activate <id>\]/);
-  assert.match(palette, /\/hooks \[list\|inspect\|trust\|untrust\]/);
+  assert.match(palette, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
   assert.doesNotMatch(palette, /\/model <id-or-search>/);
 });
 
@@ -158,7 +158,7 @@ test("compact command palette renderer bounds TTY-oriented command discovery", (
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
   assert.match(palette, /\/prompts \[list\|status\|activate <id>\]/);
   assert.match(palette, /\/rules \[list\|status\|activate <id>\]/);
-  assert.match(palette, /\/hooks \[list\|inspect\|trust\|untrust\]/);
+  assert.match(palette, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
   assert.doesNotMatch(palette, /\/model <id-or-search>/);
   for (const line of palette.split("\n")) {
     assert.ok(line.length <= 64, `palette line exceeds width: ${line}`);
@@ -187,6 +187,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/plugins en"), [["enable "], "en"]);
   assert.deepEqual(completeSlashCommandLine("/plugins i"), [["inspect ", "install "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/hooks t"), [["trust "], "t"]);
+  assert.deepEqual(completeSlashCommandLine("/hooks r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/prompts a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/rules a"), [["activate "], "a"]);
@@ -1586,15 +1587,15 @@ test("plugins register, list, inspect, enable, and disable without network or ex
     assert.match(harness.stdout(), /skills: directory skills sha256:[a-f0-9]{64}/);
     assert.match(harness.stdout(), /filesystem: read:\./);
     assert.match(harness.stdout(), /env: DEMO_TOKEN/);
-    assert.match(harness.stdout(), /executable_surfaces: hooks=inactive bins=inactive mcp=inactive/);
-    assert.match(harness.stdout(), /plugin_code_execution: disabled in this scaffold/);
+    assert.match(harness.stdout(), /executable_surfaces: hooks=manual_trust_required bins=inactive mcp=inactive/);
+    assert.match(harness.stdout(), /plugin_code_execution: hooks run only through explicit \/hooks run/);
 
     assert.equal(
       handleSlashCommand("/plugins enable acme.demo-plugin@1.0.0", harness.context),
       "continue",
     );
     assert.match(harness.stdout(), /Plugin acme\.demo-plugin@1\.0\.0 enabled/);
-    assert.match(harness.stdout(), /executable surfaces remain inactive/);
+    assert.match(harness.stdout(), /automatic executable surfaces remain inactive/);
 
     assert.equal(handleSlashCommand("/status", harness.context), "continue");
     assert.match(harness.stdout(), /plugin_installed_count: 1/);
@@ -1663,13 +1664,15 @@ test("mcp slash commands show plugin-provided presets without endpoint discovery
   }
 });
 
-test("hooks slash command lists inspects trusts and untrusts inactive hooks", async () => {
+test("hooks slash command lists inspects trusts runs and untrusts hooks", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-hooks-slash-"));
   const registryPath = join(cwd, "registry", "plugins.json");
   const hooksConfigPath = join(cwd, "hooks", "trust.json");
+  const hooksAuditLogPath = join(cwd, "audit", "hooks.jsonl");
   const manifestPath = writePluginHookFixture(cwd);
   const hookId = "plugin:acme.hook-slash-plugin@1.0.0:format";
   const harness = createSlashHarness({
+    pluginHooksAuditLogPath: hooksAuditLogPath,
     pluginHooksConfigPath: hooksConfigPath,
     pluginRegistryPath: registryPath,
   });
@@ -1678,25 +1681,36 @@ test("hooks slash command lists inspects trusts and untrusts inactive hooks", as
     assert.equal(await handleSlashCommand(`/plugins install ${manifestPath}`, harness.context), "continue");
     assert.equal(handleSlashCommand("/plugins enable acme.hook-slash-plugin@1.0.0", harness.context), "continue");
 
-    assert.equal(handleSlashCommand("/hooks list", harness.context), "continue");
+    assert.equal(await handleSlashCommand("/hooks list", harness.context), "continue");
     assert.match(harness.stdout(), /discovered_hooks: 1/);
     assert.match(harness.stdout(), /trusted=no/);
-    assert.match(harness.stdout(), /execution=inactive/);
+    assert.match(harness.stdout(), /execution=trust-required/);
 
-    assert.equal(handleSlashCommand(`/hooks inspect ${hookId}`, harness.context), "continue");
+    assert.equal(await handleSlashCommand(`/hooks inspect ${hookId}`, harness.context), "continue");
     assert.match(harness.stdout(), /Hook: plugin:acme\.hook-slash-plugin@1\.0\.0:format/);
-    assert.match(harness.stdout(), /command: npm run format/);
-    assert.match(harness.stdout(), /execution: inactive/);
+    assert.match(harness.stdout(), /command: .*slash-hook/);
+    assert.match(harness.stdout(), /execution: manual_run_only/);
 
-    assert.equal(handleSlashCommand(`/hooks trust ${hookId}`, harness.context), "continue");
+    assert.equal(await handleSlashCommand(`/hooks run ${hookId}`, harness.context), "continue");
+    assert.match(harness.stderr(), /status: untrusted/);
+    assert.doesNotMatch(harness.stderr(), /stdout: "slash-hook/);
+
+    assert.equal(await handleSlashCommand(`/hooks trust ${hookId}`, harness.context), "continue");
     assert.match(harness.stdout(), /Hook plugin:acme\.hook-slash-plugin@1\.0\.0:format trusted/);
+
+    assert.equal(await handleSlashCommand(`/hooks run ${hookId}`, harness.context), "continue");
+    assert.match(harness.stdout(), /Hook run: plugin:acme\.hook-slash-plugin@1\.0\.0:format/);
+    assert.match(harness.stdout(), /status: ok/);
+    assert.match(harness.stdout(), /stdout: "slash-hook\\n"/);
+    assert.match(readFileSync(hooksAuditLogPath, "utf8"), /"type":"plugin.hook.run"/);
 
     assert.equal(handleSlashCommand("/status", harness.context), "continue");
     assert.match(harness.stdout(), /plugin_hook_definitions: 1/);
     assert.match(harness.stdout(), /plugin_trusted_hooks: 1/);
+    assert.match(harness.stdout(), /plugin_hook_runtime: manual_run_only/);
     assert.match(harness.stdout(), /plugin_enabled_hooks: 0/);
 
-    assert.equal(handleSlashCommand(`/hooks untrust ${hookId}`, harness.context), "continue");
+    assert.equal(await handleSlashCommand(`/hooks untrust ${hookId}`, harness.context), "continue");
     assert.match(harness.stdout(), /trust removed/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -2511,6 +2525,7 @@ function createSlashHarness(
     cwd?: string;
     mcpAuditLogPath?: string;
     mcpConfigPath?: string;
+    pluginHooksAuditLogPath?: string;
     pluginCatalogPath?: string;
     pluginHooksConfigPath?: string;
     pluginRegistryPath?: string;
@@ -2607,6 +2622,7 @@ function createSlashHarness(
       mcpAuditLogPath: options.mcpAuditLogPath,
       mcpConfigPath: options.mcpConfigPath,
       pluginCatalogPath: options.pluginCatalogPath,
+      pluginHooksAuditLogPath: options.pluginHooksAuditLogPath,
       pluginHooksConfigPath: options.pluginHooksConfigPath,
       pluginRegistryPath: options.pluginRegistryPath,
       profileConfigPath: options.profileConfigPath,
@@ -2731,6 +2747,9 @@ function writePluginMcpPresetFixture(cwd: string): string {
 function writePluginHookFixture(cwd: string): string {
   const pluginDirectory = join(cwd, "hook-plugin");
   const manifestPath = join(pluginDirectory, "orx-plugin.json");
+  const hookCommand = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
+    "console.log('slash-hook')",
+  )}`;
   mkdirSync(pluginDirectory, { recursive: true });
   writeFileSync(
     join(pluginDirectory, "hooks.json"),
@@ -2738,8 +2757,8 @@ function writePluginHookFixture(cwd: string): string {
       hooks: {
         format: {
           event: "post_tool_use",
-          command: "npm run format",
-          env: ["CI"],
+          command: hookCommand,
+          env: [],
           timeoutMs: 5000,
         },
       },

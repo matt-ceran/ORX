@@ -72,8 +72,8 @@ export function renderPluginInspect(plugin: InstalledPluginRecord): string {
     plugin.manifest.components.mcpServers
       ? "  mcp_profiles: discoverable via /mcp list when plugin is enabled; execution inactive"
       : "  mcp_profiles: none declared",
-    "  executable_surfaces: hooks=inactive bins=inactive mcp=inactive commands=inactive",
-    "  plugin_code_execution: disabled in this scaffold",
+    "  executable_surfaces: hooks=manual_trust_required bins=inactive mcp=inactive commands=inactive",
+    "  plugin_code_execution: hooks run only through explicit /hooks run for trusted hashes",
   ].join("\n");
 }
 

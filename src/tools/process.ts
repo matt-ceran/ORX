@@ -7,6 +7,7 @@ export interface RunProcessOptions extends TextTruncationOptions {
   args?: string[];
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  inheritEnv?: boolean;
   timeoutMs?: number;
   shell?: boolean;
   stdin?: string;
@@ -91,10 +92,7 @@ export function runProcess(options: RunProcessOptions): Promise<RunProcessResult
       (options.signal !== undefined || options.timeoutMs !== undefined);
     const child = spawn(options.command, args, {
       cwd,
-      env: {
-        ...process.env,
-        ...options.env,
-      },
+      env: options.inheritEnv === false ? { ...options.env } : { ...process.env, ...options.env },
       shell,
       detached: shouldCreateProcessGroup,
       stdio: ["pipe", "pipe", "pipe"],

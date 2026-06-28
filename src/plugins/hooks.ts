@@ -1,4 +1,5 @@
 import {
+  appendFileSync,
   chmodSync,
   existsSync,
   lstatSync,
@@ -8,6 +9,8 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import { redactSecrets } from "../mcp/audit.js";
+import { shellTool } from "../tools/shell.js";
 import { canonicalJson, sha256 } from "./hash.js";
 import {
   loadPluginRegistry,
@@ -30,6 +33,7 @@ export interface PluginHookDefinition {
   hookId: string;
   event: PluginHookEvent;
   command: string;
+  pluginRoot: string;
   cwd?: string;
   env: string[];
   timeoutMs?: number;
@@ -40,6 +44,17 @@ export interface PluginHookDefinition {
   componentHash: string;
   hookHash: string;
 }
+
+export type PluginHookRunStatus =
+  | "ok"
+  | "not_found"
+  | "untrusted"
+  | "pending_hash_change"
+  | "cwd_unavailable"
+  | "process_error"
+  | "exit_nonzero"
+  | "timed_out"
+  | "audit_failed";
 
 export interface PluginHookOmission {
   pluginId: string;
@@ -81,14 +96,56 @@ export interface PluginHookTrustResult {
   message: string;
 }
 
+export interface PluginHookRunResult {
+  ok: boolean;
+  executed: boolean;
+  status: PluginHookRunStatus;
+  hook?: PluginHookDefinition;
+  message: string;
+  cwd?: string;
+  envNames: string[];
+  timeoutMs?: number;
+  exitCode?: number | null;
+  signal?: NodeJS.Signals | null;
+  stdout?: string;
+  stderr?: string;
+  stdoutTruncated?: boolean;
+  stderrTruncated?: boolean;
+  durationMs?: number;
+  timedOut?: boolean;
+  auditLogPath: string;
+  auditError?: string;
+}
+
+export type PluginHookAuditEventType = "plugin.hook.run";
+
+export interface PluginHookAuditEvent {
+  type: PluginHookAuditEventType;
+  hookId?: string;
+  pluginId?: string;
+  hookEvent?: PluginHookEvent;
+  hookHash?: string;
+  ok: boolean;
+  details?: Record<string, unknown>;
+  timestamp?: string;
+}
+
 export interface PluginHookPathOptions {
   env?: NodeJS.ProcessEnv;
   cwd?: string;
   configPath?: string;
+  auditLogPath?: string;
 }
 
 export interface PluginHookOptions extends PluginRegistryIoOptions {
   configPath?: string;
+}
+
+export interface PluginHookRunOptions extends PluginHookOptions {
+  auditLogPath?: string;
+  env?: NodeJS.ProcessEnv;
+  now?: () => Date;
+  signal?: AbortSignal;
 }
 
 const HOOK_CONFIG_VERSION = 1;
@@ -100,9 +157,13 @@ const MAX_COMMAND_LENGTH = 2048;
 const MAX_DESCRIPTION_LENGTH = 500;
 const MAX_ENV_ENTRIES = 32;
 const MAX_TIMEOUT_MS = 120_000;
+const DEFAULT_HOOK_TIMEOUT_MS = 30_000;
+const MAX_HOOK_OUTPUT_BYTES = 16 * 1024;
 const HOOK_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
+const OUTPUT_CONTROL_CHAR_PATTERN = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
+const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const SECRET_LIKE_PATTERN =
   /\b(?:bearer\s+[A-Za-z0-9._~+/=-]{8,}|authorization:\s*bearer\s+[A-Za-z0-9._~+/=-]{8,}|(?:access[_-]?token|api[_-]?key|token|key|secret)\s*[=:]\s*[A-Za-z0-9._~+/=-]{4,}|sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/i;
 const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/;
@@ -120,6 +181,10 @@ export function defaultPluginHooksConfigPath(): string {
   return join(homedir(), ".orx", "plugins", "hooks.json");
 }
 
+export function defaultPluginHooksAuditLogPath(): string {
+  return join(homedir(), ".orx", "audit", "hooks.jsonl");
+}
+
 export function resolvePluginHooksConfigPath(options: PluginHookPathOptions = {}): string {
   const explicitPath = options.configPath ?? options.env?.ORX_PLUGIN_HOOKS_CONFIG_PATH;
   if (!explicitPath) {
@@ -127,6 +192,45 @@ export function resolvePluginHooksConfigPath(options: PluginHookPathOptions = {}
   }
 
   return resolve(options.cwd ?? process.cwd(), explicitPath);
+}
+
+export function resolvePluginHooksAuditLogPath(options: PluginHookPathOptions = {}): string {
+  const explicitPath = options.auditLogPath ?? options.env?.ORX_PLUGIN_HOOKS_AUDIT_PATH;
+  if (!explicitPath) {
+    return defaultPluginHooksAuditLogPath();
+  }
+
+  return resolve(options.cwd ?? process.cwd(), explicitPath);
+}
+
+export function writePluginHookAuditEvent(
+  event: PluginHookAuditEvent,
+  options: { auditLogPath?: string; now?: () => Date } = {},
+): void {
+  const path = options.auditLogPath ?? defaultPluginHooksAuditLogPath();
+  const timestamp = event.timestamp ?? (options.now?.() ?? new Date()).toISOString();
+  const sanitized = redactSecrets({
+    timestamp,
+    type: event.type,
+    hookId: event.hookId,
+    pluginId: event.pluginId,
+    hookEvent: event.hookEvent,
+    hookHash: event.hookHash,
+    ok: event.ok,
+    details: event.details,
+  });
+  const parent = dirname(path);
+  const parentExisted = existsSync(parent);
+
+  mkdirSync(parent, { recursive: true, mode: HOOK_DIRECTORY_MODE });
+  if (!parentExisted || resolve(path) === resolve(defaultPluginHooksAuditLogPath())) {
+    chmodSync(parent, HOOK_DIRECTORY_MODE);
+  }
+  appendFileSync(path, `${JSON.stringify(sanitized)}\n`, {
+    encoding: "utf8",
+    mode: HOOK_FILE_MODE,
+  });
+  chmodSync(path, HOOK_FILE_MODE);
 }
 
 export function emptyPluginHooksTrustConfig(): PluginHooksTrustConfig {
@@ -257,7 +361,7 @@ export function renderPluginHooks(
   const lines = [
     "Hooks",
     `  discovered_hooks: ${discovery.hooks.length}${discovery.truncated ? " (truncated)" : ""}`,
-    "  execution: inactive",
+    "  execution: manual_run_only",
     "  hooks:",
   ];
 
@@ -287,7 +391,7 @@ export function renderPluginHooks(
     }
   }
 
-  lines.push("  trust: use /hooks trust <id>; trusted hooks still do not execute in this scaffold");
+  lines.push("  trust: use /hooks trust <id>; use /hooks run <id> to execute a trusted hook manually");
   return lines.join("\n");
 }
 
@@ -314,7 +418,7 @@ export function renderPluginHookInspect(
     `  trusted: ${record?.hookHash === hook.hookHash ? "yes" : "no"}`,
     record && record.hookHash !== hook.hookHash ? `  trust_status: pending_hash_change trusted_hash=${record.hookHash}` : undefined,
     record?.trustedAt ? `  trusted_at: ${record.trustedAt}` : undefined,
-    "  execution: inactive; hooks are not run by ORX yet",
+    "  execution: manual_run_only; lifecycle hook automation is not wired yet",
   ]
     .filter((line): line is string => typeof line === "string")
     .join("\n");
@@ -347,7 +451,7 @@ export function trustPluginHook(
     hook,
     trustedAt,
     previousTrustedHash,
-    message: `Hook ${hook.id} trusted at ${hook.hookHash}. Execution remains inactive.`,
+    message: `Hook ${hook.id} trusted at ${hook.hookHash}. Manual execution is now available with /hooks run ${hook.id}.`,
   };
 }
 
@@ -370,8 +474,174 @@ export function untrustPluginHook(
 
   return {
     ok: true,
-    message: `Hook ${formattedId} trust removed. Execution remains inactive.`,
+    message: `Hook ${formattedId} trust removed. Manual execution is blocked until the hook is trusted again.`,
   };
+}
+
+export async function runPluginHook(
+  id: string,
+  options: PluginHookRunOptions = {},
+): Promise<PluginHookRunResult> {
+  const auditLogPath = options.auditLogPath ?? defaultPluginHooksAuditLogPath();
+  const hook = findDiscoveredHook(id, { registryPath: options.registryPath });
+  if (!hook) {
+    return finalizeHookRunResult(
+      {
+        ok: false,
+        executed: false,
+        status: "not_found",
+        message: `Unknown enabled plugin hook: ${formatHookIdForMessage(id)}`,
+        envNames: [],
+        auditLogPath,
+      },
+      options,
+    );
+  }
+
+  const trustRecord = loadPluginHooksTrustConfig({ configPath: options.configPath }).hooks[hook.id];
+  if (!trustRecord) {
+    return finalizeHookRunResult(
+      {
+        ok: false,
+        executed: false,
+        status: "untrusted",
+        hook,
+        message: `Hook ${hook.id} is not trusted. Run /hooks trust ${hook.id} before manual execution.`,
+        envNames: hook.env,
+        auditLogPath,
+      },
+      options,
+    );
+  }
+  if (trustRecord.hookHash !== hook.hookHash) {
+    return finalizeHookRunResult(
+      {
+        ok: false,
+        executed: false,
+        status: "pending_hash_change",
+        hook,
+        message: `Hook ${hook.id} changed since it was trusted. Re-run /hooks trust ${hook.id} before manual execution.`,
+        envNames: hook.env,
+        auditLogPath,
+      },
+      options,
+    );
+  }
+
+  const cwdResult = resolveHookRuntimeCwd(hook);
+  if (typeof cwdResult !== "string") {
+    return finalizeHookRunResult(
+      {
+        ok: false,
+        executed: false,
+        status: "cwd_unavailable",
+        hook,
+        message: cwdResult.message,
+        envNames: hook.env,
+        auditLogPath,
+      },
+      options,
+    );
+  }
+
+  const forwardedEnv = collectHookEnvironment(hook, options.env ?? process.env);
+  const timeoutMs = hook.timeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS;
+  const result = await shellTool({
+    command: hook.command,
+    cwd: cwdResult,
+    env: forwardedEnv,
+    inheritEnv: false,
+    maxBytes: MAX_HOOK_OUTPUT_BYTES,
+    shell: true,
+    signal: options.signal,
+    timeoutMs,
+  });
+
+  if (!result.ok) {
+    return finalizeHookRunResult(
+      {
+        ok: false,
+        executed: true,
+        status: "process_error",
+        hook,
+        message: `Hook ${hook.id} failed to start: ${result.error.message}`,
+        cwd: cwdResult,
+        envNames: Object.keys(forwardedEnv).sort(),
+        timeoutMs,
+        stdout: "",
+        stderr: result.error.message,
+        stdoutTruncated: false,
+        stderrTruncated: false,
+        durationMs: 0,
+        timedOut: false,
+        auditLogPath,
+      },
+      options,
+      forwardedEnv,
+    );
+  }
+
+  const stdout = redactHookOutput(result.stdout, forwardedEnv);
+  const stderr = redactHookOutput(result.stderr, forwardedEnv);
+  const status: PluginHookRunStatus = result.timedOut
+    ? "timed_out"
+    : result.exitCode === 0
+      ? "ok"
+      : "exit_nonzero";
+  const ok = status === "ok";
+
+  return finalizeHookRunResult(
+    {
+      ok,
+      executed: true,
+      status,
+      hook,
+      message: ok
+        ? `Hook ${hook.id} completed successfully.`
+        : `Hook ${hook.id} ${status === "timed_out" ? "timed out" : `exited with code ${result.exitCode}`}.`,
+      cwd: cwdResult,
+      envNames: Object.keys(forwardedEnv).sort(),
+      timeoutMs,
+      exitCode: result.exitCode,
+      signal: result.signal,
+      stdout,
+      stderr,
+      stdoutTruncated: result.stdoutTruncation.truncated,
+      stderrTruncated: result.stderrTruncation.truncated,
+      durationMs: result.durationMs,
+      timedOut: result.timedOut,
+      auditLogPath,
+    },
+    options,
+    forwardedEnv,
+  );
+}
+
+export function renderPluginHookRunResult(result: PluginHookRunResult): string {
+  const lines = [
+    `Hook run: ${result.hook?.id ?? "unknown"}`,
+    `  status: ${result.status}`,
+    `  executed: ${result.executed ? "yes" : "no"}`,
+    result.hook ? `  event: ${result.hook.event}` : undefined,
+    result.cwd ? `  cwd: ${result.cwd}` : undefined,
+    result.timeoutMs ? `  timeout_ms: ${result.timeoutMs}` : undefined,
+    `  env: ${result.envNames.length > 0 ? result.envNames.join(",") : "none"}`,
+    result.exitCode !== undefined ? `  exit_code: ${result.exitCode}` : undefined,
+    result.signal !== undefined && result.signal !== null ? `  signal: ${result.signal}` : undefined,
+    result.timedOut !== undefined ? `  timed_out: ${result.timedOut ? "yes" : "no"}` : undefined,
+    result.durationMs !== undefined ? `  duration_ms: ${result.durationMs}` : undefined,
+    result.stdout !== undefined
+      ? `  stdout${result.stdoutTruncated ? " (truncated)" : ""}: ${formatHookOutputBlock(result.stdout)}`
+      : undefined,
+    result.stderr !== undefined
+      ? `  stderr${result.stderrTruncated ? " (truncated)" : ""}: ${formatHookOutputBlock(result.stderr)}`
+      : undefined,
+    `  audit_log: ${result.auditLogPath}`,
+    result.auditError ? `  audit_error: ${result.auditError}` : undefined,
+    `  message: ${result.message}`,
+  ];
+
+  return lines.filter((line): line is string => typeof line === "string").join("\n");
 }
 
 export function findDiscoveredHook(
@@ -485,7 +755,15 @@ function discoverPluginHooks(
     }
 
     try {
-      const hook = sanitizeHookDefinition(hookId, rawHook, plugin, componentFile, relativePath, componentHash);
+      const hook = sanitizeHookDefinition(
+        hookId,
+        rawHook,
+        plugin,
+        baseDirectory,
+        componentFile,
+        relativePath,
+        componentHash,
+      );
       if (seenHookIds.has(hook.id)) {
         omissions.push({
           pluginId: plugin.id,
@@ -512,6 +790,7 @@ function sanitizeHookDefinition(
   fallbackHookId: string,
   value: unknown,
   plugin: InstalledPluginRecord,
+  pluginRoot: string,
   sourcePath: string,
   relativePath: string,
   componentHash: string,
@@ -548,6 +827,7 @@ function sanitizeHookDefinition(
     hookId,
     event,
     command,
+    pluginRoot,
     cwd,
     env,
     timeoutMs,
@@ -558,6 +838,127 @@ function sanitizeHookDefinition(
     componentHash,
     hookHash: sha256(canonicalJson(hashInput)),
   };
+}
+
+function resolveHookRuntimeCwd(hook: PluginHookDefinition): string | { message: string } {
+  const runtimeCwd = resolve(hook.pluginRoot, hook.cwd ?? ".");
+  if (!isWithinDirectory(hook.pluginRoot, runtimeCwd)) {
+    return {
+      message: `Hook ${hook.id} cwd is outside the cached plugin directory.`,
+    };
+  }
+
+  try {
+    const stat = lstatSync(runtimeCwd);
+    if (!stat.isDirectory()) {
+      return {
+        message: `Hook ${hook.id} cwd is not a directory: ${runtimeCwd}`,
+      };
+    }
+  } catch {
+    return {
+      message: `Hook ${hook.id} cwd is unavailable: ${runtimeCwd}`,
+    };
+  }
+
+  return runtimeCwd;
+}
+
+function collectHookEnvironment(
+  hook: PluginHookDefinition,
+  sourceEnv: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const name of hook.env) {
+    const value = sourceEnv[name];
+    if (typeof value === "string") {
+      env[name] = value;
+    }
+  }
+  return env;
+}
+
+function finalizeHookRunResult(
+  result: PluginHookRunResult,
+  options: Pick<PluginHookRunOptions, "auditLogPath" | "now">,
+  forwardedEnv: NodeJS.ProcessEnv = {},
+): PluginHookRunResult {
+  try {
+    writePluginHookAuditEvent(
+      {
+        type: "plugin.hook.run",
+        hookId: result.hook?.id,
+        pluginId: result.hook?.pluginId,
+        hookEvent: result.hook?.event,
+        hookHash: result.hook?.hookHash,
+        ok: result.ok,
+        details: {
+          status: result.status,
+          executed: result.executed,
+          cwd: result.cwd,
+          envNames: result.envNames,
+          timeoutMs: result.timeoutMs,
+          exitCode: result.exitCode,
+          signal: result.signal,
+          timedOut: result.timedOut,
+          durationMs: result.durationMs,
+          stdout: result.stdout,
+          stderr: redactHookOutput(result.stderr ?? "", forwardedEnv),
+          stdoutTruncated: result.stdoutTruncated,
+          stderrTruncated: result.stderrTruncated,
+          message: result.message,
+        },
+      },
+      { auditLogPath: options.auditLogPath, now: options.now },
+    );
+  } catch (error) {
+    const auditError = error instanceof Error ? error.message : "unknown audit write failure";
+    if (result.ok) {
+      return {
+        ...result,
+        ok: false,
+        status: "audit_failed",
+        message: `${result.message} Audit log could not be written; treating hook run as failed.`,
+        auditError,
+      };
+    }
+
+    return {
+      ...result,
+      auditError,
+    };
+  }
+
+  return result;
+}
+
+function redactHookOutput(text: string, forwardedEnv: NodeJS.ProcessEnv): string {
+  let output = stripTerminalControls(text);
+  for (const [name, value] of Object.entries(forwardedEnv)) {
+    if (typeof value === "string" && value.length >= 4) {
+      output = output.split(value).join(`[redacted-env:${name}]`);
+    }
+  }
+  const redacted = redactSecrets(output);
+  return typeof redacted === "string" ? redacted : output;
+}
+
+function stripTerminalControls(text: string): string {
+  return text.replace(ANSI_PATTERN, "").replace(OUTPUT_CONTROL_CHAR_PATTERN, "");
+}
+
+function formatHookOutputBlock(text: string): string {
+  if (!text) {
+    return "none";
+  }
+  const contentBeforeFinalNewline = text.endsWith("\n") ? text.slice(0, -1) : text;
+  if (!contentBeforeFinalNewline.includes("\n")) {
+    return JSON.stringify(text);
+  }
+  return `\n${text
+    .split("\n")
+    .map((line) => `    ${line}`)
+    .join("\n")}`;
 }
 
 function getHookEntries(value: unknown): Array<[string, unknown]> {
@@ -732,7 +1133,7 @@ function formatHookSummary(
     record && !trusted ? "trust=pending_hash_change" : undefined,
     `hook_hash=${hook.hookHash}`,
     `command=${JSON.stringify(hook.command)}`,
-    "execution=inactive",
+    `execution=${trusted ? "manual-run" : "trust-required"}`,
   ]
     .filter((part): part is string => typeof part === "string")
     .join(" ");

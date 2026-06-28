@@ -4,13 +4,14 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
   renameSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { pluginManifestId, type PluginManifest } from "./manifest.js";
 
 export interface PluginCachePathOptions {
@@ -39,6 +40,7 @@ const MAX_CACHE_COPY_ENTRIES = 4096;
 const MAX_CACHE_COPY_BYTES = 32 * 1024 * 1024;
 const MAX_CACHE_COPY_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_CACHE_DIRECTORY_ENTRIES = 2048;
+const MAX_CACHE_HOOK_FILE_BYTES = 256 * 1024;
 
 export function defaultPluginCacheDirectory(): string {
   return join(homedir(), ".orx", "plugins", "cache");
@@ -99,6 +101,7 @@ export function cachePluginManifest(
 
       copyPluginComponent(sourcePath, destinationPath, sourceDirectory, budget, 0);
     }
+    copyHookRuntimeCwds(manifest, sourceDirectory, tempRoot, budget);
 
     const cachedManifestPath = join(tempRoot, MANIFEST_FILE_NAME);
     writeFileSync(cachedManifestPath, `${JSON.stringify(manifest, null, 2)}\n`, {
@@ -120,6 +123,108 @@ export function cachePluginManifest(
     rmSync(tempRoot, { recursive: true, force: true });
     throw error;
   }
+}
+
+function copyHookRuntimeCwds(
+  manifest: PluginManifest,
+  sourceDirectory: string,
+  cacheRoot: string,
+  budget: PluginCacheCopyBudget,
+): void {
+  const hooksComponentPath = manifest.components.hooks;
+  if (!hooksComponentPath) {
+    return;
+  }
+
+  const hooksPath = resolve(sourceDirectory, hooksComponentPath);
+  if (!isWithinDirectory(sourceDirectory, hooksPath) || !existsSync(hooksPath)) {
+    return;
+  }
+
+  let stat;
+  try {
+    stat = lstatSync(hooksPath);
+  } catch {
+    return;
+  }
+  if (!stat.isFile() || stat.size > MAX_CACHE_HOOK_FILE_BYTES) {
+    return;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(hooksPath, "utf8")) as unknown;
+  } catch {
+    return;
+  }
+
+  for (const cwd of collectHookCwds(parsed)) {
+    const sourcePath = resolve(sourceDirectory, cwd);
+    const destinationPath = resolve(cacheRoot, cwd);
+    if (
+      !isWithinDirectory(sourceDirectory, sourcePath) ||
+      !existsSync(sourcePath) ||
+      !isWithinDirectory(cacheRoot, destinationPath)
+    ) {
+      continue;
+    }
+    let cwdStat;
+    try {
+      cwdStat = lstatSync(sourcePath);
+    } catch {
+      continue;
+    }
+    if (!cwdStat.isDirectory()) {
+      continue;
+    }
+    if (existsSync(destinationPath)) {
+      let destinationStat;
+      try {
+        destinationStat = lstatSync(destinationPath);
+      } catch {
+        continue;
+      }
+      if (!destinationStat.isDirectory()) {
+        continue;
+      }
+    }
+    copyPluginComponent(sourcePath, destinationPath, sourceDirectory, budget, 0);
+  }
+}
+
+function collectHookCwds(value: unknown): string[] {
+  if (!isPlainObject(value) || !isPlainObject(value.hooks)) {
+    return [];
+  }
+
+  const cwds = new Set<string>();
+  for (const rawHook of Object.values(value.hooks)) {
+    if (!isPlainObject(rawHook) || typeof rawHook.cwd !== "string") {
+      continue;
+    }
+    const cwd = normalizeCacheRelativePath(rawHook.cwd);
+    if (cwd) {
+      cwds.add(cwd);
+    }
+  }
+  return [...cwds].sort((left, right) => left.localeCompare(right));
+}
+
+function normalizeCacheRelativePath(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed || isAbsolute(trimmed) || trimmed.includes("\\") || trimmed.includes("\0")) {
+    return undefined;
+  }
+  const normalized = posix.normalize(trimmed.split(sep).join(posix.sep)).replace(/^\.\/+/, "");
+  if (
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    normalized.includes("/../")
+  ) {
+    return undefined;
+  }
+  return normalized;
 }
 
 function copyPluginComponent(
@@ -230,6 +335,10 @@ function isWithinDirectory(baseDirectory: string, candidate: string): boolean {
       !relativePath.startsWith(`..${sep}`) &&
       !isAbsolute(relativePath),
   );
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 interface PluginCacheCopyBudget {

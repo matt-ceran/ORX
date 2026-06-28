@@ -216,8 +216,8 @@ export function setPluginEnabledState(
     nextEnabled: enabled,
     message:
       previousEnabled === enabled
-        ? `Plugin ${id} already ${enabled ? "enabled" : "disabled"}. State marker persisted; executable surfaces remain inactive.`
-        : `Plugin ${id} ${enabled ? "enabled" : "disabled"}. State marker persisted; executable surfaces remain inactive.`,
+        ? `Plugin ${id} already ${enabled ? "enabled" : "disabled"}. State marker persisted; automatic executable surfaces remain inactive.`
+        : `Plugin ${id} ${enabled ? "enabled" : "disabled"}. State marker persisted; automatic executable surfaces remain inactive.`,
   };
 }
 

@@ -16,13 +16,15 @@ import {
   loadPluginHooksTrustConfig,
   registerPluginManifest,
   renderPluginHookInspect,
+  renderPluginHookRunResult,
   renderPluginHooks,
+  runPluginHook,
   setPluginEnabledState,
   trustPluginHook,
   untrustPluginHook,
 } from "./index.js";
 
-test("plugin hooks discover from enabled cached manifests and render inactive", () => {
+test("plugin hooks discover from enabled cached manifests and render manual runtime state", () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-hooks-"));
   const registryPath = join(cwd, "plugins", "registry.json");
   const hooksConfigPath = join(cwd, "state", "hooks.json");
@@ -45,9 +47,206 @@ test("plugin hooks discover from enabled cached manifests and render inactive", 
     assert.match(hook.hookHash, /^sha256:[a-f0-9]{64}$/);
     assert.match(hook.componentHash, /^sha256:[a-f0-9]{64}$/);
     assert.match(rendered, /Hooks/);
-    assert.match(rendered, /execution: inactive/);
+    assert.match(rendered, /execution: manual_run_only/);
     assert.match(rendered, /trusted=no/);
     assert.match(rendered, /command="npm run format"/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugin hook runner blocks untrusted hooks and executes trusted hooks with declared env and audit", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-hook-run-"));
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const hooksConfigPath = join(cwd, "state", "hooks.json");
+  const auditLogPath = join(cwd, "audit", "hooks.jsonl");
+  const secretValue = "hide-me-12345";
+  const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
+    "console.log('ci=' + process.env.CI); console.error('secret=' + process.env.SECRET_HOOK_VALUE)",
+  )}`;
+  const manifestPath = writeHookPluginFixture(cwd, {
+    hooks: {
+      format: {
+        event: "post_tool_use",
+        command,
+        env: ["CI", "SECRET_HOOK_VALUE"],
+      },
+    },
+  });
+  const hookId = "plugin:acme.hook-plugin@1.0.0:format";
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.hook-plugin@1.0.0", true, { registryPath });
+
+    const blocked = await runPluginHook(hookId, {
+      auditLogPath,
+      configPath: hooksConfigPath,
+      env: { CI: "1", SECRET_HOOK_VALUE: secretValue },
+      registryPath,
+    });
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.executed, false);
+    assert.equal(blocked.status, "untrusted");
+
+    trustPluginHook(hookId, { registryPath, configPath: hooksConfigPath });
+    const result = await runPluginHook(hookId, {
+      auditLogPath,
+      configPath: hooksConfigPath,
+      env: { CI: "1", SECRET_HOOK_VALUE: secretValue, UNDECLARED_VALUE: "ignored" },
+      registryPath,
+      now: () => new Date("2026-06-27T12:30:00.000Z"),
+    });
+    const rendered = renderPluginHookRunResult(result);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.executed, true);
+    assert.equal(result.status, "ok");
+    assert.deepEqual(result.envNames, ["CI", "SECRET_HOOK_VALUE"]);
+    assert.match(result.stdout ?? "", /ci=1/);
+    assert.doesNotMatch(result.stderr ?? "", new RegExp(secretValue));
+    assert.match(result.stderr ?? "", /\[redacted-env:SECRET_HOOK_VALUE\]/);
+    assert.match(rendered, /Hook run: plugin:acme\.hook-plugin@1\.0\.0:format/);
+    assert.match(rendered, /status: ok/);
+    assert.match(rendered, /stdout: "ci=1\\n"/);
+    assert.equal(statSync(dirname(auditLogPath)).mode & 0o777, 0o700);
+    assert.equal(statSync(auditLogPath).mode & 0o777, 0o600);
+
+    const auditLog = readFileSync(auditLogPath, "utf8");
+    assert.match(auditLog, /"type":"plugin.hook.run"/);
+    assert.match(auditLog, /"status":"untrusted"/);
+    assert.match(auditLog, /"status":"ok"/);
+    assert.doesNotMatch(auditLog, new RegExp(secretValue));
+    assert.doesNotMatch(auditLog, /UNDECLARED_VALUE/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugin hook runner uses cached hook cwd after source plugin removal", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-hook-cwd-run-"));
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const hooksConfigPath = join(cwd, "state", "hooks.json");
+  const auditLogPath = join(cwd, "audit", "hooks.jsonl");
+  const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
+    "console.log('cwd-marker=' + require('node:fs').existsSync('marker.txt'))",
+  )}`;
+  const manifestPath = writeHookPluginFixture(cwd, {
+    hooks: {
+      format: {
+        event: "post_tool_use",
+        command,
+        cwd: "safe",
+      },
+    },
+  });
+  const sourcePluginRoot = dirname(manifestPath);
+  mkdirSync(join(sourcePluginRoot, "safe"), { recursive: true });
+  writeFileSync(join(sourcePluginRoot, "safe", "marker.txt"), "cached");
+  const hookId = "plugin:acme.hook-plugin@1.0.0:format";
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    rmSync(sourcePluginRoot, { recursive: true, force: true });
+    setPluginEnabledState("acme.hook-plugin@1.0.0", true, { registryPath });
+    trustPluginHook(hookId, { registryPath, configPath: hooksConfigPath });
+
+    const result = await runPluginHook(hookId, {
+      auditLogPath,
+      configPath: hooksConfigPath,
+      registryPath,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "ok");
+    assert.match(result.cwd ?? "", /plugins[/\\]cache[/\\]acme\.hook-plugin@1\.0\.0/);
+    assert.match(result.stdout ?? "", /cwd-marker=true/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugin hook runner caches full cwd when hooks file is nested inside it", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-hook-nested-cwd-run-"));
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const hooksConfigPath = join(cwd, "state", "hooks.json");
+  const auditLogPath = join(cwd, "audit", "hooks.jsonl");
+  const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
+    "console.log('nested-marker=' + require('node:fs').existsSync('marker.txt'))",
+  )}`;
+  const manifestPath = writeHookPluginFixture(
+    cwd,
+    {
+      hooks: {
+        format: {
+          event: "post_tool_use",
+          command,
+          cwd: "safe",
+        },
+      },
+    },
+    "./safe/hooks.json",
+  );
+  const sourcePluginRoot = dirname(manifestPath);
+  writeFileSync(join(sourcePluginRoot, "safe", "marker.txt"), "cached");
+  const hookId = "plugin:acme.hook-plugin@1.0.0:format";
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    rmSync(sourcePluginRoot, { recursive: true, force: true });
+    setPluginEnabledState("acme.hook-plugin@1.0.0", true, { registryPath });
+    trustPluginHook(hookId, { registryPath, configPath: hooksConfigPath });
+
+    const result = await runPluginHook(hookId, {
+      auditLogPath,
+      configPath: hooksConfigPath,
+      registryPath,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "ok");
+    assert.match(result.stdout ?? "", /nested-marker=true/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("plugin hook runner fails closed when a successful run cannot be audited", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-hook-audit-failure-"));
+  const registryPath = join(cwd, "plugins", "registry.json");
+  const hooksConfigPath = join(cwd, "state", "hooks.json");
+  const auditLogPath = join(cwd, "audit-directory");
+  const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
+    "console.log('audit-required')",
+  )}`;
+  const manifestPath = writeHookPluginFixture(cwd, {
+    hooks: {
+      format: {
+        event: "post_tool_use",
+        command,
+      },
+    },
+  });
+  const hookId = "plugin:acme.hook-plugin@1.0.0:format";
+
+  try {
+    registerPluginManifest(manifestPath, { registryPath });
+    setPluginEnabledState("acme.hook-plugin@1.0.0", true, { registryPath });
+    trustPluginHook(hookId, { registryPath, configPath: hooksConfigPath });
+    mkdirSync(auditLogPath, { recursive: true });
+
+    const result = await runPluginHook(hookId, {
+      auditLogPath,
+      configPath: hooksConfigPath,
+      registryPath,
+    });
+
+    assert.equal(result.executed, true);
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "audit_failed");
+    assert.match(result.stdout ?? "", /audit-required/);
+    assert.match(result.message, /Audit log could not be written/);
+    assert.ok(result.auditError);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -191,11 +390,14 @@ function writeHookPluginFixture(
       },
     },
   },
+  hooksComponentPath = "./hooks.json",
 ): string {
   const pluginDirectory = join(cwd, "plugin");
   const manifestPath = join(pluginDirectory, "orx-plugin.json");
   mkdirSync(pluginDirectory, { recursive: true });
-  writeFileSync(join(pluginDirectory, "hooks.json"), JSON.stringify(hooksFile));
+  const hooksPath = join(pluginDirectory, hooksComponentPath);
+  mkdirSync(dirname(hooksPath), { recursive: true });
+  writeFileSync(hooksPath, JSON.stringify(hooksFile));
   writeFileSync(
     manifestPath,
     JSON.stringify({
@@ -209,7 +411,7 @@ function writeHookPluginFixture(
         path: ".",
       },
       components: {
-        hooks: "./hooks.json",
+        hooks: hooksComponentPath,
       },
       permissions: {
         filesystem: [],
