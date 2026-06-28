@@ -130,8 +130,10 @@ export {
 export {
   MCP_PROVIDER_PRESETS,
   findMcpProviderPreset,
+  formatMcpProviderPresetIdForMessage,
   installMcpProviderPreset,
   listMcpProviderPresets,
+  renderMcpProviderPresetInspect,
   renderMcpProviderPresets,
   type InstallMcpProviderPresetOptions,
   type InstallMcpProviderPresetResult,

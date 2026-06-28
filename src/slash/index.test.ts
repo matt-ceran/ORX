@@ -112,7 +112,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
-  assert.match(output, /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(output, /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog \[list\|inspect\|add-local\|add-git\|remove\]\|list\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
@@ -127,7 +127,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -197,6 +197,9 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/web h"), [["help "], "h"]);
   assert.deepEqual(completeSlashCommandLine("/mcp m"), [["model "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp model e"), [["enable "], "e"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets i"), [["inspect ", "info "], "i"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets inspect g"), [["github-readonly "], "g"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets show m"), [["microsoft-learn "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp allow-m"), [["allow-model-tool "], "allow-m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp inspect o"), [["openrouter "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog ", "commands "], "c"]);
@@ -328,7 +331,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-    assert.match(alias.stdout(), /\/mcp \[list\|catalog\|presets\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+    assert.match(alias.stdout(), /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -2372,6 +2375,15 @@ test("mcp slash commands install provider presets", async () => {
     assert.equal(await handleSlashCommand("/mcp presets", harness.context), "continue");
     assert.match(harness.stdout(), /MCP provider presets/);
     assert.match(harness.stdout(), /id=context7/);
+
+    assert.equal(await handleSlashCommand("/mcp presets inspect github-readonly", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP Provider Preset: github-readonly/);
+    assert.match(harness.stdout(), /tools: none/);
+    assert.match(harness.stdout(), /inspect_side_effects: none/);
+
+    assert.equal(await handleSlashCommand("/mcp presets microsoft-learn", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP Provider Preset: microsoft-learn/);
+    assert.match(harness.stdout(), /microsoft_docs_search risk=read auth=no billable=no/);
 
     assert.equal(
       await handleSlashCommand("/mcp add-preset microsoft-learn --id mslearn", harness.context),

@@ -36,7 +36,7 @@ Reasoning: Zero-static-tool providers such as GitHub read-only need a comfortabl
 
 ## 2026-06-28: MCP Provider Presets Are Local Templates Only
 
-Decision: ORX may ship built-in MCP provider presets such as `context7`, `microsoft-learn`, and `github-readonly`, exposed through `orx mcp presets`, `orx mcp add-preset <preset>`, and matching `/mcp` commands. Installing a preset writes sanitized disabled declarations into the local user MCP catalog only. It must not enable a profile, trust a profile hash, grant tools, expose model MCP, fetch remote metadata, or bypass the existing guarded discovery/call/audit gates.
+Decision: ORX may ship built-in MCP provider presets such as `context7`, `microsoft-learn`, and `github-readonly`, exposed through `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, and matching `/mcp` commands. Inspecting a preset is display-only, and installing a preset writes sanitized disabled declarations into the local user MCP catalog only. These commands must not enable a profile, trust a profile hash, grant tools, expose model MCP, fetch remote metadata, or bypass the existing guarded discovery/call/audit gates.
 
 Reasoning: Provider presets make real MCP setup comfortable without making provider metadata an authority boundary. Keeping presets as local declaration templates preserves the existing operator-owned flow: review the profile, enable/trust the current hash, inspect remote tools when needed, grant specific tools, and only then call tools or expose read-only model MCP.
 

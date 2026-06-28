@@ -30,6 +30,8 @@ import {
   allowMcpToolGrant,
   callRemoteMcpTool,
   discoverMcpProfile,
+  findMcpProviderPreset,
+  formatMcpProviderPresetIdForMessage,
   formatMcpToolCallResult,
   formatMcpDiscoveryResult,
   formatMcpRemoteToolImportResult,
@@ -41,6 +43,7 @@ import {
   installMcpProviderPreset,
   loadUserMcpProfileCatalog,
   listRemoteMcpTools,
+  renderMcpProviderPresetInspect,
   renderMcpProviderPresets,
   renderMcpProfileInspect,
   renderMcpProfileTools,
@@ -373,6 +376,12 @@ const MCP_SUBCOMMAND_COMPLETIONS = [
 const MCP_MODEL_SUBCOMMAND_COMPLETIONS = ["status", "enable", "disable"] as const;
 const MCP_PROFILE_COMPLETIONS = ["openrouter"] as const;
 const MCP_PROVIDER_PRESET_COMPLETIONS = ["context7", "github-readonly", "microsoft-learn"] as const;
+const MCP_PROVIDER_PRESET_ACTION_COMPLETIONS = [
+  "inspect",
+  "show",
+  "info",
+  ...MCP_PROVIDER_PRESET_COMPLETIONS,
+] as const;
 const MCP_TOOL_RISK_COMPLETIONS = ["read", "write", "destructive", "billable"] as const;
 const PLUGIN_SUBCOMMAND_COMPLETIONS = [
   "catalog",
@@ -951,7 +960,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|catalog|presets|add-preset|add-profile|add-tool|model|inspect|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
+    usage: "/mcp [list|catalog|presets [inspect]|add-preset|add-profile|add-tool|model|inspect|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
     description: "Show and manage MCP profiles, local user catalogs, remote metadata, and tool grants",
     group: "Integrations",
     tier: "advanced",
@@ -1446,6 +1455,16 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       }
       if (firstArg === "model" && argIndex === 1) {
         return [...MCP_MODEL_SUBCOMMAND_COMPLETIONS];
+      }
+      if ((firstArg === "presets" || firstArg === "preset") && argIndex === 1) {
+        return [...MCP_PROVIDER_PRESET_ACTION_COMPLETIONS];
+      }
+      if (
+        (firstArg === "presets" || firstArg === "preset") &&
+        (secondArg === "inspect" || secondArg === "show" || secondArg === "info") &&
+        argIndex === 2
+      ) {
+        return [...MCP_PROVIDER_PRESET_COMPLETIONS];
       }
       if (firstArg === "add-preset" && argIndex === 1) {
         return [...MCP_PROVIDER_PRESET_COMPLETIONS];
@@ -2748,8 +2767,21 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
   }
 
   if (subcommand === "presets" || subcommand === "preset") {
-    if (command.args.length !== 1) {
-      writeLine(context.io.stderr, "Usage: /mcp presets");
+    const presetArgs = parseMcpPresetInspectArgs(command.args);
+    if (presetArgs.kind === "error") {
+      writeLine(context.io.stderr, presetArgs.message.replace(/^Usage: orx mcp /, "Usage: /mcp "));
+      return;
+    }
+    if (presetArgs.kind === "inspect") {
+      const preset = findMcpProviderPreset(presetArgs.presetId);
+      if (!preset) {
+        writeLine(
+          context.io.stderr,
+          `Unknown MCP provider preset: ${formatMcpProviderPresetIdForMessage(presetArgs.presetId)}`,
+        );
+        return;
+      }
+      writeLine(context.io.stdout, renderMcpProviderPresetInspect(preset));
       return;
     }
 
@@ -3389,7 +3421,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /mcp [list|catalog|presets|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: /mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
 }
 
@@ -3436,6 +3468,29 @@ function renderMcpModelToolState(context: SlashCommandContext): string {
     "  auth: env-only bearer tokens from ORX_MCP_BEARER_<PROFILE> or ORX_MCP_BEARER_TOKEN",
     "  trust_boundary: remote MCP tool output is untrusted model context",
   ].join("\n");
+}
+
+function parseMcpPresetInspectArgs(
+  args: string[],
+):
+  | { kind: "list" }
+  | { kind: "inspect"; presetId: string }
+  | { kind: "error"; message: string } {
+  if (args.length === 1) {
+    return { kind: "list" };
+  }
+  const action = args[1]?.toLowerCase();
+  if (action === "inspect" || action === "show" || action === "info") {
+    const presetId = args[2];
+    if (!presetId || args.length !== 3) {
+      return { kind: "error", message: "Usage: orx mcp presets inspect <preset>" };
+    }
+    return { kind: "inspect", presetId };
+  }
+  if (args.length === 2) {
+    return { kind: "inspect", presetId: args[1] ?? "" };
+  }
+  return { kind: "error", message: "Usage: orx mcp presets [inspect <preset>]" };
 }
 
 function parseMcpAddPresetArgs(args: string[]):

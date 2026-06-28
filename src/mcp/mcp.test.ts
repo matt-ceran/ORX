@@ -30,9 +30,11 @@ import {
   getMcpStatusSummary,
   getMcpProfileToolPolicyReport,
   hashMcpProfile,
+  listMcpProviderPresets,
   listRemoteMcpTools,
   loadUserMcpProfileCatalog,
   loadMcpProfilesConfig,
+  renderMcpProviderPresetInspect,
   renderMcpProfileTools,
   renderMcpProviderPresets,
   renderUserMcpProfileCatalog,
@@ -323,6 +325,12 @@ test("MCP provider presets install local user catalog profiles", () => {
     assert.match(rendered, /id=context7/);
     assert.match(rendered, /id=github-readonly/);
     assert.match(rendered, /id=microsoft-learn/);
+
+    const inspected = renderMcpProviderPresetInspect(listMcpProviderPresets()[0]!);
+    assert.match(inspected, /MCP Provider Preset:/);
+    assert.match(inspected, /result_state: local_user_profile_disabled/);
+    assert.match(inspected, /inspect_side_effects: none/);
+    assert.match(inspected, /install_enable_trust_grant_call_model_exposure: separate_explicit_steps/);
 
     const result = installMcpProviderPreset("microsoft-learn", {
       profileCatalogPath,

@@ -31,7 +31,7 @@ Urgent UX recovery additions from user testing:
 - Local plugin catalog inspect/editor commands are implemented through `orx plugins catalog inspect|add-local|add-git|remove` and `/plugins catalog inspect|add-local|add-git|remove`. They review or write private local catalog declarations only, preserving install/enable/trust/grant/fetch/execution as separate explicit steps.
 - Local user MCP profile catalogs are implemented through `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. Declarations are namespaced as `user:<profile-id>`, currently support sanitized `remote-http` transports, appear in `/mcp`, `orx mcp`, `/status`, interactive chat, and `orx ask --mcp-tools`, and share the same enable/trusted-hash/schema-change/tool-grant/model-grant/auth/audit gates as built-in and plugin MCP profiles.
 - Local user MCP catalog management commands are implemented through `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands. They write private local catalog files, preserve existing array/object/legacy `servers` declarations during edits, and avoid manual JSON editing for common remote MCP setup.
-- Built-in MCP provider presets are implemented through `orx mcp presets`, `orx mcp add-preset <preset>`, `/mcp presets`, and `/mcp add-preset <preset>`. Initial templates include `context7`, `microsoft-learn`, and `github-readonly`, and install into the same local user catalog without enabling or trusting profiles.
+- Built-in MCP provider presets are implemented through `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, `/mcp presets`, `/mcp presets inspect <preset>`, and `/mcp add-preset <preset>`. Initial templates include `context7`, `microsoft-learn`, and `github-readonly`, and inspect/install flows leave enablement, trust, grants, calls, and model exposure as separate explicit steps.
 - Reviewed remote MCP tool import is implemented through `orx mcp import-remote-tools <profile>` and `/mcp import-remote-tools <profile>`. It is limited to local `user:` catalog profiles, uses the existing enabled/trusted/unchanged guarded `tools/list` path, stores sanitized read-only non-billable declarations only, skips unsupported names, audits hashes only, and leaves newly changed profiles behind the pending schema-change retrust gate.
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` or the derived `/plugin:<plugin-id>:command:<slug>` alias as untrusted context. Manifest-defined executable command schemas are discoverable through `components.commandSchemas` and exposed as `/plugin:<plugin-id>:exec:<slug>` aliases that can only run referenced trusted current bins.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
@@ -79,6 +79,13 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented no-side-effect MCP provider preset inspect commands:
+
+- Added `orx mcp presets inspect <preset>` / `orx mcp presets <preset>` and matching `/mcp presets inspect <preset>` / `/mcp presets <preset>` review surfaces.
+- Preset inspect renders static provider template metadata, default user profile id, URL, auth requirement, static tool declarations or remote-tool review guidance, install command, and explicit side-effect boundaries.
+- Preset inspect is display-only. It does not write the user MCP catalog, enable or trust profiles, grant tools, fetch remote metadata, call tools, or expose model MCP.
+- Next likely plugin/MCP work: broader provider preset packs, catalog update/provenance UX, or stronger prompt-injection boundaries for search/browser/research surfaces.
 
 Implemented no-side-effect plugin catalog inspect commands:
 

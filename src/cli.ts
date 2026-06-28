@@ -24,7 +24,9 @@ import {
   allowMcpToolGrant,
   callRemoteMcpTool,
   discoverMcpProfile,
+  findMcpProviderPreset,
   formatMcpDiscoveryResult,
+  formatMcpProviderPresetIdForMessage,
   formatMcpRemoteToolImportResult,
   formatMcpRemoteToolsResult,
   formatMcpToolCallResult,
@@ -35,6 +37,7 @@ import {
   installMcpProviderPreset,
   loadUserMcpProfileCatalog,
   listRemoteMcpTools,
+  renderMcpProviderPresetInspect,
   renderMcpProviderPresets,
   renderMcpProfileInspect,
   renderMcpProfileTools,
@@ -944,9 +947,22 @@ function runMcpCommand(
   }
 
   if (subcommand === "presets" || subcommand === "preset") {
-    if (args.length !== 1) {
-      writeLine(io.stderr, "Usage: orx mcp presets");
+    const presetArgs = parseMcpPresetInspectArgs(args);
+    if (presetArgs.kind === "error") {
+      writeLine(io.stderr, presetArgs.message);
       return 1;
+    }
+    if (presetArgs.kind === "inspect") {
+      const preset = findMcpProviderPreset(presetArgs.presetId);
+      if (!preset) {
+        writeLine(
+          io.stderr,
+          `Unknown MCP provider preset: ${formatMcpProviderPresetIdForMessage(presetArgs.presetId)}`,
+        );
+        return 1;
+      }
+      writeLine(io.stdout, renderMcpProviderPresetInspect(preset));
+      return 0;
     }
 
     writeLine(io.stdout, renderMcpProviderPresets());
@@ -1562,9 +1578,32 @@ function runMcpCommand(
 
   writeLine(
     io.stderr,
-    "Usage: orx mcp [list|catalog|presets|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: orx mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
   return 1;
+}
+
+function parseMcpPresetInspectArgs(
+  args: string[],
+):
+  | { kind: "list" }
+  | { kind: "inspect"; presetId: string }
+  | { kind: "error"; message: string } {
+  if (args.length === 1) {
+    return { kind: "list" };
+  }
+  const action = args[1]?.toLowerCase();
+  if (action === "inspect" || action === "show" || action === "info") {
+    const presetId = args[2];
+    if (!presetId || args.length !== 3) {
+      return { kind: "error", message: "Usage: orx mcp presets inspect <preset>" };
+    }
+    return { kind: "inspect", presetId };
+  }
+  if (args.length === 2) {
+    return { kind: "inspect", presetId: args[1] ?? "" };
+  }
+  return { kind: "error", message: "Usage: orx mcp presets [inspect <preset>]" };
 }
 
 function parseMcpAddPresetArgs(args: string[]):

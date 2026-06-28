@@ -562,6 +562,27 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(listed.stdout(), /id=context7/);
     assert.match(listed.stdout(), /id=microsoft-learn/);
 
+    const presetInspect = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "presets", "inspect", "context7"], env, presetInspect.io),
+      0,
+    );
+    assert.match(presetInspect.stdout(), /MCP Provider Preset: context7/);
+    assert.match(presetInspect.stdout(), /profile_id: user:context7/);
+    assert.match(presetInspect.stdout(), /command: orx mcp add-preset context7/);
+    assert.match(presetInspect.stdout(), /inspect_side_effects: none/);
+    assert.match(presetInspect.stdout(), /install_enable_trust_grant_call_model_exposure: separate_explicit_steps/);
+
+    const shorthandInspect = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "presets", "github-readonly"], env, shorthandInspect.io), 0);
+    assert.match(shorthandInspect.stdout(), /MCP Provider Preset: github-readonly/);
+    assert.match(shorthandInspect.stdout(), /tools: none/);
+    assert.match(shorthandInspect.stdout(), /remote_tool_review:/);
+
+    const pluginList = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "catalog"], env, pluginList.io), 0);
+    assert.match(pluginList.stdout(), /profiles: 0/);
+
     const added = createIo({ cwd });
     assert.equal(
       await runCli(

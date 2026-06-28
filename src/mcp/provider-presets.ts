@@ -38,6 +38,9 @@ export interface InstallMcpProviderPresetResult {
   message: string;
 }
 
+const PRESET_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,79}$/;
+const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
+
 export const MCP_PROVIDER_PRESETS: McpProviderPreset[] = [
   {
     id: "context7",
@@ -135,6 +138,55 @@ export function renderMcpProviderPresets(
         .join(" "),
     ),
   ].join("\n");
+}
+
+export function renderMcpProviderPresetInspect(preset: McpProviderPreset): string {
+  const lines = [
+    `MCP Provider Preset: ${preset.id}`,
+    `  name: ${preset.name}`,
+    `  profile_id: user:${preset.profileId}`,
+    `  url: ${preset.url}`,
+    `  auth_required: ${preset.authRequired ? "yes" : "no"}`,
+    `  tags: ${preset.tags.length > 0 ? preset.tags.join(",") : "none"}`,
+    `  notes: ${preset.notes}`,
+    `  static_tools: ${preset.tools.length}`,
+  ];
+
+  if (preset.tools.length > 0) {
+    lines.push("  tools:");
+    for (const tool of preset.tools) {
+      lines.push(
+        `    - ${tool.name} risk=${tool.risk} auth=${tool.authRequired ? "yes" : "no"} billable=${tool.billable ? "yes" : "no"}`,
+      );
+    }
+  } else {
+    lines.push(
+      "  tools: none",
+      "  remote_tool_review: enable/trust the installed profile, run orx mcp remote-tools, then import or add reviewed tools explicitly",
+    );
+  }
+
+  lines.push(
+    "  install:",
+    `    command: orx mcp add-preset ${preset.id}`,
+    "    result_state: local_user_profile_disabled",
+    "  authority:",
+    "    preset_template: declaration_only",
+    "    inspect_side_effects: none",
+    "    install_enable_trust_grant_call_model_exposure: separate_explicit_steps",
+  );
+
+  return lines.join("\n");
+}
+
+export function formatMcpProviderPresetIdForMessage(id: string): string {
+  const normalized = id.trim().toLowerCase();
+  return normalized &&
+    normalized.length <= 80 &&
+    PRESET_ID_PATTERN.test(normalized) &&
+    !CONTROL_CHAR_PATTERN.test(normalized)
+    ? normalized
+    : "[invalid preset id]";
 }
 
 export function installMcpProviderPreset(
