@@ -254,6 +254,7 @@ export interface SlashCommandContext {
   setLatestCredits?: (credits: OpenRouterCreditsInfo) => void;
   mcpAuditLogPath?: string;
   mcpConfigPath?: string;
+  mcpProfileCatalogPath?: string;
   pluginCacheDirectory?: string;
   pluginCatalogPath?: string;
   pluginBinsAuditLogPath?: string;
@@ -1612,6 +1613,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       cwd: context.io.cwd,
       loadedConfig,
       mcpConfigPath: context.mcpConfigPath,
+      mcpProfileCatalogPath: context.mcpProfileCatalogPath,
       pluginCacheDirectory: context.pluginCacheDirectory,
       pluginBinsAuditLogPath: context.pluginBinsAuditLogPath,
       pluginBinsConfigPath: context.pluginBinsConfigPath,
@@ -2522,6 +2524,11 @@ function handleDelegateCommand(command: SlashCommand, context: SlashCommandConte
 async function handleMcpCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
   const subcommand = command.args[0]?.toLowerCase() ?? "list";
   const profileId = command.args[1];
+  const registryOptions = {
+    configPath: context.mcpConfigPath,
+    profileCatalogPath: context.mcpProfileCatalogPath,
+    pluginRegistryPath: context.pluginRegistryPath,
+  };
 
   if (subcommand === "model") {
     handleMcpModelCommand(command, context);
@@ -2529,10 +2536,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
   }
 
   if (subcommand === "list" || subcommand === "status") {
-    const summary = getMcpStatusSummary({
-      configPath: context.mcpConfigPath,
-      pluginRegistryPath: context.pluginRegistryPath,
-    });
+    const summary = getMcpStatusSummary(registryOptions);
     tryWriteMcpAuditEvent(context, {
       type: "mcp.profile.status",
       ok: true,
@@ -2556,10 +2560,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
       return;
     }
 
-    const report = getMcpProfileToolPolicyReport(profileId, {
-      configPath: context.mcpConfigPath,
-      pluginRegistryPath: context.pluginRegistryPath,
-    });
+    const report = getMcpProfileToolPolicyReport(profileId, registryOptions);
     tryWriteMcpAuditEvent(context, {
       type: "mcp.profile.inspect",
       profileId,
@@ -2608,10 +2609,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
       return;
     }
 
-    const report = getMcpProfileToolPolicyReport(profileId, {
-      configPath: context.mcpConfigPath,
-      pluginRegistryPath: context.pluginRegistryPath,
-    });
+    const report = getMcpProfileToolPolicyReport(profileId, registryOptions);
     tryWriteMcpAuditEvent(context, {
       type: "mcp.profile.tools",
       profileId,
@@ -2668,8 +2666,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
     }
 
     const result = await callRemoteMcpTool(profileId, toolName, parsedArgs.value, {
-      configPath: context.mcpConfigPath,
-      pluginRegistryPath: context.pluginRegistryPath,
+      ...registryOptions,
       fetch: context.mcpCallFetch,
       resolveHost: context.mcpResolveHost,
       authToken: resolveMcpBearerToken(profileId, context.mcpAuthEnv),
@@ -2711,8 +2708,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
     }
 
     const result = await listRemoteMcpTools(profileId, {
-      configPath: context.mcpConfigPath,
-      pluginRegistryPath: context.pluginRegistryPath,
+      ...registryOptions,
       fetch: context.mcpRemoteToolsFetch,
       resolveHost: context.mcpResolveHost,
     });
@@ -2767,8 +2763,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
     }
 
     const result = await discoverMcpProfile(profileId, {
-      configPath: context.mcpConfigPath,
-      pluginRegistryPath: context.pluginRegistryPath,
+      ...registryOptions,
       fetch: context.mcpDiscoveryFetch,
       resolveHost: context.mcpResolveHost,
     });
@@ -2818,10 +2813,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
     let result: ReturnType<typeof allowMcpToolGrant>;
     try {
-      result = allowMcpToolGrant(profileId, toolName, {
-        configPath: context.mcpConfigPath,
-        pluginRegistryPath: context.pluginRegistryPath,
-      });
+      result = allowMcpToolGrant(profileId, toolName, registryOptions);
     } catch (error) {
       tryWriteMcpAuditEvent(context, {
         type: "mcp.tool.allow_attempt",
@@ -2864,10 +2856,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
     let result: ReturnType<typeof allowMcpModelToolGrant>;
     try {
-      result = allowMcpModelToolGrant(profileId, toolName, {
-        configPath: context.mcpConfigPath,
-        pluginRegistryPath: context.pluginRegistryPath,
-      });
+      result = allowMcpModelToolGrant(profileId, toolName, registryOptions);
     } catch (error) {
       tryWriteMcpAuditEvent(context, {
         type: "mcp.model_tool.allow_attempt",
@@ -2910,10 +2899,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
     let result: ReturnType<typeof revokeMcpToolGrant>;
     try {
-      result = revokeMcpToolGrant(profileId, toolName, {
-        configPath: context.mcpConfigPath,
-        pluginRegistryPath: context.pluginRegistryPath,
-      });
+      result = revokeMcpToolGrant(profileId, toolName, registryOptions);
     } catch (error) {
       tryWriteMcpAuditEvent(context, {
         type: "mcp.tool.revoke_attempt",
@@ -2952,10 +2938,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
     let result: ReturnType<typeof revokeMcpModelToolGrant>;
     try {
-      result = revokeMcpModelToolGrant(profileId, toolName, {
-        configPath: context.mcpConfigPath,
-        pluginRegistryPath: context.pluginRegistryPath,
-      });
+      result = revokeMcpModelToolGrant(profileId, toolName, registryOptions);
     } catch (error) {
       tryWriteMcpAuditEvent(context, {
         type: "mcp.model_tool.revoke_attempt",
@@ -2996,10 +2979,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
       result = setMcpProfilePersistentState(
         profileId,
         subcommand === "enable" ? "enabled" : "disabled",
-        {
-          configPath: context.mcpConfigPath,
-          pluginRegistryPath: context.pluginRegistryPath,
-        },
+        registryOptions,
       );
     } catch (error) {
       tryWriteMcpAuditEvent(context, {
@@ -3077,6 +3057,7 @@ function renderMcpModelToolState(context: SlashCommandContext): string {
   const enabled = context.getModelMcpEnabled?.() === true;
   const summary = getMcpStatusSummary({
     configPath: context.mcpConfigPath,
+    profileCatalogPath: context.mcpProfileCatalogPath,
     pluginRegistryPath: context.pluginRegistryPath,
   });
   return [

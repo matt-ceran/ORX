@@ -21,6 +21,7 @@ export interface StatusOptions {
   cwd: string;
   loadedConfig: LoadedConfig;
   mcpConfigPath?: string;
+  mcpProfileCatalogPath?: string;
   pluginCacheDirectory?: string;
   pluginBinsAuditLogPath?: string;
   pluginBinsConfigPath?: string;
@@ -36,6 +37,7 @@ export function formatStatus({
   cwd,
   loadedConfig,
   mcpConfigPath,
+  mcpProfileCatalogPath,
   pluginCacheDirectory,
   pluginBinsAuditLogPath,
   pluginBinsConfigPath,
@@ -50,6 +52,7 @@ export function formatStatus({
   const { config } = loadedConfig;
   const mcpStatus = getMcpStatusSummary({
     configPath: mcpConfigPath,
+    profileCatalogPath: mcpProfileCatalogPath,
     pluginRegistryPath,
   });
   const pluginStatus = getPluginStatusSummary({ registryPath: pluginRegistryPath });
@@ -97,6 +100,10 @@ export function formatStatus({
     `test_node_targets: ${testStatus.nodeTestTargetCount}`,
     `test_frameworks: node=${testStatus.frameworkCounts.node}, vitest=${testStatus.frameworkCounts.vitest}, jest=${testStatus.frameworkCounts.jest}, playwright=${testStatus.frameworkCounts.playwright}, unknown=${testStatus.frameworkCounts.unknown}`,
     `mcp_active_profiles: ${activeMcpProfiles}`,
+    `mcp_profile_catalog_path: ${mcpProfileCatalogPath ?? "none"}`,
+    `mcp_user_profiles: ${
+      mcpStatus.profiles.filter((profile) => profile.source?.kind === "user").length
+    }`,
     `mcp_active_servers: ${mcpStatus.serverCount}`,
     `mcp_auth_bearing_servers: ${mcpStatus.authBearingServerCount}`,
     `mcp_write_enabled_tools: ${mcpStatus.writeEnabledToolCount}`,

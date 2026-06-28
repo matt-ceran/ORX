@@ -1025,6 +1025,16 @@ function formatMcpProfileSource(profile: McpProfile): string {
     return "builtin";
   }
 
+  if (source.kind === "user") {
+    return [
+      "user",
+      source.componentPath ? `catalog_path=${source.componentPath}` : undefined,
+      source.componentHash ? `profile_hash=${source.componentHash}` : undefined,
+    ]
+      .filter((part): part is string => typeof part === "string")
+      .join(" ");
+  }
+
   return [
     "plugin",
     source.pluginId ? `plugin=${source.pluginId}` : undefined,

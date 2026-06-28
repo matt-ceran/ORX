@@ -26,6 +26,7 @@ Urgent UX recovery additions from user testing:
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
 - Plugin install/register now snapshots sanitized manifests plus declared components and declared hook cwd directories into ORX-owned plugin cache storage before registry persistence; enabled skill/hook discovery resolves from the cached manifest path, not the original source checkout.
 - Plugin catalog support now handles both local manifest entries and pinned git source entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH`. `orx plugins install <catalog-id>` and `/plugins install <catalog-id>` clone git catalog sources into private temporary cache storage, checkout the exact pinned commit, normalize cached manifest provenance to that pin, and still register the plugin disabled/inert.
+- Local user MCP profile catalogs are implemented through `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. Declarations are namespaced as `user:<profile-id>`, currently support sanitized `remote-http` transports, appear in `/mcp`, `orx mcp`, `/status`, interactive chat, and `orx ask --mcp-tools`, and share the same enable/trusted-hash/schema-change/tool-grant/model-grant/auth/audit gates as built-in and plugin MCP profiles.
 - Enabled plugin markdown prompt commands are discoverable through `/prompts list` and compact model metadata. Full prompt markdown is loaded only by explicit `/prompts activate <id>` or the derived `/plugin:<plugin-id>:command:<slug>` alias as untrusted context. Manifest-defined executable command schemas are discoverable through `components.commandSchemas` and exposed as `/plugin:<plugin-id>:exec:<slug>` aliases that can only run referenced trusted current bins.
 - Enabled plugin markdown rules are discoverable through `/rules list` and compact model metadata. Full rule markdown is loaded only by explicit `/rules activate <id>` as untrusted context; rules are advisory and cannot change permissions or activate executable surfaces.
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
@@ -72,6 +73,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Implemented local user MCP profile catalogs:
+
+- Added `src/mcp/user-profiles.ts` with a bounded, sanitized local profile catalog loader. Default path is `~/.orx/mcp/profile-catalog.json`; `ORX_MCP_PROFILE_CATALOG_PATH` overrides it for tests or alternate local setups.
+- User catalog profiles are namespaced as `user:<profile-id>`, support `profiles` arrays, `profiles` objects, or `servers` objects, currently accept `remote-http` transports only, reject credentials/query/fragment/secret-like values, and store per-profile declaration hashes in source provenance.
+- The MCP registry now includes catalog profiles alongside built-in and plugin profiles, so `/mcp list|inspect|tools|enable|disable|call|remote-tools|discover`, `orx mcp ...`, `/status`, chat `/mcp model ...`, and `orx ask --mcp-tools` all use the same enable/trusted-hash/schema-change/tool-grant/model-grant gates.
+- Verification so far: `npm run typecheck`, `git diff --check`, focused source tests for MCP/CLI/slash with 165 tests, and full build-backed `npm test` with 394 tests pass, including a one-shot `ask --mcp-tools` model bridge test against a catalog-backed `user:context7` profile.
+- Next likely plugin/MCP work: provider preset packs/docs for common remote MCP services, prompt-injection boundary hardening for MCP/research outputs, richer catalog/marketplace UX, or plugin authoring docs.
 
 Implemented pinned git plugin catalog installs:
 

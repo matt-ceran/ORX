@@ -31,6 +31,7 @@ import {
   renderMcpProfileTools,
   renderMcpStatus,
   resolveMcpConfigPath,
+  resolveMcpProfileCatalogPath,
   resolveMcpBearerToken,
   revokeMcpModelToolGrant,
   revokeMcpToolGrant,
@@ -163,6 +164,7 @@ export async function runCli(
   }
 
   const mcpConfigPath = resolveMcpConfigPath({ env, cwd: io.cwd });
+  const mcpProfileCatalogPath = resolveMcpProfileCatalogPath({ env, cwd: io.cwd });
   const pluginRegistryPath = resolvePluginRegistryPath({ env, cwd: io.cwd });
   const pluginCacheDirectory = resolvePluginCacheDirectory({
     env,
@@ -194,6 +196,7 @@ export async function runCli(
         cwd: io.cwd,
         loadedConfig,
         mcpConfigPath,
+        mcpProfileCatalogPath,
         pluginCacheDirectory,
         pluginBinsAuditLogPath,
         pluginBinsConfigPath,
@@ -251,6 +254,7 @@ export async function runCli(
       io,
       env,
       mcpConfigPath,
+      mcpProfileCatalogPath,
       pluginRegistryPath,
       env.ORX_MCP_AUDIT_PATH,
     );
@@ -283,6 +287,7 @@ export async function runCli(
       hookEnv: env,
       mcpAuditLogPath: env.ORX_MCP_AUDIT_PATH,
       mcpConfigPath,
+      mcpProfileCatalogPath,
       pluginHooksAuditLogPath,
       pluginHooksConfigPath,
       pluginRegistryPath,
@@ -304,6 +309,7 @@ export async function runCli(
   if (!first || first === "chat") {
     return runChatCommand(env, loadedConfig, io, {
       mcpConfigPath,
+      mcpProfileCatalogPath,
       pluginCacheDirectory,
       pluginCatalogPath,
       pluginBinsAuditLogPath,
@@ -366,6 +372,7 @@ function runChatCommand(
   io: CliIo,
   paths?: {
     mcpConfigPath?: string;
+    mcpProfileCatalogPath?: string;
     pluginCacheDirectory?: string;
     pluginCatalogPath?: string;
     pluginBinsAuditLogPath?: string;
@@ -391,6 +398,7 @@ function runChatCommand(
     sessionDirectory: resolveSessionDirectory({ env, cwd: io.cwd }),
     mcpAuditLogPath: env.ORX_MCP_AUDIT_PATH,
     mcpConfigPath: paths?.mcpConfigPath,
+    mcpProfileCatalogPath: paths?.mcpProfileCatalogPath,
     pluginCacheDirectory: paths?.pluginCacheDirectory,
     pluginCatalogPath: paths?.pluginCatalogPath,
     pluginBinsAuditLogPath: paths?.pluginBinsAuditLogPath,
@@ -741,18 +749,21 @@ function runMcpCommand(
   io: CliIo,
   env: NodeJS.ProcessEnv,
   mcpConfigPath: string,
+  mcpProfileCatalogPath: string,
   pluginRegistryPath: string,
   mcpAuditLogPath?: string,
 ): number | Promise<number> {
   const subcommand = args[0]?.toLowerCase() ?? "list";
   const profileId = args[1];
   const toolName = args[2];
+  const registryOptions = {
+    configPath: mcpConfigPath,
+    profileCatalogPath: mcpProfileCatalogPath,
+    pluginRegistryPath,
+  };
 
   if (subcommand === "list" || subcommand === "status") {
-    const summary = getMcpStatusSummary({
-      configPath: mcpConfigPath,
-      pluginRegistryPath,
-    });
+    const summary = getMcpStatusSummary(registryOptions);
     tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
       type: "mcp.profile.status",
       ok: true,
@@ -778,10 +789,7 @@ function runMcpCommand(
       return 1;
     }
 
-    const report = getMcpProfileToolPolicyReport(profileId, {
-      configPath: mcpConfigPath,
-      pluginRegistryPath,
-    });
+    const report = getMcpProfileToolPolicyReport(profileId, registryOptions);
     tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
       type: "mcp.profile.inspect",
       profileId,
@@ -833,10 +841,7 @@ function runMcpCommand(
       return 1;
     }
 
-    const report = getMcpProfileToolPolicyReport(profileId, {
-      configPath: mcpConfigPath,
-      pluginRegistryPath,
-    });
+    const report = getMcpProfileToolPolicyReport(profileId, registryOptions);
     tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
       type: "mcp.profile.tools",
       profileId,
@@ -879,10 +884,7 @@ function runMcpCommand(
       const result = setMcpProfilePersistentState(
         profileId,
         subcommand === "enable" ? "enabled" : "disabled",
-        {
-          configPath: mcpConfigPath,
-          pluginRegistryPath,
-        },
+        registryOptions,
       );
       tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
         type:
@@ -948,8 +950,7 @@ function runMcpCommand(
     }
 
     return callRemoteMcpTool(profileId, toolName, parsedArgs.value, {
-      configPath: mcpConfigPath,
-      pluginRegistryPath,
+      ...registryOptions,
       fetch: io.mcpCallFetch,
       authToken: resolveMcpBearerToken(profileId, env),
     }).then((result) => {
@@ -989,10 +990,7 @@ function runMcpCommand(
     }
 
     try {
-      const result = allowMcpToolGrant(profileId, toolName, {
-        configPath: mcpConfigPath,
-        pluginRegistryPath,
-      });
+      const result = allowMcpToolGrant(profileId, toolName, registryOptions);
       tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
         type: "mcp.tool.allow_attempt",
         profileId,
@@ -1032,10 +1030,7 @@ function runMcpCommand(
     }
 
     try {
-      const result = allowMcpModelToolGrant(profileId, toolName, {
-        configPath: mcpConfigPath,
-        pluginRegistryPath,
-      });
+      const result = allowMcpModelToolGrant(profileId, toolName, registryOptions);
       tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
         type: "mcp.model_tool.allow_attempt",
         profileId,
@@ -1075,10 +1070,7 @@ function runMcpCommand(
     }
 
     try {
-      const result = revokeMcpModelToolGrant(profileId, toolName, {
-        configPath: mcpConfigPath,
-        pluginRegistryPath,
-      });
+      const result = revokeMcpModelToolGrant(profileId, toolName, registryOptions);
       tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
         type: "mcp.model_tool.revoke_attempt",
         profileId,
@@ -1114,10 +1106,7 @@ function runMcpCommand(
     }
 
     try {
-      const result = revokeMcpToolGrant(profileId, toolName, {
-        configPath: mcpConfigPath,
-        pluginRegistryPath,
-      });
+      const result = revokeMcpToolGrant(profileId, toolName, registryOptions);
       tryWriteCliMcpAuditEvent(io, mcpAuditLogPath, {
         type: "mcp.tool.revoke_attempt",
         profileId,
@@ -1368,6 +1357,7 @@ async function runAskCommand(
     hookEnv?: NodeJS.ProcessEnv;
     mcpAuditLogPath?: string;
     mcpConfigPath?: string;
+    mcpProfileCatalogPath?: string;
     pluginHooksAuditLogPath?: string;
     pluginHooksConfigPath?: string;
     pluginRegistryPath?: string;
@@ -1411,6 +1401,7 @@ async function runAskCommand(
               authEnv: options.hookEnv,
               configPath: options.mcpConfigPath,
               fetch: io.mcpCallFetch,
+              profileCatalogPath: options.mcpProfileCatalogPath,
               pluginRegistryPath: options.pluginRegistryPath,
             }
           : undefined,

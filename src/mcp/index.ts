@@ -99,6 +99,15 @@ export {
   type McpAuditOptions,
 } from "./audit.js";
 export {
+  defaultMcpProfileCatalogPath,
+  loadUserMcpProfileCatalog,
+  resolveMcpProfileCatalogPath,
+  type UserMcpProfileCatalogIoOptions,
+  type UserMcpProfileCatalogLoadResult,
+  type UserMcpProfileCatalogPathOptions,
+  type UserMcpProfileOmission,
+} from "./user-profiles.js";
+export {
   hashMcpProfile,
   hashMcpProfiles,
   mcpProfileHashInput,

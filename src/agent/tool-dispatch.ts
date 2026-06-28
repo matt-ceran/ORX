@@ -31,6 +31,7 @@ export interface ToolDispatchOptions {
 export interface McpModelToolOptions {
   enabled?: boolean;
   configPath?: string;
+  profileCatalogPath?: string;
   pluginRegistryPath?: string;
   auditLogPath?: string;
   authEnv?: NodeJS.ProcessEnv;
@@ -234,6 +235,7 @@ async function runModelMcpCallTool(
 
   const registryOptions = {
     configPath: mcp.configPath,
+    profileCatalogPath: mcp.profileCatalogPath,
     pluginRegistryPath: mcp.pluginRegistryPath,
   };
   const policy = evaluateMcpModelToolPolicy(profileId, toolName, registryOptions);

@@ -4,6 +4,7 @@ import {
   type McpProfilesConfig,
 } from "./config.js";
 import { hashMcpProfile } from "./schema.js";
+import { loadUserMcpProfileCatalog } from "./user-profiles.js";
 import { discoverEnabledPluginMcpProfiles } from "../plugins/mcp-presets.js";
 
 export type McpTransportKind = "remote-http" | "stdio";
@@ -19,7 +20,7 @@ export interface McpDeclaredTool {
 }
 
 export interface McpProfileSource {
-  kind: "builtin" | "plugin";
+  kind: "builtin" | "plugin" | "user";
   pluginId?: string;
   manifestHash?: string;
   componentPath?: string;
@@ -45,6 +46,7 @@ export interface McpProfile {
 export interface McpRegistryOptions {
   config?: McpProfilesConfig;
   configPath?: string;
+  profileCatalogPath?: string;
   pluginRegistryPath?: string;
 }
 
@@ -229,21 +231,25 @@ export function getMcpToolNames(profile: McpProfile): string[] {
 
 function getConfiguredMcpProfile(
   id: string,
-  options: Pick<McpRegistryOptions, "pluginRegistryPath"> = {},
+  options: Pick<McpRegistryOptions, "pluginRegistryPath" | "profileCatalogPath"> = {},
 ): McpProfile | undefined {
   return getConfiguredMcpProfiles(options).find((profile) => profile.id === id);
 }
 
 function getConfiguredMcpProfiles(
-  options: Pick<McpRegistryOptions, "pluginRegistryPath"> = {},
+  options: Pick<McpRegistryOptions, "pluginRegistryPath" | "profileCatalogPath"> = {},
 ): McpProfile[] {
-  if (!options.pluginRegistryPath) {
-    return [OPENROUTER_MCP_PROFILE];
-  }
+  const userProfiles = options.profileCatalogPath
+    ? loadUserMcpProfileCatalog({ profileCatalogPath: options.profileCatalogPath }).profiles
+    : [];
+  const pluginProfiles = options.pluginRegistryPath
+    ? discoverEnabledPluginMcpProfiles({ registryPath: options.pluginRegistryPath }).profiles
+    : [];
 
   return [
     OPENROUTER_MCP_PROFILE,
-    ...discoverEnabledPluginMcpProfiles({ registryPath: options.pluginRegistryPath }).profiles,
+    ...userProfiles,
+    ...pluginProfiles,
   ];
 }
 

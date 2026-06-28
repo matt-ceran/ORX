@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { runCli } from "./cli.js";
@@ -451,6 +451,41 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     assert.match(audit, /"type":"mcp.model_tool.allow_attempt"/);
     assert.match(audit, /"type":"mcp.model_tool.revoke_attempt"/);
     assert.doesNotMatch(audit, /sk-or-v1/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli mcp commands use user MCP profile catalog", async () => {
+  const cwd = createTempDir();
+  const mcpConfigPath = join(cwd, "mcp", "profiles.json");
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+  const env = {
+    ORX_MCP_CONFIG_PATH: mcpConfigPath,
+    ORX_MCP_PROFILE_CATALOG_PATH: profileCatalogPath,
+  };
+
+  try {
+    writeUserMcpProfileCatalog(profileCatalogPath);
+
+    const list = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "list"], env, list.io), 0);
+    assert.match(list.stdout(), /profile=user:context7 state=disabled/);
+    assert.match(list.stdout(), /source=user/);
+
+    const status = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "status"], env, status.io), 0);
+    assert.match(status.stdout(), /mcp_user_profiles: 1/);
+    assert.match(status.stdout(), /mcp_profile: profile=user:context7 state=disabled/);
+
+    const enabled = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "enable", "user:context7"], env, enabled.io), 0);
+    assert.match(enabled.stdout(), /MCP profile user:context7 enabled/);
+
+    const inspected = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "inspect", "user:context7"], env, inspected.io), 0);
+    assert.match(inspected.stdout(), /source: user catalog_path=/);
+    assert.match(inspected.stdout(), /resolve-library-id risk=read auth=yes billable=no policy=allowed/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -1253,14 +1288,20 @@ test("ask streams text and prints compact metadata summary", async () => {
 test("ask --mcp-tools exposes read-only MCP calls through dedicated transport", async () => {
   const cwd = createTempDir();
   const mcpConfigPath = join(cwd, "mcp", "profiles.json");
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
   const auditLogPath = join(cwd, "audit", "mcp.jsonl");
   const seenMcpRequests: Array<{ authorization: string | null; body: string }> = [];
   let chatRequestCount = 0;
 
   try {
-    setMcpProfilePersistentState("openrouter", "enabled", { configPath: mcpConfigPath });
-    const modelGrant = allowMcpModelToolGrant("openrouter", "models-list", {
+    writeUserMcpProfileCatalog(profileCatalogPath);
+    setMcpProfilePersistentState("user:context7", "enabled", {
       configPath: mcpConfigPath,
+      profileCatalogPath,
+    });
+    const modelGrant = allowMcpModelToolGrant("user:context7", "resolve-library-id", {
+      configPath: mcpConfigPath,
+      profileCatalogPath,
     });
     assert.equal(modelGrant.ok, true);
     const capture = createIo({
@@ -1287,8 +1328,8 @@ test("ask --mcp-tools exposes read-only MCP calls through dedicated transport", 
                           function: {
                             name: "mcp_call",
                             arguments: JSON.stringify({
-                              profile: "openrouter",
-                              tool: "models-list",
+                              profile: "user:context7",
+                              tool: "resolve-library-id",
                               arguments: { query: "claude" },
                             }),
                           },
@@ -1351,8 +1392,9 @@ test("ask --mcp-tools exposes read-only MCP calls through dedicated transport", 
       {
         OPENROUTER_API_KEY: "test-key",
         ORX_MCP_AUDIT_PATH: auditLogPath,
-        ORX_MCP_BEARER_OPENROUTER: "mcp-secret-token",
+        ORX_MCP_BEARER_USER_CONTEXT7: "mcp-secret-token",
         ORX_MCP_CONFIG_PATH: mcpConfigPath,
+        ORX_MCP_PROFILE_CATALOG_PATH: profileCatalogPath,
       },
       capture.io,
     );
@@ -1362,7 +1404,7 @@ test("ask --mcp-tools exposes read-only MCP calls through dedicated transport", 
     assert.equal(seenMcpRequests.length, 1);
     assert.equal(seenMcpRequests[0].authorization, "Bearer mcp-secret-token");
     assert.match(seenMcpRequests[0].body, /"method":"tools\/call"/);
-    assert.match(stripAnsi(capture.stdout()), /\[tool\] mcp_call profile="openrouter" tool="models-list" arguments=<object>/);
+    assert.match(stripAnsi(capture.stdout()), /\[tool\] mcp_call profile="user:context7" tool="resolve-library-id" arguments=<object>/);
     assert.match(stripAnsi(capture.stdout()), /\[tool\] mcp_call ok duration=\d+ms status=ok policy=allowed network=attempted result_hash=sha256:[a-f0-9]{64}/);
     assert.match(capture.stdout(), /Used MCP\./);
     assert.doesNotMatch(capture.stdout(), /remote-secret|mcp-secret-token/);
@@ -2438,6 +2480,41 @@ function stripAnsi(value: string): string {
 
 function createTempDir(): string {
   return mkdtempSync(join(tmpdir(), "orx-cli-"));
+}
+
+function writeUserMcpProfileCatalog(path: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(
+    path,
+    JSON.stringify({
+      version: 1,
+      profiles: {
+        context7: {
+          name: "Context7 docs",
+          transport: {
+            kind: "remote-http",
+            url: "https://mcp.context7.example/mcp",
+          },
+          authRequired: true,
+          tools: [
+            {
+              name: "resolve-library-id",
+              risk: "read",
+              authRequired: true,
+              billable: false,
+            },
+            {
+              name: "write-doc-cache",
+              risk: "write",
+              authRequired: true,
+              billable: false,
+            },
+          ],
+          notes: "Docs lookup profile declared by the local user catalog.",
+        },
+      },
+    }),
+  );
 }
 
 function git(cwd: string, ...args: string[]): string {

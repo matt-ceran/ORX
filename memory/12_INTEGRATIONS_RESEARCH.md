@@ -55,6 +55,7 @@ Install/runtime shape:
 - Namespace all plugin-provided surfaces: `/plugin:command`, `plugin:skill`, and `mcp__plugin__server__tool`.
 - Keep plugin binaries scoped to ORX execution; do not add them to the user's global `PATH`.
 - Current implementation supports local manifest paths, local catalog manifest paths, and pinned git catalog entries. Git catalog installs require a full commit pin, clone with shell-disabled bounded `git`, checkout that exact commit, normalize cached manifest provenance to the catalog pin, and then register the plugin disabled/inert.
+- Current implementation also supports local user MCP profile catalogs at `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. These are operator-controlled `remote-http` declarations namespaced as `user:<profile-id>` and routed through the same MCP enable/trust/tool-grant/model-grant gates as built-in and plugin profiles.
 - Support GitHub shorthand, richer marketplace JSON, update checks, and optional signing/provenance layers later.
 - Maintain a lockfile with source, resolved commit, integrity, install time, and enabled components.
 
@@ -106,6 +107,7 @@ Every research run should maintain an evidence ledger with source id, canonical 
 ## Risk Rules
 
 - Do not auto-enable plugins or MCP servers.
+- Do not auto-enable local user MCP catalog profiles merely because they are present.
 - Do not enable auth-bearing MCP servers by default.
 - Do not enable write-capable GitHub, database, cloud, issue tracker, Slack/Notion, Figma, browser, or plugin executable profiles without explicit config.
 - Treat fetched web pages, issue text, database rows, browser DOM, MCP tool descriptions, tool schemas, tool annotations, plugin rules, plugin skills, and plugin docs as untrusted input.

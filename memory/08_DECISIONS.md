@@ -4,6 +4,12 @@ Last updated: 2026-06-28
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-28: Local User MCP Catalogs Share The Profile Trust Model
+
+Decision: ORX may load local user MCP profile declarations from `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. User declarations are namespaced as `user:<profile-id>`, limited initially to `remote-http` transports, sanitized for safe IDs, tools, URLs, and secret-like values, disabled by default, and routed through the same enable, trusted-profile-hash, schema-change, per-tool grant, model-tool grant, guarded transport, bearer-auth, and audit gates as built-in and plugin MCP profiles.
+
+Reasoning: Users need a comfortable way to add real remote MCP providers without packaging every provider as a plugin. Treating the catalog as local operator configuration keeps provider setup lightweight while preserving the existing MCP authority boundary: declarations are not enabled by being present, trust is hash-bound, stale declarations are denied, bearer tokens stay env-only, and remote output remains untrusted.
+
 ## 2026-06-28: Treat Catalog Git Pins As Authoritative Install Provenance
 
 Decision: For catalog git installs, ORX should treat the catalog entry's repository/ref/resolvedCommit as the authoritative source pin. The installer checks out that exact commit, rejects unsafe transports and manifest path escapes, normalizes the cached manifest source to the catalog pin, and then registers the plugin disabled/inert through the normal cache flow.

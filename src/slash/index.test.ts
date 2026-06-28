@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
 import type { DelegationState } from "../delegation/index.js";
@@ -2176,6 +2176,46 @@ test("mcp slash commands discover trusted plugin-provided remote-http presets", 
   }
 });
 
+test("mcp slash commands use user MCP profile catalog", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-user-mcp-slash-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+  const harness = createSlashHarness({
+    mcpConfigPath: configPath,
+    mcpProfileCatalogPath: profileCatalogPath,
+  });
+
+  try {
+    writeUserMcpProfileCatalog(profileCatalogPath);
+
+    assert.equal(handleSlashCommand("/status", harness.context), "continue");
+    assert.match(harness.stdout(), /mcp_user_profiles: 1/);
+    assert.match(harness.stdout(), /mcp_profile: profile=user:context7 state=disabled/);
+
+    assert.equal(await handleSlashCommand("/mcp list", harness.context), "continue");
+    assert.match(harness.stdout(), /profile=user:context7 state=disabled/);
+    assert.match(harness.stdout(), /source=user/);
+
+    assert.equal(await handleSlashCommand("/mcp inspect user:context7", harness.context), "continue");
+    assert.match(harness.stdout(), /source: user catalog_path=/);
+    assert.match(harness.stdout(), /resolve-library-id risk=read auth=yes billable=no policy=blocked_by_profile/);
+
+    assert.equal(await handleSlashCommand("/mcp enable user:context7", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP profile user:context7 enabled/);
+
+    assert.equal(
+      await handleSlashCommand("/mcp allow-model-tool user:context7 resolve-library-id", harness.context),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Model MCP tool grant stored for user:context7\/resolve-library-id/);
+
+    assert.equal(await handleSlashCommand("/mcp model status", harness.context), "continue");
+    assert.match(harness.stdout(), /model_tool_grants: 1/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("bins slash command lists inspects trusts runs and untrusts bins", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-bins-slash-"));
   const registryPath = join(cwd, "registry", "plugins.json");
@@ -3245,6 +3285,7 @@ function createSlashHarness(
     cwd?: string;
     mcpAuditLogPath?: string;
     mcpConfigPath?: string;
+    mcpProfileCatalogPath?: string;
     pluginBinsAuditLogPath?: string;
     pluginBinsConfigPath?: string;
     pluginHooksAuditLogPath?: string;
@@ -3359,6 +3400,7 @@ function createSlashHarness(
       },
       mcpAuditLogPath: options.mcpAuditLogPath,
       mcpConfigPath: options.mcpConfigPath,
+      mcpProfileCatalogPath: options.mcpProfileCatalogPath,
       pluginCatalogPath: options.pluginCatalogPath,
       pluginBinsAuditLogPath: options.pluginBinsAuditLogPath,
       pluginBinsConfigPath: options.pluginBinsConfigPath,
@@ -3483,6 +3525,41 @@ function writePluginMcpPresetFixture(cwd: string): string {
     }),
   );
   return manifestPath;
+}
+
+function writeUserMcpProfileCatalog(path: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(
+    path,
+    JSON.stringify({
+      version: 1,
+      profiles: {
+        context7: {
+          name: "Context7 docs",
+          transport: {
+            kind: "remote-http",
+            url: "https://mcp.context7.example/mcp",
+          },
+          authRequired: true,
+          tools: [
+            {
+              name: "resolve-library-id",
+              risk: "read",
+              authRequired: true,
+              billable: false,
+            },
+            {
+              name: "write-doc-cache",
+              risk: "write",
+              authRequired: true,
+              billable: false,
+            },
+          ],
+          notes: "Docs lookup profile declared by the local user catalog.",
+        },
+      },
+    }),
+  );
 }
 
 function writePluginHookFixture(cwd: string): string {

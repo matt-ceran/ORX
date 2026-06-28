@@ -28,6 +28,7 @@ import {
   getMcpProfileToolPolicyReport,
   hashMcpProfile,
   listRemoteMcpTools,
+  loadUserMcpProfileCatalog,
   loadMcpProfilesConfig,
   renderMcpProfileTools,
   redactSecrets,
@@ -179,6 +180,102 @@ test("plugin MCP profiles use persisted trust state and policy gates", () => {
     assert.equal(summary.policyAllowedToolCount, 1);
     assert.equal(summary.policyDeniedToolCount, 1);
     assert.equal(summary.configuredRiskyToolCount, 2);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("user MCP catalog declarations become disabled namespaced profiles", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-user-mcp-profile-"));
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+
+  try {
+    writeUserMcpProfileCatalog(profileCatalogPath);
+    const summary = getMcpStatusSummary({ profileCatalogPath });
+    const profile = summary.profiles.find((candidate) => candidate.id === "user:context7");
+
+    assert.ok(profile);
+    assert.equal(profile.state, "disabled");
+    assert.equal(profile.source?.kind, "user");
+    assert.equal(profile.source?.componentPath, profileCatalogPath);
+    assert.match(profile.source?.componentHash ?? "", /^sha256:[a-f0-9]{64}$/);
+    assert.equal(profile.transport.kind, "remote-http");
+    assert.equal(profile.transport.url, "https://mcp.context7.example/mcp");
+    assert.deepEqual(
+      profile.tools.map((tool) => `${tool.name}:${tool.risk}:${tool.billable ? "billable" : "free"}`),
+      ["resolve-library-id:read:free", "write-doc-cache:write:free"],
+    );
+    assert.match(summary.profileHashes["user:context7"], /^sha256:[a-f0-9]{64}$/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("user MCP profiles use persisted trust state and policy gates", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-user-mcp-policy-"));
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+  const configPath = join(cwd, "mcp", "profiles.json");
+
+  try {
+    writeUserMcpProfileCatalog(profileCatalogPath);
+    const enabled = setMcpProfilePersistentState("user:context7", "enabled", {
+      configPath,
+      profileCatalogPath,
+      now: () => new Date("2026-06-28T12:00:00.000Z"),
+    });
+
+    assert.equal(enabled.ok, true);
+    assert.match(enabled.trustedProfileHash ?? "", /^sha256:[a-f0-9]{64}$/);
+
+    const readTool = evaluateMcpToolPolicy("user:context7", "resolve-library-id", {
+      configPath,
+      profileCatalogPath,
+    });
+    const writeTool = evaluateMcpToolPolicy("user:context7", "write-doc-cache", {
+      configPath,
+      profileCatalogPath,
+    });
+    const summary = getMcpStatusSummary({ configPath, profileCatalogPath });
+
+    assert.equal(readTool.decision, "allowed");
+    assert.equal(writeTool.decision, "denied");
+    assert.match(writeTool.reason, /write MCP tools require an explicit MCP tool grant/);
+    assert.deepEqual(summary.activeProfileIds, ["user:context7"]);
+    assert.equal(summary.policyAllowedToolCount, 1);
+    assert.equal(summary.policyDeniedToolCount, 1);
+    assert.equal(summary.configuredRiskyToolCount, 2);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("user MCP catalog rejects unsafe declarations", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-user-mcp-unsafe-"));
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+
+  try {
+    mkdirSync(dirname(profileCatalogPath), { recursive: true });
+    writeFileSync(
+      profileCatalogPath,
+      JSON.stringify({
+        version: 1,
+        profiles: {
+          unsafe: {
+            transport: {
+              kind: "remote-http",
+              url: "https://mcp.example.test/mcp?v=1",
+            },
+          },
+        },
+      }),
+    );
+    const loaded = loadUserMcpProfileCatalog({ profileCatalogPath });
+    const summary = getMcpStatusSummary({ profileCatalogPath });
+
+    assert.equal(loaded.profiles.length, 0);
+    assert.equal(loaded.omissions.length, 1);
+    assert.match(loaded.omissions[0].reason, /query strings or fragments/);
+    assert.equal(summary.profiles.some((profile) => profile.id === "user:unsafe"), false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -1938,4 +2035,39 @@ function writePluginWithMcpProfile(
     }),
   );
   return manifestPath;
+}
+
+function writeUserMcpProfileCatalog(path: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(
+    path,
+    JSON.stringify({
+      version: 1,
+      profiles: {
+        context7: {
+          name: "Context7 docs",
+          transport: {
+            kind: "remote-http",
+            url: "https://mcp.context7.example/mcp",
+          },
+          authRequired: false,
+          tools: [
+            {
+              name: "resolve-library-id",
+              risk: "read",
+              authRequired: false,
+              billable: false,
+            },
+            {
+              name: "write-doc-cache",
+              risk: "write",
+              authRequired: false,
+              billable: false,
+            },
+          ],
+          notes: "Docs lookup profile declared by the local user catalog.",
+        },
+      },
+    }),
+  );
 }
