@@ -482,7 +482,8 @@ function formatNextSteps({
   const steps: string[] = [];
 
   if (!apiKeyPresent) {
-    steps.push("set OPENROUTER_API_KEY before using chat, ask, models, credits, or generation");
+    steps.push("run orx auth setup to configure OPENROUTER_API_KEY");
+    steps.push("run orx auth init to create a private commented env template");
   } else {
     steps.push("run orx chat for the interactive coding session");
   }

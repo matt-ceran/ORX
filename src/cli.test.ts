@@ -147,6 +147,8 @@ test("help, version, and status work without an API key", async () => {
     assert.match(doctor.stdout(), /chat_readiness: not_evaluated_sessionless_cli/);
     assert.match(doctor.stdout(), /saved_team_availability: blocked_policy_disabled/);
     assert.match(doctor.stdout(), /next_steps:/);
+    assert.match(doctor.stdout(), /run orx auth setup to configure OPENROUTER_API_KEY/);
+    assert.match(doctor.stdout(), /run orx auth init to create a private commented env template/);
     assert.equal(fetchCalls, 0);
     assert.equal(doctor.stderr(), "");
 
@@ -174,7 +176,11 @@ test("help, version, and status work without an API key", async () => {
     assert.deepEqual(jsonReport.mcp.active_profiles, []);
     assert.equal(jsonReport.plugins.installed, 0);
     assert.equal(jsonReport.delegation.execution_policy, "disabled");
-    assert.match(jsonReport.next_steps[0], /OPENROUTER_API_KEY/);
+    assert.equal(jsonReport.next_steps[0], "run orx auth setup to configure OPENROUTER_API_KEY");
+    assert.equal(
+      jsonReport.next_steps[1],
+      "run orx auth init to create a private commented env template",
+    );
     assert.equal(jsonDoctor.stderr(), "");
     assert.equal(fetchCalls, 0);
 
