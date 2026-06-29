@@ -24,6 +24,12 @@ export interface DoctorOptions {
   delegationPolicyPath?: string;
 }
 
+export interface DoctorReport {
+  text: string;
+  readiness: DoctorReadiness;
+  strictReady: boolean;
+}
+
 export function formatDoctor({
   cwd,
   loadedConfig,
@@ -37,6 +43,34 @@ export function formatDoctor({
   delegationTeamConfigPath,
   delegationPolicyPath,
 }: DoctorOptions): string {
+  return createDoctorReport({
+    cwd,
+    loadedConfig,
+    mcpConfigPath,
+    mcpProfileCatalogPath,
+    pluginCatalogPath,
+    pluginBinsConfigPath,
+    pluginHooksConfigPath,
+    pluginRegistryPath,
+    profileConfigPath,
+    delegationTeamConfigPath,
+    delegationPolicyPath,
+  }).text;
+}
+
+export function createDoctorReport({
+  cwd,
+  loadedConfig,
+  mcpConfigPath,
+  mcpProfileCatalogPath,
+  pluginCatalogPath,
+  pluginBinsConfigPath,
+  pluginHooksConfigPath,
+  pluginRegistryPath,
+  profileConfigPath,
+  delegationTeamConfigPath,
+  delegationPolicyPath,
+}: DoctorOptions): DoctorReport {
   const { config } = loadedConfig;
   const mcpStatus = getMcpStatusSummary({
     configPath: mcpConfigPath,
@@ -80,8 +114,7 @@ export function formatDoctor({
     delegationExecutionEnabled: delegationPolicy.executionEnabled,
     delegationTeamCount: delegationTeamStatus.count,
   });
-
-  return [
+  const text = [
     "ORX doctor",
     "summary:",
     `  overall: ${readiness.overall}`,
@@ -158,6 +191,12 @@ export function formatDoctor({
       delegationTeamCount: delegationTeamStatus.count,
     }),
   ].join("\n");
+
+  return {
+    text,
+    readiness,
+    strictReady: readiness.readyToUse === "yes",
+  };
 }
 
 interface DoctorReadinessOptions {
@@ -169,7 +208,7 @@ interface DoctorReadinessOptions {
   delegationTeamCount: number;
 }
 
-interface DoctorReadiness {
+export interface DoctorReadiness {
   overall: string;
   readyToUse: string;
   coreCli: string;

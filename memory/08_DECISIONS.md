@@ -4,6 +4,12 @@ Last updated: 2026-06-29
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-29: Doctor Strict Mode Gates Ready-To-Use State Only
+
+Decision: `orx doctor --strict` should render the same local doctor report as `orx doctor`, then exit nonzero only when the report's `ready_to_use` label is not `yes`. Strict mode must not add network calls, subprocesses, remote MCP calls, plugin execution, data-content writes, or secret rendering. Optional surfaces such as inactive MCP profiles or disabled delegation remain visible in the report without failing strict mode when core interactive coding is ready.
+
+Reasoning: ORX needs a scriptable readiness gate for local install and release checks, but the gate should measure whether the CLI is actually usable rather than forcing every optional integration to be configured. Tying strict mode to `ready_to_use` keeps the behavior predictable and aligned with the existing doctor header.
+
 ## 2026-06-29: Doctor Readiness Separates Core CLI From Optional Surfaces
 
 Decision: `orx doctor` should start with concise local readiness labels for `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation`, while keeping the existing detailed diagnostic sections and next commands. The labels must be computed from local config/state only and must not call OpenRouter, remote MCP endpoints, plugin bins, plugin hooks, or delegation adapters. API-key presence can affect chat readiness, but key values must never be printed.

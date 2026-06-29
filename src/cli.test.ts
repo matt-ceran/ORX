@@ -40,7 +40,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /orchestrator\s+Show delegation readiness or refuse session-less changes/);
     assert.match(help.stdout(), /delegate\s+Show\/refuse session delegate changes, policy, or saved teams/);
     assert.match(help.stdout(), /delegates\s+Show delegate readiness, execution policy, or saved teams/);
-    assert.match(help.stdout(), /doctor\s+Run a no-network readiness check across runtime, MCP, plugins, and delegation/);
+    assert.match(help.stdout(), /doctor\s+Run a no-network readiness check; use --strict to fail when not ready/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
   }
@@ -147,6 +147,37 @@ test("help, version, and status work without an API key", async () => {
     assert.match(doctor.stdout(), /next_steps:/);
     assert.equal(fetchCalls, 0);
     assert.equal(doctor.stderr(), "");
+
+    const strictDoctor = createIo({ cwd, fetch: doctor.io.fetch });
+    assert.equal(await runCli(["node", "cli", "doctor", "--strict"], diagnosticEnv, strictDoctor.io), 1);
+    assert.match(strictDoctor.stdout(), /ready_to_use: limited_core_cli_only/);
+    assert.match(
+      strictDoctor.stderr(),
+      /ORX doctor strict gate failed: ready_to_use=limited_core_cli_only overall=setup_needed_api_key/,
+    );
+    assert.equal(fetchCalls, 0);
+
+    const doctorHelp = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "doctor", "--help"], diagnosticEnv, doctorHelp.io), 0);
+    assert.match(doctorHelp.stdout(), /Usage: orx doctor \[--strict\]/);
+    assert.equal(doctorHelp.stderr(), "");
+
+    const doctorUnknown = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "doctor", "--json"], diagnosticEnv, doctorUnknown.io), 1);
+    assert.match(doctorUnknown.stderr(), /Unknown doctor option: --json/);
+    assert.match(doctorUnknown.stderr(), /Usage: orx doctor \[--strict\]/);
+
+    const doctorSecretOption = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "doctor", "sk-or-v1-secret-doctor-option"],
+        diagnosticEnv,
+        doctorSecretOption.io,
+      ),
+      1,
+    );
+    assert.match(doctorSecretOption.stderr(), /Unknown doctor option: \[redacted\]/);
+    assert.doesNotMatch(doctorSecretOption.stderr(), /sk-or-v1-secret-doctor-option/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -218,6 +249,12 @@ test("cli doctor does not treat saved delegation teams as active chat delegates"
     assert.match(doctor.stdout(), /saved_team_availability: available_load_in_chat/);
     assert.doesNotMatch(doctor.stdout(), /sk-or-v1-test-doctor/);
     assert.equal(doctor.stderr(), "");
+
+    const strictDoctor = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "doctor", "--strict"], env, strictDoctor.io), 0);
+    assert.match(strictDoctor.stdout(), /ready_to_use: yes/);
+    assert.doesNotMatch(strictDoctor.stdout(), /sk-or-v1-test-doctor/);
+    assert.equal(strictDoctor.stderr(), "");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

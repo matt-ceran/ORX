@@ -25,7 +25,7 @@ Urgent UX recovery additions from user testing:
 - Durable TTY prompt history is implemented through private `~/.orx/history.json`, `ORX_CHAT_HISTORY_PATH`, readline preload, `orx history [search|clear]`, and `/history [search|clear]`; it stores sanitized user prompts only and skips slash commands/secret-like input.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
 - Safe config inspection/editing is available in both CLI and chat through `orx config show|path|set` and `/config [show|path|set]`. It redacts API-key values, refuses API-key/secret-like arguments, honors `ORX_CONFIG_PATH`, writes private config files through the shared guards, and updates the active chat snapshot for edited keys.
-- `orx doctor` is the top-level no-network readiness overview. It now starts with concise `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation` labels before local runtime/MCP/plugin/delegation details and next commands.
+- `orx doctor` is the top-level no-network readiness overview. It now starts with concise `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation` labels before local runtime/MCP/plugin/delegation details and next commands; `orx doctor --strict` renders the same report and exits nonzero unless `ready_to_use: yes`.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
 - Plugin authoring scaffold is implemented through `orx plugins scaffold <directory>` and `/plugins scaffold <directory>`. It creates a valid local `orx-plugin.json` authoring bundle without registry writes; defaults are inert skills/prompt-commands/rules markdown, `--minimal` writes only the manifest, and `--with` adds opt-in empty placeholders for hooks, bins, MCP, command schemas, assets, and docs behind the existing review gates.
 - Plugin manifest validation is implemented through `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>`. It parses/sanitizes manifests, renders manifest/component hashes, permission counts, missing component warnings, and explicitly leaves registry/cache/trust/runtime state unchanged.
@@ -91,6 +91,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added strict `orx doctor` readiness gating:
+
+- `orx doctor --strict` now renders the normal doctor report and exits nonzero when `ready_to_use` is not `yes`.
+- The strict gate is local-only and does not add network calls, subprocesses, remote MCP calls, plugin execution, data-content writes, or secret rendering.
+- The doctor implementation now exposes a structured `DoctorReport` with text, readiness labels, and `strictReady`, while preserving the existing string formatter for other callers.
+- Verification: focused compiled CLI tests with 43 tests, `npm run typecheck`, `git diff --check`, full `npm test` with 488 tests, `npm run verify:global-install`, isolated built-CLI strict doctor smokes for no-key failure, API-key success, help, and secret-shaped unknown-option redaction, and independent verifier review with no findings.
+- Next likely work is broader release hardening, remaining OAuth/device-flow decision work if ORX should own provider auth, delegate team/profile ergonomics, or stronger pre-spend budget strategy if OpenRouter can support it.
 
 Added concise `orx doctor` readiness labels:
 

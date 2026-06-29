@@ -178,7 +178,7 @@ import {
 } from "./profiles/index.js";
 import type { BrowserSnapshotDriver } from "./research/index.js";
 import { resolveSessionDirectory } from "./sessions/index.js";
-import { formatDoctor } from "./doctor.js";
+import { createDoctorReport } from "./doctor.js";
 import { formatStatus } from "./status.js";
 import {
   discoverTestTargets,
@@ -311,22 +311,36 @@ export async function runCli(
   }
 
   if (first === "doctor") {
-    writeLine(
-      io.stdout,
-      formatDoctor({
-        cwd: io.cwd,
-        loadedConfig,
-        mcpConfigPath,
-        mcpProfileCatalogPath,
-        pluginCatalogPath,
-        pluginBinsConfigPath,
-        pluginHooksConfigPath,
-        pluginRegistryPath,
-        profileConfigPath,
-        delegationTeamConfigPath,
-        delegationPolicyPath,
-      }),
-    );
+    const doctorOptions = parseDoctorArgs(args.slice(1));
+    if (typeof doctorOptions === "string") {
+      writeLine(io.stderr, doctorOptions);
+      return 1;
+    }
+    if (doctorOptions.help) {
+      writeLine(io.stdout, "Usage: orx doctor [--strict]");
+      return 0;
+    }
+    const report = createDoctorReport({
+      cwd: io.cwd,
+      loadedConfig,
+      mcpConfigPath,
+      mcpProfileCatalogPath,
+      pluginCatalogPath,
+      pluginBinsConfigPath,
+      pluginHooksConfigPath,
+      pluginRegistryPath,
+      profileConfigPath,
+      delegationTeamConfigPath,
+      delegationPolicyPath,
+    });
+    writeLine(io.stdout, report.text);
+    if (doctorOptions.strict && !report.strictReady) {
+      writeLine(
+        io.stderr,
+        `ORX doctor strict gate failed: ready_to_use=${report.readiness.readyToUse} overall=${report.readiness.overall}`,
+      );
+      return 1;
+    }
     return 0;
   }
 
@@ -503,7 +517,7 @@ function helpText(): string {
     "  delegate      Show/refuse session delegate changes, policy, or saved teams",
     "  delegates     Show delegate readiness, execution policy, or saved teams",
     "  status        Show runtime status and config defaults",
-    "  doctor        Run a no-network readiness check across runtime, MCP, plugins, and delegation",
+    "  doctor        Run a no-network readiness check; use --strict to fail when not ready",
     "  help          Show this help message",
     "  version       Show the current version",
     "",
@@ -3178,6 +3192,25 @@ function parseGlobalOptions(args: string[]): GlobalCliOptions | string {
   };
 }
 
+function parseDoctorArgs(args: string[]): { strict: boolean; help: boolean } | string {
+  let strict = false;
+  let help = false;
+
+  for (const arg of args) {
+    if (arg === "--strict") {
+      strict = true;
+      continue;
+    }
+    if (arg === "--help" || arg === "-h") {
+      help = true;
+      continue;
+    }
+    return `Unknown doctor option: ${formatDoctorOptionForMessage(arg)}\nUsage: orx doctor [--strict]`;
+  }
+
+  return { strict, help };
+}
+
 function loadConfigWithProfile(options: {
   env: NodeJS.ProcessEnv;
   cwd: string;
@@ -3281,6 +3314,13 @@ function formatProfileIdForMessage(profileId: string): string {
 
 const SECRET_LIKE_MESSAGE_PATTERN =
   /\b(?:sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/i;
+
+function formatDoctorOptionForMessage(value: string): string {
+  if (SECRET_LIKE_MESSAGE_PATTERN.test(value)) {
+    return "[redacted]";
+  }
+  return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim().slice(0, 80);
+}
 
 function formatDelegationTeamIdForMessage(teamId: string): string {
   if (SECRET_LIKE_MESSAGE_PATTERN.test(teamId)) {
