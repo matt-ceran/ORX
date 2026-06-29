@@ -23,7 +23,7 @@ Even though prompts are bypassed, `/status` must show:
 - whether network tools are enabled
 - whether destructive command warnings are enabled
 
-`orx doctor` is the top-level operator readiness summary. It may read local ORX config/state, but it must not call OpenRouter, remote MCP endpoints, plugin bins, or plugin hooks. It should point operators to deeper status surfaces rather than becoming a hidden execution path.
+`orx doctor` is the top-level operator readiness summary. It may read local ORX config/state and may render either human text or `--json`, but it must not call OpenRouter, remote MCP endpoints, plugin bins, or plugin hooks. It should point operators to deeper status surfaces rather than becoming a hidden execution path.
 
 `orx config set` is a local configuration editor for non-secret setup fields. It must not call network/subprocesses and must refuse API-key or secret-like values in CLI arguments; keys belong in `OPENROUTER_API_KEY` or deliberate manual config editing.
 

@@ -50,6 +50,7 @@ npm run dev -- init --local
 npm run dev -- status
 npm run dev -- doctor
 npm run dev -- doctor --strict
+npm run dev -- doctor --json
 npm run dev -- config init
 npm run dev -- config show
 npm run dev -- config path
@@ -120,7 +121,7 @@ OPENROUTER_API_KEY="sk-or-..." npm run dev -- --profile daily ask "Say hello"
 
 Profiles persist model, mode, Fusion preset, theme, and permission posture under `~/.orx/profiles.json`; use `ORX_PROFILE_CONFIG_PATH` for isolated runs. Profiles do not store API keys. In chat, `/profile list`, `/profile save <id>`, `/profile use <id>`, `/profile inspect <id>`, and `/profile delete <id>` manage the same registry. Manual `/model`, `/mode`, `/fusion`, or `/theme` changes clear the active profile label.
 
-`orx doctor` is a no-key setup overview that starts with `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation` readiness labels, then aggregates local runtime defaults, API-key presence, saved profiles, test targets, MCP profile/policy counts, plugin review counts, saved delegation teams, delegation policy state, and concrete next commands. `orx doctor --strict` renders the same report and exits nonzero unless `ready_to_use: yes`, so it can gate local install/release readiness. It does not call OpenRouter, remote MCP endpoints, plugin bins, or plugin hooks. Use `orx status`, `orx mcp status`, `orx plugins doctor`, and `orx delegates plan` for detailed follow-up.
+`orx doctor` is a no-key setup overview that starts with `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation` readiness labels, then aggregates local runtime defaults, API-key presence, saved profiles, test targets, MCP profile/policy counts, plugin review counts, saved delegation teams, delegation policy state, and concrete next commands. `orx doctor --strict` renders the same report and exits nonzero unless `ready_to_use: yes`, so it can gate local install/release readiness. `orx doctor --json` emits the same readiness data as redacted structured JSON with `schema_version`, `strict_ready`, summary, runtime, MCP, plugins, delegation, and next-step fields; it can be combined with `--strict`. It does not call OpenRouter, remote MCP endpoints, plugin bins, or plugin hooks. Use `orx status`, `orx mcp status`, `orx plugins doctor`, and `orx delegates plan` for detailed follow-up.
 
 TTY prompt history is local and private. Interactive readline chat stores sanitized user prompts under `~/.orx/history.json` or `ORX_CHAT_HISTORY_PATH` with `0700` parent and `0600` file modes; slash commands and secret-like input are skipped. Readline preloads single-line entries for up-arrow recall. `orx history`, `orx history search <query>`, `orx history clear`, `/history`, `/history search <query>`, and `/history clear` inspect or clear the same file without API keys, network calls, subprocesses, model exposure, or transcript indexing.
 

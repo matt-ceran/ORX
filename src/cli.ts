@@ -333,7 +333,7 @@ export async function runCli(
       return 1;
     }
     if (doctorOptions.help) {
-      writeLine(io.stdout, "Usage: orx doctor [--strict]");
+      writeLine(io.stdout, "Usage: orx doctor [--strict] [--json]");
       return 0;
     }
     const report = createDoctorReport({
@@ -349,7 +349,7 @@ export async function runCli(
       delegationTeamConfigPath,
       delegationPolicyPath,
     });
-    writeLine(io.stdout, report.text);
+    writeLine(io.stdout, doctorOptions.json ? JSON.stringify(report.json, null, 2) : report.text);
     if (doctorOptions.strict && !report.strictReady) {
       writeLine(
         io.stderr,
@@ -3295,23 +3295,28 @@ function parseGlobalOptions(args: string[]): GlobalCliOptions | string {
   };
 }
 
-function parseDoctorArgs(args: string[]): { strict: boolean; help: boolean } | string {
+function parseDoctorArgs(args: string[]): { strict: boolean; help: boolean; json: boolean } | string {
   let strict = false;
   let help = false;
+  let json = false;
 
   for (const arg of args) {
     if (arg === "--strict") {
       strict = true;
       continue;
     }
+    if (arg === "--json") {
+      json = true;
+      continue;
+    }
     if (arg === "--help" || arg === "-h") {
       help = true;
       continue;
     }
-    return `Unknown doctor option: ${formatDoctorOptionForMessage(arg)}\nUsage: orx doctor [--strict]`;
+    return `Unknown doctor option: ${formatDoctorOptionForMessage(arg)}\nUsage: orx doctor [--strict] [--json]`;
   }
 
-  return { strict, help };
+  return { strict, help, json };
 }
 
 function loadConfigWithProfile(options: {

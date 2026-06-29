@@ -158,15 +158,47 @@ test("help, version, and status work without an API key", async () => {
     );
     assert.equal(fetchCalls, 0);
 
+    const jsonDoctor = createIo({ cwd, fetch: doctor.io.fetch });
+    assert.equal(await runCli(["node", "cli", "doctor", "--json"], diagnosticEnv, jsonDoctor.io), 0);
+    const jsonReport = JSON.parse(jsonDoctor.stdout());
+    assert.equal(jsonReport.schema_version, 1);
+    assert.equal(jsonReport.strict_ready, false);
+    assert.equal(jsonReport.summary.overall, "setup_needed_api_key");
+    assert.equal(jsonReport.summary.ready_to_use, "limited_core_cli_only");
+    assert.equal(jsonReport.summary.network_calls, "none");
+    assert.equal(jsonReport.runtime.api_key_present, false);
+    assert.equal(jsonReport.runtime.api_key_source, "missing");
+    assert.equal(jsonReport.runtime.approval_policy, "never");
+    assert.equal(jsonReport.runtime.sandbox_mode, "danger-full-access");
+    assert.deepEqual(jsonReport.mcp.active_profiles, []);
+    assert.equal(jsonReport.plugins.installed, 0);
+    assert.equal(jsonReport.delegation.execution_policy, "disabled");
+    assert.match(jsonReport.next_steps[0], /OPENROUTER_API_KEY/);
+    assert.equal(jsonDoctor.stderr(), "");
+    assert.equal(fetchCalls, 0);
+
+    const strictJsonDoctor = createIo({ cwd, fetch: doctor.io.fetch });
+    assert.equal(
+      await runCli(["node", "cli", "doctor", "--json", "--strict"], diagnosticEnv, strictJsonDoctor.io),
+      1,
+    );
+    assert.equal(JSON.parse(strictJsonDoctor.stdout()).summary.ready_to_use, "limited_core_cli_only");
+    assert.equal(JSON.parse(strictJsonDoctor.stdout()).strict_ready, false);
+    assert.match(
+      strictJsonDoctor.stderr(),
+      /ORX doctor strict gate failed: ready_to_use=limited_core_cli_only overall=setup_needed_api_key/,
+    );
+    assert.equal(fetchCalls, 0);
+
     const doctorHelp = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "doctor", "--help"], diagnosticEnv, doctorHelp.io), 0);
-    assert.match(doctorHelp.stdout(), /Usage: orx doctor \[--strict\]/);
+    assert.match(doctorHelp.stdout(), /Usage: orx doctor \[--strict\] \[--json\]/);
     assert.equal(doctorHelp.stderr(), "");
 
     const doctorUnknown = createIo({ cwd });
-    assert.equal(await runCli(["node", "cli", "doctor", "--json"], diagnosticEnv, doctorUnknown.io), 1);
-    assert.match(doctorUnknown.stderr(), /Unknown doctor option: --json/);
-    assert.match(doctorUnknown.stderr(), /Usage: orx doctor \[--strict\]/);
+    assert.equal(await runCli(["node", "cli", "doctor", "--yaml"], diagnosticEnv, doctorUnknown.io), 1);
+    assert.match(doctorUnknown.stderr(), /Unknown doctor option: --yaml/);
+    assert.match(doctorUnknown.stderr(), /Usage: orx doctor \[--strict\] \[--json\]/);
 
     const doctorSecretOption = createIo({ cwd });
     assert.equal(
@@ -446,6 +478,19 @@ test("cli doctor does not treat saved delegation teams as active chat delegates"
     assert.match(strictDoctor.stdout(), /ready_to_use: yes/);
     assert.doesNotMatch(strictDoctor.stdout(), /sk-or-v1-test-doctor/);
     assert.equal(strictDoctor.stderr(), "");
+
+    const strictJsonDoctor = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "doctor", "--strict", "--json"], env, strictJsonDoctor.io), 0);
+    const jsonReport = JSON.parse(strictJsonDoctor.stdout());
+    assert.equal(jsonReport.summary.ready_to_use, "yes");
+    assert.equal(jsonReport.strict_ready, true);
+    assert.equal(jsonReport.summary.overall, "ready_for_interactive_coding");
+    assert.equal(jsonReport.runtime.api_key_present, true);
+    assert.equal(jsonReport.runtime.api_key_source, "OPENROUTER_API_KEY");
+    assert.equal(jsonReport.delegation.execution_policy, "enabled");
+    assert.equal(jsonReport.delegation.saved_teams, 1);
+    assert.doesNotMatch(strictJsonDoctor.stdout(), /sk-or-v1-test-doctor/);
+    assert.equal(strictJsonDoctor.stderr(), "");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

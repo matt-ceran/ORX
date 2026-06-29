@@ -4,6 +4,12 @@ Last updated: 2026-06-29
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-29: Doctor JSON Mirrors Local Readiness Without Extra Effects
+
+Decision: `orx doctor --json` should render the same local readiness data as `orx doctor` in structured JSON with a stable `schema_version`, `strict_ready`, readiness summary, runtime, MCP, plugin, delegation, and next-step fields. It must preserve the existing doctor boundary: no OpenRouter calls, remote MCP calls, plugin bin/hook execution, subprocesses, data-content writes, or secret rendering. `--json` may be combined with `--strict`; strict exit status remains tied to `ready_to_use: yes`.
+
+Reasoning: `orx doctor --strict` is useful for release gates, but scriptable automation should not need to scrape human text. A structured, redacted, local-only JSON report gives automation a reliable contract while keeping the operator-facing doctor output unchanged.
+
 ## 2026-06-29: First-Run Init Creates No-Secret Starter Config
 
 Decision: `orx init` and `orx config init` may create a starter TOML config through the same private/symlink-resistant config writer used by `orx config set`, but they must never accept or write API keys. Init is idempotent: an existing regular config file is reported and left unchanged. `--local` writes the repo-local config path, while the default writes the user config path or `ORX_CONFIG_PATH`.
