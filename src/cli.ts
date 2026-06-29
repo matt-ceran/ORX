@@ -6,7 +6,9 @@ import { BIN_NAME } from "./constants.js";
 import { formatToolCallStart, formatToolResult, runAgentTurn } from "./agent/index.js";
 import { createCodeMap, createCodeSymbolIndex, renderCodeMap, renderCodeSymbols } from "./code-map/index.js";
 import {
+  initializeConfig,
   loadConfig,
+  parseConfigInitArgs,
   parseConfigSetArgs,
   renderConfigPaths,
   renderConfigShow,
@@ -254,6 +256,20 @@ export async function runCli(
   if (first === "--version" || first === "-v" || first === "version") {
     writeLine(io.stdout, getVersion());
     return 0;
+  }
+
+  if (first === "init" || first === "setup") {
+    return runInitCommand(args.slice(1), io, env, {
+      commandName: first === "setup" ? "orx setup" : "orx init",
+      commandLabel: first,
+    });
+  }
+
+  if (first === "config" && args[1]?.toLowerCase() === "init") {
+    return runInitCommand(args.slice(2), io, env, {
+      commandName: "orx config init",
+      commandLabel: "config init",
+    });
   }
 
   const mcpConfigPath = resolveMcpConfigPath({ env, cwd: io.cwd });
@@ -504,6 +520,7 @@ function helpText(): string {
     "  models [q]    List live OpenRouter models with an optional filter",
     "  credits       Show live OpenRouter credits",
     "  generation <id>  Show OpenRouter generation metadata",
+    "  init          Create a no-secret starter config for first-run setup",
     "  config        Show or edit local ORX configuration",
     "  profile       List, inspect, save, or delete local ORX profiles",
     "  history       Search or clear local prompt history",
@@ -1205,8 +1222,90 @@ function runConfigCommand(
     }
   }
 
-  writeLine(io.stderr, "Usage: orx config [show|path|set <key> <value> [--user|--local]]");
+  writeLine(io.stderr, "Usage: orx config [show|path|init|set <key> <value> [--user|--local]]");
   return 1;
+}
+
+function runInitCommand(
+  args: string[],
+  io: CliIo,
+  env: NodeJS.ProcessEnv,
+  options: { commandName: string; commandLabel: string } = {
+    commandName: "orx init",
+    commandLabel: "init",
+  },
+): number {
+  const usage = `Usage: ${options.commandName} [--user|--local]`;
+  if (args.includes("--help") || args.includes("-h")) {
+    writeLine(io.stdout, usage);
+    return 0;
+  }
+
+  const parsed = parseConfigInitArgs(args, usage, options.commandLabel);
+  if (typeof parsed === "string") {
+    writeLine(io.stderr, parsed);
+    return 1;
+  }
+
+  try {
+    const result = initializeConfig({
+      env,
+      cwd: io.cwd,
+      scope: parsed.scope,
+    });
+    const envApiKeyPresent = hasOpenRouterApiKeyInEnv(env);
+    const apiKeyPresence = envApiKeyPresent
+      ? "yes"
+      : result.created
+        ? "no"
+        : "not_evaluated_existing_config";
+    const configValueLines =
+      result.valueSource === "starter_defaults"
+        ? [
+            `  model: ${result.model}`,
+            `  mode: ${result.mode}`,
+            `  theme: ${result.theme}`,
+            `  permissions: ${result.approvalPolicy}/${result.sandboxMode}`,
+          ]
+        : ["  config_values: unchanged_existing_config"];
+    const nextSteps = envApiKeyPresent
+      ? ["orx doctor --strict", "orx"]
+      : result.created
+        ? [
+            "set OPENROUTER_API_KEY in your shell or edit config manually",
+            "orx doctor --strict",
+            "orx",
+          ]
+        : [
+            "orx doctor --strict",
+            "set OPENROUTER_API_KEY if doctor reports missing credentials",
+            "orx",
+          ];
+    writeLine(
+      io.stdout,
+      [
+        "ORX init",
+        `  state_changed: ${result.created ? "yes" : "no"}`,
+        `  scope: ${result.scope}`,
+        `  path: ${result.path}`,
+        `  config_exists: ${result.existed ? "yes" : "no"}`,
+        ...configValueLines,
+        `  api_key_present: ${apiKeyPresence}`,
+        `  api_key_written: ${result.apiKeyWritten ? "yes" : "no"}`,
+        "  network_calls: none",
+        "  subprocesses: none",
+        "next:",
+        ...nextSteps.map((step) => `  - ${step}`),
+      ].join("\n"),
+    );
+    return 0;
+  } catch (error) {
+    writeLine(
+      io.stderr,
+      `Unable to initialize config: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return 1;
+  }
 }
 
 function runHistoryCommand(args: string[], io: CliIo, historyPath: string): number {
@@ -1238,6 +1337,10 @@ function runHistoryCommand(args: string[], io: CliIo, historyPath: string): numb
     );
     return 1;
   }
+}
+
+function hasOpenRouterApiKeyInEnv(env: NodeJS.ProcessEnv): boolean {
+  return typeof env.OPENROUTER_API_KEY === "string" && env.OPENROUTER_API_KEY.trim().length > 0;
 }
 
 function runProfileCommand(

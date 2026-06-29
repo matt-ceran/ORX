@@ -4,6 +4,12 @@ Last updated: 2026-06-29
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-29: First-Run Init Creates No-Secret Starter Config
+
+Decision: `orx init` and `orx config init` may create a starter TOML config through the same private/symlink-resistant config writer used by `orx config set`, but they must never accept or write API keys. Init is idempotent: an existing regular config file is reported and left unchanged. `--local` writes the repo-local config path, while the default writes the user config path or `ORX_CONFIG_PATH`.
+
+Reasoning: ORX needs a comfortable first-run path before interactive use, but CLI arguments and generated files should not normalize casual secret storage. A no-secret init command gives users visible defaults, YOLO permission posture, and next commands while keeping credentials in the existing `OPENROUTER_API_KEY` or deliberate manual-edit boundary.
+
 ## 2026-06-29: Doctor Strict Mode Gates Ready-To-Use State Only
 
 Decision: `orx doctor --strict` should render the same local doctor report as `orx doctor`, then exit nonzero only when the report's `ready_to_use` label is not `yes`. Strict mode must not add network calls, subprocesses, remote MCP calls, plugin execution, data-content writes, or secret rendering. Optional surfaces such as inactive MCP profiles or disabled delegation remain visible in the report without failing strict mode when core interactive coding is ready.

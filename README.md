@@ -33,6 +33,7 @@ npm install
 npm run build
 node dist/cli.js --help
 node dist/cli.js --version
+node dist/cli.js init
 node dist/cli.js status
 node dist/cli.js doctor
 node dist/cli.js doctor --strict
@@ -44,6 +45,7 @@ To install the source checkout as a global `orx` command without manually runnin
 npm install
 npm install -g .
 orx --version
+orx init
 orx status
 orx doctor
 orx doctor --strict
@@ -66,6 +68,8 @@ OPENROUTER_API_KEY=... orx
 ```
 
 The npm `prepare` lifecycle builds `dist/cli.js` for local source installs. `orx` with no command starts interactive chat from the current directory; use `orx help` or `orx --help` for help output.
+
+For first-run setup, `orx init` creates a private starter config at `~/.orx/config.toml` or `ORX_CONFIG_PATH`; use `orx init --local` for a repo-local `.orx/config.toml`. The generated file contains default model, mode, theme, and unrestricted local permission posture, but it never writes an API key. Provide credentials with `OPENROUTER_API_KEY` or deliberate manual config editing, then run `orx doctor --strict` before launching `orx`.
 
 Config is discovered from repo-local `.orx/config.toml` development defaults and `~/.orx/config.toml`. `OPENROUTER_API_KEY` takes precedence for API key detection. The `status` command reports whether a key is present without printing it. `orx config show` and `/config show` render the effective config with API-key values redacted, `orx config path` and `/config path` show the local/user config paths, and `orx config set <key> <value> [--local]` or `/config set <key> <value> [--local]` edit supported non-secret keys: `model`, `mode`, `fusion_preset`, `theme`, `approval_policy`, and `sandbox_mode`. Config edits default to the user config path, honor `ORX_CONFIG_PATH` for isolated runs, use private file modes for created files, update the current chat snapshot for the edited key, and refuse API-key storage through CLI arguments.
 

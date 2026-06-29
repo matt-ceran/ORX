@@ -52,6 +52,24 @@ export interface ConfigSetArgs {
   scope: ConfigEditScope;
 }
 
+export interface ConfigInitArgs {
+  scope: ConfigEditScope;
+}
+
+export interface ConfigInitResult {
+  path: string;
+  scope: ConfigEditScope;
+  created: boolean;
+  existed: boolean;
+  apiKeyWritten: false;
+  valueSource: "starter_defaults" | "existing_config_unchanged";
+  model?: string;
+  mode?: OrxMode;
+  theme?: OrxTheme;
+  approvalPolicy?: string;
+  sandboxMode?: string;
+}
+
 export interface RenderConfigOptions extends LoadConfigOptions {
   config?: OrxConfig;
   commandPrefix?: string;
@@ -170,6 +188,37 @@ export function setConfigValue(
     value,
     scope,
     message: `Config ${key} saved to ${path}`,
+  };
+}
+
+export function initializeConfig(options: ConfigPathOptions = {}): ConfigInitResult {
+  const scope = options.scope ?? "user";
+  const path = resolveConfigEditPath({ ...options, scope });
+  const defaults = createStarterConfigDefaults();
+
+  if (existsSync(path)) {
+    assertNoSymlinkInParentPath(path);
+    assertExistingConfigFile(path);
+    return {
+      path,
+      scope,
+      created: false,
+      existed: true,
+      apiKeyWritten: false,
+      valueSource: "existing_config_unchanged",
+    };
+  }
+
+  writeEditableConfigFile(path, createStarterConfigTable(defaults));
+
+  return {
+    path,
+    scope,
+    created: true,
+    existed: false,
+    apiKeyWritten: false,
+    valueSource: "starter_defaults",
+    ...defaults,
   };
 }
 
@@ -345,6 +394,31 @@ export function parseConfigSetArgs(
   };
 }
 
+export function parseConfigInitArgs(
+  args: string[],
+  usage = "Usage: orx init [--user|--local]",
+  commandLabel = "init",
+): ConfigInitArgs | string {
+  let scope: ConfigEditScope = "user";
+
+  for (const arg of args) {
+    if (arg === "--user") {
+      scope = "user";
+      continue;
+    }
+    if (arg === "--local") {
+      scope = "local";
+      continue;
+    }
+    if (arg === "--help" || arg === "-h") {
+      return usage;
+    }
+    return `Unknown ${commandLabel} option: ${formatConfigKeyForMessage(arg)}\n${usage}`;
+  }
+
+  return { scope };
+}
+
 function readEditableConfigFile(path: string): TomlTable {
   if (!existsSync(path)) {
     return {};
@@ -373,6 +447,36 @@ function writeEditableConfigFile(path: string, config: TomlTable): void {
     mode: CONFIG_FILE_MODE,
   });
   chmodSync(path, CONFIG_FILE_MODE);
+}
+
+interface ConfigInitDefaults {
+  model: string;
+  mode: OrxMode;
+  theme: OrxTheme;
+  approvalPolicy: string;
+  sandboxMode: string;
+}
+
+function createStarterConfigDefaults(): ConfigInitDefaults {
+  return {
+    model: DEFAULT_MODEL,
+    mode: DEFAULT_MODE,
+    theme: DEFAULT_THEME,
+    approvalPolicy: DEFAULT_APPROVAL_POLICY,
+    sandboxMode: DEFAULT_SANDBOX_MODE,
+  };
+}
+
+function createStarterConfigTable(defaults: ConfigInitDefaults): TomlTable {
+  return {
+    model: defaults.model,
+    mode: defaults.mode,
+    theme: defaults.theme,
+    permissions: {
+      approval_policy: defaults.approvalPolicy,
+      sandbox_mode: defaults.sandboxMode,
+    },
+  };
 }
 
 function applyEditableConfigValue(config: TomlTable, key: ConfigSetKey, value: string): void {
@@ -471,11 +575,30 @@ function validateConfigSetValue(key: ConfigSetKey, valueInput: string): string {
 }
 
 function assertConfigPathWritable(path: string): void {
-  if (!existsSync(path)) {
-    return;
-  }
-  if (lstatSync(path).isSymbolicLink()) {
+  const stat = lstatIfExists(path);
+  if (stat?.isSymbolicLink()) {
     throw new Error("refusing to write through a config symlink");
+  }
+}
+
+function assertExistingConfigFile(path: string): void {
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink()) {
+    throw new Error("refusing to use a config symlink");
+  }
+  if (!stat.isFile()) {
+    throw new Error("config path exists but is not a regular file");
+  }
+}
+
+function lstatIfExists(path: string): ReturnType<typeof lstatSync> | undefined {
+  try {
+    return lstatSync(path);
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
   }
 }
 

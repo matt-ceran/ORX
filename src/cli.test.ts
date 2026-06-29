@@ -29,6 +29,7 @@ test("help, version, and status work without an API key", async () => {
     assert.equal(await runCli(["node", "cli", helpArg], {}, help.io), 0);
     assert.match(help.stdout(), /Commands:/);
     assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
+    assert.match(help.stdout(), /init\s+Create a no-secret starter config for first-run setup/);
     assert.match(help.stdout(), /config\s+Show or edit local ORX configuration/);
     assert.match(help.stdout(), /history\s+Search or clear local prompt history/);
     assert.match(help.stdout(), /mcp\s+List, edit, inspect, enable, disable, and grant MCP tool policy/);
@@ -178,6 +179,196 @@ test("help, version, and status work without an API key", async () => {
     );
     assert.match(doctorSecretOption.stderr(), /Unknown doctor option: \[redacted\]/);
     assert.doesNotMatch(doctorSecretOption.stderr(), /sk-or-v1-secret-doctor-option/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli init creates a no-secret starter config and is idempotent", async () => {
+  const cwd = createTempDir();
+  const configPath = join(cwd, "user", "config.toml");
+  const env = {
+    ORX_CONFIG_PATH: configPath,
+  };
+  let fetchCalls = 0;
+  const fetch = async (): Promise<Response> => {
+    fetchCalls += 1;
+    throw new Error("init must not call fetch");
+  };
+
+  try {
+    const first = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "init"], env, first.io), 0);
+    assert.match(first.stdout(), /ORX init/);
+    assert.match(first.stdout(), /state_changed: yes/);
+    assert.match(first.stdout(), /scope: user/);
+    assert.match(first.stdout(), new RegExp(`path: ${escapeRegExp(configPath)}`));
+    assert.match(first.stdout(), /config_exists: no/);
+    assert.match(first.stdout(), /model: openrouter\/auto/);
+    assert.match(first.stdout(), /mode: auto/);
+    assert.match(first.stdout(), /theme: default/);
+    assert.match(first.stdout(), /permissions: never\/danger-full-access/);
+    assert.match(first.stdout(), /api_key_present: no/);
+    assert.match(first.stdout(), /api_key_written: no/);
+    assert.match(first.stdout(), /network_calls: none/);
+    assert.match(first.stdout(), /subprocesses: none/);
+    assert.match(first.stdout(), /set OPENROUTER_API_KEY in your shell or edit config manually/);
+    assert.equal(first.stderr(), "");
+    assert.equal(statSync(join(cwd, "user")).mode & 0o777, 0o700);
+    assert.equal(statSync(configPath).mode & 0o777, 0o600);
+
+    const stored = readFileSync(configPath, "utf8");
+    assert.match(stored, /model = "openrouter\/auto"/);
+    assert.match(stored, /mode = "auto"/);
+    assert.match(stored, /theme = "default"/);
+    assert.match(stored, /approval_policy = "never"/);
+    assert.match(stored, /sandbox_mode = "danger-full-access"/);
+    assert.doesNotMatch(stored, /api_key|openrouter_api_key|OPENROUTER_API_KEY/);
+
+    const second = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "init"], env, second.io), 0);
+    assert.match(second.stdout(), /state_changed: no/);
+    assert.match(second.stdout(), /config_exists: yes/);
+    assert.match(second.stdout(), /config_values: unchanged_existing_config/);
+    assert.doesNotMatch(second.stdout(), /model: openrouter\/auto/);
+    assert.equal(readFileSync(configPath, "utf8"), stored);
+
+    const help = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "init", "--help"], env, help.io), 0);
+    assert.match(help.stdout(), /Usage: orx init \[--user\|--local\]/);
+    assert.equal(help.stderr(), "");
+
+    const secretOption = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(["node", "cli", "init", "sk-or-v1-secret-init-option"], env, secretOption.io),
+      1,
+    );
+    assert.match(secretOption.stderr(), /Unknown init option: \[redacted\]/);
+    assert.doesNotMatch(secretOption.stderr(), /sk-or-v1-secret-init-option/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli init leaves existing config unchanged without reporting starter defaults", async () => {
+  const cwd = createTempDir();
+  const configPath = join(cwd, "custom-config.toml");
+  const existing = [
+    'model = "anthropic/claude-sonnet-4.5"',
+    'mode = "exact"',
+    'theme = "vivid"',
+    "[permissions]",
+    'approval_policy = "on-request"',
+    'sandbox_mode = "workspace-write"',
+    "",
+  ].join("\n");
+  writeFileSync(configPath, existing);
+
+  try {
+    const init = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "init"], { ORX_CONFIG_PATH: configPath }, init.io), 0);
+    assert.match(init.stdout(), /state_changed: no/);
+    assert.match(init.stdout(), /config_exists: yes/);
+    assert.match(init.stdout(), /config_values: unchanged_existing_config/);
+    assert.match(init.stdout(), /api_key_present: not_evaluated_existing_config/);
+    assert.doesNotMatch(init.stdout(), /model: openrouter\/auto/);
+    assert.doesNotMatch(init.stdout(), /mode: auto/);
+    assert.doesNotMatch(init.stdout(), /theme: default/);
+    assert.doesNotMatch(init.stdout(), /permissions: never\/danger-full-access/);
+    assert.equal(init.stderr(), "");
+    assert.equal(readFileSync(configPath, "utf8"), existing);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli init and setup do not parse or leak malformed existing config", async () => {
+  const cwd = createTempDir();
+  const configPath = join(cwd, "bad-config.toml");
+  writeFileSync(configPath, 'api_key = "sk-or-v1-malformed-init-secret\n');
+  const env = {
+    ORX_CONFIG_PATH: configPath,
+  };
+
+  try {
+    const initHelp = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "init", "--help"], env, initHelp.io), 0);
+    assert.match(initHelp.stdout(), /Usage: orx init \[--user\|--local\]/);
+    assert.equal(initHelp.stderr(), "");
+
+    const setupHelp = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "setup", "--help"], env, setupHelp.io), 0);
+    assert.match(setupHelp.stdout(), /Usage: orx setup \[--user\|--local\]/);
+    assert.equal(setupHelp.stderr(), "");
+
+    const configInitHelp = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "config", "init", "--help"], env, configInitHelp.io), 0);
+    assert.match(configInitHelp.stdout(), /Usage: orx config init \[--user\|--local\]/);
+    assert.equal(configInitHelp.stderr(), "");
+
+    const init = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "init"], env, init.io), 0);
+    assert.match(init.stdout(), /state_changed: no/);
+    assert.match(init.stdout(), /config_values: unchanged_existing_config/);
+    assert.match(init.stdout(), /api_key_present: not_evaluated_existing_config/);
+    assert.equal(init.stderr(), "");
+
+    const setupUnknown = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "setup", "sk-or-v1-secret-setup-option"], env, setupUnknown.io),
+      1,
+    );
+    assert.match(setupUnknown.stderr(), /Unknown setup option: \[redacted\]/);
+
+    const combinedOutput = [
+      initHelp.stdout(),
+      initHelp.stderr(),
+      setupHelp.stdout(),
+      setupHelp.stderr(),
+      configInitHelp.stdout(),
+      configInitHelp.stderr(),
+      init.stdout(),
+      init.stderr(),
+      setupUnknown.stdout(),
+      setupUnknown.stderr(),
+    ].join("\n");
+    assert.doesNotMatch(combinedOutput, /sk-or-v1-malformed-init-secret/);
+    assert.doesNotMatch(combinedOutput, /sk-or-v1-secret-setup-option/);
+    assert.equal(readFileSync(configPath, "utf8"), 'api_key = "sk-or-v1-malformed-init-secret\n');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli init supports local scope and config init alias", async () => {
+  const cwd = createTempDir();
+  const localConfigPath = join(cwd, ".orx", "config.toml");
+  const userConfigPath = join(cwd, "user-config.toml");
+  const env = {
+    ORX_CONFIG_PATH: userConfigPath,
+    OPENROUTER_API_KEY: "sk-or-v1-test-init",
+  };
+
+  try {
+    const local = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "init", "--local"], env, local.io), 0);
+    assert.match(local.stdout(), /state_changed: yes/);
+    assert.match(local.stdout(), /scope: local/);
+    assert.match(local.stdout(), new RegExp(`path: ${escapeRegExp(localConfigPath)}`));
+    assert.match(local.stdout(), /api_key_present: yes/);
+    assert.doesNotMatch(local.stdout(), /sk-or-v1-test-init/);
+    assert.equal(existsSync(localConfigPath), true);
+    assert.equal(existsSync(userConfigPath), false);
+
+    const user = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "config", "init"], env, user.io), 0);
+    assert.match(user.stdout(), /ORX init/);
+    assert.match(user.stdout(), /scope: user/);
+    assert.match(user.stdout(), new RegExp(`path: ${escapeRegExp(userConfigPath)}`));
+    assert.equal(existsSync(userConfigPath), true);
+    assert.doesNotMatch(readFileSync(localConfigPath, "utf8"), /api_key/);
+    assert.doesNotMatch(readFileSync(userConfigPath, "utf8"), /api_key/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

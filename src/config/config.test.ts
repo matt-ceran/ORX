@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadConfig, setConfigValue, validateApiKey } from "./index.js";
+import { initializeConfig, loadConfig, setConfigValue, validateApiKey } from "./index.js";
 
 test("loads built-in defaults when config files are absent", () => {
   const tempHome = mkdtempSync(join(tmpdir(), "orx-home-"));
@@ -137,6 +137,104 @@ test("setConfigValue writes supported config keys privately and preserves existi
     assert.match(stored, /api_key = "config-key"/);
     assert.match(stored, /theme = "vivid"/);
     assert.equal(statSync(configPath).mode & 0o777, 0o600);
+  } finally {
+    rmSync(tempHome, { recursive: true, force: true });
+    rmSync(tempCwd, { recursive: true, force: true });
+  }
+});
+
+test("initializeConfig creates a private no-secret starter config idempotently", () => {
+  const tempHome = mkdtempSync(join(tmpdir(), "orx-home-"));
+  const tempCwd = mkdtempSync(join(tmpdir(), "orx-cwd-"));
+
+  try {
+    const first = initializeConfig({
+      cwd: tempCwd,
+      homeDir: tempHome,
+      env: {},
+    });
+
+    assert.equal(first.created, true);
+    assert.equal(first.existed, false);
+    assert.equal(first.scope, "user");
+    assert.equal(first.path, join(tempHome, ".orx", "config.toml"));
+    assert.equal(statSync(join(tempHome, ".orx")).mode & 0o777, 0o700);
+    assert.equal(statSync(first.path).mode & 0o777, 0o600);
+
+    const stored = readFileSync(first.path, "utf8");
+    assert.match(stored, /model = "openrouter\/auto"/);
+    assert.match(stored, /mode = "auto"/);
+    assert.match(stored, /theme = "default"/);
+    assert.match(stored, /approval_policy = "never"/);
+    assert.match(stored, /sandbox_mode = "danger-full-access"/);
+    assert.doesNotMatch(stored, /api_key|openrouter_api_key|OPENROUTER_API_KEY/);
+
+    const loaded = loadConfig({ cwd: tempCwd, homeDir: tempHome, env: {} });
+    assert.equal(loaded.config.model, "openrouter/auto");
+    assert.equal(loaded.config.permissions.approvalPolicy, "never");
+    assert.equal(loaded.apiKeyPresent, false);
+
+    const second = initializeConfig({
+      cwd: tempCwd,
+      homeDir: tempHome,
+      env: {},
+    });
+    assert.equal(second.created, false);
+    assert.equal(second.existed, true);
+    assert.equal(readFileSync(first.path, "utf8"), stored);
+  } finally {
+    rmSync(tempHome, { recursive: true, force: true });
+    rmSync(tempCwd, { recursive: true, force: true });
+  }
+});
+
+test("initializeConfig supports local scope and refuses symlink config paths", () => {
+  const tempHome = mkdtempSync(join(tmpdir(), "orx-home-"));
+  const tempCwd = mkdtempSync(join(tmpdir(), "orx-cwd-"));
+
+  try {
+    const local = initializeConfig({
+      cwd: tempCwd,
+      homeDir: tempHome,
+      env: {},
+      scope: "local",
+    });
+    assert.equal(local.created, true);
+    assert.equal(local.path, join(tempCwd, ".orx", "config.toml"));
+    assert.equal(statSync(join(tempCwd, ".orx")).mode & 0o777, 0o700);
+    assert.equal(statSync(local.path).mode & 0o777, 0o600);
+
+    const targetPath = join(tempCwd, "target.toml");
+    const linkPath = join(tempCwd, "link.toml");
+    writeFileSync(targetPath, "");
+    symlinkSync(targetPath, linkPath);
+
+    assert.throws(
+      () =>
+        initializeConfig({
+          cwd: tempCwd,
+          homeDir: tempHome,
+          env: {
+            ORX_CONFIG_PATH: linkPath,
+          },
+        }),
+      /symlink/,
+    );
+
+    const danglingLinkPath = join(tempCwd, "dangling-link.toml");
+    symlinkSync(join(tempCwd, "missing-target.toml"), danglingLinkPath);
+    assert.throws(
+      () =>
+        initializeConfig({
+          cwd: tempCwd,
+          homeDir: tempHome,
+          env: {
+            ORX_CONFIG_PATH: danglingLinkPath,
+          },
+        }),
+      /symlink/,
+    );
+    assert.equal(existsSync(join(tempCwd, "missing-target.toml")), false);
   } finally {
     rmSync(tempHome, { recursive: true, force: true });
     rmSync(tempCwd, { recursive: true, force: true });

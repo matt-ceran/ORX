@@ -24,6 +24,7 @@ Urgent UX recovery additions from user testing:
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
 - Durable TTY prompt history is implemented through private `~/.orx/history.json`, `ORX_CHAT_HISTORY_PATH`, readline preload, `orx history [search|clear]`, and `/history [search|clear]`; it stores sanitized user prompts only and skips slash commands/secret-like input.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
+- First-run config initialization is implemented through `orx init`, `orx setup`, and `orx config init`. It creates private no-secret starter config files for user or local scope, leaves existing regular config files unchanged, refuses symlink config paths, and tells users to provide credentials through `OPENROUTER_API_KEY` or deliberate manual editing.
 - Safe config inspection/editing is available in both CLI and chat through `orx config show|path|set` and `/config [show|path|set]`. It redacts API-key values, refuses API-key/secret-like arguments, honors `ORX_CONFIG_PATH`, writes private config files through the shared guards, and updates the active chat snapshot for edited keys.
 - `orx doctor` is the top-level no-network readiness overview. It now starts with concise `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation` labels before local runtime/MCP/plugin/delegation details and next commands; `orx doctor --strict` renders the same report and exits nonzero unless `ready_to_use: yes`.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
@@ -91,6 +92,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added first-run no-secret config initialization:
+
+- `orx init`, `orx setup`, and `orx config init` now create a starter TOML config using the existing private/symlink-resistant config writer.
+- Init writes default `openrouter/auto`, `auto`, `default`, and `never/danger-full-access` values, never writes API keys, leaves existing regular config files unchanged, and reports next steps for `OPENROUTER_API_KEY`, `orx doctor --strict`, and `orx`.
+- `--local` creates a repo-local `.orx/config.toml`; default user scope honors `ORX_CONFIG_PATH` for isolated runs.
+- Verification: `npm run typecheck`, focused build-backed config/CLI tests with 58 tests, `git diff --check`, full `npm test` with 494 tests, `npm run verify:global-install`, built CLI smokes for init/idempotence/existing custom config/malformed secret-looking TOML/setup help/config init help/secret-shaped option redaction/direct and dangling symlink refusal, and independent verifier recheck with no code findings after fixes.
+- Next likely work remains broader release hardening, remaining OAuth/device-flow decision work if ORX should own provider auth, delegate team/profile ergonomics, or stronger pre-spend budget strategy if OpenRouter can support it.
 
 Added strict `orx doctor` readiness gating:
 
