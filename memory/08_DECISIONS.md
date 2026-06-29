@@ -1,8 +1,14 @@
 # Decisions
 
-Last updated: 2026-06-28
+Last updated: 2026-06-29
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
+
+## 2026-06-29: Prompt History Stores Prompts Only
+
+Decision: ORX may persist local TTY prompt history for readline recall and operator search, but it should store sanitized user prompts only. Slash commands and secret-like input are skipped. The default file is `~/.orx/history.json`, `ORX_CHAT_HISTORY_PATH` can isolate it, writes use private `0700`/`0600` modes, and nested symlink parent paths are refused. History inspection and clearing are operator commands only through `orx history` and `/history`; prompt history is not model-visible context and is not a transcript search index.
+
+Reasoning: Durable prompt recall makes ORX feel like a mature CLI, but CLI history is a common place for accidental secret persistence. Prompt-only storage gives useful up-arrow/search ergonomics while avoiding command replay surprises, token persistence, network calls, subprocesses, and model exposure.
 
 ## 2026-06-28: Delegation Result Merge Has A Metadata-Only Mode
 

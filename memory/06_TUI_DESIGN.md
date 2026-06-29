@@ -1,6 +1,6 @@
 # TUI Design
 
-Last updated: 2026-06-27
+Last updated: 2026-06-29
 
 ## Interface Goals
 
@@ -52,6 +52,7 @@ Current MVP:
 - TTY render helpers support `default`, `mono`, and `vivid` themes. Theme can be set in config as `theme = "default" | "mono" | "vivid"`, overridden with `ORX_TTY_THEME`/`ORX_THEME`, or changed in chat with `/theme [default|mono|vivid]`. `NO_COLOR=1` and non-TTY output still force plain text.
 - Saved profile controls persist named local config snapshots outside repos at `~/.orx/profiles.json`. Use `orx profile ...`, global `orx --profile <id>`, or chat `/profile [list|save|use|inspect|delete]` to manage/apply them. Profiles do not store API keys or enable MCP/plugin executable surfaces.
 - Chat config controls mirror the safe CLI config surface through `/config show|path|set`. They render redacted config/path state, edit only supported non-secret keys, update the active chat snapshot after successful edits, and keep API keys/manual secret storage out of slash arguments.
+- TTY prompt history is durable, local, and private. Readline chat preloads single-line entries from `~/.orx/history.json` or `ORX_CHAT_HISTORY_PATH`; only sanitized user prompts are stored, slash commands and secret-like input are skipped, non-TTY/scripted chat does not persist history, and `/history [search|clear]` plus `orx history [search|clear]` inspect or clear the same prompt-only file.
 - TTY chat shows a subtle `work <spinner> assistant` activity state while waiting for assistant output and `work <spinner> tool <name>` while native tools run. The activity composer clears in place before assistant/tool scrollback is printed.
 - Readline Tab completion now covers slash command names, aliases, and deterministic arguments for common command families such as routing, web, MCP, plugins, skills, orchestration, resume, help, and palette filtering.
 - Multiline prompt continuation is implemented without a raw-mode rewrite: an input line ending with an unescaped `\` keeps collecting lines, TTY mode renders a continuation `orx …` composer, non-TTY mode renders `...>`, and the collected lines are submitted as one user message with internal newlines preserved.
@@ -70,7 +71,7 @@ bottom status notch: model | mode | context | cost | credits | permissions
 bottom composer: orx › current input
 ```
 
-Next TTY polish should focus on any remaining provider badge polish, history/search ergonomics, and optional future raw-mode editing only if it can preserve the current script-safe fallback.
+Next TTY polish should focus on any remaining provider badge polish and optional future raw-mode editing only if it can preserve the current script-safe fallback.
 
 ## Slash Commands
 
@@ -93,6 +94,7 @@ Initial commands:
 /mcp
 /compact
 /profile
+/history
 /orchestrator
 /delegate
 /delegates
@@ -151,6 +153,6 @@ Future orchestration commands:
 - Trailing unescaped `\` continues a multiline prompt and submits the collected lines together.
 - Shift+Enter can be added later if a raw-mode editor is introduced safely.
 - Ctrl+C interrupts the current task before quitting.
-- Arrow keys navigate command history.
+- Arrow keys navigate durable prompt history in interactive readline/TTY chat.
 - Slash command menu filters as the user types.
 - Tab completes slash command names, aliases, and deterministic subcommands/arguments where ORX has stable choices.

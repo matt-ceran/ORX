@@ -75,6 +75,14 @@ import {
   type TtyActivityState,
   type TtyInputState,
 } from "./screen.js";
+import {
+  appendChatHistoryEntry,
+  chatHistoryEntriesForReadline,
+  clearChatHistory,
+  loadChatHistory,
+  renderChatHistoryCleared,
+  type ChatHistoryEntry,
+} from "./history.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
 
@@ -115,6 +123,7 @@ export interface ChatOptions {
   pluginHooksConfigPath?: string;
   pluginRegistryPath?: string;
   profileConfigPath?: string;
+  chatHistoryPath?: string;
   delegationTeamConfigPath?: string;
   delegationPolicyPath?: string;
   delegationAuditLogPath?: string;
@@ -149,6 +158,7 @@ export async function runChat({
   pluginHooksConfigPath,
   pluginRegistryPath,
   profileConfigPath,
+  chatHistoryPath,
   delegationTeamConfigPath,
   delegationPolicyPath,
   delegationAuditLogPath,
@@ -177,6 +187,16 @@ export async function runChat({
   let delegationState: DelegationState = normalizeDelegationState(session.record.delegation);
   let modelMcpEnabled = false;
   const { useReadlineTerminal, useTtyScreen } = resolveChatTerminalModes(io.stdin, io.stdout);
+  let promptHistoryEntries: ChatHistoryEntry[] = [];
+  let historyWarningShown = false;
+
+  if (chatHistoryPath && useReadlineTerminal) {
+    try {
+      promptHistoryEntries = loadChatHistory({ historyPath: chatHistoryPath });
+    } catch (error) {
+      warnHistoryFailure(error);
+    }
+  }
 
   if (useTtyScreen) {
     writeComposer(io.stdout, renderCurrentTtyComposer());
@@ -202,6 +222,9 @@ export async function runChat({
     terminal: useReadlineTerminal,
     crlfDelay: Infinity,
   });
+  if (useReadlineTerminal && promptHistoryEntries.length > 0) {
+    setReadlineHistory(rl, chatHistoryEntriesForReadline(promptHistoryEntries));
+  }
 
   rl.on("SIGINT", () => {
     if (activeAbort) {
@@ -299,6 +322,17 @@ export async function runChat({
           delegationTeamConfigPath,
           delegationPolicyPath,
           delegationAuditLogPath,
+          chatHistoryPath,
+          getChatHistoryEntries: () => promptHistoryEntries,
+          clearChatHistory: () => {
+            if (!chatHistoryPath) {
+              return undefined;
+            }
+            const result = clearChatHistory({ historyPath: chatHistoryPath });
+            promptHistoryEntries = [];
+            setReadlineHistory(rl, []);
+            return renderChatHistoryCleared(result);
+          },
           recordActivatedSkill: (skill) => {
             activatedSkills = upsertActivatedSkill(activatedSkills, skill);
           },
@@ -395,6 +429,7 @@ export async function runChat({
         pluginRegistryPath,
       ));
       activeAbort = new AbortController();
+      recordPromptHistory(line);
       writeLine(io.stdout, `\nyou: ${formatUserSubmissionForScrollback(line)}`);
       await runLifecycleHooksAndWarn("user_prompt_submit", activeAbort.signal);
       const userMessage: OpenRouterMessage = { role: "user", content: line };
@@ -661,6 +696,30 @@ export async function runChat({
       writeLine(io.stderr, renderPluginHookLifecycleResult(result));
     }
   }
+
+  function recordPromptHistory(line: string): void {
+    if (!chatHistoryPath || !useReadlineTerminal) {
+      return;
+    }
+
+    try {
+      const result = appendChatHistoryEntry(line, {
+        historyPath: chatHistoryPath,
+      });
+      promptHistoryEntries = result.entries;
+    } catch (error) {
+      warnHistoryFailure(error);
+    }
+  }
+
+  function warnHistoryFailure(error: unknown): void {
+    if (historyWarningShown) {
+      return;
+    }
+    historyWarningShown = true;
+    const message = error instanceof Error ? error.message : String(error);
+    writeLine(io.stderr, `Warning: unable to use prompt history: ${message}`);
+  }
 }
 
 export function resolveChatTerminalModes(
@@ -738,6 +797,10 @@ function writeComposer(stream: WritableLike, composer: string) {
 
 function writeLine(stream: WritableLike, text: string) {
   stream.write(`${text}\n`);
+}
+
+function setReadlineHistory(rl: unknown, history: string[]): void {
+  (rl as { history?: string[] }).history = history;
 }
 
 function countLines(value: string): number {

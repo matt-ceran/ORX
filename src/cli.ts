@@ -187,6 +187,13 @@ import {
   runTestTarget,
 } from "./testing/index.js";
 import { runChat } from "./tui/chat.js";
+import {
+  clearChatHistory,
+  loadChatHistory,
+  renderChatHistory,
+  renderChatHistoryCleared,
+  resolveChatHistoryPath,
+} from "./tui/history.js";
 
 interface PackageJson {
   version: string;
@@ -263,6 +270,7 @@ export async function runCli(
   const pluginHooksAuditLogPath = resolvePluginHooksAuditLogPath({ env, cwd: io.cwd });
   const pluginCatalogPath = resolvePluginCatalogPath({ env, cwd: io.cwd });
   const profileConfigPath = resolveProfileConfigPath({ env, cwd: io.cwd });
+  const chatHistoryPath = resolveChatHistoryPath({ env, cwd: io.cwd });
   const delegationTeamConfigPath = resolveDelegationTeamRegistryPath({ env, cwd: io.cwd });
   const delegationPolicyPath = resolveDelegationPolicyPath({ env, cwd: io.cwd });
   const delegationAuditLogPath = resolveDelegationAuditLogPath({ env, cwd: io.cwd });
@@ -328,6 +336,10 @@ export async function runCli(
 
   if (first === "profile" || first === "profiles") {
     return runProfileCommand(args.slice(1), loadedConfig.config, io, profileConfigPath);
+  }
+
+  if (first === "history") {
+    return runHistoryCommand(args.slice(1), io, chatHistoryPath);
   }
 
   if (first === "plugins" || first === "plugin") {
@@ -450,6 +462,7 @@ export async function runCli(
       pluginHooksConfigPath,
       pluginRegistryPath,
       profileConfigPath,
+      chatHistoryPath,
       delegationTeamConfigPath,
       delegationPolicyPath,
       delegationAuditLogPath,
@@ -479,6 +492,7 @@ function helpText(): string {
     "  generation <id>  Show OpenRouter generation metadata",
     "  config        Show or edit local ORX configuration",
     "  profile       List, inspect, save, or delete local ORX profiles",
+    "  history       Search or clear local prompt history",
     "  mcp           List, edit, inspect, enable, disable, and grant MCP tool policy",
     "  plugins       List catalog entries, scaffold, validate, install, enable, or disable plugins",
     "  bins          List, inspect, trust, untrust, or run plugin bins",
@@ -521,6 +535,7 @@ function runChatCommand(
     pluginHooksConfigPath?: string;
     pluginRegistryPath?: string;
     profileConfigPath?: string;
+    chatHistoryPath?: string;
     delegationTeamConfigPath?: string;
     delegationPolicyPath?: string;
     delegationAuditLogPath?: string;
@@ -554,6 +569,7 @@ function runChatCommand(
     pluginHooksConfigPath: paths?.pluginHooksConfigPath,
     pluginRegistryPath: paths?.pluginRegistryPath,
     profileConfigPath: paths?.profileConfigPath,
+    chatHistoryPath: paths?.chatHistoryPath,
     delegationTeamConfigPath: paths?.delegationTeamConfigPath,
     delegationPolicyPath: paths?.delegationPolicyPath,
     delegationAuditLogPath: paths?.delegationAuditLogPath,
@@ -1177,6 +1193,37 @@ function runConfigCommand(
 
   writeLine(io.stderr, "Usage: orx config [show|path|set <key> <value> [--user|--local]]");
   return 1;
+}
+
+function runHistoryCommand(args: string[], io: CliIo, historyPath: string): number {
+  const subcommand = args[0]?.toLowerCase();
+
+  try {
+    if (subcommand === "clear") {
+      if (args.length !== 1) {
+        writeLine(io.stderr, "Usage: orx history clear");
+        return 1;
+      }
+      writeLine(io.stdout, renderChatHistoryCleared(clearChatHistory({ historyPath })));
+      return 0;
+    }
+
+    const query = subcommand === "search" ? args.slice(1).join(" ") : args.join(" ");
+    writeLine(
+      io.stdout,
+      renderChatHistory(loadChatHistory({ historyPath }), {
+        query,
+        historyPath,
+      }),
+    );
+    return 0;
+  } catch (error) {
+    writeLine(
+      io.stderr,
+      `Unable to use prompt history: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return 1;
+  }
 }
 
 function runProfileCommand(

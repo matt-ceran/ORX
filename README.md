@@ -47,6 +47,7 @@ orx status
 orx doctor
 orx config show
 orx config set theme vivid
+orx history
 orx tests list
 orx tests run
 orx code map
@@ -67,6 +68,8 @@ The npm `prepare` lifecycle builds `dist/cli.js` for local source installs. `orx
 Config is discovered from repo-local `.orx/config.toml` development defaults and `~/.orx/config.toml`. `OPENROUTER_API_KEY` takes precedence for API key detection. The `status` command reports whether a key is present without printing it. `orx config show` and `/config show` render the effective config with API-key values redacted, `orx config path` and `/config path` show the local/user config paths, and `orx config set <key> <value> [--local]` or `/config set <key> <value> [--local]` edit supported non-secret keys: `model`, `mode`, `fusion_preset`, `theme`, `approval_policy`, and `sandbox_mode`. Config edits default to the user config path, honor `ORX_CONFIG_PATH` for isolated runs, use private file modes for created files, update the current chat snapshot for the edited key, and refuse API-key storage through CLI arguments.
 
 `orx doctor` is a no-network readiness overview for day-to-day setup checks. It summarizes chat API-key readiness, runtime defaults, MCP profile state, plugin review counts, saved delegation teams, delegation policy state, and concrete next commands without calling OpenRouter, remote MCP servers, plugin bins, or plugin hooks. Use `orx status`, `orx mcp status`, `orx plugins doctor`, and `orx delegates plan` for deeper detail.
+
+Interactive TTY chat stores sanitized user prompts, but not slash commands or secret-like input, in a private local prompt history file at `~/.orx/history.json`; set `ORX_CHAT_HISTORY_PATH` to isolate it. Readline preloads that history for up-arrow recall. Use `orx history`, `orx history search <query>`, `orx history clear`, `/history`, `/history search <query>`, and `/history clear` to inspect or clear it without network calls.
 
 Saved local profiles can bundle model, mode, Fusion preset, theme, and permission posture without storing API keys:
 
@@ -332,6 +335,7 @@ The chat UI keeps in-session message history for the current process, streams as
 /theme [default|mono|vivid]
 /config [show|path|set]
 /profile [list|save|use|inspect|delete]
+/history [search <query>|clear]
 /tests [list|run]
 /map [path]
 /code [map|symbols]

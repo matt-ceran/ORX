@@ -1,6 +1,6 @@
 # Commands
 
-Last updated: 2026-06-28
+Last updated: 2026-06-29
 
 ## Repository
 
@@ -50,6 +50,9 @@ npm run dev -- doctor
 npm run dev -- config show
 npm run dev -- config path
 npm run dev -- config set theme vivid
+npm run dev -- history
+npm run dev -- history search provider
+npm run dev -- history clear
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello from ORX"
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello" --model anthropic/claude-sonnet-4.5
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello" --mode fusion --fusion general-budget
@@ -78,7 +81,7 @@ OPENROUTER_API_KEY="sk-or-..." npm run dev -- profile save daily
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- --profile daily status
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- --profile daily ask "Say hello"
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- chat
-printf '/mode fusion\n/fusion general-budget\n/theme vivid\n/config show\n/config path\n/config set theme mono\n/profile save daily\n/profile use daily\n/models claude\n/credits\n/generation gen_...\n/tests list\n/tests run\n/map\n/code map src\n/code symbols render\n/symbols create\n/web\n/web fetch https://example.com\n/web search openrouter models\n/web browse https://example.com\n/search orx cli\n/browse https://example.com\n/orchestrator openrouter openrouter/fusion\n/delegate add reviewer openrouter anthropic/claude-sonnet-4.5\n/delegates\n/sources\n/cite src-1\n/bibliography\n/mcp\n/mcp enable openrouter\n/mcp auth setup openrouter\n/mcp allow-model-tool openrouter models-list\n/mcp model enable\n/status\n/new\n/exit\n' | OPENROUTER_API_KEY="sk-or-..." BRAVE_SEARCH_API_KEY="..." npm run dev -- chat
+printf '/mode fusion\n/fusion general-budget\n/theme vivid\n/config show\n/config path\n/config set theme mono\n/profile save daily\n/profile use daily\n/history search provider\n/models claude\n/credits\n/generation gen_...\n/tests list\n/tests run\n/map\n/code map src\n/code symbols render\n/symbols create\n/web\n/web fetch https://example.com\n/web search openrouter models\n/web browse https://example.com\n/search orx cli\n/browse https://example.com\n/orchestrator openrouter openrouter/fusion\n/delegate add reviewer openrouter anthropic/claude-sonnet-4.5\n/delegates\n/sources\n/cite src-1\n/bibliography\n/mcp\n/mcp enable openrouter\n/mcp auth setup openrouter\n/mcp allow-model-tool openrouter models-list\n/mcp model enable\n/status\n/new\n/exit\n' | OPENROUTER_API_KEY="sk-or-..." BRAVE_SEARCH_API_KEY="..." npm run dev -- chat
 ```
 
 If `.orx/config.toml` contains the API key, the `OPENROUTER_API_KEY=...` prefix is not needed. The `.orx/` directory is ignored and must remain uncommitted.
@@ -112,6 +115,8 @@ OPENROUTER_API_KEY="sk-or-..." npm run dev -- --profile daily ask "Say hello"
 Profiles persist model, mode, Fusion preset, theme, and permission posture under `~/.orx/profiles.json`; use `ORX_PROFILE_CONFIG_PATH` for isolated runs. Profiles do not store API keys. In chat, `/profile list`, `/profile save <id>`, `/profile use <id>`, `/profile inspect <id>`, and `/profile delete <id>` manage the same registry. Manual `/model`, `/mode`, `/fusion`, or `/theme` changes clear the active profile label.
 
 `orx doctor` is a no-key setup overview that aggregates local runtime defaults, API-key presence, saved profiles, test targets, MCP profile/policy counts, plugin review counts, saved delegation teams, delegation policy state, and concrete next commands. It does not call OpenRouter, remote MCP endpoints, plugin bins, or plugin hooks. Use `orx status`, `orx mcp status`, `orx plugins doctor`, and `orx delegates plan` for detailed follow-up.
+
+TTY prompt history is local and private. Interactive readline chat stores sanitized user prompts under `~/.orx/history.json` or `ORX_CHAT_HISTORY_PATH` with `0700` parent and `0600` file modes; slash commands and secret-like input are skipped. Readline preloads single-line entries for up-arrow recall. `orx history`, `orx history search <query>`, `orx history clear`, `/history`, `/history search <query>`, and `/history clear` inspect or clear the same file without API keys, network calls, subprocesses, model exposure, or transcript indexing.
 
 Plugin registry commands are no-key and no-network by default. `orx plugins install <manifest-path>` and `/plugins install <manifest-path>` are aliases for inert local manifest registration. Installed plugins remain disabled; enabling a plugin persists only the enabled marker. `orx plugins commands` and `/plugin list` render namespaced aliases derived from enabled prompt commands, bins, and executable command schemas. `/plugin:<plugin-id>:command:<slug>` activates the matching prompt as untrusted chat context. Trusted current bin hashes can run only through explicit `orx bins run <id> [args...]`, `/bins run <id> [args...]`, or `/plugin:<plugin-id>:bin:<file> [args...]`, with cached-plugin cwd, manifest-declared env only, redacted/truncated output, and JSONL audit logging without raw argument lists. `/plugin:<plugin-id>:exec:<slug> [args...]` aliases come from `components.commandSchemas`, enforce optional `maxArgs`, and then delegate to the referenced trusted current bin through the same runtime. Trusted current hook hashes can run through explicit `orx hooks run <id>` / `/hooks run <id>` and matching lifecycle events with minimal env/cwd and JSONL audit logging. Plugin MCP presets require separate MCP profile enablement/trust plus explicit `/mcp call`/`orx mcp call` or read-only model grants through `/mcp allow-model-tool`/`orx mcp allow-model-tool` before tool execution.
 

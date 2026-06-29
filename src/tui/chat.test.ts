@@ -16,6 +16,7 @@ import {
 import type { BrowserSnapshotDriver, ResolveBrowserHost } from "../research/index.js";
 import { createSessionRecord, saveSessionRecord } from "../sessions/index.js";
 import { resolveChatTerminalModes, runChat } from "./chat.js";
+import { loadChatHistory } from "./history.js";
 
 const encoder = new TextEncoder();
 
@@ -189,6 +190,139 @@ test("tty chat renders continuation composer for multiline input", async () => {
     } else {
       process.env.NO_COLOR = previousNoColor;
     }
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat persists searchable prompt history and clears it from slash command", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-history-sessions-"));
+  const cwd = mkdtempSync(join(tmpdir(), "orx-chat-history-cwd-"));
+  const historyPath = join(cwd, "history.json");
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+
+  try {
+    const firstRun = createIo({
+      stdin: Readable.from(["Remember provider preset setup\n", "/exit\n"]),
+      cwd,
+      tty: true,
+      columns: 88,
+      fetch: async () =>
+        new Response(
+          streamFrom([
+            'data: {"choices":[{"delta":{"content":"stored"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        ),
+    });
+
+    assert.equal(
+      await runChat({
+        apiKey: "test-key",
+        loadedConfig: baseLoadedConfig(),
+        io: firstRun.io,
+        sessionDirectory,
+        chatHistoryPath: historyPath,
+      }),
+      0,
+    );
+    const savedEntries = loadChatHistory({ historyPath });
+    assert.deepEqual(savedEntries, [
+      {
+        text: "Remember provider preset setup",
+        createdAt: savedEntries[0]?.createdAt ?? "",
+      },
+    ]);
+    assert.doesNotMatch(readFileSync(historyPath, "utf8"), new RegExp(escapeRegExp(cwd)));
+    assert.doesNotMatch(readFileSync(historyPath, "utf8"), /sessionId|cwd/);
+
+    const secondRun = createIo({
+      stdin: Readable.from([
+        "/history search provider\n",
+        "/history clear\n",
+        "/history\n",
+        "/exit\n",
+      ]),
+      cwd,
+      tty: true,
+      columns: 88,
+      fetch: async () => {
+        throw new Error("history slash commands should not call OpenRouter");
+      },
+    });
+
+    assert.equal(
+      await runChat({
+        apiKey: "test-key",
+        loadedConfig: baseLoadedConfig(),
+        io: secondRun.io,
+        sessionDirectory,
+        chatHistoryPath: historyPath,
+      }),
+      0,
+    );
+
+    const stdout = stripAnsi(secondRun.stdout());
+    assert.match(stdout, /Prompt history matching "provider"/);
+    assert.match(stdout, /Remember provider preset setup/);
+    assert.match(stdout, /Prompt history cleared/);
+    assert.match(stdout, /No prompt history found/);
+    assert.equal(loadChatHistory({ historyPath }).length, 0);
+    assert.equal(secondRun.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("non-tty chat does not persist prompt history even when a history path is configured", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-non-tty-history-sessions-"));
+  const cwd = mkdtempSync(join(tmpdir(), "orx-chat-non-tty-history-cwd-"));
+  const historyPath = join(cwd, "history.json");
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+
+  try {
+    const capture = createIo({
+      stdin: Readable.from(["scripted prompt should not persist\n", "/exit\n"]),
+      cwd,
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+
+        return new Response(
+          streamFrom([
+            'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    assert.equal(
+      await runChat({
+        apiKey: "test-key",
+        loadedConfig: baseLoadedConfig(),
+        io: capture.io,
+        sessionDirectory,
+        chatHistoryPath: historyPath,
+      }),
+      0,
+    );
+
+    assert.equal(requests.length, 1);
+    assert.equal(loadChatHistory({ historyPath }).length, 0);
+    assert.equal(readFileIfExists(historyPath), undefined);
+    assert.match(capture.stdout(), /assistant: ok/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
     rmSync(sessionDirectory, { recursive: true, force: true });
   }
 });
@@ -2295,6 +2429,14 @@ function sse(value: unknown): string {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function readFileIfExists(path: string): string | undefined {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
 }
 
 function stripAnsi(value: string): string {

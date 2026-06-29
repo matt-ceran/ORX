@@ -231,6 +231,11 @@ import {
   renderTestTargets,
   runTestTarget,
 } from "../testing/index.js";
+import {
+  loadChatHistory,
+  renderChatHistory,
+  type ChatHistoryEntry,
+} from "../tui/history.js";
 import { gitDiffTool } from "../tools/index.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
@@ -333,6 +338,9 @@ export interface SlashCommandContext {
   delegationTeamConfigPath?: string;
   delegationPolicyPath?: string;
   delegationAuditLogPath?: string;
+  chatHistoryPath?: string;
+  getChatHistoryEntries?: () => ChatHistoryEntry[];
+  clearChatHistory?: () => string | undefined;
   recordActivatedPrompt?: (prompt: PluginPromptActivationProvenance) => void;
   recordActivatedRule?: (rule: PluginRuleActivationProvenance) => void;
   recordActivatedSkill?: (skill: PluginSkillActivationProvenance) => void;
@@ -522,6 +530,7 @@ const DELEGATION_POLICY_SUBCOMMAND_COMPLETIONS = [
   "set",
 ] as const;
 const RESUME_SELECTOR_COMPLETIONS = ["latest"] as const;
+const HISTORY_SUBCOMMAND_COMPLETIONS = ["search", "clear"] as const;
 const COMMON_GROUP_ORDER: SlashCommandGroup[] = [
   "Core",
   "Models & routing",
@@ -1188,6 +1197,16 @@ const COMMANDS: Record<string, SlashDefinition> = {
       return "continue";
     },
   },
+  "/history": {
+    usage: "/history [search <query>|clear]",
+    description: "Search or clear local prompt history",
+    group: "Workspace",
+    tier: "common",
+    handler: (command, context): SlashResult => {
+      handleHistoryCommand(command, context);
+      return "continue";
+    },
+  },
   "/new": {
     usage: "/new",
     description: "Start a new in-process chat",
@@ -1564,6 +1583,8 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       return [];
     case "/profile":
       return argIndex === 0 ? [...PROFILE_SUBCOMMAND_COMPLETIONS] : [];
+    case "/history":
+      return argIndex === 0 ? [...HISTORY_SUBCOMMAND_COMPLETIONS] : [];
     case "/web":
       return argIndex === 0 ? [...WEB_SUBCOMMAND_COMPLETIONS] : [];
     case "/mcp":
@@ -2213,6 +2234,52 @@ function applyConfigSetResultToConfig(config: OrxConfig, key: ConfigSetKey, valu
   }
 
   return nextConfig;
+}
+
+function handleHistoryCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const subcommand = command.args[0]?.toLowerCase();
+  if (subcommand === "clear") {
+    if (command.args.length !== 1) {
+      writeLine(context.io.stderr, "Usage: /history clear");
+      return;
+    }
+    if (!context.clearChatHistory) {
+      writeLine(context.io.stderr, "Prompt history is not available in this context.");
+      return;
+    }
+
+    try {
+      const rendered = context.clearChatHistory();
+      writeLine(context.io.stdout, rendered ?? "Prompt history cleared.");
+    } catch (error) {
+      writeLine(
+        context.io.stderr,
+        `Unable to clear prompt history: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return;
+  }
+
+  const query = subcommand === "search" ? command.args.slice(1).join(" ") : command.argText;
+  try {
+    const entries = context.getChatHistoryEntries
+      ? context.getChatHistoryEntries()
+      : context.chatHistoryPath
+        ? loadChatHistory({ historyPath: context.chatHistoryPath })
+        : [];
+    writeLine(
+      context.io.stdout,
+      renderChatHistory(entries, {
+        query,
+        historyPath: context.chatHistoryPath,
+      }),
+    );
+  } catch (error) {
+    writeLine(
+      context.io.stderr,
+      `Unable to read prompt history: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 function handleProfileCommand(command: SlashCommand, context: SlashCommandContext): void {

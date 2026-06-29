@@ -31,6 +31,12 @@ import {
   renderSlashHelp,
   type SlashCommandContext,
 } from "./index.js";
+import {
+  appendChatHistoryEntry,
+  clearChatHistory,
+  loadChatHistory,
+  renderChatHistoryCleared,
+} from "../tui/history.js";
 
 afterEach(() => {
   resetMcpProfileRuntimeState();
@@ -77,6 +83,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.match(output, /\/theme \[default\|mono\|vivid\]\s+Show or set the TTY color theme/);
   assert.match(output, /\/config \[show\|path\|set <key> <value>\]\s+Inspect or edit safe ORX config keys/);
   assert.match(output, /\/profile \[list\|save\|use\|inspect\|delete\]\s+Manage saved local config profiles/);
+  assert.match(output, /\/history \[search <query>\|clear\]\s+Search or clear local prompt history/);
   assert.match(output, /\/tests \[list\|run <target-id>\]\s+Discover or run native test targets \(aliases: \/test\)/);
   assert.match(output, /\/map \[path\]\s+Render a bounded local repository code map/);
   assert.match(output, /\/model <id-or-search>\s+Resolve and switch OpenRouter model \(aliases: \/m\)/);
@@ -214,6 +221,8 @@ test("slash command completer suggests command names, aliases, and deterministic
     ["status ", "save "],
     "s",
   ]);
+  assert.deepEqual(completeSlashCommandLine("/history c"), [["clear "], "c"]);
+  assert.deepEqual(completeSlashCommandLine("/history s"), [["search "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/web b"), [["browse "], "b"]);
   assert.deepEqual(completeSlashCommandLine("/web h"), [["help "], "h"]);
   assert.deepEqual(completeSlashCommandLine("/mcp m"), [["model "], "m"]);
@@ -587,6 +596,44 @@ test("profile command saves lists applies inspects and deletes local profiles", 
 
     assert.equal(handleSlashCommand("/profile use deep-review", harness.context), "continue");
     assert.match(harness.stderr(), /Unknown profile: deep-review/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("history slash command searches and clears local prompt history", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-history-slash-"));
+  const historyPath = join(cwd, "history.json");
+  let entries = [] as ReturnType<typeof loadChatHistory>;
+  const harness = createSlashHarness({
+    chatHistoryPath: historyPath,
+    getChatHistoryEntries: () => entries,
+    clearChatHistory: () => {
+      const result = clearChatHistory({ historyPath });
+      entries = [];
+      return renderChatHistoryCleared(result);
+    },
+  });
+
+  try {
+    appendChatHistoryEntry("Review provider setup", { historyPath });
+    appendChatHistoryEntry("Polish command palette", { historyPath });
+    entries = loadChatHistory({ historyPath });
+
+    assert.equal(handleSlashCommand("/history search provider", harness.context), "continue");
+    assert.match(harness.stdout(), /Prompt history matching "provider"/);
+    assert.match(harness.stdout(), /Review provider setup/);
+    assert.doesNotMatch(harness.stdout(), /Polish command palette/);
+    assert.match(harness.stdout(), new RegExp(`history_path: ${escapeRegExp(historyPath)}`));
+
+    assert.equal(handleSlashCommand("/history clear", harness.context), "continue");
+    assert.match(harness.stdout(), /Prompt history cleared/);
+    assert.match(harness.stdout(), /state_changed: yes/);
+
+    assert.equal(handleSlashCommand("/history", harness.context), "continue");
+    assert.match(harness.stdout(), /No prompt history found/);
+    assert.equal(loadChatHistory({ historyPath }).length, 0);
+    assert.equal(harness.stderr(), "");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -4203,6 +4250,9 @@ function createSlashHarness(
     delegationTeamConfigPath?: string;
     delegationPolicyPath?: string;
     delegationAuditLogPath?: string;
+    chatHistoryPath?: string;
+    getChatHistoryEntries?: SlashCommandContext["getChatHistoryEntries"];
+    clearChatHistory?: SlashCommandContext["clearChatHistory"];
     recordActivatedPrompt?: SlashCommandContext["recordActivatedPrompt"];
     recordActivatedRule?: SlashCommandContext["recordActivatedRule"];
     recordActivatedSkill?: SlashCommandContext["recordActivatedSkill"];
@@ -4329,6 +4379,9 @@ function createSlashHarness(
       delegationTeamConfigPath: options.delegationTeamConfigPath,
       delegationPolicyPath: options.delegationPolicyPath,
       delegationAuditLogPath: options.delegationAuditLogPath,
+      chatHistoryPath: options.chatHistoryPath,
+      getChatHistoryEntries: options.getChatHistoryEntries,
+      clearChatHistory: options.clearChatHistory,
       recordActivatedPrompt: options.recordActivatedPrompt,
       recordActivatedRule: options.recordActivatedRule,
       recordActivatedSkill: options.recordActivatedSkill,

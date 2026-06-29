@@ -19,6 +19,7 @@ import {
   trustPluginHook,
 } from "./plugins/index.js";
 import { saveCurrentProfile } from "./profiles/index.js";
+import { appendChatHistoryEntry } from "./tui/history.js";
 
 const encoder = new TextEncoder();
 
@@ -29,6 +30,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /Commands:/);
     assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
     assert.match(help.stdout(), /config\s+Show or edit local ORX configuration/);
+    assert.match(help.stdout(), /history\s+Search or clear local prompt history/);
     assert.match(help.stdout(), /mcp\s+List, edit, inspect, enable, disable, and grant MCP tool policy/);
     assert.match(help.stdout(), /plugins\s+List catalog entries, scaffold, validate, install, enable, or disable plugins/);
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
@@ -311,6 +313,52 @@ test("cli config --local edits the discovered ancestor local config from subdire
     assert.equal(existsSync(nestedConfigPath), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("cli history searches and clears local prompt history without an API key", async () => {
+  const cwd = createTempDir();
+  const historyPath = join(cwd, "history", "prompts.json");
+  const env = {
+    ORX_CHAT_HISTORY_PATH: historyPath,
+  };
+  let fetchCalls = 0;
+  const fetch = async (): Promise<Response> => {
+    fetchCalls += 1;
+    throw new Error("history commands must not call fetch");
+  };
+
+  try {
+    appendChatHistoryEntry("Review MCP provider preset flow", { historyPath });
+    appendChatHistoryEntry("Polish TTY prompt history", { historyPath });
+
+    const list = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "history"], env, list.io), 0);
+    assert.match(list.stdout(), /Prompt history:/);
+    assert.match(list.stdout(), /Polish TTY prompt history/);
+    assert.match(list.stdout(), /Review MCP provider preset flow/);
+    assert.match(list.stdout(), new RegExp(`history_path: ${escapeRegExp(historyPath)}`));
+    assert.equal(list.stderr(), "");
+
+    const search = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "history", "search", "provider"], env, search.io), 0);
+    assert.match(search.stdout(), /Prompt history matching "provider"/);
+    assert.match(search.stdout(), /Review MCP provider preset flow/);
+    assert.doesNotMatch(search.stdout(), /Polish TTY prompt history/);
+    assert.equal(search.stderr(), "");
+
+    const clear = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "history", "clear"], env, clear.io), 0);
+    assert.match(clear.stdout(), /Prompt history cleared/);
+    assert.match(clear.stdout(), /state_changed: yes/);
+    assert.equal(clear.stderr(), "");
+
+    const empty = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "history"], env, empty.io), 0);
+    assert.match(empty.stdout(), /No prompt history found/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
 

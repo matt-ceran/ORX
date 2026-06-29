@@ -1,15 +1,16 @@
 # Backlog
 
-Last updated: 2026-06-28
+Last updated: 2026-06-29
 
 ## P0
 
 Urgent UX recovery:
 
-- Continue TTY polish after multiline continuation: any remaining provider badge polish, history/search ergonomics, and optional future raw-mode editing only if it preserves script-safe fallback behavior.
+- Continue TTY polish after durable prompt history: any remaining provider badge polish and optional future raw-mode editing only if it preserves script-safe fallback behavior.
 
 Completed:
 
+- Add durable local TTY prompt history/search: private `~/.orx/history.json` storage with `ORX_CHAT_HISTORY_PATH`, readline preload for single-line prompt recall, prompt-only recording that skips slash commands and secret-like input, `orx history [search|clear]`, `/history [search|clear]`, private modes, and symlink-parent refusal.
 - Add saved local profile controls: private `~/.orx/profiles.json` registry with `ORX_PROFILE_CONFIG_PATH`, no API-key persistence, `orx profile list|save|use|inspect|delete`, global `orx --profile <id>`, `/profile [list|save|use|inspect|delete]`, `active_profile`/`profile_count` status visibility, session snapshot persistence, and stale active-profile clearing on manual routing/theme changes.
 - Add chat slash parity for safe config inspection/editing: `/config show|path|set`, shared redacted config formatting, `ORX_CONFIG_PATH` scope behavior, active-chat config snapshot updates, and secret/control-character unknown-key redaction.
 - Add first-class config commands: `orx config show|path|set`, `ORX_CONFIG_PATH` user-config override support, private writes for supported non-secret settings, and API-key storage refusal through CLI args.

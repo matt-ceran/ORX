@@ -1,6 +1,6 @@
 # Current Context
 
-Last updated: 2026-06-28
+Last updated: 2026-06-29
 
 ## Fast Phase 12 Handoff
 
@@ -22,6 +22,7 @@ Urgent UX recovery additions from user testing:
 - Line-based multiline prompt continuation is implemented: a trailing unescaped `\` keeps collecting input, TTY mode shows an `orx …` continuation composer, non-TTY mode shows `...>`, and the collected lines are submitted as one user message.
 - The TTY bottom status notch now uses compact model badges for OpenRouter routing shortcuts, rendering `openrouter/auto` as `auto` and `openrouter/fusion` as `fusion`; full model ids remain unchanged in config, request construction, plain status, and non-TTY output.
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
+- Durable TTY prompt history is implemented through private `~/.orx/history.json`, `ORX_CHAT_HISTORY_PATH`, readline preload, `orx history [search|clear]`, and `/history [search|clear]`; it stores sanitized user prompts only and skips slash commands/secret-like input.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
 - Safe config inspection/editing is available in both CLI and chat through `orx config show|path|set` and `/config [show|path|set]`. It redacts API-key values, refuses API-key/secret-like arguments, honors `ORX_CONFIG_PATH`, writes private config files through the shared guards, and updates the active chat snapshot for edited keys.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
@@ -89,6 +90,15 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added durable local TTY prompt history/search:
+
+- Added `src/tui/history.ts` for private prompt history storage under `~/.orx/history.json` or `ORX_CHAT_HISTORY_PATH`, with `0700` parent and `0600` file modes, bounded newest-first entries, deduplication, single-line readline preload, and nested symlink-parent refusal while allowing normal macOS system temp roots.
+- Interactive TTY chat now preloads single-line prompt history for readline recall and records completed user prompts after submission. Non-TTY/scripted chat does not persist prompt history, slash commands are skipped, and secret-like inputs are not stored.
+- Added `orx history`, `orx history search <query>`, `orx history clear`, `/history`, `/history search <query>`, and `/history clear` as no-key/no-network/no-subprocess operator surfaces over the same local file. Prompt history is not model-visible context and is not transcript indexing.
+- Updated README, command memory, tooling policy, backlog, and decisions for the prompt-history privacy boundary.
+- Verification: `npm run typecheck`, `git diff --check`, focused compiled history/chat/CLI/slash tests with 168 tests after verifier fixes, full `npm test` with 484 tests, `npm run verify:global-install`, isolated built-CLI history dogfood, and independent verifier recheck with no findings. Verifier-found issues around cwd/session metadata, stale README slash-list docs, and non-TTY/no-metadata regression coverage are fixed.
+- Next likely work remains provider-specific OAuth/token helper polish beyond bearer storage, real-key policy-enabled delegation dogfood when `OPENROUTER_API_KEY` is available, broader provider/plugin preset polish, optional final TTY raw-mode editing, and release hardening.
 
 Added MCP macOS Keychain bearer support:
 
@@ -398,7 +408,7 @@ Implemented line-based multiline prompt continuation:
 - TTY mode renders a continuation `orx …` composer; non-TTY and `NO_COLOR` retain script-safe line-oriented behavior with a plain `...>` continuation prompt.
 - Multiline user scrollback indents continuation lines under the first `you:` line, and slash commands remain single-line-only dispatches.
 - Verification: `npm run typecheck`, `npm run build`, `git diff --check`, focused TUI/CLI build-backed tests, focused source TUI tests with 33 tests, full `npm test` with 380 tests through the independent verifier, and verifier ad hoc probes for escaped backslashes, multiline slash input, interior blank lines, and TTY `NO_COLOR` continuation fallback.
-- Next likely TTY polish: remaining provider badge polish, history/search ergonomics, or optional future raw-mode editing only with script-safe fallback preserved.
+- That slice's next likely history/search ergonomics work is now complete; remaining TTY polish is provider badge polish or optional future raw-mode editing only with script-safe fallback preserved.
 
 Implemented framework-aware test metadata:
 
