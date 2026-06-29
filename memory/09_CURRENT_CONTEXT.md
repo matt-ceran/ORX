@@ -26,7 +26,7 @@ Urgent UX recovery additions from user testing:
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
 - First-run config initialization is implemented through `orx init`, `orx setup`, and `orx config init`. It creates private no-secret starter config files for user or local scope, leaves existing regular config files unchanged, refuses symlink config paths, and tells users to provide credentials through `OPENROUTER_API_KEY` or deliberate manual editing.
 - Core OpenRouter auth ergonomics are implemented through `orx auth`, `orx auth status`, `orx auth setup`, `orx auth env`, `orx auth init`, and `orx auth env-file`. They report API-key readiness without values, print only placeholder exports, create private commented env templates under `~/.orx/auth` or `ORX_AUTH_ENV_DIR`, avoid automatic env-file loading, and refuse auth env-file symlink paths.
-- Safe config inspection/editing is available in both CLI and chat through `orx config show|path|set` and `/config [show|path|set]`. It redacts API-key values, refuses API-key/secret-like arguments, honors `ORX_CONFIG_PATH`, writes private config files through the shared guards, and updates the active chat snapshot for edited keys.
+- Safe config inspection/editing is available in both CLI and chat through `orx config show|path|set` and `/config [show|path|set]`. It redacts API-key values, refuses API-key/secret-like arguments, honors `ORX_CONFIG_PATH`, writes private config files through the shared guards, updates the active chat snapshot for edited keys, and keeps `orx config path` usable as a sanitized recovery surface when config parsing fails.
 - `orx doctor` is the top-level no-network readiness overview. It now starts with concise `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation` labels before local runtime/MCP/plugin/delegation details and next commands; `orx doctor --strict` renders the same report and exits nonzero unless `ready_to_use: yes`, and `orx doctor --json` emits the same readiness data as redacted structured JSON for automation.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
 - Plugin authoring scaffold is implemented through `orx plugins scaffold <directory>` and `/plugins scaffold <directory>`. It creates a valid local `orx-plugin.json` authoring bundle without registry writes; defaults are inert skills/prompt-commands/rules markdown, `--minimal` writes only the manifest, and `--with` adds opt-in empty placeholders for hooks, bins, MCP, command schemas, assets, and docs behind the existing review gates.
@@ -93,6 +93,13 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added malformed-config recovery for config paths:
+
+- When general config loading fails, normal commands now return the sanitized config-load failure instead of raw parser output.
+- `orx config path` now has a recovery branch that still renders local/user config paths with `effective_sources: not_evaluated_config_unreadable`, so users can locate the broken config file without exposing malformed contents or secret-looking tokens.
+- Verification: `npm run typecheck`, focused build-backed CLI tests with the malformed-config recovery regression, `git diff --check`, full `npm test` with 497 tests, and `npm run verify:global-install` passed.
+- Next likely work remains broader release hardening, remaining OAuth/device-flow decision work if ORX should own provider auth, delegate team/profile ergonomics, or stronger pre-spend budget strategy if OpenRouter can support it.
 
 Added no-secret core OpenRouter auth setup helpers:
 

@@ -346,7 +346,7 @@ export function renderConfigShow(
 }
 
 export function renderConfigPaths(
-  loadedConfig: LoadedConfig,
+  loadedConfig: Pick<LoadedConfig, "loadedFiles"> | undefined,
   options: RenderConfigOptions = {},
 ): string {
   const localPath = resolveLocalConfigPath(options);
@@ -354,7 +354,9 @@ export function renderConfigPaths(
   const commandPrefix = options.commandPrefix ?? "orx config";
   return [
     "ORX config paths",
-    `  effective_sources: ${formatConfigSources(loadedConfig.loadedFiles)}`,
+    `  effective_sources: ${
+      loadedConfig ? formatConfigSources(loadedConfig.loadedFiles) : "not_evaluated_config_unreadable"
+    }`,
     `  local: ${localPath} exists=${existsSync(localPath) ? "yes" : "no"}`,
     `  user: ${userPath} exists=${existsSync(userPath) ? "yes" : "no"}`,
     `  user_env_override: ${options.env?.ORX_CONFIG_PATH ? "ORX_CONFIG_PATH" : "none"}`,

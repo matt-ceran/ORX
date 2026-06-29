@@ -308,6 +308,10 @@ export async function runCli(
     profileConfigPath,
   });
   if (typeof loadedConfigResult === "string") {
+    if (isConfigPathCommand(first, args) && isConfigLoadFailureMessage(loadedConfigResult)) {
+      writeLine(io.stdout, renderConfigPaths(undefined, { cwd: io.cwd, env }));
+      return 0;
+    }
     writeLine(io.stderr, loadedConfigResult);
     return 1;
   }
@@ -1236,6 +1240,15 @@ function runConfigCommand(
 
   writeLine(io.stderr, "Usage: orx config [show|path|init|set <key> <value> [--user|--local]]");
   return 1;
+}
+
+function isConfigPathCommand(first: string | undefined, args: string[]): boolean {
+  const subcommand = args[1]?.toLowerCase();
+  return first === "config" && (subcommand === "path" || subcommand === "paths");
+}
+
+function isConfigLoadFailureMessage(message: string): boolean {
+  return message.startsWith("Unable to load config:");
 }
 
 function runOpenRouterAuthCommand(

@@ -420,6 +420,13 @@ test("cli auth does not parse or leak malformed config and redacts secret-shaped
     assert.match(generalStatus.stderr(), /Unable to load config: config file is unreadable or invalid/);
     assert.match(generalStatus.stderr(), /Run orx auth for credential status/);
 
+    const configPathRecovery = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "config", "path"], env, configPathRecovery.io), 0);
+    assert.match(configPathRecovery.stdout(), /ORX config paths/);
+    assert.match(configPathRecovery.stdout(), /effective_sources: not_evaluated_config_unreadable/);
+    assert.match(configPathRecovery.stdout(), new RegExp(`user: ${escapeRegExp(configPath)}`));
+    assert.equal(configPathRecovery.stderr(), "");
+
     const combinedOutput = [
       status.stdout(),
       status.stderr(),
@@ -431,6 +438,8 @@ test("cli auth does not parse or leak malformed config and redacts secret-shaped
       unexpected.stderr(),
       generalStatus.stdout(),
       generalStatus.stderr(),
+      configPathRecovery.stdout(),
+      configPathRecovery.stderr(),
     ].join("\n");
     assert.doesNotMatch(combinedOutput, /sk-or-v1-malformed-auth-secret/);
     assert.doesNotMatch(combinedOutput, /sk-or-v1-secret-auth-option/);
