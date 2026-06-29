@@ -19,6 +19,7 @@ import {
   formatPluginIdForMessage,
   registerPluginManifest,
   renderPluginInspect,
+  resolveInstalledPluginReference,
   resolvePluginCacheDirectory,
   resolvePluginRegistryPath,
   setPluginEnabledState,
@@ -114,13 +115,20 @@ test("plugin registry enable and disable only changes state markers", () => {
       now: () => new Date("2026-06-26T12:00:00.000Z"),
     });
 
-    const enabled = setPluginEnabledState("acme.demo-plugin@1.0.0", true, {
+    const resolved = resolveInstalledPluginReference("acme.demo-plugin", { registryPath });
+    assert.equal(resolved.ok, true);
+    assert.equal(resolved.ok ? resolved.resolvedId : "", "acme.demo-plugin@1.0.0");
+    assert.equal(resolved.ok ? resolved.exact : true, false);
+
+    const enabled = setPluginEnabledState("acme.demo-plugin", true, {
       registryPath,
       now: () => new Date("2026-06-26T12:01:00.000Z"),
     });
     assert.equal(enabled.ok, true);
+    assert.equal(enabled.plugin?.id, "acme.demo-plugin@1.0.0");
     assert.equal(enabled.previousEnabled, false);
     assert.equal(enabled.nextEnabled, true);
+    assert.match(enabled.message, /Plugin acme\.demo-plugin@1\.0\.0 enabled/);
     assert.match(enabled.message, /hooks and bins require separate hash trust, and MCP\/commands remain gated/);
 
     const summary = getPluginStatusSummary({ registryPath });
@@ -136,6 +144,65 @@ test("plugin registry enable and disable only changes state markers", () => {
     });
     assert.equal(disabled.ok, true);
     assert.equal(getPluginStatusSummary({ registryPath }).enabledCount, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("unversioned plugin ids fail closed when multiple installed versions match", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-ambiguous-id-"));
+  const registryPath = join(cwd, "registry.json");
+  const manifestV1Path = join(cwd, "plugin-v1.json");
+  const manifestV2Path = join(cwd, "plugin-v2.json");
+  writeFileSync(manifestV1Path, JSON.stringify(validManifest()));
+  writeFileSync(manifestV2Path, JSON.stringify({ ...validManifest(), version: "2.0.0" }));
+
+  try {
+    registerPluginManifest(manifestV1Path, { registryPath });
+    registerPluginManifest(manifestV2Path, { registryPath });
+
+    const ambiguous = resolveInstalledPluginReference("acme.demo-plugin", { registryPath });
+    assert.equal(ambiguous.ok, false);
+    assert.match(ambiguous.message, /Ambiguous plugin: acme\.demo-plugin matches acme\.demo-plugin@1\.0\.0, acme\.demo-plugin@2\.0\.0/);
+
+    const stateChange = setPluginEnabledState("acme.demo-plugin", true, { registryPath });
+    assert.equal(stateChange.ok, false);
+    assert.match(stateChange.message, /Ambiguous plugin: acme\.demo-plugin/);
+
+    const exact = setPluginEnabledState("acme.demo-plugin@2.0.0", true, { registryPath });
+    assert.equal(exact.ok, true);
+    assert.equal(exact.plugin?.id, "acme.demo-plugin@2.0.0");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("exact versioned plugin ids preserve uppercase version text", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-uppercase-version-"));
+  const registryPath = join(cwd, "registry.json");
+  const manifestPath = join(cwd, "plugin.json");
+  writeFileSync(manifestPath, JSON.stringify({ ...validManifest(), version: "1.0.0-RC.1" }));
+
+  try {
+    const installed = registerPluginManifest(manifestPath, { registryPath });
+    assert.equal(installed.plugin?.id, "acme.demo-plugin@1.0.0-RC.1");
+
+    const exact = resolveInstalledPluginReference("acme.demo-plugin@1.0.0-RC.1", {
+      registryPath,
+    });
+    assert.equal(exact.ok, true);
+    assert.equal(exact.ok ? exact.exact : false, true);
+    assert.equal(exact.ok ? exact.resolvedId : "", "acme.demo-plugin@1.0.0-RC.1");
+
+    const unversioned = setPluginEnabledState("acme.demo-plugin", true, { registryPath });
+    assert.equal(unversioned.ok, true);
+    assert.match(unversioned.message, /Plugin acme\.demo-plugin@1\.0\.0-RC\.1 enabled/);
+
+    const exactDisable = setPluginEnabledState("acme.demo-plugin@1.0.0-RC.1", false, {
+      registryPath,
+    });
+    assert.equal(exactDisable.ok, true);
+    assert.equal(exactDisable.plugin?.id, "acme.demo-plugin@1.0.0-RC.1");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

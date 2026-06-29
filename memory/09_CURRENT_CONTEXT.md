@@ -28,7 +28,7 @@ Urgent UX recovery additions from user testing:
 - Core OpenRouter auth ergonomics are implemented through `orx auth`, `orx auth status`, `orx auth setup`, `orx auth env`, `orx auth init`, `orx auth env-file`, and matching `/auth status|setup|env|init|env-file` chat commands. They report API-key readiness without values, print only placeholder exports, create private commented env templates under `~/.orx/auth` or `ORX_AUTH_ENV_DIR`, avoid automatic env-file loading, and refuse auth env-file symlink paths.
 - Safe config inspection/editing is available in both CLI and chat through `orx config show|path|set` and `/config [show|path|set]`. It redacts API-key values, refuses API-key/secret-like arguments, honors `ORX_CONFIG_PATH`, writes private config files through the shared guards, updates the active chat snapshot for edited keys, and keeps `orx config path` usable as a sanitized recovery surface when config parsing fails.
 - `orx doctor` is the top-level no-network readiness overview. It now starts with concise `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation` labels before local runtime/MCP/plugin/delegation details and next commands; missing-key next steps point to `orx auth setup` and `orx auth init`; `orx doctor --strict` renders the same report and exits nonzero unless `ready_to_use: yes`, and `orx doctor --json` emits the same readiness data as redacted structured JSON for automation.
-- Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
+- Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and matching `/plugins ...` commands; installed-plugin inspect/enable/disable accept exact `publisher.name@version` ids or unversioned `publisher.name` ids when exactly one installed version matches. Plugin enablement persists only a state marker and does not by itself trust executable surfaces.
 - Plugin authoring scaffold is implemented through `orx plugins scaffold <directory>` and `/plugins scaffold <directory>`. It creates a valid local `orx-plugin.json` authoring bundle without registry writes; defaults are inert skills/prompt-commands/rules markdown, `--minimal` writes only the manifest, and `--with` adds opt-in empty placeholders for hooks, bins, MCP, command schemas, assets, and docs behind the existing review gates.
 - Plugin manifest validation is implemented through `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>`. It parses/sanitizes manifests, renders manifest/component hashes, permission counts, missing component warnings, and explicitly leaves registry/cache/trust/runtime state unchanged.
 - Plugin install/register now snapshots sanitized manifests plus declared components and declared hook cwd directories into ORX-owned plugin cache storage before registry persistence; enabled skill/hook discovery resolves from the cached manifest path, not the original source checkout.
@@ -93,6 +93,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added unversioned installed-plugin id resolution:
+
+- Dogfooding the clean MCP/plugin onboarding path showed that scaffold/install surfaces exact ids such as `local.sample-plugin@0.1.0`, while a natural `orx plugins enable local.sample-plugin` failed.
+- `orx plugins inspect|enable|disable` and `/plugins inspect|enable|disable` now accept exact versioned ids or unique unversioned `publisher.name` ids. If multiple installed versions match, ORX fails closed with an ambiguous-plugin message listing exact ids.
+- The change is registry-level, so state changes still write the exact stored plugin id and exact ids remain stable for aliases, bins, hooks, MCP profiles, and review output.
+- Verification: `npm run typecheck`, `git diff --check`, `npm run build`, build-backed registry/CLI/slash plugin coverage with 159 tests, full `npm test` with 500 tests, `npm run verify:global-install`, isolated scaffold/install/inspect/enable/disable dogfood through both CLI and chat slash commands, and independent verifier recheck. The verifier found only stale memory wording, which was fixed.
+- Next likely work is commit/push, then continue live MCP/plugin dogfooding for the broader first-run ORX flow.
 
 Added chat slash parity for core OpenRouter auth helpers:
 

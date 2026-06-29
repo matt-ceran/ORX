@@ -121,11 +121,9 @@ import {
   findDiscoveredBin,
   findDiscoveredHook,
   findPluginCatalogEntry,
-  findInstalledPlugin,
   formatBinIdForMessage,
   formatHookIdForMessage,
   formatPluginCatalogIdForMessage,
-  formatPluginIdForMessage,
   getPluginBinTrustSummary,
   getPluginHookTrustSummary,
   getPluginStatusSummary,
@@ -159,6 +157,7 @@ import {
   resolvePluginCacheDirectory,
   resolvePluginCatalogPath,
   resolvePluginHooksConfigPath,
+  resolveInstalledPluginReference,
   resolvePluginRegistryPath,
   runPluginBin,
   runPluginHook,
@@ -1653,13 +1652,13 @@ async function runPluginsCommand(
       return 1;
     }
 
-    const plugin = findInstalledPlugin(pluginId, { registryPath: pluginRegistryPath });
-    if (!plugin) {
-      writeLine(io.stderr, `Unknown plugin: ${formatPluginIdForMessage(pluginId)}`);
+    const resolution = resolveInstalledPluginReference(pluginId, { registryPath: pluginRegistryPath });
+    if (!resolution.ok) {
+      writeLine(io.stderr, resolution.message);
       return 1;
     }
 
-    writeLine(io.stdout, renderPluginInspect(plugin));
+    writeLine(io.stdout, renderPluginInspect(resolution.plugin));
     return 0;
   }
 

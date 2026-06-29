@@ -2805,7 +2805,7 @@ test("plugins register, list, inspect, enable, and disable without network or ex
     assert.match(harness.stdout(), /components=bins,hooks,mcpServers,skills/);
 
     assert.equal(
-      await handleSlashCommand("/plugins inspect acme.demo-plugin@1.0.0", harness.context),
+      await handleSlashCommand("/plugins inspect acme.demo-plugin", harness.context),
       "continue",
     );
     assert.match(harness.stdout(), /Plugin: acme\.demo-plugin@1\.0\.0/);
@@ -2820,7 +2820,7 @@ test("plugins register, list, inspect, enable, and disable without network or ex
     assert.match(harness.stdout(), /plugin_code_execution: trusted current hooks run manually\/on lifecycle; trusted bins and schema-backed exec aliases run only by explicit operator command/);
 
     assert.equal(
-      await handleSlashCommand("/plugins enable acme.demo-plugin@1.0.0", harness.context),
+      await handleSlashCommand("/plugins enable acme.demo-plugin", harness.context),
       "continue",
     );
     assert.match(harness.stdout(), /Plugin acme\.demo-plugin@1\.0\.0 enabled/);
@@ -2834,7 +2834,7 @@ test("plugins register, list, inspect, enable, and disable without network or ex
     assert.match(harness.stdout(), /plugin_enabled_mcp: 0/);
 
     assert.equal(
-      await handleSlashCommand("/plugins disable acme.demo-plugin@1.0.0", harness.context),
+      await handleSlashCommand("/plugins disable acme.demo-plugin", harness.context),
       "continue",
     );
     assert.match(harness.stdout(), /Plugin acme\.demo-plugin@1\.0\.0 disabled/);

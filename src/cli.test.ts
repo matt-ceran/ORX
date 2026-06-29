@@ -2281,7 +2281,7 @@ test("cli plugins install list inspect enable and disable without an API key", a
     const inspected = createNoFetchIo();
     assert.equal(
       await runCli(
-        ["node", "cli", "plugins", "inspect", "acme.cli-plugin@1.0.0"],
+        ["node", "cli", "plugins", "inspect", "acme.cli-plugin"],
         env,
         inspected.io,
       ),
@@ -2294,7 +2294,7 @@ test("cli plugins install list inspect enable and disable without an API key", a
     const enabled = createNoFetchIo();
     assert.equal(
       await runCli(
-        ["node", "cli", "plugins", "enable", "acme.cli-plugin@1.0.0"],
+        ["node", "cli", "plugins", "enable", "acme.cli-plugin"],
         env,
         enabled.io,
       ),
@@ -2306,7 +2306,7 @@ test("cli plugins install list inspect enable and disable without an API key", a
     const disabled = createNoFetchIo();
     assert.equal(
       await runCli(
-        ["node", "cli", "plugins", "disable", "acme.cli-plugin@1.0.0"],
+        ["node", "cli", "plugins", "disable", "acme.cli-plugin"],
         env,
         disabled.io,
       ),

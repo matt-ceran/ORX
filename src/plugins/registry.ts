@@ -63,6 +63,20 @@ export interface PluginStateChange {
   message: string;
 }
 
+export type InstalledPluginReferenceResolution =
+  | {
+      ok: true;
+      plugin: InstalledPluginRecord;
+      requestedId: string;
+      resolvedId: string;
+      exact: boolean;
+    }
+  | {
+      ok: false;
+      requestedId: string;
+      message: string;
+    };
+
 export interface PluginStatusSummary {
   installedCount: number;
   enabledCount: number;
@@ -210,21 +224,23 @@ export function setPluginEnabledState(
   options: PluginRegistryIoOptions & { now?: () => Date } = {},
 ): PluginStateChange {
   const registry = loadPluginRegistry({ registryPath: options.registryPath });
-  const plugin = registry.plugins[id];
-  if (!plugin) {
+  const resolution = resolveInstalledPluginReferenceFromRegistry(id, registry);
+  if (!resolution.ok) {
     return {
       ok: false,
-      message: `Unknown plugin: ${formatPluginIdForMessage(id)}`,
+      message: resolution.message,
     };
   }
 
+  const plugin = resolution.plugin;
+  const resolvedId = resolution.resolvedId;
   const previousEnabled = plugin.enabled;
   const updated: InstalledPluginRecord = {
     ...plugin,
     enabled,
     updatedAt: (options.now?.() ?? new Date()).toISOString(),
   };
-  registry.plugins[id] = updated;
+  registry.plugins[resolvedId] = updated;
   savePluginRegistry(registry, { registryPath: options.registryPath });
 
   return {
@@ -234,8 +250,8 @@ export function setPluginEnabledState(
     nextEnabled: enabled,
     message:
       previousEnabled === enabled
-        ? `Plugin ${id} already ${enabled ? "enabled" : "disabled"}. State marker persisted; hooks and bins require separate hash trust, and MCP/commands remain gated.`
-        : `Plugin ${id} ${enabled ? "enabled" : "disabled"}. State marker persisted; hooks and bins require separate hash trust, and MCP/commands remain gated.`,
+        ? `Plugin ${resolvedId} already ${enabled ? "enabled" : "disabled"}. State marker persisted; hooks and bins require separate hash trust, and MCP/commands remain gated.`
+        : `Plugin ${resolvedId} ${enabled ? "enabled" : "disabled"}. State marker persisted; hooks and bins require separate hash trust, and MCP/commands remain gated.`,
   };
 }
 
@@ -261,7 +277,18 @@ export function findInstalledPlugin(
   id: string,
   options: PluginRegistryIoOptions = {},
 ): InstalledPluginRecord | undefined {
-  return loadPluginRegistry({ registryPath: options.registryPath }).plugins[id];
+  const resolution = resolveInstalledPluginReference(id, options);
+  return resolution.ok ? resolution.plugin : undefined;
+}
+
+export function resolveInstalledPluginReference(
+  id: string,
+  options: PluginRegistryIoOptions = {},
+): InstalledPluginReferenceResolution {
+  return resolveInstalledPluginReferenceFromRegistry(
+    id,
+    loadPluginRegistry({ registryPath: options.registryPath }),
+  );
 }
 
 export function hashPluginManifest(manifest: PluginManifest): string {
@@ -270,6 +297,73 @@ export function hashPluginManifest(manifest: PluginManifest): string {
 
 export function formatPluginIdForMessage(id: string): string {
   const formatted = sanitizeDisplayString(id.trim().toLowerCase(), "", 160);
+  return formatted || "[invalid plugin id]";
+}
+
+function resolveInstalledPluginReferenceFromRegistry(
+  id: string,
+  registry: PluginRegistryFile,
+): InstalledPluginReferenceResolution {
+  const requestedExactId = id.trim();
+  const exact = registry.plugins[requestedExactId];
+  if (exact) {
+    return {
+      ok: true,
+      plugin: exact,
+      requestedId: requestedExactId,
+      resolvedId: exact.id,
+      exact: true,
+    };
+  }
+
+  if (requestedExactId.includes("@")) {
+    return {
+      ok: false,
+      requestedId: requestedExactId,
+      message: `Unknown plugin: ${formatPluginIdForMessage(id)}`,
+    };
+  }
+
+  const requestedBaseId = requestedExactId.toLowerCase();
+  const matches = Object.values(registry.plugins)
+    .filter((plugin) => pluginBaseId(plugin.id) === requestedBaseId)
+    .sort((left, right) => left.id.localeCompare(right.id));
+
+  if (matches.length === 1) {
+    const plugin = matches[0];
+    return {
+      ok: true,
+      plugin,
+      requestedId: requestedExactId,
+      resolvedId: plugin.id,
+      exact: false,
+    };
+  }
+
+  if (matches.length > 1) {
+    return {
+      ok: false,
+      requestedId: requestedExactId,
+      message: `Ambiguous plugin: ${formatPluginIdForMessage(id)} matches ${matches
+        .map((plugin) => formatInstalledPluginIdForMessage(plugin.id))
+        .join(", ")}`,
+    };
+  }
+
+  return {
+    ok: false,
+    requestedId: requestedExactId,
+    message: `Unknown plugin: ${formatPluginIdForMessage(id)}`,
+  };
+}
+
+function pluginBaseId(id: string): string {
+  const index = id.lastIndexOf("@");
+  return index > 0 ? id.slice(0, index) : id;
+}
+
+function formatInstalledPluginIdForMessage(id: string): string {
+  const formatted = sanitizeDisplayString(id.trim(), "", 160);
   return formatted || "[invalid plugin id]";
 }
 
