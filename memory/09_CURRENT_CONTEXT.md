@@ -25,7 +25,7 @@ Urgent UX recovery additions from user testing:
 - Durable TTY prompt history is implemented through private `~/.orx/history.json`, `ORX_CHAT_HISTORY_PATH`, readline preload, `orx history [search|clear]`, and `/history [search|clear]`; it stores sanitized user prompts only and skips slash commands/secret-like input.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
 - First-run config initialization is implemented through `orx init`, `orx setup`, and `orx config init`. It creates private no-secret starter config files for user or local scope, leaves existing regular config files unchanged, refuses symlink config paths, and tells users to provide credentials through `OPENROUTER_API_KEY` or deliberate manual editing.
-- Core OpenRouter auth ergonomics are implemented through `orx auth`, `orx auth status`, `orx auth setup`, `orx auth env`, `orx auth init`, and `orx auth env-file`. They report API-key readiness without values, print only placeholder exports, create private commented env templates under `~/.orx/auth` or `ORX_AUTH_ENV_DIR`, avoid automatic env-file loading, and refuse auth env-file symlink paths.
+- Core OpenRouter auth ergonomics are implemented through `orx auth`, `orx auth status`, `orx auth setup`, `orx auth env`, `orx auth init`, `orx auth env-file`, and matching `/auth status|setup|env|init|env-file` chat commands. They report API-key readiness without values, print only placeholder exports, create private commented env templates under `~/.orx/auth` or `ORX_AUTH_ENV_DIR`, avoid automatic env-file loading, and refuse auth env-file symlink paths.
 - Safe config inspection/editing is available in both CLI and chat through `orx config show|path|set` and `/config [show|path|set]`. It redacts API-key values, refuses API-key/secret-like arguments, honors `ORX_CONFIG_PATH`, writes private config files through the shared guards, updates the active chat snapshot for edited keys, and keeps `orx config path` usable as a sanitized recovery surface when config parsing fails.
 - `orx doctor` is the top-level no-network readiness overview. It now starts with concise `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation` labels before local runtime/MCP/plugin/delegation details and next commands; missing-key next steps point to `orx auth setup` and `orx auth init`; `orx doctor --strict` renders the same report and exits nonzero unless `ready_to_use: yes`, and `orx doctor --json` emits the same readiness data as redacted structured JSON for automation.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
@@ -93,6 +93,15 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added chat slash parity for core OpenRouter auth helpers:
+
+- `/auth`, `/auth status`, `/auth setup`, `/auth env`, `/auth init`, and `/auth env-file` now mirror the no-secret `orx auth` setup helpers inside interactive chat.
+- `/auth` status reports API-key readiness without values, setup prints only a placeholder `OPENROUTER_API_KEY` export, and init creates the same private commented env template under `~/.orx/auth` or `ORX_AUTH_ENV_DIR`.
+- The slash command does not auto-load env files, call network, spawn subprocesses, or write config; secret-shaped and control-character unexpected arguments are redacted.
+- `/help`, `/commands`, and readline Tab completion now include the `/auth` surface.
+- Verification: `npm run typecheck`, build-backed slash/auth coverage, full `npm test` with 498 tests, `git diff --check`, `npm run verify:global-install`, compiled chat smoke for `/auth` status/setup/init/env-file plus secret-shaped unknown-command redaction, and independent verifier review with no findings.
+- Next likely work is broader release hardening and live MCP/plugin dogfooding.
 
 Integrated core auth commands into doctor guidance:
 

@@ -7,6 +7,13 @@ import {
   type AgentContextBudget,
   type SessionDiffState,
 } from "../agent/index.js";
+import {
+  createOpenRouterAuthReport,
+  initializeOpenRouterAuthEnvFile,
+  renderOpenRouterAuthEnvFileInitResult,
+  renderOpenRouterAuthSetup,
+  renderOpenRouterAuthStatus,
+} from "../auth/openrouter.js";
 import { createCodeMap, createCodeSymbolIndex, renderCodeMap, renderCodeSymbols } from "../code-map/index.js";
 import type { LoadedConfig, OrxConfig, OrxTheme } from "../config/types.js";
 import {
@@ -392,9 +399,12 @@ const MIN_COMPACT_PALETTE_WIDTH = 32;
 const MAX_COMPACT_PALETTE_WIDTH = 140;
 const HELP_CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/g;
 const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
+const SECRET_LIKE_MESSAGE_PATTERN =
+  /\b(?:sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/i;
 const MODE_COMPLETIONS = ["auto", "fusion"] as const;
 const FUSION_PRESET_COMPLETIONS = ["general-budget"] as const;
 const THEME_COMPLETIONS = [...TERMINAL_THEMES];
+const AUTH_SUBCOMMAND_COMPLETIONS = ["status", "show", "setup", "env", "init", "env-file", "help"] as const;
 const CONFIG_SUBCOMMAND_COMPLETIONS = ["show", "status", "list", "path", "paths", "set"] as const;
 const CONFIG_SET_KEY_COMPLETIONS = [
   "model",
@@ -630,6 +640,16 @@ const COMMANDS: Record<string, SlashDefinition> = {
     tier: "common",
     handler: (command, context): SlashResult => {
       handleConfigCommand(command, context);
+      return "continue";
+    },
+  },
+  "/auth": {
+    usage: "/auth [status|setup|env|init|env-file]",
+    description: "Inspect or initialize core OpenRouter auth setup",
+    group: "Core",
+    tier: "common",
+    handler: (command, context): SlashResult => {
+      handleOpenRouterAuthCommand(command, context);
       return "continue";
     },
   },
@@ -1567,6 +1587,8 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       return argIndex === 0 ? [...FUSION_PRESET_COMPLETIONS] : [];
     case "/theme":
       return argIndex === 0 ? [...THEME_COMPLETIONS] : [];
+    case "/auth":
+      return argIndex === 0 ? [...AUTH_SUBCOMMAND_COMPLETIONS] : [];
     case "/config":
       if (argIndex === 0) {
         return [...CONFIG_SUBCOMMAND_COMPLETIONS];
@@ -2136,6 +2158,72 @@ function parseTestRunArgs(args: string[]): { targetId?: string; extraArgs: strin
     return { targetId: args[0], extraArgs: args.slice(2) };
   }
   return { targetId: args[0], extraArgs: args.slice(1) };
+}
+
+function handleOpenRouterAuthCommand(command: SlashCommand, context: SlashCommandContext): void {
+  const usage = "Usage: /auth [status|setup|env|init|env-file]";
+  const subcommand = command.args[0]?.toLowerCase() ?? "status";
+  const options = {
+    cwd: context.io.cwd,
+    env: context.env,
+    homeDir: context.homeDir,
+  };
+
+  if (subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
+    writeLine(context.io.stdout, usage);
+    return;
+  }
+
+  const acceptsNoArgs = (commandName: string): boolean => {
+    if (command.args.length <= 1) {
+      return true;
+    }
+    writeLine(
+      context.io.stderr,
+      `Unexpected auth argument for ${commandName}: ${formatAuthArgForMessage(command.args[1])}\n${usage}`,
+    );
+    return false;
+  };
+
+  const report = createOpenRouterAuthReport(options);
+
+  if (subcommand === "status" || subcommand === "show" || subcommand === "list") {
+    if (!acceptsNoArgs(subcommand)) {
+      return;
+    }
+    writeLine(context.io.stdout, renderOpenRouterAuthStatus(report));
+    return;
+  }
+
+  if (subcommand === "setup" || subcommand === "env") {
+    if (!acceptsNoArgs(subcommand)) {
+      return;
+    }
+    writeLine(context.io.stdout, renderOpenRouterAuthSetup(report));
+    return;
+  }
+
+  if (subcommand === "init" || subcommand === "env-file") {
+    if (!acceptsNoArgs(subcommand)) {
+      return;
+    }
+    try {
+      const result = initializeOpenRouterAuthEnvFile(options);
+      const updatedReport = createOpenRouterAuthReport(options);
+      writeLine(context.io.stdout, renderOpenRouterAuthEnvFileInitResult(result, updatedReport));
+    } catch (error) {
+      writeLine(
+        context.io.stderr,
+        `Unable to initialize OpenRouter auth env file: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return;
+  }
+
+  writeLine(
+    context.io.stderr,
+    `Unknown auth command: ${formatAuthArgForMessage(command.args[0] ?? "")}\n${usage}`,
+  );
 }
 
 function handleConfigCommand(command: SlashCommand, context: SlashCommandContext): void {
@@ -4656,6 +4744,14 @@ function formatErrorCode(error: unknown): string {
 
 function formatProfileIdForMessage(profileId: string): string {
   return profileId.replace(HELP_CONTROL_PATTERN, "").trim().toLowerCase().slice(0, 80);
+}
+
+function formatAuthArgForMessage(value: string): string {
+  if (SECRET_LIKE_MESSAGE_PATTERN.test(value)) {
+    return "[redacted]";
+  }
+  const cleaned = value.replace(HELP_CONTROL_PATTERN, "").trim();
+  return cleaned.length > 0 ? cleaned.slice(0, 80) : "[redacted]";
 }
 
 function formatDelegationTeamIdForMessage(teamId: string): string {

@@ -52,6 +52,7 @@ Current MVP:
 - TTY render helpers support `default`, `mono`, and `vivid` themes. Theme can be set in config as `theme = "default" | "mono" | "vivid"`, overridden with `ORX_TTY_THEME`/`ORX_THEME`, or changed in chat with `/theme [default|mono|vivid]`. `NO_COLOR=1` and non-TTY output still force plain text.
 - Saved profile controls persist named local config snapshots outside repos at `~/.orx/profiles.json`. Use `orx profile ...`, global `orx --profile <id>`, or chat `/profile [list|save|use|inspect|delete]` to manage/apply them. Profiles do not store API keys or enable MCP/plugin executable surfaces.
 - Chat config controls mirror the safe CLI config surface through `/config show|path|set`. They render redacted config/path state, edit only supported non-secret keys, update the active chat snapshot after successful edits, and keep API keys/manual secret storage out of slash arguments.
+- Chat auth controls mirror the core OpenRouter auth helper surface through `/auth status|setup|env|init|env-file`. They report API-key readiness without values, print placeholder exports only, create private commented env templates when requested, do not auto-load env files, and redact secret-shaped unexpected arguments.
 - TTY prompt history is durable, local, and private. Readline chat preloads single-line entries from `~/.orx/history.json` or `ORX_CHAT_HISTORY_PATH`; only sanitized user prompts are stored, slash commands and secret-like input are skipped, non-TTY/scripted chat does not persist history, and `/history [search|clear]` plus `orx history [search|clear]` inspect or clear the same prompt-only file.
 - TTY chat shows a subtle `work <spinner> assistant` activity state while waiting for assistant output and `work <spinner> tool <name>` while native tools run. The activity composer clears in place before assistant/tool scrollback is printed.
 - Readline Tab completion now covers slash command names, aliases, and deterministic arguments for common command families such as routing, web, MCP, plugins, skills, orchestration, resume, help, and palette filtering.
@@ -85,6 +86,7 @@ Initial commands:
 /mode fusion
 /fusion
 /theme
+/auth
 /credits
 /cost
 /status
@@ -113,6 +115,7 @@ Implemented MVP commands:
 /mode auto
 /mode fusion
 /fusion [preset]
+/auth [status|setup|env|init|env-file]
 /models
 /clear
 /new

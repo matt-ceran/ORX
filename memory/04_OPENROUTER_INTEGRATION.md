@@ -1,6 +1,6 @@
 # OpenRouter Integration
 
-Last updated: 2026-06-28
+Last updated: 2026-06-29
 
 ## API Base
 
@@ -18,9 +18,9 @@ OPENROUTER_API_KEY
 
 Core auth setup helpers:
 
-- `orx auth` and `orx auth status` report whether the OpenRouter API key is available from `OPENROUTER_API_KEY`, config, missing state, or unreadable config without printing key values.
-- `orx auth setup` and `orx auth env` render placeholder shell exports only; they do not accept key values through CLI arguments.
-- `orx auth init` and `orx auth env-file` create a private commented template at `~/.orx/auth/openrouter.env`, or under `ORX_AUTH_ENV_DIR` for isolated runs, with no automatic loading. The operator edits/sources it manually.
+- `orx auth`, `orx auth status`, `/auth`, and `/auth status` report whether the OpenRouter API key is available from `OPENROUTER_API_KEY`, config, missing state, or unreadable config without printing key values.
+- `orx auth setup`, `orx auth env`, `/auth setup`, and `/auth env` render placeholder shell exports only; they do not accept key values through command arguments.
+- `orx auth init`, `orx auth env-file`, `/auth init`, and `/auth env-file` create a private commented template at `~/.orx/auth/openrouter.env`, or under `ORX_AUTH_ENV_DIR` for isolated runs, with no automatic loading. The operator edits/sources it manually.
 - These helpers make no network calls, spawn no subprocesses, write no config, and refuse direct or parent env-file symlink paths.
 
 ## Supported Model Modes

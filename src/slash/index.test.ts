@@ -82,6 +82,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.match(output, /\/status\s+Show current chat status/);
   assert.match(output, /\/theme \[default\|mono\|vivid\]\s+Show or set the TTY color theme/);
   assert.match(output, /\/config \[show\|path\|set <key> <value>\]\s+Inspect or edit safe ORX config keys/);
+  assert.match(output, /\/auth \[status\|setup\|env\|init\|env-file\]\s+Inspect or initialize core OpenRouter auth setup/);
   assert.match(output, /\/profile \[list\|save\|use\|inspect\|delete\]\s+Manage saved local config profiles/);
   assert.match(output, /\/history \[search <query>\|clear\]\s+Search or clear local prompt history/);
   assert.match(output, /\/tests \[list\|run <target-id>\]\s+Discover or run native test targets \(aliases: \/test\)/);
@@ -96,7 +97,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.doesNotMatch(output, /^Chat commands:/m);
 
   const commandLines = output.split("\n").filter((line) => line.startsWith("  /"));
-  assert.ok(commandLines.length <= 18, `expected concise common help, got ${commandLines.length}`);
+  assert.ok(commandLines.length <= 19, `expected concise common help, got ${commandLines.length}`);
 });
 
 test("help all shows common commands first plus advanced surfaces", () => {
@@ -206,6 +207,12 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mode a"), [["auto "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/fusion g"), [["general-budget "], "g"]);
   assert.deepEqual(completeSlashCommandLine("/theme v"), [["vivid "], "v"]);
+  assert.deepEqual(completeSlashCommandLine("/auth s"), [
+    ["status ", "show ", "setup "],
+    "s",
+  ]);
+  assert.deepEqual(completeSlashCommandLine("/auth e"), [["env ", "env-file "], "e"]);
+  assert.deepEqual(completeSlashCommandLine("/auth i"), [["init "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/config s"), [
     ["show ", "status ", "set "],
     "s",
@@ -540,6 +547,82 @@ test("config slash command shows paths and updates safe config keys", () => {
     );
     assert.match(harness.stderr(), /Unknown config key: \[redacted\]/);
     assert.doesNotMatch(harness.stderr(), /owned/);
+  } finally {
+    rmSync(tempHome, { recursive: true, force: true });
+    rmSync(tempCwd, { recursive: true, force: true });
+  }
+});
+
+test("auth slash command reports OpenRouter setup and creates a no-secret env template", () => {
+  const tempHome = mkdtempSync(join(tmpdir(), "orx-slash-auth-home-"));
+  const tempCwd = mkdtempSync(join(tmpdir(), "orx-slash-auth-cwd-"));
+  const authDir = join(tempCwd, "auth");
+  const configPath = join(tempCwd, "missing-config.toml");
+  const secret = "sk-or-v1-slash-auth-secret";
+
+  try {
+    const env = {
+      ORX_AUTH_ENV_DIR: authDir,
+      ORX_CONFIG_PATH: configPath,
+      OPENROUTER_API_KEY: secret,
+    } as NodeJS.ProcessEnv;
+    const harness = createSlashHarness({
+      cwd: tempCwd,
+      homeDir: tempHome,
+      env,
+    });
+
+    assert.equal(handleSlashCommand("/auth", harness.context), "continue");
+    assert.match(harness.stdout(), /ORX OpenRouter auth/);
+    assert.match(harness.stdout(), /api_key_present: yes/);
+    assert.match(harness.stdout(), /api_key_source: OPENROUTER_API_KEY/);
+    assert.match(harness.stdout(), /network_calls: none/);
+    assert.match(harness.stdout(), /subprocesses: none/);
+    assert.doesNotMatch(harness.stdout(), new RegExp(secret));
+
+    const setupStart = harness.stdout().length;
+    assert.equal(handleSlashCommand("/auth setup", harness.context), "continue");
+    const setupOutput = harness.stdout().slice(setupStart);
+    assert.match(setupOutput, /ORX OpenRouter auth setup/);
+    assert.match(setupOutput, /token_display: never/);
+    assert.match(setupOutput, /export OPENROUTER_API_KEY="<openrouter-api-key>"/);
+    assert.match(setupOutput, /managed_template:\n  orx auth init/);
+    assert.doesNotMatch(setupOutput, new RegExp(secret));
+
+    const initStart = harness.stdout().length;
+    assert.equal(handleSlashCommand("/auth init", harness.context), "continue");
+    const initOutput = harness.stdout().slice(initStart);
+    const envFilePath = join(authDir, "openrouter.env");
+    assert.match(initOutput, /ORX OpenRouter auth env file/);
+    assert.match(initOutput, /state_changed: yes/);
+    assert.match(initOutput, new RegExp(`path: ${escapeRegExp(envFilePath)}`));
+    assert.match(initOutput, /api_key_written: no/);
+    assert.match(initOutput, /template_exports_commented: yes/);
+    assert.match(initOutput, /file_mode: 0600/);
+    assert.equal(statSync(authDir).mode & 0o777, 0o700);
+    assert.equal(statSync(envFilePath).mode & 0o777, 0o600);
+    const template = readFileSync(envFilePath, "utf8");
+    assert.match(template, /# ORX OpenRouter auth env template/);
+    assert.match(template, /# export OPENROUTER_API_KEY="<openrouter-api-key>"/);
+    assert.doesNotMatch(template, /^export OPENROUTER_API_KEY/m);
+    assert.doesNotMatch(template, new RegExp(secret));
+
+    const secondInitStart = harness.stdout().length;
+    assert.equal(handleSlashCommand("/auth env-file", harness.context), "continue");
+    const secondInitOutput = harness.stdout().slice(secondInitStart);
+    assert.match(secondInitOutput, /state_changed: no/);
+    assert.match(secondInitOutput, /file_mode: unchanged_existing_file/);
+
+    assert.equal(handleSlashCommand("/auth help", harness.context), "continue");
+    assert.match(harness.stdout(), /Usage: \/auth \[status\|setup\|env\|init\|env-file\]/);
+
+    assert.equal(handleSlashCommand("/auth sk-or-v1-secret-auth-option", harness.context), "continue");
+    assert.match(harness.stderr(), /Unknown auth command: \[redacted\]/);
+    assert.doesNotMatch(harness.stderr(), /sk-or-v1-secret-auth-option/);
+
+    assert.equal(handleSlashCommand("/auth setup sk-or-v1-secret-auth-extra", harness.context), "continue");
+    assert.match(harness.stderr(), /Unexpected auth argument for setup: \[redacted\]/);
+    assert.doesNotMatch(harness.stderr(), /sk-or-v1-secret-auth-extra/);
   } finally {
     rmSync(tempHome, { recursive: true, force: true });
     rmSync(tempCwd, { recursive: true, force: true });
