@@ -97,8 +97,8 @@ Added concise `orx doctor` readiness labels:
 - `orx doctor` now starts with `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation` status lines before the existing detailed local diagnostics.
 - The summary distinguishes core CLI readiness from chat API-key readiness, active MCP profile state, plugin review needs, and optional delegation policy/team readiness.
 - The command remains no-network/no-subprocess, performs no config/data content writes, and does not print API key values; existing local loaders may still tighten private state-file permissions while reading.
-- Verification so far: focused compiled CLI tests with 43 tests. Independent verifier review is in progress for the current uncommitted slice.
-- Next likely work remains full gates, commit/push this doctor polish, then broader release hardening or any remaining OAuth/device-flow decision work.
+- Verification: focused compiled CLI tests with 43 tests, `npm run typecheck`, `git diff --check`, full `npm test` with 488 tests, `npm run verify:global-install`, built `orx doctor` smoke with isolated paths and no API-key leakage, and independent verifier review/recheck with no findings after memory boundary wording was corrected.
+- Next likely work is broader release hardening, remaining OAuth/device-flow decision work if ORX should own provider auth, delegate team/profile ergonomics, or stronger pre-spend budget strategy if OpenRouter can support it.
 
 Added provider-specific MCP auth guidance:
 
