@@ -30,6 +30,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /Commands:/);
     assert.match(help.stdout(), /\(no command\)  Start an interactive OpenRouter chat session/);
     assert.match(help.stdout(), /init\s+Create a no-secret starter config for first-run setup/);
+    assert.match(help.stdout(), /auth\s+Show OpenRouter API-key setup status or create an env template/);
     assert.match(help.stdout(), /config\s+Show or edit local ORX configuration/);
     assert.match(help.stdout(), /history\s+Search or clear local prompt history/);
     assert.match(help.stdout(), /mcp\s+List, edit, inspect, enable, disable, and grant MCP tool policy/);
@@ -278,6 +279,199 @@ test("cli init creates a no-secret starter config and is idempotent", async () =
     assert.match(secretOption.stderr(), /Unknown init option: \[redacted\]/);
     assert.doesNotMatch(secretOption.stderr(), /sk-or-v1-secret-init-option/);
     assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli auth reports OpenRouter setup and creates a no-secret env template", async () => {
+  const cwd = createTempDir();
+  const envFileDir = join(cwd, "auth");
+  const env = {
+    ORX_AUTH_ENV_DIR: envFileDir,
+    ORX_CONFIG_PATH: join(cwd, "config.toml"),
+  };
+  let fetchCalls = 0;
+  const fetch = async (): Promise<Response> => {
+    fetchCalls += 1;
+    throw new Error("auth must not call fetch");
+  };
+
+  try {
+    const status = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "auth"], env, status.io), 0);
+    assert.match(status.stdout(), /ORX OpenRouter auth/);
+    assert.match(status.stdout(), /api_key_present: no/);
+    assert.match(status.stdout(), /api_key_source: missing/);
+    assert.match(status.stdout(), /config_status: loaded/);
+    assert.match(status.stdout(), new RegExp(`env_file: ${escapeRegExp(join(envFileDir, "openrouter.env"))}`));
+    assert.match(status.stdout(), /env_file_exists: no/);
+    assert.match(status.stdout(), /env_file_auto_loaded: no/);
+    assert.match(status.stdout(), /cli_secret_args_accepted: no/);
+    assert.match(status.stdout(), /config_writes: no/);
+    assert.match(status.stdout(), /network_calls: none/);
+    assert.match(status.stdout(), /subprocesses: none/);
+    assert.match(status.stdout(), /orx auth setup/);
+    assert.equal(status.stderr(), "");
+
+    const setup = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "auth", "setup"], env, setup.io), 0);
+    assert.match(setup.stdout(), /ORX OpenRouter auth setup/);
+    assert.match(setup.stdout(), /token_display: never/);
+    assert.match(setup.stdout(), /cli_secret_args: refused/);
+    assert.match(setup.stdout(), /config_writes: none/);
+    assert.match(setup.stdout(), /export OPENROUTER_API_KEY="<openrouter-api-key>"/);
+    assert.match(setup.stdout(), /managed_template:\n  orx auth init/);
+    assert.doesNotMatch(setup.stdout(), /sk-or-v1-/);
+    assert.equal(setup.stderr(), "");
+
+    const init = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "auth", "init"], env, init.io), 0);
+    const envFilePath = join(envFileDir, "openrouter.env");
+    assert.match(init.stdout(), /ORX OpenRouter auth env file/);
+    assert.match(init.stdout(), /state_changed: yes/);
+    assert.match(init.stdout(), new RegExp(`path: ${escapeRegExp(envFilePath)}`));
+    assert.match(init.stdout(), /api_key_written: no/);
+    assert.match(init.stdout(), /template_exports_commented: yes/);
+    assert.match(init.stdout(), /directory_mode: 0700/);
+    assert.match(init.stdout(), /file_mode: 0600/);
+    assert.match(init.stdout(), /config_writes: none/);
+    assert.match(init.stdout(), /network_calls: none/);
+    assert.match(init.stdout(), /subprocesses: none/);
+    assert.equal(init.stderr(), "");
+    assert.equal(statSync(envFileDir).mode & 0o777, 0o700);
+    assert.equal(statSync(envFilePath).mode & 0o777, 0o600);
+    const stored = readFileSync(envFilePath, "utf8");
+    assert.match(stored, /# ORX OpenRouter auth env template/);
+    assert.match(stored, /# export OPENROUTER_API_KEY="<openrouter-api-key>"/);
+    assert.doesNotMatch(stored, /^export OPENROUTER_API_KEY=/m);
+    assert.doesNotMatch(stored, /sk-or-v1-/);
+
+    const secondInit = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "auth", "env-file"], env, secondInit.io), 0);
+    assert.match(secondInit.stdout(), /state_changed: no/);
+    assert.match(secondInit.stdout(), /file_mode: unchanged_existing_file/);
+    assert.equal(readFileSync(envFilePath, "utf8"), stored);
+
+    const keyedStatus = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "auth", "status"],
+        { ...env, OPENROUTER_API_KEY: "sk-or-v1-test-auth-secret" },
+        keyedStatus.io,
+      ),
+      0,
+    );
+    assert.match(keyedStatus.stdout(), /api_key_present: yes/);
+    assert.match(keyedStatus.stdout(), /api_key_source: OPENROUTER_API_KEY/);
+    assert.doesNotMatch(keyedStatus.stdout(), /sk-or-v1-test-auth-secret/);
+
+    const help = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "auth", "--help"], env, help.io), 0);
+    assert.match(help.stdout(), /Usage: orx auth \[status\|setup\|env\|init\|env-file\]/);
+    assert.equal(help.stderr(), "");
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli auth does not parse or leak malformed config and redacts secret-shaped args", async () => {
+  const cwd = createTempDir();
+  const configPath = join(cwd, "bad-config.toml");
+  writeFileSync(configPath, 'api_key = "sk-or-v1-malformed-auth-secret\n');
+  const env = {
+    ORX_CONFIG_PATH: configPath,
+    ORX_AUTH_ENV_DIR: join(cwd, "auth"),
+  };
+
+  try {
+    const status = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "auth", "status"], env, status.io), 0);
+    assert.match(status.stdout(), /config_status: unreadable/);
+    assert.match(status.stdout(), /api_key_source: config_unreadable/);
+    assert.equal(status.stderr(), "");
+
+    const setup = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "auth", "setup"], env, setup.io), 0);
+    assert.match(setup.stdout(), /config_status: unreadable|api_key_source: config_unreadable/);
+    assert.equal(setup.stderr(), "");
+
+    const unknown = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "auth", "sk-or-v1-secret-auth-option"], env, unknown.io),
+      1,
+    );
+    assert.match(unknown.stderr(), /Unknown auth command: \[redacted\]/);
+
+    const unexpected = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "auth", "setup", "sk-or-v1-secret-auth-extra"],
+        env,
+        unexpected.io,
+      ),
+      1,
+    );
+    assert.match(unexpected.stderr(), /Unexpected auth argument for setup: \[redacted\]/);
+
+    const generalStatus = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "status"], env, generalStatus.io), 1);
+    assert.match(generalStatus.stderr(), /Unable to load config: config file is unreadable or invalid/);
+    assert.match(generalStatus.stderr(), /Run orx auth for credential status/);
+
+    const combinedOutput = [
+      status.stdout(),
+      status.stderr(),
+      setup.stdout(),
+      setup.stderr(),
+      unknown.stdout(),
+      unknown.stderr(),
+      unexpected.stdout(),
+      unexpected.stderr(),
+      generalStatus.stdout(),
+      generalStatus.stderr(),
+    ].join("\n");
+    assert.doesNotMatch(combinedOutput, /sk-or-v1-malformed-auth-secret/);
+    assert.doesNotMatch(combinedOutput, /sk-or-v1-secret-auth-option/);
+    assert.doesNotMatch(combinedOutput, /sk-or-v1-secret-auth-extra/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli auth init refuses direct and parent auth env-file symlinks", async () => {
+  const cwd = createTempDir();
+
+  try {
+    const directDir = join(cwd, "direct");
+    mkdirSync(directDir, { recursive: true });
+    const targetPath = join(cwd, "target.env");
+    writeFileSync(targetPath, "# target\n");
+    symlinkSync(targetPath, join(directDir, "openrouter.env"));
+    const direct = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "auth", "init"], { ORX_AUTH_ENV_DIR: directDir }, direct.io),
+      1,
+    );
+    assert.match(direct.stderr(), /refusing to write through an auth env-file symlink/);
+    assert.equal(readFileSync(targetPath, "utf8"), "# target\n");
+
+    const actualParent = join(cwd, "actual-parent");
+    const linkedParent = join(cwd, "linked-parent");
+    mkdirSync(actualParent, { recursive: true });
+    symlinkSync(actualParent, linkedParent);
+    const parent = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "auth", "init"],
+        { ORX_AUTH_ENV_DIR: join(linkedParent, "nested") },
+        parent.io,
+      ),
+      1,
+    );
+    assert.match(parent.stderr(), /refusing to write through an auth env-file parent symlink/);
+    assert.equal(existsSync(join(actualParent, "nested", "openrouter.env")), false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

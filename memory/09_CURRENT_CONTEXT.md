@@ -25,6 +25,7 @@ Urgent UX recovery additions from user testing:
 - Durable TTY prompt history is implemented through private `~/.orx/history.json`, `ORX_CHAT_HISTORY_PATH`, readline preload, `orx history [search|clear]`, and `/history [search|clear]`; it stores sanitized user prompts only and skips slash commands/secret-like input.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
 - First-run config initialization is implemented through `orx init`, `orx setup`, and `orx config init`. It creates private no-secret starter config files for user or local scope, leaves existing regular config files unchanged, refuses symlink config paths, and tells users to provide credentials through `OPENROUTER_API_KEY` or deliberate manual editing.
+- Core OpenRouter auth ergonomics are implemented through `orx auth`, `orx auth status`, `orx auth setup`, `orx auth env`, `orx auth init`, and `orx auth env-file`. They report API-key readiness without values, print only placeholder exports, create private commented env templates under `~/.orx/auth` or `ORX_AUTH_ENV_DIR`, avoid automatic env-file loading, and refuse auth env-file symlink paths.
 - Safe config inspection/editing is available in both CLI and chat through `orx config show|path|set` and `/config [show|path|set]`. It redacts API-key values, refuses API-key/secret-like arguments, honors `ORX_CONFIG_PATH`, writes private config files through the shared guards, and updates the active chat snapshot for edited keys.
 - `orx doctor` is the top-level no-network readiness overview. It now starts with concise `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation` labels before local runtime/MCP/plugin/delegation details and next commands; `orx doctor --strict` renders the same report and exits nonzero unless `ready_to_use: yes`, and `orx doctor --json` emits the same readiness data as redacted structured JSON for automation.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
@@ -92,6 +93,15 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added no-secret core OpenRouter auth setup helpers:
+
+- `orx auth` / `orx auth status` now render core OpenRouter API-key readiness before normal API-key-required commands, including source (`OPENROUTER_API_KEY`, config, missing, or config-unreadable), managed env-file path, no-network/no-subprocess boundaries, and concrete next commands without printing key values.
+- `orx auth setup` and `orx auth env` print placeholder `OPENROUTER_API_KEY` exports only, explicitly refuse CLI secret arguments, do not write config, and remain usable when existing config is malformed.
+- `orx auth init` and `orx auth env-file` create a private commented shell template at `~/.orx/auth/openrouter.env` or `ORX_AUTH_ENV_DIR`, use `0700` directory and `0600` file modes for new files, do not overwrite existing files, do not auto-load env files, and refuse direct or parent auth env-file symlinks.
+- General config loading now fails with a sanitized message instead of propagating raw parser context, closing a verifier-found leak where `orx status` could print malformed config contents containing a secret-looking token.
+- Verification: `npm run typecheck`, focused build-backed CLI/auth/init tests, `git diff --check`, full `npm test` with 497 tests, `npm run verify:global-install`, built CLI smokes for auth status/setup/init plus malformed-config `orx status` redaction, and independent verifier review. The verifier found the malformed-config status leak; it was fixed with a regression test and built smoke.
+- Next likely work remains broader release hardening, remaining OAuth/device-flow decision work if ORX should own provider auth, delegate team/profile ergonomics, or stronger pre-spend budget strategy if OpenRouter can support it.
 
 Added structured JSON doctor output:
 

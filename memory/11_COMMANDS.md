@@ -47,6 +47,9 @@ npm run dev -- --help
 npm run dev -- --version
 npm run dev -- init
 npm run dev -- init --local
+npm run dev -- auth
+npm run dev -- auth setup
+npm run dev -- auth init
 npm run dev -- status
 npm run dev -- doctor
 npm run dev -- doctor --strict
@@ -92,6 +95,8 @@ printf '/mode fusion\n/fusion general-budget\n/theme vivid\n/config show\n/confi
 If `.orx/config.toml` contains the API key, the `OPENROUTER_API_KEY=...` prefix is not needed. The `.orx/` directory is ignored and must remain uncommitted.
 
 `orx init` and `orx setup` create a private starter config for first-run setup. Default scope writes the user config path, honoring `ORX_CONFIG_PATH`; `orx init --local` writes a repo-local `.orx/config.toml`. `orx config init` is the same initializer under the config namespace. Init writes model/mode/theme/permission defaults only, never writes API keys, leaves existing regular config files unchanged, refuses symlink config paths, and points users to `OPENROUTER_API_KEY`, `orx doctor --strict`, and `orx`.
+
+`orx auth`, `orx auth status`, `orx auth setup`, `orx auth env`, `orx auth init`, and `orx auth env-file` are no-key/no-network setup helpers for the core OpenRouter API key. Status reports whether a key is available from `OPENROUTER_API_KEY`, config, or neither without printing values, and it degrades to `config_unreadable` without leaking malformed config contents. Setup prints a placeholder shell export only. Init creates a private commented template at `~/.orx/auth/openrouter.env` or `ORX_AUTH_ENV_DIR`, with `0700` directory and `0600` file modes, no token values, no overwrite of existing files, no automatic loading, no config writes, and symlink path refusal. Edit and source the file yourself, then run `orx doctor --strict`.
 
 `orx config show` and `/config show` render the effective local/user config with API-key values redacted. `orx config path` and `/config path` show the local and user config paths, including `ORX_CONFIG_PATH` overrides. `orx config set <key> <value> [--user|--local]` and `/config set <key> <value> [--user|--local]` edit supported non-secret keys only: `model`, `mode`, `fusion_preset`, `theme`, `approval_policy`, and `sandbox_mode`. Edits default to the user config path, write private files, do not call network/subprocesses, refuse API-key storage through CLI/slash args, and redact secret-like/control-character unknown keys; slash edits also update the active chat config snapshot for the edited key. Use `OPENROUTER_API_KEY` or manual config editing for keys.
 

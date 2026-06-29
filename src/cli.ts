@@ -2,6 +2,13 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  createOpenRouterAuthReport,
+  initializeOpenRouterAuthEnvFile,
+  renderOpenRouterAuthEnvFileInitResult,
+  renderOpenRouterAuthSetup,
+  renderOpenRouterAuthStatus,
+} from "./auth/openrouter.js";
 import { BIN_NAME } from "./constants.js";
 import { formatToolCallStart, formatToolResult, runAgentTurn } from "./agent/index.js";
 import { createCodeMap, createCodeSymbolIndex, renderCodeMap, renderCodeSymbols } from "./code-map/index.js";
@@ -272,6 +279,10 @@ export async function runCli(
     });
   }
 
+  if (first === "auth") {
+    return runOpenRouterAuthCommand(args.slice(1), io, env);
+  }
+
   const mcpConfigPath = resolveMcpConfigPath({ env, cwd: io.cwd });
   const mcpProfileCatalogPath = resolveMcpProfileCatalogPath({ env, cwd: io.cwd });
   const pluginRegistryPath = resolvePluginRegistryPath({ env, cwd: io.cwd });
@@ -521,6 +532,7 @@ function helpText(): string {
     "  credits       Show live OpenRouter credits",
     "  generation <id>  Show OpenRouter generation metadata",
     "  init          Create a no-secret starter config for first-run setup",
+    "  auth          Show OpenRouter API-key setup status or create an env template",
     "  config        Show or edit local ORX configuration",
     "  profile       List, inspect, save, or delete local ORX profiles",
     "  history       Search or clear local prompt history",
@@ -1223,6 +1235,70 @@ function runConfigCommand(
   }
 
   writeLine(io.stderr, "Usage: orx config [show|path|init|set <key> <value> [--user|--local]]");
+  return 1;
+}
+
+function runOpenRouterAuthCommand(
+  args: string[],
+  io: CliIo,
+  env: NodeJS.ProcessEnv,
+): number {
+  const usage = "Usage: orx auth [status|setup|env|init|env-file]";
+  const subcommand = args[0]?.toLowerCase() ?? "status";
+
+  if (subcommand === "--help" || subcommand === "-h" || subcommand === "help") {
+    writeLine(io.stdout, usage);
+    return 0;
+  }
+
+  const acceptsNoArgs = (commandName: string): boolean => {
+    if (args.length <= 1) {
+      return true;
+    }
+    writeLine(
+      io.stderr,
+      `Unexpected auth argument for ${commandName}: ${formatAuthArgForMessage(args[1])}\n${usage}`,
+    );
+    return false;
+  };
+
+  const report = createOpenRouterAuthReport({ env, cwd: io.cwd });
+
+  if (subcommand === "status" || subcommand === "show" || subcommand === "list") {
+    if (!acceptsNoArgs(subcommand)) {
+      return 1;
+    }
+    writeLine(io.stdout, renderOpenRouterAuthStatus(report));
+    return 0;
+  }
+
+  if (subcommand === "setup" || subcommand === "env") {
+    if (!acceptsNoArgs(subcommand)) {
+      return 1;
+    }
+    writeLine(io.stdout, renderOpenRouterAuthSetup(report));
+    return 0;
+  }
+
+  if (subcommand === "init" || subcommand === "env-file") {
+    if (!acceptsNoArgs(subcommand)) {
+      return 1;
+    }
+    try {
+      const result = initializeOpenRouterAuthEnvFile({ env, cwd: io.cwd });
+      const updatedReport = createOpenRouterAuthReport({ env, cwd: io.cwd });
+      writeLine(io.stdout, renderOpenRouterAuthEnvFileInitResult(result, updatedReport));
+      return 0;
+    } catch (error) {
+      writeLine(
+        io.stderr,
+        `Unable to initialize OpenRouter auth env file: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
+  }
+
+  writeLine(io.stderr, `Unknown auth command: ${formatAuthArgForMessage(args[0] ?? "")}\n${usage}`);
   return 1;
 }
 
@@ -3325,7 +3401,15 @@ function loadConfigWithProfile(options: {
   profileId?: string;
   profileConfigPath: string;
 }): LoadedConfig | string {
-  const loadedConfig = loadConfig({ env: options.env, cwd: options.cwd });
+  let loadedConfig: LoadedConfig;
+  try {
+    loadedConfig = loadConfig({ env: options.env, cwd: options.cwd });
+  } catch {
+    return [
+      "Unable to load config: config file is unreadable or invalid.",
+      "Run orx auth for credential status, or fix the config file before retrying.",
+    ].join(" ");
+  }
   if (!options.profileId) {
     return loadedConfig;
   }
@@ -3428,6 +3512,14 @@ function formatDoctorOptionForMessage(value: string): string {
     return "[redacted]";
   }
   return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim().slice(0, 80);
+}
+
+function formatAuthArgForMessage(value: string): string {
+  if (SECRET_LIKE_MESSAGE_PATTERN.test(value)) {
+    return "[redacted]";
+  }
+  const cleaned = value.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim();
+  return cleaned.length > 0 ? cleaned.slice(0, 80) : "[redacted]";
 }
 
 function formatDelegationTeamIdForMessage(teamId: string): string {
