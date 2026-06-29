@@ -4,6 +4,12 @@ Last updated: 2026-06-29
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-29: MCP Provider Auth Guidance Is Render-Only And Endpoint-Matched
+
+Decision: ORX may render provider-specific MCP auth guidance inside `orx mcp auth <profile>`, `orx mcp auth setup <profile>`, and matching slash commands, including credential source, lifetime, scope, setup URL, and ORX support notes. This guidance must remain render-only: no OAuth browser/device flow, network call, subprocess call, config write, token persistence, or secret display. Provider-specific guidance is selected only from parsed HTTPS MCP endpoint host/path matches for recognized providers; spoofed or unknown endpoints must fall back to generic bearer guidance.
+
+Reasoning: Provider setup is confusing if ORX only says "bring a bearer token", but ORX should not imply it owns provider OAuth or direct users to real provider token setup for lookalike endpoints. Exact endpoint matching gives useful setup help while preserving the existing operator-owned auth boundary.
+
 ## 2026-06-29: Prompt History Stores Prompts Only
 
 Decision: ORX may persist local TTY prompt history for readline recall and operator search, but it should store sanitized user prompts only. Slash commands and secret-like input are skipped. The default file is `~/.orx/history.json`, `ORX_CHAT_HISTORY_PATH` can isolate it, writes use private `0700`/`0600` modes, and nested symlink parent paths are refused. History inspection and clearing are operator commands only through `orx history` and `/history`; prompt history is not model-visible context and is not a transcript search index.

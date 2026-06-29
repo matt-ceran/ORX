@@ -42,6 +42,8 @@ import {
   renderMcpProviderPresetInspect,
   renderMcpAuthEnvFileInitResult,
   renderMcpMacosKeychainResult,
+  renderMcpProfileAuthReport,
+  renderMcpProfileAuthSetup,
   renderMcpProfileTools,
   renderMcpProviderPresets,
   renderUserMcpProfileCatalog,
@@ -2352,6 +2354,134 @@ test("mcp auth env file init writes a private commented template without overwri
     assert.equal(directoryOnly.directoryPermissionsTightened, true);
     assert.equal(statSync(authEnvDirectory).mode & 0o777, 0o700);
     assert.equal(statSync(result.path).mode & 0o777, 0o600);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mcp auth renderers include provider-specific setup guidance without leaking bearer values", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-auth-provider-guidance-"));
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+  const authEnvDirectory = join(cwd, "mcp", "auth-env");
+  const env = {
+    ORX_MCP_AUTH_ENV_DIR: authEnvDirectory,
+    ORX_MCP_BEARER_OPENROUTER: "mcp-secret-token",
+  };
+
+  try {
+    const openrouterReport = getMcpProfileAuthReport("openrouter", {
+      cwd,
+      env,
+      profileCatalogPath,
+    });
+    assert.ok(openrouterReport);
+    const openrouterStatus = renderMcpProfileAuthReport(openrouterReport);
+    const openrouterSetup = renderMcpProfileAuthSetup(openrouterReport);
+
+    assert.match(openrouterStatus, /provider_auth: openrouter/);
+    assert.match(openrouterStatus, /credential_lifetime: provider default: 7 days for OAuth-created MCP keys/);
+    assert.match(openrouterStatus, /setup_url: https:\/\/openrouter\.ai\/docs\/mcp-server/);
+    assert.match(openrouterStatus, /oauth: provider-managed/);
+    assert.match(openrouterSetup, /orx_support: paste the provider-issued key/);
+    assert.doesNotMatch(openrouterStatus, /mcp-secret-token/);
+    assert.doesNotMatch(openrouterSetup, /mcp-secret-token/);
+
+    assert.equal(installMcpProviderPreset("github-readonly", { profileCatalogPath }).ok, true);
+    const githubReport = getMcpProfileAuthReport("user:github-readonly", {
+      cwd,
+      env,
+      profileCatalogPath,
+    });
+    assert.ok(githubReport);
+    const githubSetup = renderMcpProfileAuthSetup(githubReport);
+
+    assert.match(githubSetup, /provider_auth: github/);
+    assert.match(githubSetup, /setup_url: https:\/\/docs\.github\.com\/en\/copilot\/how-tos\/provide-context\/use-mcp-in-your-ide\/extend-copilot-chat-with-mcp/);
+    assert.match(githubSetup, /scope_hint: approve only read-only repository scopes/);
+
+    assert.equal(installMcpProviderPreset("figma", { profileCatalogPath }).ok, true);
+    const figmaReport = getMcpProfileAuthReport("user:figma", {
+      cwd,
+      env,
+      profileCatalogPath,
+    });
+    assert.ok(figmaReport);
+    const figmaSetup = renderMcpProfileAuthSetup(figmaReport);
+
+    assert.match(figmaSetup, /provider_auth: figma/);
+    assert.match(figmaSetup, /provider_warning: Figma documents a supported client catalog/);
+
+    assert.equal(installMcpProviderPreset("context7", { profileCatalogPath }).ok, true);
+    const context7Report = getMcpProfileAuthReport("user:context7", {
+      cwd,
+      env,
+      profileCatalogPath,
+    });
+    assert.ok(context7Report);
+    const context7Status = renderMcpProfileAuthReport(context7Report);
+
+    assert.match(context7Status, /auth_status: not_required/);
+    assert.match(context7Status, /provider_auth: context7/);
+    assert.match(context7Status, /setup_url: https:\/\/context7\.com\/docs/);
+    assert.match(context7Status, /next_step: no bearer token required by current local declarations/);
+
+    assert.equal(
+      upsertUserMcpRemoteProfile(
+        "openrouter-spoof",
+        {
+          name: "OpenRouter-looking profile",
+          url: "https://openrouter.ai.evil.test/mcp",
+          authRequired: true,
+        },
+        { profileCatalogPath },
+      ).ok,
+      true,
+    );
+    assert.equal(
+      upsertUserMcpRemoteProfile(
+        "github-spoof",
+        {
+          name: "GitHub-looking profile",
+          url: "https://evil.example/mcp",
+          authRequired: true,
+        },
+        { profileCatalogPath },
+      ).ok,
+      true,
+    );
+    assert.equal(
+      upsertUserMcpRemoteProfile(
+        "cloudflare-spoof",
+        {
+          name: "Cloudflare-looking profile",
+          url: "https://mcp.cloudflare.com.evil.test/mcp",
+          authRequired: true,
+        },
+        { profileCatalogPath },
+      ).ok,
+      true,
+    );
+
+    for (const spoofProfileId of [
+      "user:openrouter-spoof",
+      "user:github-spoof",
+      "user:cloudflare-spoof",
+    ]) {
+      const spoofReport = getMcpProfileAuthReport(spoofProfileId, {
+        cwd,
+        env,
+        profileCatalogPath,
+      });
+      assert.ok(spoofReport);
+      const spoofStatus = renderMcpProfileAuthReport(spoofReport);
+      assert.match(spoofStatus, /provider_auth: generic/);
+      assert.doesNotMatch(spoofStatus, /provider_auth: openrouter/);
+      assert.doesNotMatch(spoofStatus, /provider_auth: github/);
+      assert.doesNotMatch(spoofStatus, /provider_auth: cloudflare/);
+      assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/openrouter\.ai\/docs\/mcp-server/);
+      assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/docs\.github\.com/);
+      assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/github\.com\/cloudflare\/mcp/);
+    }
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

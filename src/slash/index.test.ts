@@ -1654,7 +1654,10 @@ test("mcp auth renders bearer readiness without network or secret leakage", asyn
     assert.match(harness.stdout(), /fallback_env: ORX_MCP_BEARER_TOKEN status=unset/);
     assert.match(harness.stdout(), /effective_bearer: configured/);
     assert.match(harness.stdout(), new RegExp(`managed_env_file: ${escapeRegExp(join(authEnvDir, "openrouter.env"))}`));
-    assert.match(harness.stdout(), /oauth: not managed by ORX yet/);
+    assert.match(harness.stdout(), /oauth: provider-managed/);
+    assert.match(harness.stdout(), /provider_auth: openrouter/);
+    assert.match(harness.stdout(), /credential_lifetime: provider default: 7 days for OAuth-created MCP keys/);
+    assert.match(harness.stdout(), /setup_url: https:\/\/openrouter\.ai\/docs\/mcp-server/);
     assert.match(harness.stdout(), /macos_keychain: supported=(yes|no) opt_in=disabled status=not_checked/);
     assert.match(harness.stdout(), /storage: env vars are not persisted; optional macOS Keychain stores bearer values only after explicit keychain setup/);
     assert.doesNotMatch(harness.stdout(), /mcp-secret-token/);
@@ -1676,6 +1679,8 @@ test("mcp auth renders bearer readiness without network or secret leakage", asyn
     assert.match(harness.stdout(), /preferred_env: ORX_MCP_BEARER_OPENROUTER status=set/);
     assert.match(harness.stdout(), /fallback_env: ORX_MCP_BEARER_TOKEN status=unset/);
     assert.match(harness.stdout(), new RegExp(`managed_env_file: ${escapeRegExp(join(authEnvDir, "openrouter.env"))}`));
+    assert.match(harness.stdout(), /provider_auth: openrouter/);
+    assert.match(harness.stdout(), /orx_support: paste the provider-issued key/);
     assert.match(harness.stdout(), /network_calls: none/);
     assert.match(harness.stdout(), /subprocesses: none/);
     assert.match(harness.stdout(), /config_writes: none/);
@@ -1765,6 +1770,8 @@ test("mcp auth reports no-auth profiles as ready in audit", async () => {
     assert.match(harness.stdout(), /auth_required: no/);
     assert.match(harness.stdout(), /auth_status: not_required/);
     assert.match(harness.stdout(), /effective_bearer: missing/);
+    assert.match(harness.stdout(), /provider_auth: context7/);
+    assert.match(harness.stdout(), /setup_url: https:\/\/context7\.com\/docs/);
     assert.match(harness.stdout(), /next_step: no bearer token required by current local declarations/);
 
     assert.equal(await handleSlashCommand("/mcp auth setup user:docs", harness.context), "continue");
@@ -1773,6 +1780,7 @@ test("mcp auth reports no-auth profiles as ready in audit", async () => {
     assert.match(harness.stdout(), /auth_status: not_required/);
     assert.match(harness.stdout(), /token_value: not needed by current local declarations/);
     assert.match(harness.stdout(), /shell_exports: not required/);
+    assert.match(harness.stdout(), /provider_auth: context7/);
     assert.match(harness.stdout(), /network_calls: none/);
 
     assert.equal(await handleSlashCommand("/mcp auth init user:docs", harness.context), "continue");

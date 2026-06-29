@@ -32,6 +32,16 @@ export interface McpProfileAuthReport {
   authRequiredToolCount: number;
 }
 
+interface McpProviderAuthGuidance {
+  provider: string;
+  credentialSource: string;
+  credentialLifetime: string;
+  scopeHint: string;
+  setupUrl: string;
+  orxSupport: string;
+  warning?: string;
+}
+
 export interface McpProfileAuthReportOptions extends McpRegistryOptions {
   env?: NodeJS.ProcessEnv;
   cwd?: string;
@@ -107,6 +117,7 @@ export function getMcpProfileAuthReport(
 
 export function renderMcpProfileAuthReport(report: McpProfileAuthReport): string {
   const needsBearer = report.profile.authRequired || report.authRequiredToolCount > 0;
+  const guidance = getMcpProviderAuthGuidance(report.profile);
   const authStatus = !needsBearer
     ? "not_required"
     : report.authReady
@@ -133,7 +144,8 @@ export function renderMcpProfileAuthReport(report: McpProfileAuthReport): string
     `  profile_hash: ${report.profileHash ?? "unknown"}`,
     report.trustedProfileHash ? `  trusted_hash: ${report.trustedProfileHash}` : undefined,
     report.schemaChangePending ? "  schema_change: pending" : undefined,
-    "  oauth: not managed by ORX yet; use a provider-issued bearer or expiring MCP key only when the provider supports it",
+    "  oauth: provider-managed; ORX accepts env/Keychain bearer material but does not run an OAuth browser or device flow yet",
+    ...renderProviderAuthGuidance(guidance),
     "  storage: env vars are not persisted; optional macOS Keychain stores bearer values only after explicit keychain setup",
     `  next_step: ${nextStep}`,
   ].filter((line): line is string => typeof line === "string").join("\n");
@@ -141,6 +153,7 @@ export function renderMcpProfileAuthReport(report: McpProfileAuthReport): string
 
 export function renderMcpProfileAuthSetup(report: McpProfileAuthReport): string {
   const needsBearer = report.profile.authRequired || report.authRequiredToolCount > 0;
+  const guidance = getMcpProviderAuthGuidance(report.profile);
   const authStatus = !needsBearer
     ? "not_required"
     : report.authReady
@@ -167,6 +180,7 @@ export function renderMcpProfileAuthSetup(report: McpProfileAuthReport): string 
     `  fallback_env: ${report.fallbackEnvName} status=${report.fallbackEnvSet ? "set" : "unset"}`,
     `  macos_keychain: supported=${report.macosKeychainSupported ? "yes" : "no"} opt_in=${report.macosKeychainOptedIn ? "enabled" : "disabled"} status=not_checked`,
     `  managed_env_file: ${report.managedEnvFilePath}`,
+    ...renderProviderAuthGuidance(guidance),
     needsBearer
       ? "  token_value: never shown; paste a provider-issued bearer or expiring MCP key into your shell only"
       : "  token_value: not needed by current local declarations",
@@ -186,6 +200,157 @@ export function renderMcpProfileAuthSetup(report: McpProfileAuthReport): string 
       : undefined,
     `  next_step: ${nextStep}`,
   ].filter((line): line is string => typeof line === "string").join("\n");
+}
+
+function renderProviderAuthGuidance(guidance: McpProviderAuthGuidance): string[] {
+  return [
+    `  provider_auth: ${guidance.provider}`,
+    `  credential_source: ${guidance.credentialSource}`,
+    `  credential_lifetime: ${guidance.credentialLifetime}`,
+    `  scope_hint: ${guidance.scopeHint}`,
+    `  setup_url: ${guidance.setupUrl}`,
+    `  orx_support: ${guidance.orxSupport}`,
+    guidance.warning ? `  provider_warning: ${guidance.warning}` : undefined,
+  ].filter((line): line is string => typeof line === "string");
+}
+
+function getMcpProviderAuthGuidance(profile: McpProfile): McpProviderAuthGuidance {
+  const endpoint = parseMcpProviderEndpoint(profile.transport.url);
+
+  if (isMcpProviderEndpoint(endpoint, "mcp.openrouter.ai", "/mcp")) {
+    return {
+      provider: "openrouter",
+      credentialSource:
+        "OpenRouter MCP OAuth creates a dedicated expiring OpenRouter key for the MCP connection.",
+      credentialLifetime: "provider default: 7 days for OAuth-created MCP keys",
+      scopeHint: "read tools plus billable chat-send only after explicit ORX grants",
+      setupUrl: "https://openrouter.ai/docs/mcp-server",
+      orxSupport: "paste the provider-issued key into the profile env var, fallback env var, or opted-in macOS Keychain",
+    };
+  }
+
+  if (isMcpProviderEndpoint(endpoint, "api.githubcopilot.com", "/mcp")) {
+    return {
+      provider: "github",
+      credentialSource:
+        "GitHub remote MCP uses provider OAuth; local stdio GitHub MCP commonly uses GITHUB_PERSONAL_ACCESS_TOKEN.",
+      credentialLifetime: "provider managed",
+      scopeHint: "approve only read-only repository scopes for read-only ORX profiles",
+      setupUrl:
+        "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/extend-copilot-chat-with-mcp",
+      orxSupport:
+        "remote OAuth must be completed with the provider; use ORX bearer env or Keychain only when you already have compatible bearer material",
+    };
+  }
+
+  if (
+    isMcpProviderEndpoint(endpoint, "mcp.cloudflare.com", "/mcp") ||
+    isMcpProviderEndpoint(endpoint, "docs.mcp.cloudflare.com", "/mcp") ||
+    isMcpProviderEndpoint(endpoint, "browser.mcp.cloudflare.com", "/mcp")
+  ) {
+    return {
+      provider: "cloudflare",
+      credentialSource:
+        "Cloudflare hosted MCP supports OAuth-style authorization; use least-privilege Cloudflare account credentials or tokens.",
+      credentialLifetime: "provider/token policy dependent",
+      scopeHint: profile.writeCapable
+        ? "high-risk/write-capable: grant only reviewed tools and account scopes"
+        : "prefer docs/read-only scopes where available",
+      setupUrl: "https://github.com/cloudflare/mcp",
+      orxSupport: "store only bearer-compatible credentials in env or opted-in Keychain; keep grants explicit",
+      warning: profile.writeCapable
+        ? "this profile is write-capable; ORX keeps write/destructive tools denied until explicit grants"
+        : undefined,
+    };
+  }
+
+  if (isMcpProviderEndpoint(endpoint, "mcp.figma.com", "/mcp")) {
+    return {
+      provider: "figma",
+      credentialSource: "Figma remote MCP uses provider OAuth for Figma file access.",
+      credentialLifetime: "provider managed",
+      scopeHint: "design-file access can expose or modify workspace content; review tools before grants",
+      setupUrl: "https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/",
+      orxSupport:
+        "complete provider OAuth externally; ORX bearer env/Keychain works only if the provider exposes compatible bearer material",
+      warning:
+        "Figma documents a supported client catalog; do not put Figma personal access tokens in ORX config or prompts",
+    };
+  }
+
+  if (isMcpProviderEndpoint(endpoint, "mcp.sentry.dev", "/mcp")) {
+    return {
+      provider: "sentry",
+      credentialSource: "Sentry hosted MCP uses OAuth-style provider authorization for organization/project access.",
+      credentialLifetime: "provider managed",
+      scopeHint: "prefer read-only debugging scopes unless you explicitly add write-capable tools",
+      setupUrl: "https://mcp.sentry.dev/",
+      orxSupport:
+        "complete provider OAuth externally; ORX bearer env/Keychain works only if the provider exposes compatible bearer material",
+    };
+  }
+
+  if (isMcpProviderEndpoint(endpoint, "mcp.context7.com", "/mcp")) {
+    return {
+      provider: "context7",
+      credentialSource:
+        "Context7 basic hosted docs lookup is no-auth; higher-rate or account features may use a provider API key.",
+      credentialLifetime: "provider/token policy dependent",
+      scopeHint: "docs lookup should stay read-only and non-billable unless declarations change",
+      setupUrl: "https://context7.com/docs",
+      orxSupport: "no ORX credential is needed for current no-auth declarations; use profile env only if auth is later required",
+    };
+  }
+
+  if (isMcpProviderEndpoint(endpoint, "learn.microsoft.com", "/api/mcp")) {
+    return {
+      provider: "microsoft-learn",
+      credentialSource: "Microsoft Learn hosted docs MCP is no-auth in the built-in preset.",
+      credentialLifetime: "not applicable for current declarations",
+      scopeHint: "read-only docs and code sample lookup",
+      setupUrl: "https://learn.microsoft.com/api/mcp",
+      orxSupport: "no ORX credential is needed unless local declarations later require auth",
+    };
+  }
+
+  return {
+    provider: "generic",
+    credentialSource: "provider-issued bearer token, OAuth session token, or expiring MCP key when supported",
+    credentialLifetime: "provider/token policy dependent",
+    scopeHint: "use the narrowest read-only scopes possible before declaring risky tools",
+    setupUrl: profile.transport.url ?? "unknown",
+    orxSupport: "store bearer-compatible values only in env vars or opted-in macOS Keychain",
+  };
+}
+
+function parseMcpProviderEndpoint(url: string | undefined): URL | undefined {
+  if (!url) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") {
+      return undefined;
+    }
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+function isMcpProviderEndpoint(
+  endpoint: URL | undefined,
+  hostname: string,
+  pathPrefix: string,
+): boolean {
+  if (!endpoint || endpoint.hostname.toLowerCase() !== hostname) {
+    return false;
+  }
+
+  const normalizedPath = endpoint.pathname.replace(/\/+$/g, "") || "/";
+  const normalizedPrefix = pathPrefix.replace(/\/+$/g, "") || "/";
+  return normalizedPath === normalizedPrefix || normalizedPath.startsWith(`${normalizedPrefix}/`);
 }
 
 export function defaultMcpAuthEnvDirectory(): string {

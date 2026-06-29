@@ -948,6 +948,9 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     assert.match(missingAuth.stdout(), /effective_bearer: missing/);
     assert.match(missingAuth.stdout(), new RegExp(`managed_env_file: ${escapeRegExp(join(authEnvDir, "openrouter.env"))}`));
     assert.match(missingAuth.stdout(), /macos_keychain: supported=(yes|no) opt_in=disabled status=not_checked/);
+    assert.match(missingAuth.stdout(), /provider_auth: openrouter/);
+    assert.match(missingAuth.stdout(), /credential_lifetime: provider default: 7 days for OAuth-created MCP keys/);
+    assert.match(missingAuth.stdout(), /setup_url: https:\/\/openrouter\.ai\/docs\/mcp-server/);
     assert.match(missingAuth.stdout(), /storage: env vars are not persisted; optional macOS Keychain stores bearer values only after explicit keychain setup/);
 
     const authSetup = createIo({ cwd });
@@ -960,6 +963,8 @@ test("cli mcp commands manage local profile and tool grant policy without an API
     assert.match(authSetup.stdout(), /preferred_env: ORX_MCP_BEARER_OPENROUTER status=unset/);
     assert.match(authSetup.stdout(), /fallback_env: ORX_MCP_BEARER_TOKEN status=unset/);
     assert.match(authSetup.stdout(), new RegExp(`managed_env_file: ${escapeRegExp(join(authEnvDir, "openrouter.env"))}`));
+    assert.match(authSetup.stdout(), /provider_auth: openrouter/);
+    assert.match(authSetup.stdout(), /orx_support: paste the provider-issued key/);
     assert.match(authSetup.stdout(), /network_calls: none/);
     assert.match(authSetup.stdout(), /subprocesses: none/);
     assert.match(authSetup.stdout(), /config_writes: none/);
@@ -1383,6 +1388,8 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.equal(await runCli(["node", "cli", "mcp", "auth", "user:docs"], env, noAuth.io), 0);
     assert.match(noAuth.stdout(), /auth_status: not_required/);
     assert.match(noAuth.stdout(), /effective_bearer: missing/);
+    assert.match(noAuth.stdout(), /provider_auth: context7/);
+    assert.match(noAuth.stdout(), /setup_url: https:\/\/context7\.com\/docs/);
     assert.match(noAuth.stdout(), /next_step: no bearer token required by current local declarations/);
 
     const noAuthSetup = createIo({ cwd });
@@ -1392,6 +1399,7 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(noAuthSetup.stdout(), /auth_status: not_required/);
     assert.match(noAuthSetup.stdout(), /token_value: not needed by current local declarations/);
     assert.match(noAuthSetup.stdout(), /shell_exports: not required/);
+    assert.match(noAuthSetup.stdout(), /provider_auth: context7/);
     assert.match(noAuthSetup.stdout(), /network_calls: none/);
     assert.doesNotMatch(noAuthSetup.stdout(), /<bearer-token>/);
 
