@@ -433,9 +433,19 @@ export function resolvePluginInstallTarget(
   const trimmed = input.trim();
   const pathCandidate = resolve(options.cwd ?? process.cwd(), trimmed);
   if (existsSync(pathCandidate) || isPathLike(trimmed)) {
+    let manifestPath = pathCandidate;
+    if (existsSync(pathCandidate)) {
+      try {
+        if (lstatSync(pathCandidate).isDirectory()) {
+          manifestPath = join(pathCandidate, "orx-plugin.json");
+        }
+      } catch {
+        manifestPath = pathCandidate;
+      }
+    }
     return {
       kind: "manifest",
-      manifestPath: pathCandidate,
+      manifestPath,
     };
   }
 

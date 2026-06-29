@@ -240,7 +240,7 @@ const CLI_NAMESPACE_USAGES = {
   profile: "Usage: orx profile [list|save <id> [options]|use <id>|inspect <id>|delete <id>]",
   history: "Usage: orx history [search <query>|clear]",
   mcp: "Usage: orx mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
-  plugins: "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+  plugins: "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
   bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
   tests: "Usage: orx tests [list|run [target-id] [-- args...]]",
@@ -1785,7 +1785,10 @@ async function runPluginsCommand(
   if (subcommand === "register" || subcommand === "install") {
     const manifestPathText = args.slice(1).join(" ").trim();
     if (!manifestPathText) {
-      writeLine(io.stderr, `Usage: orx plugins ${subcommand} <manifest-path>`);
+      writeLine(
+        io.stderr,
+        `Usage: orx plugins ${subcommand} <manifest-path-or-directory-or-catalog-id>`,
+      );
       return 1;
     }
 

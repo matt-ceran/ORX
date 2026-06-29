@@ -125,7 +125,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/code \[map\|symbols\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/mcp \[list\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
-  assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(output, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
@@ -165,7 +165,7 @@ test("command palette renderer is a pure grouped listing surface", () => {
 
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
-  assert.match(palette, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold\|validate\|inspect\|reg/);
+  assert.match(palette, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -400,7 +400,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.equal(handleSlashCommand("/commands plugin", harness.context), "continue");
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
-  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold\|validate\|inspect\|register\|install\|enable\|disable\]/);
+  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(harness.stdout(), /\/plugin \[list\|status\]/);
   assert.match(harness.stdout(), /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(harness.stdout(), /\/skills \[list\|status\|activate <id>\]/);
@@ -2930,10 +2930,7 @@ test("plugins scaffold creates an installable bundle without registry changes", 
     assert.equal(existsSync(registryPath), false);
 
     assert.equal(
-      await handleSlashCommand(
-        `/plugins install ${join(targetDirectory, "orx-plugin.json")}`,
-        harness.context,
-      ),
+      await handleSlashCommand(`/plugins install ${targetDirectory}`, harness.context),
       "continue",
     );
     assert.match(harness.stdout(), /Plugin acme\.slash-plugin@0\.1\.0 registered disabled/);

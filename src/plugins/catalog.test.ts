@@ -144,6 +144,12 @@ test("plugin catalog loads sanitized entries and resolves relative manifest path
     assert.equal(directTarget.manifestPath, join(cwd, "plugin.json"));
     assert.equal(directTarget.catalogEntry, undefined);
 
+    mkdirSync(join(cwd, "direct-plugin"));
+    const directoryTarget = resolvePluginInstallTarget("./direct-plugin", { cwd });
+    assert.equal(directoryTarget.kind, "manifest");
+    assert.equal(directoryTarget.manifestPath, join(cwd, "direct-plugin", "orx-plugin.json"));
+    assert.equal(directoryTarget.catalogEntry, undefined);
+
     const localInspect = renderPluginCatalogInspect(localEntry!, { catalogPath });
     assert.match(localInspect, /Plugin Catalog Entry: acme\.demo-plugin@1\.0\.0/);
     assert.match(localInspect, /source_type: local/);

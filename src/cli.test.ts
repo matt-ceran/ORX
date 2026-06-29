@@ -2516,11 +2516,7 @@ test("cli plugins scaffold creates an installable disabled plugin bundle", async
 
     const installed = createNoFetchIo();
     assert.equal(
-      await runCli(
-        ["node", "cli", "plugins", "install", join(targetDirectory, "orx-plugin.json")],
-        env,
-        installed.io,
-      ),
+      await runCli(["node", "cli", "plugins", "install", targetDirectory], env, installed.io),
       0,
     );
     assert.match(installed.stdout(), /Plugin acme\.new-plugin@0\.1\.0 registered disabled/);

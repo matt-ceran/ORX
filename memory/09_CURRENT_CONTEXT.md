@@ -32,6 +32,7 @@ Urgent UX recovery additions from user testing:
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and matching `/plugins ...` commands; installed-plugin inspect/enable/disable accept exact `publisher.name@version` ids or unversioned `publisher.name` ids when exactly one installed version matches. Plugin enablement persists only a state marker and does not by itself trust executable surfaces.
 - Plugin authoring scaffold is implemented through `orx plugins scaffold <directory>` and `/plugins scaffold <directory>`. It creates a valid local `orx-plugin.json` authoring bundle without registry writes; defaults are inert skills/prompt-commands/rules markdown, `--minimal` writes only the manifest, and `--with` adds opt-in empty placeholders for hooks, bins, MCP, command schemas, assets, and docs behind the existing review gates.
 - Plugin manifest validation is implemented through `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>`. It parses/sanitizes manifests, renders manifest/component hashes, permission counts, missing component warnings, and explicitly leaves registry/cache/trust/runtime state unchanged.
+- Plugin install/register accepts local manifest paths, local plugin directories containing `orx-plugin.json`, or catalog ids through `orx plugins install|register <manifest-path-or-directory-or-catalog-id>` and matching `/plugins ...` commands. This keeps scaffold -> validate -> install usable with the same directory argument while preserving pinned git catalog installs.
 - Plugin install/register now snapshots sanitized manifests plus declared components and declared hook cwd directories into ORX-owned plugin cache storage before registry persistence; enabled skill/hook discovery resolves from the cached manifest path, not the original source checkout.
 - Plugin catalog support now handles both local manifest entries and pinned git source entries from `~/.orx/plugins/catalog.json` or `ORX_PLUGIN_CATALOG_PATH`. `orx plugins install <catalog-id>` and `/plugins install <catalog-id>` clone git catalog sources into private temporary cache storage, checkout the exact pinned commit, normalize cached manifest provenance to that pin, and still register the plugin disabled/inert.
 - Local plugin catalog inspect/editor/update-check/apply commands are implemented through `orx plugins catalog inspect|updates|update|add-local|add-git|remove` and `/plugins catalog inspect|updates|update|add-local|add-git|remove`. They review local declarations, compare installed registry provenance against local catalog pins, apply explicit pinned git catalog updates when available, or edit local catalog declarations while preserving enable/trust/grant/fetch/execution as separate explicit steps.
@@ -94,6 +95,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added plugin install directory input parity:
+
+- Clean dogfooding found that `orx plugins validate <scaffold-directory>` worked, but `orx plugins install <scaffold-directory>` failed because install treated the directory itself as the manifest file.
+- Local plugin install/register resolution now maps an existing directory input to `<directory>/orx-plugin.json`, matching the validation path, while direct manifest paths, catalog ids, and pinned git catalog installs keep their existing behavior.
+- CLI and slash usage/help/palette text now advertise `manifest-path-or-directory-or-catalog-id`, and scaffold-install regressions use the directory input directly in both CLI and slash tests.
+- Verification: `npm run typecheck`, `git diff --check`, `npm run build`, focused build-backed catalog/CLI/slash coverage with 146 tests, scaffold -> validate directory -> install directory -> enable -> review dogfood, full `npm test` with 502 tests, `npm run verify:global-install`, and independent verifier review/recheck with no remaining findings after stale slash help text was fixed.
+- Next likely work is another clean first-run dogfood pass to find the next real CLI friction point, then broader release hardening around MCP/plugin authoring docs/templates, provider auth/OAuth decisions, richer code intelligence, or remaining nested-help polish.
 
 Added CLI namespace help polish:
 

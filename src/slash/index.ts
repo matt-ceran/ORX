@@ -1116,7 +1116,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/plugins": {
-    usage: "/plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold|validate|inspect|register|install|enable|disable]",
+    usage: "/plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
     description: "Show catalog entries and update inert plugin registry state",
     group: "Integrations",
     tier: "advanced",
@@ -2738,7 +2738,10 @@ async function handlePluginsCommand(
   if (subcommand === "register" || subcommand === "install") {
     const manifestPathText = command.args.slice(1).join(" ").trim();
     if (!manifestPathText) {
-      writeLine(context.io.stderr, `Usage: /plugins ${subcommand} <manifest-path>`);
+      writeLine(
+        context.io.stderr,
+        `Usage: /plugins ${subcommand} <manifest-path-or-directory-or-catalog-id>`,
+      );
       return;
     }
 
@@ -2785,7 +2788,7 @@ async function handlePluginsCommand(
 
   writeLine(
     context.io.stderr,
-    "Usage: /plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: /plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
   );
 }
 

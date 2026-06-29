@@ -10,6 +10,7 @@ Urgent UX recovery:
 
 Completed:
 
+- Add plugin install directory input parity: `orx plugins install|register <directory>` and `/plugins install|register <directory>` now resolve existing local plugin directories to `orx-plugin.json`, so scaffold -> validate -> install can reuse the same directory argument while direct manifest paths and catalog ids still work.
 - Add CLI namespace help polish: `orx <namespace> help|--help|-h` now exits 0 and prints usage for auth, config, profiles, history, MCP, plugins, bins, hooks, tests, code, and delegation namespaces, including common aliases, before config loading so malformed configs cannot block help.
 - Add wide TTY provider/model badge polish: exact `provider/model` ids render as separate provider/model badges when there is room, OpenRouter routing shortcuts render as compact `route auto` / `route fusion`, narrow terminals keep a single compact model badge, and plain/config/request surfaces keep full model ids.
 - Add durable local TTY prompt history/search: private `~/.orx/history.json` storage with `ORX_CHAT_HISTORY_PATH`, readline preload for single-line prompt recall, prompt-only recording that skips slash commands and secret-like input, `orx history [search|clear]`, `/history [search|clear]`, private modes, and symlink-parent refusal.
