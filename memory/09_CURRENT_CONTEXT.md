@@ -55,7 +55,7 @@ Urgent UX recovery additions from user testing:
 - Delegation readiness rendering is implemented through noninteractive `orx orchestrator`, `orx delegate`, `orx delegates`, and read-only slash `plan/status` variants. CLI status/readiness is session-less and no-key; mutating CLI forms validate arguments then refuse, while slash mutations remain session-local only. OpenRouter delegate execution now exists behind explicit policy enablement and interactive chat delegate state; subprocess/external-agent delegation remains unavailable.
 - Saved disabled delegation teams are implemented through private local `~/.orx/delegation/teams.json` storage with `ORX_DELEGATION_TEAMS_PATH`, plus `orx delegates teams|save|inspect|use|delete`, `/delegates teams|save|inspect|use|delete`, and `/delegate team ...`. Saved records contain only normalized disabled controller/delegates plus metadata; CLI `use` is read-only because there is no active chat session, while slash `use` loads disabled metadata into the current session.
 - Delegation execution policy storage is implemented through private local `~/.orx/delegation/policy.json` storage with `ORX_DELEGATION_POLICY_PATH`, plus `orx delegate policy`, `orx delegates policy`, `/delegate policy`, and `/delegates policy`. Policy can tune max task cost, timeout, result byte cap, max concurrent delegates, explicit `--execution enabled|disabled`, and `--result-merge manual_summary|metadata_only`; credential forwarding/result persistence remain fixed to `none`/`none`.
-- The internal `delegate_task` runtime contract and OpenRouter delegate adapter are implemented. Normal `ask` does not expose it; interactive chat exposes the schema only when policy execution is enabled and at least one delegate is configured. Live calls use env/provided OpenRouter API credentials, reject secret-like task/context payloads before network, return untrusted wrapped delegate output with structured `untrustedOutputPolicy`, and write hash-only audit metadata to `~/.orx/audit/delegation.jsonl` or `ORX_DELEGATION_AUDIT_PATH`.
+- The internal `delegate_task` runtime contract and OpenRouter delegate adapter are implemented and real-key dogfooded. Normal `ask` does not expose it; interactive chat exposes the schema only when policy execution is enabled and at least one delegate is configured. Live calls use env/provided OpenRouter API credentials, reject secret-like task/context payloads before network, return untrusted wrapped delegate output with structured `untrustedOutputPolicy`, and write hash-only audit metadata to `~/.orx/audit/delegation.jsonl` or `ORX_DELEGATION_AUDIT_PATH`. If exactly one delegate is configured, omitted or blank model-supplied delegate names select it; blank optional context/expected-output fields are omitted; model-requested timeout/result/cost limits above policy are capped to the operator policy.
 - `orx` with no args now launches interactive chat from the current directory. Help remains available through `orx help`/`--help`.
 - Slash commands now have grouped common help, `/help all`, `/help <query>`, aliases, and a pure command-palette listing surface.
 
@@ -90,6 +90,16 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Dogfooded real-key policy-enabled OpenRouter delegation and tightened delegate ergonomics:
+
+- Used the repo-local config-backed OpenRouter API key with isolated `ORX_SESSION_DIR`, `ORX_DELEGATION_POLICY_PATH`, `ORX_DELEGATION_AUDIT_PATH`, `ORX_DELEGATION_TEAMS_PATH`, and `ORX_CHAT_HISTORY_PATH`.
+- Live chat set the controller to `openai/gpt-4.1-mini`, configured delegate `reviewer` as `openai/gpt-4.1-nano`, enabled policy with `metadata_only`, and successfully executed one `delegate_task`.
+- The successful dogfood selected `reviewer`, attempted the OpenRouter delegate network call, resolved `openai/gpt-4.1-nano-2025-04-14`, wrote hash-only audit metadata, reported `cost_limit=within_limit`, and observed delegate cost around `$0.000009`.
+- Initial dogfood attempts exposed model-facing ergonomics gaps: blank delegate names, blank optional context, and overlarge result limits caused avoidable invalid-argument failures before network.
+- Fixed `delegate_task` parsing so blank delegate names are treated as omitted and fall back to the sole configured delegate, blank optional `context`/`expected_output` values are omitted, and overlarge model-requested timeout/result/cost limits are capped by operator policy while malformed or below-minimum values still fail closed.
+- Verification: focused delegation/agent runtime tests with 57 tests, isolated live delegation dogfood through the built CLI, `npm run typecheck`, `git diff --check`, full `npm test` with 487 tests, `npm run verify:global-install`, built `orx status` smoke, and independent verifier review with no findings.
+- Next likely work is provider-specific OAuth/token helper polish beyond bearer storage, remaining delegate team/profile ergonomics or stronger pre-spend budget strategy, broader provider/plugin preset polish, and release hardening.
 
 Added wide TTY provider/model badge polish:
 

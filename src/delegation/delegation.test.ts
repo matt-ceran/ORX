@@ -553,6 +553,77 @@ test("delegate_task runs the OpenRouter adapter when policy is enabled", async (
   }
 });
 
+test("delegate_task defaults blank delegate names to the sole configured delegate", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-default-"));
+  const auditLogPath = join(cwd, "audit", "delegation.jsonl");
+  const policyConfigPath = join(cwd, "delegation", "policy.json");
+  let requestCount = 0;
+
+  try {
+    updateDelegationExecutionPolicy(
+      {
+        executionEnabled: true,
+        maxResultBytes: 2_048,
+        taskTimeoutMs: 30_000,
+      },
+      {
+        configPath: policyConfigPath,
+        now: () => new Date("2026-06-29T12:00:00.000Z"),
+      },
+    );
+    const state = addOpenRouterDelegate(
+      createEmptyDelegationState(),
+      "reviewer",
+      "openai/gpt-4.1-nano",
+    ).state;
+
+    const result = await runDelegateTask(
+      {
+        delegate: "   ",
+        task: "Reply READY.",
+        context: "",
+        expected_output: "READY",
+        max_result_bytes: 999_999,
+        max_task_cost_usd: 999,
+      },
+      {
+        state,
+        policyConfigPath,
+        auditLogPath,
+        enabled: true,
+        apiKey: "sk-or-v1-test",
+        fetch: async () => {
+          requestCount += 1;
+          return new Response(
+            streamFrom([
+              'data: {"model":"openai/gpt-4.1-nano","choices":[{"delta":{"content":"READY"},"finish_reason":"stop"}],"usage":{"prompt_tokens":8,"completion_tokens":1,"total_tokens":9}}\n\n',
+              "data: [DONE]\n\n",
+            ]),
+            { status: 200, headers: { "content-type": "text/event-stream" } },
+          );
+        },
+        now: () => new Date("2026-06-29T12:00:01.000Z"),
+      },
+    );
+
+    assert.equal(requestCount, 1);
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "completed");
+    assert.equal(result.delegate, "reviewer");
+    assert.equal(result.model, "openai/gpt-4.1-nano");
+    assert.equal(result.networkAttempted, true);
+    assert.equal(result.requestedMaxResultBytes, 2_048);
+    assert.equal(result.requestedMaxTaskCostUsd, 0.25);
+    assert.match(result.result, /READY/);
+
+    const audit = readFileSync(auditLogPath, "utf8");
+    assert.match(audit, /"delegate":"reviewer"/);
+    assert.match(audit, /"status":"completed"/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("delegate_task records metadata-only merge mode for policy-enabled delegate output", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-metadata-only-"));
   const auditLogPath = join(cwd, "audit", "delegation.jsonl");
@@ -744,7 +815,7 @@ test("delegate_task refuses secret-like live payloads before network", async () 
   }
 });
 
-test("delegate_task enforces policy bounds before runtime execution", async () => {
+test("delegate_task rejects below-minimum policy bounds before runtime execution", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-delegate-runtime-policy-"));
   const auditLogPath = join(cwd, "audit", "delegation.jsonl");
   const policyConfigPath = join(cwd, "delegation", "policy.json");
@@ -753,7 +824,7 @@ test("delegate_task enforces policy bounds before runtime execution", async () =
     const result = await runDelegateTask(
       {
         task: "Stay inside policy.",
-        max_result_bytes: 999_999,
+        max_result_bytes: 1,
       },
       {
         policyConfigPath,

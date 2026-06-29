@@ -372,7 +372,10 @@ function parseDelegateTaskArguments(
   | { ok: true; value: ParsedDelegateTaskArguments }
   | { ok: false; code: string; message: string } {
   const delegate = optionalDelegateName(args.delegate);
-  if (args.delegate !== undefined && !delegate) {
+  const delegateOmitted =
+    args.delegate === undefined ||
+    (typeof args.delegate === "string" && args.delegate.trim().length === 0);
+  if (!delegateOmitted && !delegate) {
     return {
       ok: false,
       code: "INVALID_DELEGATE_NAME",
@@ -385,14 +388,14 @@ function parseDelegateTaskArguments(
     return task;
   }
 
-  const context = args.context === undefined
+  const context = optionalTextOmitted(args.context)
     ? undefined
     : boundedTextArgument(args.context, "context", MAX_CONTEXT_BYTES);
   if (context && !context.ok) {
     return context;
   }
 
-  const expectedOutput = args.expected_output === undefined
+  const expectedOutput = optionalTextOmitted(args.expected_output)
     ? undefined
     : boundedTextArgument(args.expected_output, "expected_output", MAX_EXPECTED_OUTPUT_BYTES);
   if (expectedOutput && !expectedOutput.ok) {
@@ -826,6 +829,10 @@ function optionalDelegateName(value: unknown): string | undefined {
     : undefined;
 }
 
+function optionalTextOmitted(value: unknown): boolean {
+  return value === undefined || (typeof value === "string" && value.trim().length === 0);
+}
+
 function boundedTextArgument(
   value: unknown,
   name: string,
@@ -864,14 +871,14 @@ function optionalPolicyInteger(
   if (value === undefined) {
     return { ok: true };
   }
-  if (typeof value !== "number" || !Number.isInteger(value) || value < minimum || value > maximum) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < minimum) {
     return {
       ok: false,
       code: "DELEGATE_TASK_POLICY_LIMIT_EXCEEDED",
       message: `${name} must be an integer between ${minimum} and ${maximum}.`,
     };
   }
-  return { ok: true, value };
+  return { ok: true, value: Math.min(value, maximum) };
 }
 
 function optionalPolicyCost(
@@ -881,14 +888,14 @@ function optionalPolicyCost(
   if (value === undefined) {
     return { ok: true };
   }
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > maximum) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     return {
       ok: false,
       code: "DELEGATE_TASK_POLICY_LIMIT_EXCEEDED",
       message: `max_task_cost_usd must be between 0 and ${maximum}.`,
     };
   }
-  return { ok: true, value: Math.round(value * 10_000) / 10_000 };
+  return { ok: true, value: Math.round(Math.min(value, maximum) * 10_000) / 10_000 };
 }
 
 function assertAuditPathIsSafe(path: string): void {

@@ -112,11 +112,12 @@ Completed:
 - Add saved delegation team readiness previews: `orx delegates plan <saved-team-id>` and `orx delegate plan <saved-team-id>` render a stored team against current execution policy without mutating chat state, calling OpenRouter, or changing policy.
 - Add MCP managed auth env-file templates: `orx mcp auth init <profile>` / `env-file` and matching slash commands create private commented shell env templates under `~/.orx/mcp/auth-env` or `ORX_MCP_AUTH_ENV_DIR` without token persistence, network calls, subprocesses, overwrite of existing files, or symlink-parent writes.
 - Add MCP macOS Keychain bearer support: `orx mcp auth keychain [status|set|delete] <profile>` and matching slash commands manage optional Keychain items through `/usr/bin/security`; MCP calls read Keychain only after explicit `ORX_MCP_KEYCHAIN=1` opt-in.
+- Dogfood policy-enabled OpenRouter delegation with a real config-backed key using isolated session/policy/audit/history paths, then fix model-facing delegate ergonomics so blank single-delegate names default safely, blank optional context/expected-output fields are omitted, and overlarge model-requested timeout/result/cost limits are capped by operator policy.
 
 Next:
 
 - Add actual managed OAuth/provider credential flows beyond bearer storage, such as provider-specific auth helpers, refresh guidance, or provider-issued short-lived token helpers with explicit trust and no model-visible secrets.
-- Dogfood policy-enabled OpenRouter delegation with a real key using isolated policy/audit paths, then tighten remaining delegate team/profile ergonomics and any stronger pre-spend budget strategy OpenRouter can support.
+- Tighten remaining delegate team/profile ergonomics and any stronger pre-spend budget strategy OpenRouter can support.
 - Add secret redaction and minimal env forwarding for future stdio/child-process MCP runners if ORX adds them beyond the current remote HTTP path.
 
 ## P4

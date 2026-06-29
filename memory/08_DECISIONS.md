@@ -399,3 +399,9 @@ Reasoning: OpenRouter-compatible clients, MCP SDKs, Playwright, terminal UI libr
 Decision: ORX may manage optional macOS Keychain bearer items for MCP profiles, but MCP calls must resolve credentials from env vars first and read Keychain only when `ORX_MCP_KEYCHAIN=1` is explicitly set.
 
 Reasoning: Keychain storage improves local comfort without putting bearer tokens in ORX config or command output. The opt-in preserves a visible trust boundary, avoids surprising Keychain access during tests/scripts, and keeps token values out of model-visible context and audit logs.
+
+## 2026-06-29: Delegate Tool Arguments Are Capped By Operator Policy
+
+Decision: Model-supplied `delegate_task` arguments may be ergonomically normalized only when doing so cannot exceed operator policy. Blank delegate names are treated as omitted so a sole configured delegate can be selected; blank optional context and expected-output strings are omitted; timeout, result-byte, and max-cost requests above policy are capped to policy. Malformed names, malformed values, below-minimum bounds, and secret-like task/context/expected-output content still fail closed before network.
+
+Reasoning: Real-key dogfood showed capable controller models may emit blank optional fields or generic high limits even when the operator has already configured a stricter policy. Capping to policy preserves the trust boundary while making the model-visible delegation tool usable without repeated invalid-argument retries.
