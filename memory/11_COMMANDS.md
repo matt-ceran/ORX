@@ -85,11 +85,11 @@ npm run dev -- delegate add reviewer openrouter anthropic/claude-sonnet-4.5
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- models claude
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- credits
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- generation "gen_..."
-OPENROUTER_API_KEY="sk-or-..." npm run dev -- profile save daily
+OPENROUTER_API_KEY="sk-or-..." npm run dev -- profile save daily --model openrouter/fusion --mode fusion --fusion general-budget --theme vivid
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- --profile daily status
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- --profile daily ask "Say hello"
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- chat
-printf '/mode fusion\n/fusion general-budget\n/theme vivid\n/config show\n/config path\n/config set theme mono\n/auth setup\n/profile save daily\n/profile use daily\n/history search provider\n/models claude\n/credits\n/generation gen_...\n/tests list\n/tests run\n/map\n/code map src\n/code symbols render\n/symbols create\n/web\n/web fetch https://example.com\n/web search openrouter models\n/web browse https://example.com\n/search orx cli\n/browse https://example.com\n/orchestrator openrouter openrouter/fusion\n/delegate add reviewer openrouter anthropic/claude-sonnet-4.5\n/delegates\n/sources\n/cite src-1\n/bibliography\n/mcp\n/mcp enable openrouter\n/mcp auth setup openrouter\n/mcp allow-model-tool openrouter models-list\n/mcp model enable\n/status\n/new\n/exit\n' | OPENROUTER_API_KEY="sk-or-..." BRAVE_SEARCH_API_KEY="..." npm run dev -- chat
+printf '/mode fusion\n/fusion general-budget\n/theme vivid\n/config show\n/config path\n/config set theme mono\n/auth setup\n/profile save daily --model openrouter/fusion --mode fusion --fusion general-budget --theme vivid\n/profile use daily\n/history search provider\n/models claude\n/credits\n/generation gen_...\n/tests list\n/tests run\n/map\n/code map src\n/code symbols render\n/symbols create\n/web\n/web fetch https://example.com\n/web search openrouter models\n/web browse https://example.com\n/search orx cli\n/browse https://example.com\n/orchestrator openrouter openrouter/fusion\n/delegate add reviewer openrouter anthropic/claude-sonnet-4.5\n/delegates\n/sources\n/cite src-1\n/bibliography\n/mcp\n/mcp enable openrouter\n/mcp auth setup openrouter\n/mcp allow-model-tool openrouter models-list\n/mcp model enable\n/status\n/new\n/exit\n' | OPENROUTER_API_KEY="sk-or-..." BRAVE_SEARCH_API_KEY="..." npm run dev -- chat
 ```
 
 If `.orx/config.toml` contains the API key, the `OPENROUTER_API_KEY=...` prefix is not needed. The `.orx/` directory is ignored and must remain uncommitted.
@@ -112,7 +112,7 @@ Saved profiles:
 
 ```bash
 npm run dev -- profile list
-npm run dev -- profile save daily
+npm run dev -- profile save daily --model openrouter/fusion --mode fusion --fusion general-budget --theme vivid
 npm run dev -- profile inspect daily
 npm run dev -- profile delete daily
 npm run dev -- plugins list
@@ -124,7 +124,7 @@ npm run dev -- --profile daily status
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- --profile daily ask "Say hello"
 ```
 
-Profiles persist model, mode, Fusion preset, theme, and permission posture under `~/.orx/profiles.json`; use `ORX_PROFILE_CONFIG_PATH` for isolated runs. Profiles do not store API keys. In chat, `/profile list`, `/profile save <id>`, `/profile use <id>`, `/profile inspect <id>`, and `/profile delete <id>` manage the same registry. Manual `/model`, `/mode`, `/fusion`, or `/theme` changes clear the active profile label.
+Profiles persist model, mode, Fusion preset, theme, and permission posture under `~/.orx/profiles.json`; use `ORX_PROFILE_CONFIG_PATH` for isolated runs. Profiles do not store API keys. `orx profile save <id>` and `/profile save <id>` capture the current config by default and can save non-secret overrides with `--model`, `--mode`, `--fusion`/`--fusion-preset`, `--theme`, `--approval-policy`, and `--sandbox-mode` without mutating active config/session state. In chat, `/profile list`, `/profile save <id> [options]`, `/profile use <id>`, `/profile inspect <id>`, and `/profile delete <id>` manage the same registry. Manual `/model`, `/mode`, `/fusion`, or `/theme` changes clear the active profile label.
 
 `orx doctor` is a no-key setup overview that starts with `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation` readiness labels, then aggregates local runtime defaults, API-key presence, saved profiles, test targets, MCP profile/policy counts, plugin review counts, saved delegation teams, delegation policy state, and concrete next commands. When the core API key is missing, doctor points to `orx auth setup` and `orx auth init` before broader MCP/plugin/delegation follow-ups. `orx doctor --strict` renders the same report and exits nonzero unless `ready_to_use: yes`, so it can gate local install/release readiness. `orx doctor --json` emits the same readiness data as redacted structured JSON with `schema_version`, `strict_ready`, summary, runtime, MCP, plugins, delegation, and next-step fields; it can be combined with `--strict`. It does not call OpenRouter, remote MCP endpoints, plugin bins, or plugin hooks. Use `orx status`, `orx mcp status`, `orx plugins doctor`, and `orx delegates plan` for detailed follow-up.
 

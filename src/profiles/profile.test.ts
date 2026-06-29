@@ -18,6 +18,7 @@ import {
   findSavedProfile,
   getProfileStatusSummary,
   loadProfileRegistry,
+  parseProfileSaveArgs,
   resolveProfileConfigPath,
   saveCurrentProfile,
 } from "./index.js";
@@ -88,6 +89,23 @@ test("profile registry lists and deletes profiles", () => {
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("profile save args reject missing flag values and raw control characters", () => {
+  const flagAsValue = parseProfileSaveArgs(["daily", "--model", "--mode"]);
+  assert.equal(typeof flagAsValue, "string");
+  assert.match(typeof flagAsValue === "string" ? flagAsValue : "", /Missing value for --model/);
+
+  const controlCharacterValue = parseProfileSaveArgs(["daily", "--model", "openrouter/auto\n"]);
+  assert.equal(typeof controlCharacterValue, "string");
+  assert.match(
+    typeof controlCharacterValue === "string" ? controlCharacterValue : "",
+    /Unsafe value for --model/,
+  );
+  assert.doesNotMatch(
+    typeof controlCharacterValue === "string" ? controlCharacterValue : "",
+    /openrouter\/auto/,
+  );
 });
 
 test("profile registry preserves existing override parent permissions", () => {

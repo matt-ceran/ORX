@@ -23,7 +23,7 @@ Urgent UX recovery additions from user testing:
 - The TTY bottom status notch now uses compact route badges for OpenRouter routing shortcuts, rendering `openrouter/auto` as `route auto` and `openrouter/fusion` as `route fusion`. Wide TTY layouts split exact `provider/model` ids into separate provider/model badges, while narrow TTY layouts keep a single compact model badge; full model ids remain unchanged in config, request construction, plain status, and non-TTY output.
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
 - Durable TTY prompt history is implemented through private `~/.orx/history.json`, `ORX_CHAT_HISTORY_PATH`, readline preload, `orx history [search|clear]`, and `/history [search|clear]`; it stores sanitized user prompts only and skips slash commands/secret-like input.
-- Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
+- Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save <id> [options]|use|inspect|delete]`. `profile save` captures the current config by default and can save inline non-secret overrides for model, mode, Fusion preset, theme, approval policy, and sandbox mode without mutating active config or storing API keys.
 - First-run config initialization is implemented through `orx init`, `orx setup`, and `orx config init`. It creates private no-secret starter config files for user or local scope, leaves existing regular config files unchanged, refuses symlink config paths, and tells users to provide credentials through `OPENROUTER_API_KEY` or deliberate manual editing.
 - Core OpenRouter auth ergonomics are implemented through `orx auth`, `orx auth status`, `orx auth setup`, `orx auth env`, `orx auth init`, `orx auth env-file`, and matching `/auth status|setup|env|init|env-file` chat commands. They report API-key readiness without values, print only placeholder exports, create private commented env templates under `~/.orx/auth` or `ORX_AUTH_ENV_DIR`, avoid automatic env-file loading, and refuse auth env-file symlink paths.
 - Safe config inspection/editing is available in both CLI and chat through `orx config show|path|set` and `/config [show|path|set]`. It redacts API-key values, refuses API-key/secret-like arguments, honors `ORX_CONFIG_PATH`, writes private config files through the shared guards, updates the active chat snapshot for edited keys, and keeps `orx config path` usable as a sanitized recovery surface when config parsing fails.
@@ -93,6 +93,15 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added inline profile-save customization:
+
+- Clean first-run dogfooding showed that creating a customized profile required mutating config first, saving the profile, then optionally mutating config back.
+- `orx profile save <id>` and `/profile save <id>` now accept `--model`, `--mode`, `--fusion`/`--fusion-preset`, `--theme`, `--approval-policy`, and `--sandbox-mode` to override only the saved snapshot.
+- The parser rejects secret-like/control-character values, supports `--fusion none` to clear a saved Fusion preset, does not write API keys, and does not change the active config/session when saving.
+- Slash Tab completion now offers deterministic profile-save flags plus mode/theme/Fusion/permission value hints.
+- Verification: `npm run typecheck`, `git diff --check`, `npm run build`, build-backed CLI/slash/profile coverage with 146 tests, manual built CLI smokes for `--fusion none`, flag-as-value rejection, newline/control-character rejection, full `npm test` with 501 tests, `npm run verify:global-install`, and independent verifier recheck. The verifier-found parser and completion issues were fixed.
+- Next likely work is commit/push, then another clean-profile dogfood pass to find the next first-run ORX usability gap.
 
 Added unversioned installed-plugin id resolution:
 
@@ -722,7 +731,7 @@ Implemented and verified Phase 12 saved profile controls:
 - Added `src/profiles/` for private saved profile storage under `~/.orx/profiles.json`, with `ORX_PROFILE_CONFIG_PATH` override support, `0700` parent directories, `0600` files, malformed-record sanitization, secret-like value filtering, and no API-key persistence.
 - Saved profile snapshots include model, mode, Fusion preset, theme, and permission posture. Applying a profile preserves the runtime API key and sets `activeProfile` for status/session visibility.
 - Added `orx profile list|save|use|inspect|delete` and global `orx --profile <id>` application before `status`, `ask`, or chat startup.
-- Added `/profile [list|save|use|inspect|delete]` in chat. Manual `/model`, `/mode`, `/fusion`, and `/theme` changes clear `activeProfile` so the status label does not become stale.
+- Added `/profile [list|save <id> [options]|use|inspect|delete]` in chat. Manual `/model`, `/mode`, `/fusion`, and `/theme` changes clear `activeProfile` so the status label does not become stale.
 - `orx status` and interactive `/status` now show `active_profile` and `profile_count`; session config snapshots persist `activeProfile` while continuing to exclude API keys.
 - Added focused tests for profile registry persistence, path overrides, file modes, no-key storage, CLI profile commands, `--profile` status behavior, slash profile lifecycle, completion/help, and session snapshots.
 - Verifier found that existing override parent directories could be chmodded accidentally; main session fixed profile storage to preserve existing override parent permissions while keeping default/new ORX-owned profile directories private and profile files `0600`.

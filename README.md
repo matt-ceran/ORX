@@ -86,12 +86,13 @@ Saved local profiles can bundle model, mode, Fusion preset, theme, and permissio
 
 ```sh
 orx profile save daily
+orx profile save fusion-vivid --model openrouter/fusion --mode fusion --fusion general-budget --theme vivid
 orx profile list
 orx profile inspect daily
 OPENROUTER_API_KEY=... orx --profile daily
 ```
 
-Profiles are stored outside repos at `~/.orx/profiles.json`; set `ORX_PROFILE_CONFIG_PATH` to isolate or test that registry.
+Profiles are stored outside repos at `~/.orx/profiles.json`; set `ORX_PROFILE_CONFIG_PATH` to isolate or test that registry. `profile save` captures the current config by default and can override the saved snapshot with `--model`, `--mode`, `--fusion`/`--fusion-preset`, `--theme`, `--approval-policy`, and `--sandbox-mode` without mutating the active config or writing API keys.
 
 Native test discovery is available outside chat without an OpenRouter API key:
 
@@ -346,7 +347,7 @@ The chat UI keeps in-session message history for the current process, streams as
 /theme [default|mono|vivid]
 /config [show|path|set]
 /auth [status|setup|env|init|env-file]
-/profile [list|save|use|inspect|delete]
+/profile [list|save <id> [options]|use|inspect|delete]
 /history [search <query>|clear]
 /tests [list|run]
 /map [path]

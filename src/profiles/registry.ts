@@ -47,6 +47,20 @@ export interface ProfileStateChange {
   message: string;
 }
 
+export interface ProfileSaveOverrides {
+  model?: string;
+  mode?: OrxMode;
+  fusionPreset?: string | null;
+  theme?: OrxTheme;
+  approvalPolicy?: string;
+  sandboxMode?: string;
+}
+
+export interface ParsedProfileSaveArgs {
+  profileId: string;
+  overrides: ProfileSaveOverrides;
+}
+
 export interface ProfileStatusSummary {
   count: number;
   profiles: SavedProfileRecord[];
@@ -61,6 +75,9 @@ const SECRET_LIKE_PATTERN =
   /\b(?:sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/;
 const VALID_MODES = new Set<OrxMode>(["exact", "auto", "fusion"]);
 const VALID_THEMES = new Set<OrxTheme>(TERMINAL_THEMES);
+const MODEL_ID_PATTERN = /^\S{1,200}$/;
+const FUSION_PRESET_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const PERMISSION_VALUE_PATTERN = /^[a-z][a-z0-9-]{0,79}$/;
 
 export class ProfileRegistryError extends Error {
   constructor(message: string) {
@@ -157,7 +174,7 @@ export function findSavedProfile(
 export function saveCurrentProfile(
   id: string,
   config: OrxConfig,
-  options: ProfileRegistryIoOptions & { now?: () => Date } = {},
+  options: ProfileRegistryIoOptions & { now?: () => Date; overrides?: ProfileSaveOverrides } = {},
 ): ProfileStateChange {
   const profileId = normalizeProfileId(id);
   if (!profileId) {
@@ -172,7 +189,7 @@ export function saveCurrentProfile(
   const now = (options.now?.() ?? new Date()).toISOString();
   const profile: SavedProfileRecord = {
     id: profileId,
-    config: snapshotProfileConfig(config),
+    config: snapshotProfileConfig(applyProfileSaveOverrides(config, options.overrides)),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
@@ -244,6 +261,134 @@ export function snapshotProfileConfig(config: OrxConfig): SavedProfileSnapshot {
       sandboxMode: config.permissions.sandboxMode,
     },
   });
+}
+
+export function applyProfileSaveOverrides(
+  config: OrxConfig,
+  overrides: ProfileSaveOverrides = {},
+): OrxConfig {
+  const next: OrxConfig = {
+    ...config,
+    permissions: {
+      approvalPolicy: config.permissions.approvalPolicy,
+      sandboxMode: config.permissions.sandboxMode,
+    },
+  };
+
+  if (overrides.model !== undefined) {
+    next.model = overrides.model;
+  }
+  if (overrides.mode !== undefined) {
+    next.mode = overrides.mode;
+  }
+  if (Object.prototype.hasOwnProperty.call(overrides, "fusionPreset")) {
+    next.fusionPreset = overrides.fusionPreset ?? undefined;
+  }
+  if (overrides.theme !== undefined) {
+    next.theme = overrides.theme;
+  }
+  if (overrides.approvalPolicy !== undefined) {
+    next.permissions.approvalPolicy = overrides.approvalPolicy;
+  }
+  if (overrides.sandboxMode !== undefined) {
+    next.permissions.sandboxMode = overrides.sandboxMode;
+  }
+
+  return next;
+}
+
+export function parseProfileSaveArgs(
+  args: string[],
+  usage = "Usage: orx profile save <id> [--model <slug>] [--mode <exact|auto|fusion>] [--fusion <preset|none>] [--theme <default|mono|vivid>] [--approval-policy <policy>] [--sandbox-mode <mode>]",
+): ParsedProfileSaveArgs | string {
+  const profileId = args[0];
+  if (!profileId) {
+    return usage;
+  }
+
+  const overrides: ProfileSaveOverrides = {};
+  for (let index = 1; index < args.length; index += 1) {
+    const flag = args[index];
+    if (flag === "--help" || flag === "-h") {
+      return usage;
+    }
+
+    const value = args[index + 1];
+    if (isMissingProfileOptionValue(value)) {
+      return `Missing value for ${formatProfileOptionForMessage(flag)}\n${usage}`;
+    }
+    const optionValue = value ?? "";
+
+    if (flag === "--model") {
+      const model = validateProfileOverrideValue("model", optionValue);
+      if (typeof model === "string") {
+        overrides.model = model;
+      } else {
+        return model.message;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (flag === "--mode") {
+      const mode = validateProfileOverrideValue("mode", optionValue);
+      if (typeof mode === "string") {
+        overrides.mode = mode as OrxMode;
+      } else {
+        return mode.message;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (flag === "--fusion" || flag === "--fusion-preset") {
+      const fusionPreset = validateProfileOverrideValue("fusion_preset", optionValue);
+      if (typeof fusionPreset === "string") {
+        overrides.fusionPreset = fusionPreset === "none" ? null : fusionPreset;
+      } else {
+        return fusionPreset.message;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (flag === "--theme") {
+      const theme = validateProfileOverrideValue("theme", optionValue);
+      if (typeof theme === "string") {
+        overrides.theme = theme as OrxTheme;
+      } else {
+        return theme.message;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (flag === "--approval-policy") {
+      const approvalPolicy = validateProfileOverrideValue("approval_policy", optionValue);
+      if (typeof approvalPolicy === "string") {
+        overrides.approvalPolicy = approvalPolicy;
+      } else {
+        return approvalPolicy.message;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (flag === "--sandbox-mode") {
+      const sandboxMode = validateProfileOverrideValue("sandbox_mode", optionValue);
+      if (typeof sandboxMode === "string") {
+        overrides.sandboxMode = sandboxMode;
+      } else {
+        return sandboxMode.message;
+      }
+      index += 1;
+      continue;
+    }
+
+    return `Unknown profile save option: ${formatProfileOptionForMessage(flag)}\n${usage}`;
+  }
+
+  return { profileId, overrides };
 }
 
 export function renderProfileList(
@@ -373,6 +518,64 @@ function sanitizePermissions(value: unknown): PermissionConfig {
     ),
     sandboxMode: sanitizeDisplayString(value.sandboxMode, DEFAULT_SANDBOX_MODE, 64),
   };
+}
+
+function validateProfileOverrideValue(
+  key: "model" | "mode" | "fusion_preset" | "theme" | "approval_policy" | "sandbox_mode",
+  valueInput: string,
+): string | { message: string } {
+  if (DISPLAY_UNSAFE_PATTERN.test(valueInput) || SECRET_LIKE_PATTERN.test(valueInput)) {
+    return { message: `Unsafe value for --${key.replace(/_/g, "-")}.` };
+  }
+
+  const value = valueInput.trim();
+  if (!value) {
+    return { message: `Missing value for --${key.replace(/_/g, "-")}.` };
+  }
+  if (key === "mode" && !VALID_MODES.has(value as OrxMode)) {
+    return { message: "Invalid mode for --mode. Expected exact, auto, or fusion." };
+  }
+  if (key === "theme" && !VALID_THEMES.has(value as OrxTheme)) {
+    return { message: "Invalid theme for --theme. Expected default, mono, or vivid." };
+  }
+  if (key === "model" && !MODEL_ID_PATTERN.test(value)) {
+    return { message: "Invalid model for --model. Use an OpenRouter model id without spaces." };
+  }
+  if (
+    key === "fusion_preset" &&
+    value !== "none" &&
+    !FUSION_PRESET_PATTERN.test(value)
+  ) {
+    return {
+      message: "Invalid fusion preset for --fusion. Use letters, numbers, dot, underscore, colon, or dash.",
+    };
+  }
+  if (
+    (key === "approval_policy" || key === "sandbox_mode") &&
+    !PERMISSION_VALUE_PATTERN.test(value)
+  ) {
+    return {
+      message: `Invalid ${key.replace(/_/g, "-")} for --${key.replace(/_/g, "-")}. Use lowercase letters, numbers, and dashes.`,
+    };
+  }
+
+  return value;
+}
+
+function isMissingProfileOptionValue(value: string | undefined): boolean {
+  return value === undefined || value.startsWith("--");
+}
+
+function formatProfileOptionForMessage(value: string): string {
+  if (DISPLAY_UNSAFE_PATTERN.test(value) || SECRET_LIKE_PATTERN.test(value)) {
+    return "[redacted]";
+  }
+
+  const cleaned = value.replace(/[\x00-\x1F\x7F]/g, "").trim();
+  if (!cleaned) {
+    return "[redacted]";
+  }
+  return cleaned.length > 80 ? `${cleaned.slice(0, 80)}...` : cleaned;
 }
 
 function formatProfileConfigInline(config: SavedProfileSnapshot): string {

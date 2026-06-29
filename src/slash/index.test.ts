@@ -83,7 +83,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.match(output, /\/theme \[default\|mono\|vivid\]\s+Show or set the TTY color theme/);
   assert.match(output, /\/config \[show\|path\|set <key> <value>\]\s+Inspect or edit safe ORX config keys/);
   assert.match(output, /\/auth \[status\|setup\|env\|init\|env-file\]\s+Inspect or initialize core OpenRouter auth setup/);
-  assert.match(output, /\/profile \[list\|save\|use\|inspect\|delete\]\s+Manage saved local config profiles/);
+  assert.match(output, /\/profile \[list\|save <id> \[options\]\|use\|inspect\|delete\]\s+Manage saved local config profiles/);
   assert.match(output, /\/history \[search <query>\|clear\]\s+Search or clear local prompt history/);
   assert.match(output, /\/tests \[list\|run <target-id>\]\s+Discover or run native test targets \(aliases: \/test\)/);
   assert.match(output, /\/map \[path\]\s+Render a bounded local repository code map/);
@@ -228,6 +228,16 @@ test("slash command completer suggests command names, aliases, and deterministic
     ["status ", "save "],
     "s",
   ]);
+  assert.deepEqual(completeSlashCommandLine("/profile save daily --m"), [
+    ["--model ", "--mode "],
+    "--m",
+  ]);
+  assert.deepEqual(completeSlashCommandLine("/profile save daily --model "), [
+    [],
+    "/profile save daily --model ",
+  ]);
+  assert.deepEqual(completeSlashCommandLine("/profile save daily --mode f"), [["fusion "], "f"]);
+  assert.deepEqual(completeSlashCommandLine("/profile save daily --theme v"), [["vivid "], "v"]);
   assert.deepEqual(completeSlashCommandLine("/history c"), [["clear "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/history s"), [["search "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/web b"), [["browse "], "b"]);
@@ -676,6 +686,43 @@ test("profile command saves lists applies inspects and deletes local profiles", 
 
     assert.equal(handleSlashCommand("/profile delete deep-review", harness.context), "continue");
     assert.match(harness.stdout(), /Profile deep-review deleted/);
+
+    assert.equal(
+      handleSlashCommand(
+        "/profile save inline --model openrouter/fusion --mode fusion --fusion general-budget --theme mono --approval-policy never --sandbox-mode danger-full-access",
+        harness.context,
+      ),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Profile inline saved/);
+    assert.doesNotMatch(readFileSync(profileConfigPath, "utf8"), /test-key/);
+
+    harness.context.setConfig({
+      ...harness.config(),
+      mode: "auto",
+      model: "openrouter/auto",
+      fusionPreset: undefined,
+      theme: "default",
+    });
+
+    assert.equal(handleSlashCommand("/profile use inline", harness.context), "continue");
+    assert.equal(harness.config().mode, "fusion");
+    assert.equal(harness.config().model, "openrouter/fusion");
+    assert.equal(harness.config().fusionPreset, "general-budget");
+    assert.equal(harness.config().theme, "mono");
+
+    assert.equal(
+      handleSlashCommand("/profile save unsafe --model sk-or-v1-secret-profile", harness.context),
+      "continue",
+    );
+    assert.match(harness.stderr(), /Unsafe value for --model/);
+    assert.doesNotMatch(harness.stderr(), /sk-or-v1-secret-profile/);
+
+    assert.equal(
+      handleSlashCommand("/profile save flag-value --model --mode", harness.context),
+      "continue",
+    );
+    assert.match(harness.stderr(), /Missing value for --model/);
 
     assert.equal(handleSlashCommand("/profile use deep-review", harness.context), "continue");
     assert.match(harness.stderr(), /Unknown profile: deep-review/);

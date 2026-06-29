@@ -1255,6 +1255,38 @@ test("cli profile commands manage saved config profiles without an API key", asy
     assert.match(save.stdout(), /Profile daily saved/);
     assert.doesNotMatch(readFileSync(profileConfigPath, "utf8"), /OPENROUTER/);
 
+    const saveInline = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        [
+          "node",
+          "cli",
+          "profile",
+          "save",
+          "fusion-vivid",
+          "--model",
+          "openrouter/fusion",
+          "--mode",
+          "fusion",
+          "--fusion",
+          "general-budget",
+          "--theme",
+          "vivid",
+          "--approval-policy",
+          "never",
+          "--sandbox-mode",
+          "danger-full-access",
+        ],
+        {
+          ORX_PROFILE_CONFIG_PATH: profileConfigPath,
+        },
+        saveInline.io,
+      ),
+      0,
+    );
+    assert.match(saveInline.stdout(), /Profile fusion-vivid saved/);
+    assert.doesNotMatch(readFileSync(profileConfigPath, "utf8"), /OPENROUTER/);
+
     const list = createIo({ cwd });
     assert.equal(
       await runCli(
@@ -1266,13 +1298,14 @@ test("cli profile commands manage saved config profiles without an API key", asy
       ),
       0,
     );
-    assert.match(list.stdout(), /saved_profiles: 1/);
+    assert.match(list.stdout(), /saved_profiles: 2/);
     assert.match(list.stdout(), /daily mode=auto model=openrouter\/auto/);
+    assert.match(list.stdout(), /fusion-vivid mode=fusion model=openrouter\/fusion fusion=general-budget theme=vivid/);
 
     const inspect = createIo({ cwd });
     assert.equal(
       await runCli(
-        ["node", "cli", "profile", "inspect", "daily"],
+        ["node", "cli", "profile", "inspect", "fusion-vivid"],
         {
           ORX_PROFILE_CONFIG_PATH: profileConfigPath,
         },
@@ -1280,8 +1313,53 @@ test("cli profile commands manage saved config profiles without an API key", asy
       ),
       0,
     );
-    assert.match(inspect.stdout(), /ORX profile: daily/);
+    assert.match(inspect.stdout(), /ORX profile: fusion-vivid/);
+    assert.match(inspect.stdout(), /mode: fusion/);
+    assert.match(inspect.stdout(), /model: openrouter\/fusion/);
+    assert.match(inspect.stdout(), /fusion_preset: general-budget/);
+    assert.match(inspect.stdout(), /theme: vivid/);
     assert.match(inspect.stdout(), /api_key: not stored/);
+
+    const unsafe = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "profile", "save", "unsafe", "--model", "sk-or-v1-secret-profile"],
+        {
+          ORX_PROFILE_CONFIG_PATH: profileConfigPath,
+        },
+        unsafe.io,
+      ),
+      1,
+    );
+    assert.match(unsafe.stderr(), /Unsafe value for --model/);
+    assert.doesNotMatch(unsafe.stderr(), /sk-or-v1-secret-profile/);
+
+    const flagAsValue = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "profile", "save", "flag-value", "--model", "--mode"],
+        {
+          ORX_PROFILE_CONFIG_PATH: profileConfigPath,
+        },
+        flagAsValue.io,
+      ),
+      1,
+    );
+    assert.match(flagAsValue.stderr(), /Missing value for --model/);
+
+    const controlCharacter = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "profile", "save", "control", "--model", "openrouter/auto\n"],
+        {
+          ORX_PROFILE_CONFIG_PATH: profileConfigPath,
+        },
+        controlCharacter.io,
+      ),
+      1,
+    );
+    assert.match(controlCharacter.stderr(), /Unsafe value for --model/);
+    assert.doesNotMatch(controlCharacter.stderr(), /openrouter\/auto/);
 
     const deleted = createIo({ cwd });
     assert.equal(

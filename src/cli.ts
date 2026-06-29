@@ -179,6 +179,7 @@ import {
   deleteSavedProfile,
   findSavedProfile,
   getProfileStatusSummary,
+  parseProfileSaveArgs,
   renderProfileInspect,
   renderProfileList,
   resolveProfileConfigPath,
@@ -1452,14 +1453,18 @@ function runProfileCommand(
   }
 
   if (subcommand === "save") {
-    if (!profileId || args.length !== 2) {
-      writeLine(io.stderr, "Usage: orx profile save <id>");
+    const parsed = parseProfileSaveArgs(args.slice(1));
+    if (typeof parsed === "string") {
+      writeLine(io.stderr, parsed);
       return 1;
     }
 
     let result: ReturnType<typeof saveCurrentProfile>;
     try {
-      result = saveCurrentProfile(profileId, config, { configPath: profileConfigPath });
+      result = saveCurrentProfile(parsed.profileId, config, {
+        configPath: profileConfigPath,
+        overrides: parsed.overrides,
+      });
     } catch (error) {
       writeLine(io.stderr, `Unable to save profile${formatErrorCode(error)}.`);
       return 1;
@@ -1527,7 +1532,10 @@ function runProfileCommand(
     return 0;
   }
 
-  writeLine(io.stderr, "Usage: orx profile [list|save <id>|use <id>|inspect <id>|delete <id>]");
+  writeLine(
+    io.stderr,
+    "Usage: orx profile [list|save <id> [options]|use <id>|inspect <id>|delete <id>]",
+  );
   return 1;
 }
 

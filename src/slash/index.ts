@@ -190,6 +190,7 @@ import {
   deleteSavedProfile,
   findSavedProfile,
   getProfileStatusSummary,
+  parseProfileSaveArgs,
   renderProfileInspect,
   renderProfileList,
   saveCurrentProfile,
@@ -511,6 +512,15 @@ const PROFILE_SUBCOMMAND_COMPLETIONS = [
   "save",
   "use",
   "delete",
+] as const;
+const PROFILE_SAVE_OPTION_COMPLETIONS = [
+  "--model",
+  "--mode",
+  "--fusion",
+  "--fusion-preset",
+  "--theme",
+  "--approval-policy",
+  "--sandbox-mode",
 ] as const;
 const ORCHESTRATOR_SUBCOMMAND_COMPLETIONS = ["status", "plan", "openrouter", "clear"] as const;
 const DELEGATE_SUBCOMMAND_COMPLETIONS = ["help", "status", "plan", "add", "remove", "clear", "team", "policy"] as const;
@@ -923,7 +933,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/profile": {
-    usage: "/profile [list|save|use|inspect|delete]",
+    usage: "/profile [list|save <id> [options]|use|inspect|delete]",
     description: "Manage saved local config profiles",
     group: "Core",
     tier: "common",
@@ -1603,7 +1613,15 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       }
       return [];
     case "/profile":
-      return argIndex === 0 ? [...PROFILE_SUBCOMMAND_COMPLETIONS] : [];
+      if (argIndex === 0) {
+        return [...PROFILE_SUBCOMMAND_COMPLETIONS];
+      }
+      if (firstArg === "save" && argIndex >= 2) {
+        return profileSaveValueCompletions(completedArgs[argIndex - 1]) ?? [
+          ...PROFILE_SAVE_OPTION_COMPLETIONS,
+        ];
+      }
+      return [];
     case "/history":
       return argIndex === 0 ? [...HISTORY_SUBCOMMAND_COMPLETIONS] : [];
     case "/web":
@@ -1733,6 +1751,28 @@ function configValueCompletions(key: string | undefined): string[] {
     return [...THEME_COMPLETIONS];
   }
   return [];
+}
+
+function profileSaveValueCompletions(flag: string | undefined): string[] | undefined {
+  if (flag === "--model") {
+    return [];
+  }
+  if (flag === "--mode") {
+    return [...MODE_COMPLETIONS];
+  }
+  if (flag === "--theme") {
+    return [...THEME_COMPLETIONS];
+  }
+  if (flag === "--fusion" || flag === "--fusion-preset") {
+    return ["none", "general-budget"];
+  }
+  if (flag === "--approval-policy") {
+    return ["never"];
+  }
+  if (flag === "--sandbox-mode") {
+    return ["danger-full-access"];
+  }
+  return undefined;
 }
 
 function isMcpAuthActionWithProfile(value: string | undefined): boolean {
@@ -2385,14 +2425,19 @@ function handleProfileCommand(command: SlashCommand, context: SlashCommandContex
   }
 
   if (subcommand === "save") {
-    if (!profileId || command.args.length !== 2) {
-      writeLine(context.io.stderr, "Usage: /profile save <id>");
+    const parsed = parseProfileSaveArgs(
+      command.args.slice(1),
+      "Usage: /profile save <id> [--model <slug>] [--mode <exact|auto|fusion>] [--fusion <preset|none>] [--theme <default|mono|vivid>] [--approval-policy <policy>] [--sandbox-mode <mode>]",
+    );
+    if (typeof parsed === "string") {
+      writeLine(context.io.stderr, parsed);
       return;
     }
 
     try {
-      const result = saveCurrentProfile(profileId, context.getConfig(), {
+      const result = saveCurrentProfile(parsed.profileId, context.getConfig(), {
         configPath: context.profileConfigPath,
+        overrides: parsed.overrides,
       });
       if (!result.ok) {
         writeLine(context.io.stderr, result.message);
@@ -2464,7 +2509,7 @@ function handleProfileCommand(command: SlashCommand, context: SlashCommandContex
 
   writeLine(
     context.io.stderr,
-    "Usage: /profile [list|save <id>|use <id>|inspect <id>|delete <id>]",
+    "Usage: /profile [list|save <id> [options]|use <id>|inspect <id>|delete <id>]",
   );
 }
 
