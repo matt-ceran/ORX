@@ -25,6 +25,7 @@ Urgent UX recovery additions from user testing:
 - Durable TTY prompt history is implemented through private `~/.orx/history.json`, `ORX_CHAT_HISTORY_PATH`, readline preload, `orx history [search|clear]`, and `/history [search|clear]`; it stores sanitized user prompts only and skips slash commands/secret-like input.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
 - Safe config inspection/editing is available in both CLI and chat through `orx config show|path|set` and `/config [show|path|set]`. It redacts API-key values, refuses API-key/secret-like arguments, honors `ORX_CONFIG_PATH`, writes private config files through the shared guards, and updates the active chat snapshot for edited keys.
+- `orx doctor` is the top-level no-network readiness overview. It now starts with concise `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation` labels before local runtime/MCP/plugin/delegation details and next commands.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and `/plugins install <manifest-path>`; plugin enablement persists only a state marker and does not by itself trust executable surfaces.
 - Plugin authoring scaffold is implemented through `orx plugins scaffold <directory>` and `/plugins scaffold <directory>`. It creates a valid local `orx-plugin.json` authoring bundle without registry writes; defaults are inert skills/prompt-commands/rules markdown, `--minimal` writes only the manifest, and `--with` adds opt-in empty placeholders for hooks, bins, MCP, command schemas, assets, and docs behind the existing review gates.
 - Plugin manifest validation is implemented through `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>`. It parses/sanitizes manifests, renders manifest/component hashes, permission counts, missing component warnings, and explicitly leaves registry/cache/trust/runtime state unchanged.
@@ -90,6 +91,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added concise `orx doctor` readiness labels:
+
+- `orx doctor` now starts with `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation` status lines before the existing detailed local diagnostics.
+- The summary distinguishes core CLI readiness from chat API-key readiness, active MCP profile state, plugin review needs, and optional delegation policy/team readiness.
+- The command remains no-network/no-subprocess, performs no config/data content writes, and does not print API key values; existing local loaders may still tighten private state-file permissions while reading.
+- Verification so far: focused compiled CLI tests with 43 tests. Independent verifier review is in progress for the current uncommitted slice.
+- Next likely work remains full gates, commit/push this doctor polish, then broader release hardening or any remaining OAuth/device-flow decision work.
 
 Added provider-specific MCP auth guidance:
 

@@ -65,10 +65,32 @@ export function formatDoctor({
     (count, entry) => count + entry.hooks.trusted,
     0,
   );
+  const pluginReviewIssues =
+    pluginReview.updateAvailableCount +
+    pluginReview.pendingBinTrustCount +
+    pluginReview.pendingHookTrustCount +
+    pluginReview.untrustedBinCount +
+    pluginReview.untrustedHookCount +
+    pluginReview.omissionCount;
+  const readiness = formatDoctorReadiness({
+    apiKeyPresent: loadedConfig.apiKeyPresent,
+    activeMcpProfileCount: mcpStatus.activeProfileIds.length,
+    installedPluginCount: pluginReview.installedCount,
+    pluginReviewIssues,
+    delegationExecutionEnabled: delegationPolicy.executionEnabled,
+    delegationTeamCount: delegationTeamStatus.count,
+  });
 
   return [
     "ORX doctor",
     "summary:",
+    `  overall: ${readiness.overall}`,
+    `  ready_to_use: ${readiness.readyToUse}`,
+    `  core_cli: ${readiness.coreCli}`,
+    `  chat: ${readiness.chat}`,
+    `  mcp: ${readiness.mcp}`,
+    `  plugins: ${readiness.plugins}`,
+    `  delegation: ${readiness.delegation}`,
     `  interactive_chat: ${loadedConfig.apiKeyPresent ? "ready" : "blocked_missing_openrouter_api_key"}`,
     "  network_calls: none",
     "  subprocesses: none",
@@ -131,17 +153,88 @@ export function formatDoctor({
     ...formatNextSteps({
       apiKeyPresent: loadedConfig.apiKeyPresent,
       activeMcpProfileCount: mcpStatus.activeProfileIds.length,
-      pluginReviewIssues:
-        pluginReview.updateAvailableCount +
-        pluginReview.pendingBinTrustCount +
-        pluginReview.pendingHookTrustCount +
-        pluginReview.untrustedBinCount +
-        pluginReview.untrustedHookCount +
-        pluginReview.omissionCount,
+      pluginReviewIssues,
       delegationExecutionEnabled: delegationPolicy.executionEnabled,
       delegationTeamCount: delegationTeamStatus.count,
     }),
   ].join("\n");
+}
+
+interface DoctorReadinessOptions {
+  apiKeyPresent: boolean;
+  activeMcpProfileCount: number;
+  installedPluginCount: number;
+  pluginReviewIssues: number;
+  delegationExecutionEnabled: boolean;
+  delegationTeamCount: number;
+}
+
+interface DoctorReadiness {
+  overall: string;
+  readyToUse: string;
+  coreCli: string;
+  chat: string;
+  mcp: string;
+  plugins: string;
+  delegation: string;
+}
+
+function formatDoctorReadiness({
+  apiKeyPresent,
+  activeMcpProfileCount,
+  installedPluginCount,
+  pluginReviewIssues,
+  delegationExecutionEnabled,
+  delegationTeamCount,
+}: DoctorReadinessOptions): DoctorReadiness {
+  const chat = apiKeyPresent ? "ready" : "blocked_missing_openrouter_api_key";
+  const mcp = activeMcpProfileCount > 0
+    ? "active_profiles_configured"
+    : "available_no_active_profiles";
+  const plugins = pluginReviewIssues > 0
+    ? "review_needed"
+    : installedPluginCount > 0
+      ? "review_clean"
+      : "available_no_plugins_installed";
+  const delegation = !delegationExecutionEnabled
+    ? "optional_disabled"
+    : delegationTeamCount > 0
+      ? "policy_enabled_saved_team_available"
+      : "policy_enabled_needs_chat_delegate";
+
+  if (!apiKeyPresent) {
+    return {
+      overall: "setup_needed_api_key",
+      readyToUse: "limited_core_cli_only",
+      coreCli: "ready",
+      chat,
+      mcp,
+      plugins,
+      delegation,
+    };
+  }
+
+  if (pluginReviewIssues > 0) {
+    return {
+      overall: "ready_with_plugin_review_needed",
+      readyToUse: "yes",
+      coreCli: "ready",
+      chat,
+      mcp,
+      plugins,
+      delegation,
+    };
+  }
+
+  return {
+    overall: "ready_for_interactive_coding",
+    readyToUse: "yes",
+    coreCli: "ready",
+    chat,
+    mcp,
+    plugins,
+    delegation,
+  };
 }
 
 function formatDelegationSavedTeamAvailability(

@@ -4,6 +4,12 @@ Last updated: 2026-06-29
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
 
+## 2026-06-29: Doctor Readiness Separates Core CLI From Optional Surfaces
+
+Decision: `orx doctor` should start with concise local readiness labels for `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation`, while keeping the existing detailed diagnostic sections and next commands. The labels must be computed from local config/state only and must not call OpenRouter, remote MCP endpoints, plugin bins, plugin hooks, or delegation adapters. API-key presence can affect chat readiness, but key values must never be printed.
+
+Reasoning: ORX has enough features that raw counts alone do not answer whether it is ready to use. A compact readiness header makes the CLI more comfortable while preserving the original no-network/no-execution/no-data-content-write doctor boundary; existing local loaders may still tighten private state-file permissions while reading.
+
 ## 2026-06-29: MCP Provider Auth Guidance Is Render-Only And Endpoint-Matched
 
 Decision: ORX may render provider-specific MCP auth guidance inside `orx mcp auth <profile>`, `orx mcp auth setup <profile>`, and matching slash commands, including credential source, lifetime, scope, setup URL, and ORX support notes. This guidance must remain render-only: no OAuth browser/device flow, network call, subprocess call, config write, token persistence, or secret display. Provider-specific guidance is selected only from parsed HTTPS MCP endpoint host/path matches for recognized providers; spoofed or unknown endpoints must fall back to generic bearer guidance.

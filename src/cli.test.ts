@@ -124,6 +124,13 @@ test("help, version, and status work without an API key", async () => {
     });
     assert.equal(await runCli(["node", "cli", "doctor"], diagnosticEnv, doctor.io), 0);
     assert.match(doctor.stdout(), /ORX doctor/);
+    assert.match(doctor.stdout(), /overall: setup_needed_api_key/);
+    assert.match(doctor.stdout(), /ready_to_use: limited_core_cli_only/);
+    assert.match(doctor.stdout(), /core_cli: ready/);
+    assert.match(doctor.stdout(), /chat: blocked_missing_openrouter_api_key/);
+    assert.match(doctor.stdout(), /mcp: available_no_active_profiles/);
+    assert.match(doctor.stdout(), /plugins: available_no_plugins_installed/);
+    assert.match(doctor.stdout(), /delegation: optional_disabled/);
     assert.match(doctor.stdout(), /interactive_chat: blocked_missing_openrouter_api_key/);
     assert.match(doctor.stdout(), /network_calls: none/);
     assert.match(doctor.stdout(), /remote_mcp_calls: none/);
@@ -148,6 +155,7 @@ test("help, version, and status work without an API key", async () => {
 test("cli doctor does not treat saved delegation teams as active chat delegates", async () => {
   const cwd = createTempDir();
   const env = {
+    OPENROUTER_API_KEY: "sk-or-v1-test-doctor",
     ORX_DELEGATION_POLICY_PATH: join(cwd, "delegation", "policy.json"),
     ORX_DELEGATION_TEAMS_PATH: join(cwd, "delegation", "teams.json"),
     ORX_MCP_CONFIG_PATH: join(cwd, "mcp", "profiles.json"),
@@ -196,6 +204,10 @@ test("cli doctor does not treat saved delegation teams as active chat delegates"
 
     const doctor = createIo({ cwd, fetch });
     assert.equal(await runCli(["node", "cli", "doctor"], env, doctor.io), 0);
+    assert.match(doctor.stdout(), /overall: ready_for_interactive_coding/);
+    assert.match(doctor.stdout(), /ready_to_use: yes/);
+    assert.match(doctor.stdout(), /chat: ready/);
+    assert.match(doctor.stdout(), /delegation: policy_enabled_saved_team_available/);
     assert.match(doctor.stdout(), /execution_policy: enabled/);
     assert.match(doctor.stdout(), /saved_teams: 1/);
     assert.match(doctor.stdout(), /chat_readiness: not_evaluated_sessionless_cli/);
@@ -204,7 +216,7 @@ test("cli doctor does not treat saved delegation teams as active chat delegates"
       /chat_delegate_requirement: active_chat_session_delegate_required/,
     );
     assert.match(doctor.stdout(), /saved_team_availability: available_load_in_chat/);
-    assert.doesNotMatch(doctor.stdout(), /policy_enabled_saved_team_available/);
+    assert.doesNotMatch(doctor.stdout(), /sk-or-v1-test-doctor/);
     assert.equal(doctor.stderr(), "");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
