@@ -24,6 +24,7 @@ Urgent UX recovery additions from user testing:
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
 - Durable TTY prompt history is implemented through private `~/.orx/history.json`, `ORX_CHAT_HISTORY_PATH`, readline preload, `orx history [search|clear]`, and `/history [search|clear]`; it stores sanitized user prompts only and skips slash commands/secret-like input.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save <id> [options]|use|inspect|delete]`. `profile save` captures the current config by default and can save inline non-secret overrides for model, mode, Fusion preset, theme, approval policy, and sandbox mode without mutating active config or storing API keys.
+- CLI namespace help is implemented for `auth`, `config`, `profile`/`profiles`, `history`, `mcp`, `plugins`/`plugin`, `bins`/`bin`, `hooks`/`hook`, `tests`/`test`, `code`, `orchestrator`, `delegate`, and `delegates`. `orx <namespace> help|--help|-h` exits 0, prints usage on stdout, leaves stderr empty, and runs before config loading so malformed configs cannot block help.
 - First-run config initialization is implemented through `orx init`, `orx setup`, and `orx config init`. It creates private no-secret starter config files for user or local scope, leaves existing regular config files unchanged, refuses symlink config paths, and tells users to provide credentials through `OPENROUTER_API_KEY` or deliberate manual editing.
 - Core OpenRouter auth ergonomics are implemented through `orx auth`, `orx auth status`, `orx auth setup`, `orx auth env`, `orx auth init`, `orx auth env-file`, and matching `/auth status|setup|env|init|env-file` chat commands. They report API-key readiness without values, print only placeholder exports, create private commented env templates under `~/.orx/auth` or `ORX_AUTH_ENV_DIR`, avoid automatic env-file loading, and refuse auth env-file symlink paths.
 - Safe config inspection/editing is available in both CLI and chat through `orx config show|path|set` and `/config [show|path|set]`. It redacts API-key values, refuses API-key/secret-like arguments, honors `ORX_CONFIG_PATH`, writes private config files through the shared guards, updates the active chat snapshot for edited keys, and keeps `orx config path` usable as a sanitized recovery surface when config parsing fails.
@@ -93,6 +94,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added CLI namespace help polish:
+
+- Clean first-run dogfooding showed namespace commands such as `orx mcp help` and `orx plugins help` exited 1 even though operators naturally expect namespace help to succeed.
+- A shared namespace-usage table now powers `orx <namespace> help`, `orx <namespace> --help`, and `orx <namespace> -h` for `auth`, `config`, `profile`/`profiles`, `history`, `mcp`, `plugins`/`plugin`, `bins`/`bin`, `hooks`/`hook`, `tests`/`test`, `code`, `orchestrator`, `delegate`, and `delegates`.
+- Namespace help short-circuits before config/path loading, so it remains usable with malformed config files and does not leak config parser text or secret-shaped config contents.
+- Verification: `npm run typecheck`, `git diff --check`, `npm run build`, build-backed `node --test dist/cli.test.js` with 51 tests, built CLI namespace-help surveys for canonical commands and aliases against malformed config, full `npm test` with 502 tests, `npm run verify:global-install`, and independent verifier recheck with no findings.
+- Next likely work is another clean first-run dogfood pass and then the next release-hardening slice around MCP/plugin ergonomics, provider auth/OAuth decisions, richer plugin authoring docs/templates, or code-intelligence expansion.
 
 Added inline profile-save customization:
 

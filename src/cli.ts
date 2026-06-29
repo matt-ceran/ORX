@@ -234,6 +234,74 @@ interface GlobalCliOptions {
 }
 
 const VALID_MODES = new Set<OrxMode>(["auto", "fusion", "exact"]);
+const CLI_NAMESPACE_USAGES = {
+  auth: "Usage: orx auth [status|setup|env|init|env-file]",
+  config: "Usage: orx config [show|path|init|set <key> <value> [--user|--local]]",
+  profile: "Usage: orx profile [list|save <id> [options]|use <id>|inspect <id>|delete <id>]",
+  history: "Usage: orx history [search <query>|clear]",
+  mcp: "Usage: orx mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+  plugins: "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
+  bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
+  hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
+  tests: "Usage: orx tests [list|run [target-id] [-- args...]]",
+  code: "Usage: orx code [map|symbols] [query-or-path]",
+  orchestrator: "Usage: orx orchestrator [status|plan|openrouter <model>|clear]",
+  delegate: "Usage: orx delegate [status|plan [saved-team-id]|add <name> openrouter <model>|remove <name>|clear|team|policy]",
+  delegates:
+    "Usage: orx delegates [list|status|plan [saved-team-id]|policy|teams|save <id> --controller <model> --delegate <name> <model>|use <id>|inspect <id>|delete <id>]",
+} as const;
+
+function isHelpToken(value: string | undefined): boolean {
+  const normalized = value?.toLowerCase();
+  return normalized === "help" || normalized === "--help" || normalized === "-h";
+}
+
+function isNamespaceHelp(args: string[]): boolean {
+  return args.length === 1 && isHelpToken(args[0]);
+}
+
+function getNamespaceHelpUsage(args: string[]): string | undefined {
+  if (args.length !== 2 || !isHelpToken(args[1])) {
+    return undefined;
+  }
+
+  const command = args[0]?.toLowerCase();
+  switch (command) {
+    case "auth":
+      return CLI_NAMESPACE_USAGES.auth;
+    case "config":
+      return CLI_NAMESPACE_USAGES.config;
+    case "profile":
+    case "profiles":
+      return CLI_NAMESPACE_USAGES.profile;
+    case "history":
+      return CLI_NAMESPACE_USAGES.history;
+    case "mcp":
+      return CLI_NAMESPACE_USAGES.mcp;
+    case "plugin":
+    case "plugins":
+      return CLI_NAMESPACE_USAGES.plugins;
+    case "bin":
+    case "bins":
+      return CLI_NAMESPACE_USAGES.bins;
+    case "hook":
+    case "hooks":
+      return CLI_NAMESPACE_USAGES.hooks;
+    case "test":
+    case "tests":
+      return CLI_NAMESPACE_USAGES.tests;
+    case "code":
+      return CLI_NAMESPACE_USAGES.code;
+    case "orchestrator":
+      return CLI_NAMESPACE_USAGES.orchestrator;
+    case "delegate":
+      return CLI_NAMESPACE_USAGES.delegate;
+    case "delegates":
+      return CLI_NAMESPACE_USAGES.delegates;
+    default:
+      return undefined;
+  }
+}
 
 export async function runCli(
   argv: string[],
@@ -262,6 +330,12 @@ export async function runCli(
 
   if (first === "--version" || first === "-v" || first === "version") {
     writeLine(io.stdout, getVersion());
+    return 0;
+  }
+
+  const namespaceHelpUsage = getNamespaceHelpUsage(args);
+  if (namespaceHelpUsage) {
+    writeLine(io.stdout, namespaceHelpUsage);
     return 0;
   }
 
@@ -683,6 +757,11 @@ async function runGenerationCommand(args: string[], apiKey: string, io: CliIo): 
 async function runTestsCommand(args: string[], io: CliIo): Promise<number> {
   const subcommand = args[0]?.toLowerCase() ?? "list";
 
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, CLI_NAMESPACE_USAGES.tests);
+    return 0;
+  }
+
   if (subcommand === "list" || subcommand === "status") {
     writeLine(io.stdout, renderTestTargets(discoverTestTargets(io.cwd)));
     return 0;
@@ -699,12 +778,16 @@ async function runTestsCommand(args: string[], io: CliIo): Promise<number> {
     return result.ok ? 0 : 1;
   }
 
-  writeLine(io.stderr, "Usage: orx tests [list|run [target-id] [-- args...]]");
+  writeLine(io.stderr, CLI_NAMESPACE_USAGES.tests);
   return 1;
 }
 
 function runCodeCommand(args: string[], io: CliIo): number {
   const subcommand = args[0]?.toLowerCase() ?? "map";
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, CLI_NAMESPACE_USAGES.code);
+    return 0;
+  }
   if (subcommand === "map") {
     return runCodeMapCommand(args.slice(1), io);
   }
@@ -712,7 +795,7 @@ function runCodeCommand(args: string[], io: CliIo): number {
     return runCodeSymbolsCommand(args.slice(1), io);
   }
 
-  writeLine(io.stderr, "Usage: orx code [map|symbols] [query-or-path]");
+  writeLine(io.stderr, CLI_NAMESPACE_USAGES.code);
   return 1;
 }
 
@@ -732,6 +815,11 @@ function runOrchestratorCommand(args: string[], io: CliIo, delegationPolicyPath:
   const subcommand = args[0]?.toLowerCase() ?? "status";
   const emptyState = createEmptyDelegationState();
   const policy = loadDelegationExecutionPolicy({ configPath: delegationPolicyPath });
+
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, CLI_NAMESPACE_USAGES.orchestrator);
+    return 0;
+  }
 
   if (subcommand === "status" || subcommand === "plan" || subcommand === "readiness") {
     writeLine(
@@ -777,7 +865,7 @@ function runOrchestratorCommand(args: string[], io: CliIo, delegationPolicyPath:
     return 1;
   }
 
-  writeLine(io.stderr, "Usage: orx orchestrator [status|plan|openrouter <model>|clear]");
+  writeLine(io.stderr, CLI_NAMESPACE_USAGES.orchestrator);
   return 1;
 }
 
@@ -790,6 +878,11 @@ function runDelegateCommand(
   const subcommand = args[0]?.toLowerCase() ?? "status";
   const emptyState = createEmptyDelegationState();
   const policy = loadDelegationExecutionPolicy({ configPath: delegationPolicyPath });
+
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, CLI_NAMESPACE_USAGES.delegate);
+    return 0;
+  }
 
   if (subcommand === "status" || subcommand === "list") {
     writeLine(
@@ -885,7 +978,7 @@ function runDelegateCommand(
     return 1;
   }
 
-  writeLine(io.stderr, "Usage: orx delegate [status|plan [saved-team-id]|add <name> openrouter <model>|remove <name>|clear|team|policy]");
+  writeLine(io.stderr, CLI_NAMESPACE_USAGES.delegate);
   return 1;
 }
 
@@ -898,6 +991,11 @@ function runDelegatesCommand(
   const subcommand = args[0]?.toLowerCase() ?? "list";
   const emptyState = createEmptyDelegationState();
   const policy = loadDelegationExecutionPolicy({ configPath: delegationPolicyPath });
+
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, CLI_NAMESPACE_USAGES.delegates);
+    return 0;
+  }
 
   if (subcommand === "list" || subcommand === "status") {
     writeLine(
@@ -942,10 +1040,7 @@ function runDelegatesCommand(
     return runDelegationTeamCommand(args, io, delegationTeamConfigPath);
   }
 
-  writeLine(
-    io.stderr,
-    "Usage: orx delegates [list|status|plan [saved-team-id]|policy|teams|save <id> --controller <model> --delegate <name> <model>|use <id>|inspect <id>|delete <id>]",
-  );
+  writeLine(io.stderr, CLI_NAMESPACE_USAGES.delegates);
   return 1;
 }
 
@@ -1192,6 +1287,11 @@ function runConfigCommand(
 ): number {
   const subcommand = args[0]?.toLowerCase() ?? "show";
 
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, CLI_NAMESPACE_USAGES.config);
+    return 0;
+  }
+
   if (subcommand === "show" || subcommand === "status" || subcommand === "list") {
     writeLine(io.stdout, renderConfigShow(loadedConfig, { cwd: io.cwd, env }));
     return 0;
@@ -1238,7 +1338,7 @@ function runConfigCommand(
     }
   }
 
-  writeLine(io.stderr, "Usage: orx config [show|path|init|set <key> <value> [--user|--local]]");
+  writeLine(io.stderr, CLI_NAMESPACE_USAGES.config);
   return 1;
 }
 
@@ -1256,7 +1356,7 @@ function runOpenRouterAuthCommand(
   io: CliIo,
   env: NodeJS.ProcessEnv,
 ): number {
-  const usage = "Usage: orx auth [status|setup|env|init|env-file]";
+  const usage = CLI_NAMESPACE_USAGES.auth;
   const subcommand = args[0]?.toLowerCase() ?? "status";
 
   if (subcommand === "--help" || subcommand === "-h" || subcommand === "help") {
@@ -1400,6 +1500,11 @@ function runInitCommand(
 function runHistoryCommand(args: string[], io: CliIo, historyPath: string): number {
   const subcommand = args[0]?.toLowerCase();
 
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, CLI_NAMESPACE_USAGES.history);
+    return 0;
+  }
+
   try {
     if (subcommand === "clear") {
       if (args.length !== 1) {
@@ -1440,6 +1545,11 @@ function runProfileCommand(
 ): number {
   const subcommand = args[0]?.toLowerCase() ?? "list";
   const profileId = args[1];
+
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, CLI_NAMESPACE_USAGES.profile);
+    return 0;
+  }
 
   if (subcommand === "list" || subcommand === "status") {
     writeLine(
@@ -1532,10 +1642,7 @@ function runProfileCommand(
     return 0;
   }
 
-  writeLine(
-    io.stderr,
-    "Usage: orx profile [list|save <id> [options]|use <id>|inspect <id>|delete <id>]",
-  );
+  writeLine(io.stderr, CLI_NAMESPACE_USAGES.profile);
   return 1;
 }
 
@@ -1563,6 +1670,11 @@ async function runPluginsCommand(
 ): Promise<number> {
   const subcommand = args[0]?.toLowerCase() ?? "list";
   const pluginId = args[1];
+
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, CLI_NAMESPACE_USAGES.plugins);
+    return 0;
+  }
 
   if (subcommand === "list" || subcommand === "status") {
     writeLine(
@@ -1717,10 +1829,7 @@ async function runPluginsCommand(
     }
   }
 
-  writeLine(
-    io.stderr,
-    "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-catalog-id>|install <manifest-path-or-catalog-id>|enable <id>|disable <id>]",
-  );
+  writeLine(io.stderr, CLI_NAMESPACE_USAGES.plugins);
   return 1;
 }
 
@@ -1884,6 +1993,11 @@ async function runMcpCommand(
     profileCatalogPath: mcpProfileCatalogPath,
     pluginRegistryPath,
   };
+
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, CLI_NAMESPACE_USAGES.mcp);
+    return 0;
+  }
 
   if (subcommand === "list" || subcommand === "status") {
     const summary = getMcpStatusSummary(registryOptions);
@@ -2691,10 +2805,7 @@ async function runMcpCommand(
     }
   }
 
-  writeLine(
-    io.stderr,
-    "Usage: orx mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
-  );
+  writeLine(io.stderr, CLI_NAMESPACE_USAGES.mcp);
   return 1;
 }
 
@@ -3032,6 +3143,11 @@ async function runBinsCommand(
   const subcommand = args[0]?.toLowerCase() ?? "list";
   const binId = args[1];
 
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, CLI_NAMESPACE_USAGES.bins);
+    return 0;
+  }
+
   if (subcommand === "list" || subcommand === "status") {
     writeLine(
       io.stdout,
@@ -3117,7 +3233,7 @@ async function runBinsCommand(
     }
   }
 
-  writeLine(io.stderr, "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]");
+  writeLine(io.stderr, CLI_NAMESPACE_USAGES.bins);
   return 1;
 }
 
@@ -3131,6 +3247,11 @@ async function runHooksCommand(
 ): Promise<number> {
   const subcommand = args[0]?.toLowerCase() ?? "list";
   const hookId = args[1];
+
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, CLI_NAMESPACE_USAGES.hooks);
+    return 0;
+  }
 
   if (subcommand === "list" || subcommand === "status") {
     writeLine(
@@ -3217,7 +3338,7 @@ async function runHooksCommand(
     }
   }
 
-  writeLine(io.stderr, "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]");
+  writeLine(io.stderr, CLI_NAMESPACE_USAGES.hooks);
   return 1;
 }
 

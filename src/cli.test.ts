@@ -223,6 +223,52 @@ test("help, version, and status work without an API key", async () => {
   }
 });
 
+test("namespace help exits successfully without loading config", async () => {
+  const cwd = createTempDir();
+  const brokenConfigPath = join(cwd, "broken-config.toml");
+  writeFileSync(
+    brokenConfigPath,
+    'api_key = "sk-or-secret-should-not-render"\nthis is not valid toml\n',
+  );
+
+  try {
+    const env = { ORX_CONFIG_PATH: brokenConfigPath };
+    const commands: Array<{ args: string[]; usage: RegExp }> = [
+      { args: ["auth"], usage: /Usage: orx auth/ },
+      { args: ["config"], usage: /Usage: orx config/ },
+      { args: ["profile"], usage: /Usage: orx profile/ },
+      { args: ["profiles"], usage: /Usage: orx profile/ },
+      { args: ["history"], usage: /Usage: orx history/ },
+      { args: ["mcp"], usage: /Usage: orx mcp/ },
+      { args: ["plugins"], usage: /Usage: orx plugins/ },
+      { args: ["plugin"], usage: /Usage: orx plugins/ },
+      { args: ["bins"], usage: /Usage: orx bins/ },
+      { args: ["bin"], usage: /Usage: orx bins/ },
+      { args: ["hooks"], usage: /Usage: orx hooks/ },
+      { args: ["hook"], usage: /Usage: orx hooks/ },
+      { args: ["tests"], usage: /Usage: orx tests/ },
+      { args: ["test"], usage: /Usage: orx tests/ },
+      { args: ["code"], usage: /Usage: orx code/ },
+      { args: ["orchestrator"], usage: /Usage: orx orchestrator/ },
+      { args: ["delegate"], usage: /Usage: orx delegate/ },
+      { args: ["delegates"], usage: /Usage: orx delegates/ },
+    ];
+
+    for (const { args, usage } of commands) {
+      for (const helpArg of ["help", "--help", "-h"]) {
+        const help = createIo({ cwd });
+        const label = `${args.join(" ")} ${helpArg}`;
+        assert.equal(await runCli(["node", "cli", ...args, helpArg], env, help.io), 0, label);
+        assert.match(help.stdout(), usage, label);
+        assert.doesNotMatch(help.stdout(), /sk-or-secret|Unable to load config/, label);
+        assert.equal(help.stderr(), "", label);
+      }
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("cli init creates a no-secret starter config and is idempotent", async () => {
   const cwd = createTempDir();
   const configPath = join(cwd, "user", "config.toml");

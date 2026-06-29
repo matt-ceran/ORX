@@ -10,6 +10,7 @@ Urgent UX recovery:
 
 Completed:
 
+- Add CLI namespace help polish: `orx <namespace> help|--help|-h` now exits 0 and prints usage for auth, config, profiles, history, MCP, plugins, bins, hooks, tests, code, and delegation namespaces, including common aliases, before config loading so malformed configs cannot block help.
 - Add wide TTY provider/model badge polish: exact `provider/model` ids render as separate provider/model badges when there is room, OpenRouter routing shortcuts render as compact `route auto` / `route fusion`, narrow terminals keep a single compact model badge, and plain/config/request surfaces keep full model ids.
 - Add durable local TTY prompt history/search: private `~/.orx/history.json` storage with `ORX_CHAT_HISTORY_PATH`, readline preload for single-line prompt recall, prompt-only recording that skips slash commands and secret-like input, `orx history [search|clear]`, `/history [search|clear]`, private modes, and symlink-parent refusal.
 - Add inline profile-save customization: `orx profile save <id>` and `/profile save <id>` can save non-secret snapshot overrides for model, mode, Fusion preset, theme, approval policy, and sandbox mode without mutating active config/session or storing API keys.
