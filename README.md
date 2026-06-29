@@ -323,7 +323,7 @@ Start an interactive chat session with:
 OPENROUTER_API_KEY=... npm run dev -- chat
 ```
 
-The chat UI keeps in-session message history for the current process, streams assistant text as it arrives, and uses a compact TTY status/composer with plain script-safe fallback. End a line with an unescaped `\` to continue a multiline prompt; ORX submits the collected lines as one user message. Supported slash commands:
+The chat UI keeps in-session message history for the current process, streams assistant text as it arrives, and uses a compact TTY status/composer with plain script-safe fallback. In TTY status, OpenRouter routing shortcuts appear as compact `route auto` / `route fusion` badges, and wide exact `provider/model` ids split into provider/model badges while plain and non-TTY output keep full ids. End a line with an unescaped `\` to continue a multiline prompt; ORX submits the collected lines as one user message. Supported slash commands:
 
 ```text
 /help

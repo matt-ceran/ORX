@@ -43,7 +43,7 @@ test("tty screen renders a wide bottom status notch with compact meters", () => 
     renderOptions: { color: false },
   });
 
-  assert.match(output, /^╭─ orx  model anthropic\/claude-sonnet-4\.5  mode exact/);
+  assert.match(output, /^╭─ orx  provider anthropic  model claude-sonnet-4\.5  mode exact/);
   assert.match(output, /ctx \[[#-]{8}\] \d+\.\d% approx/);
   assert.match(output, /cost \$0\.000700 meta 2\/3/);
   assert.match(output, /credits \[##------\] 25\.0% rem \$3\.000000/);
@@ -144,11 +144,91 @@ test("tty screen renders assistant and tool activity without widening the notch"
   });
 
   assert.match(assistant, /work ⠋ assistant/);
-  assert.match(assistant, /model auto/);
+  assert.match(assistant, /route auto/);
   assert.doesNotMatch(assistant, /model openrouter\/auto/);
   assert.match(tool, /work ⠸ tool re/);
   assertLinesFit(assistant, 96);
   assertLinesFit(tool, 52);
+});
+
+test("tty screen splits exact providers while keeping OpenRouter routes compact", () => {
+  const exact = renderTtyStatusNotch({
+    cwd: "/tmp/orx",
+    model: "openai/gpt-4.1",
+    mode: "exact",
+    permissions: {
+      approvalPolicy: "never",
+      sandboxMode: "danger-full-access",
+    },
+    messages: [],
+    costMeterState: {
+      costedTurnCount: 0,
+      uncostedTurnCount: 0,
+    },
+    width: 120,
+    renderOptions: { color: false },
+  });
+  const fusion = renderTtyStatusNotch({
+    cwd: "/tmp/orx",
+    model: "openrouter/fusion",
+    mode: "fusion",
+    permissions: {
+      approvalPolicy: "never",
+      sandboxMode: "danger-full-access",
+    },
+    messages: [],
+    costMeterState: {
+      costedTurnCount: 0,
+      uncostedTurnCount: 0,
+    },
+    width: 120,
+    renderOptions: { color: false },
+  });
+
+  assert.match(exact, /provider openai  model gpt-4\.1  mode exact/);
+  assert.doesNotMatch(exact, /model openai\/gpt-4\.1/);
+  assert.match(fusion, /route fusion  mode fusion/);
+  assert.doesNotMatch(fusion, /model openrouter\/fusion/);
+});
+
+test("tty screen keeps exact models compact near the wide layout threshold", () => {
+  for (const width of [72, 80, 104, 120, 140]) {
+    const output = renderTtyStatusNotch({
+      cwd: "/Users/draingang/Documents/ORX",
+      model: "openai/gpt-4.1",
+      mode: "exact",
+      permissions: {
+        approvalPolicy: "never",
+        sandboxMode: "danger-full-access",
+      },
+      messages: [{ role: "user", content: "hello" }],
+      contextBudget: {
+        maxBytes: 1_000,
+        maxMessages: 8,
+      },
+      costMeterState: {
+        latestTurnCost: 0.0002,
+        knownSessionCost: 0.0007,
+        costedTurnCount: 2,
+        uncostedTurnCount: 1,
+      },
+      latestCredits: {
+        totalCredits: 4,
+        totalUsage: 1,
+        remainingCredits: 3,
+        percentUsed: 25,
+      },
+      width,
+      renderOptions: { color: false },
+    });
+
+    assert.match(output, /model openai\/gpt-4\.1/);
+    assert.doesNotMatch(output, /provider openai  model gpt-4\.1/);
+    assert.match(output, /ctx \[[#-]{8}\]/);
+    assert.match(output, /cost \$0\.000700/);
+    assert.match(output, /credits \[##------\]/);
+    assertLinesFit(output, width);
+  }
 });
 
 test("tty screen sanitizes activity labels without adding status lines", () => {

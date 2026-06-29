@@ -48,7 +48,7 @@ Current MVP:
 - `orx chat` uses a readline-based terminal loop.
 - TTY chat uses a compact bottom status notch and `orx ›` composer instead of the older long header/footer. Non-TTY and `NO_COLOR=1` keep the plain `orx>` line-oriented fallback.
 - The status notch shows cwd, mode, model, permissions, session id, local approximate context, OpenRouter metadata cost, and account credits after `/credits` has succeeded in the current process.
-- The TTY model badge uses compact labels for OpenRouter routing shortcuts: `openrouter/auto` renders as `auto`, and `openrouter/fusion` renders as `fusion`. Full ids remain visible in plain status and request/config surfaces.
+- The TTY model badge uses compact route labels for OpenRouter routing shortcuts: `openrouter/auto` renders as `route auto`, and `openrouter/fusion` renders as `route fusion`. On wide TTY layouts exact `provider/model` ids render as separate `provider` and `model` badges; narrow layouts keep a single compact model badge. Full ids remain visible in plain status and request/config surfaces.
 - TTY render helpers support `default`, `mono`, and `vivid` themes. Theme can be set in config as `theme = "default" | "mono" | "vivid"`, overridden with `ORX_TTY_THEME`/`ORX_THEME`, or changed in chat with `/theme [default|mono|vivid]`. `NO_COLOR=1` and non-TTY output still force plain text.
 - Saved profile controls persist named local config snapshots outside repos at `~/.orx/profiles.json`. Use `orx profile ...`, global `orx --profile <id>`, or chat `/profile [list|save|use|inspect|delete]` to manage/apply them. Profiles do not store API keys or enable MCP/plugin executable surfaces.
 - Chat config controls mirror the safe CLI config surface through `/config show|path|set`. They render redacted config/path state, edit only supported non-secret keys, update the active chat snapshot after successful edits, and keep API keys/manual secret storage out of slash arguments.
@@ -71,7 +71,7 @@ bottom status notch: model | mode | context | cost | credits | permissions
 bottom composer: orx › current input
 ```
 
-Next TTY polish should focus on any remaining provider badge polish and optional future raw-mode editing only if it can preserve the current script-safe fallback.
+Next TTY polish should focus only on optional future raw-mode editing if it can preserve the current script-safe fallback.
 
 ## Slash Commands
 

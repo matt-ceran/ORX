@@ -142,7 +142,7 @@ Orchestration slash commands are chat-session delegation controls. `/orchestrato
 
 `/status` now includes local approximate context and OpenRouter metadata cost meters. `/credits` and `orx credits` now include a live OpenRouter credits usage meter when the credits endpoint returns usable fields. Set `NO_COLOR=1` to force plain output.
 
-TTY chat uses compact model badges in the bottom status notch for OpenRouter routing shortcuts: `openrouter/auto` appears as `model auto` and `openrouter/fusion` appears as `model fusion`. Plain status and non-TTY output keep the full configured model id.
+TTY chat uses compact route/model badges in the bottom status notch. OpenRouter routing shortcuts appear as `route auto` and `route fusion`; wide exact `provider/model` ids split into provider/model badges, while narrow TTY, plain status, and non-TTY output keep compact/full configured model ids as appropriate.
 
 `/status` and `orx status` include the active theme, active profile, and saved profile count. TTY status/composer output, tool summaries, `/credits`, `/commands`, `/palette`, CLI `credits`, and one-shot `ask` tool summaries all use the active theme when color is enabled.
 

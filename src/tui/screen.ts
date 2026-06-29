@@ -47,6 +47,8 @@ const DEFAULT_SCREEN_WIDTH = 80;
 const MIN_SCREEN_WIDTH = 20;
 const MAX_SCREEN_WIDTH = 220;
 const WIDE_LAYOUT_WIDTH = 72;
+const SPLIT_PROVIDER_MODEL_WIDTH = 104;
+const INLINE_CREDITS_WIDTH = 152;
 const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const CONTROL_PATTERN = /[\x00-\x1F\x7F]/g;
 const ACTIVITY_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
@@ -77,7 +79,9 @@ export function renderTtyStatusNotch(state: TtyStatusComposerState): string {
   const renderer = createTerminalRenderer(state.renderOptions);
   const contextState = getContextState(state.messages, state.contextBudget);
   const activity = formatActivity(state.activity, renderer);
-  const model = keyValue("model", compactModelLabel(state.model), renderer, "accent");
+  const splitProviderModel =
+    width >= (state.latestCredits ? INLINE_CREDITS_WIDTH : SPLIT_PROVIDER_MODEL_WIDTH);
+  const modelBadges = formatModelBadges(state.model, renderer, splitProviderModel);
   const mode = keyValue("mode", state.mode, renderer, "success");
   const context = keyValue("ctx", formatNotchContext(contextState, renderer, width), renderer);
   const cost = keyValue("cost", formatNotchCost(state.costMeterState, renderer), renderer);
@@ -93,15 +97,28 @@ export function renderTtyStatusNotch(state: TtyStatusComposerState): string {
   );
   const session = keyValue("session", compactSessionId(state.sessionId), renderer);
 
+  if (credits && width < INLINE_CREDITS_WIDTH) {
+    return [
+      fitStatusLine("╭─ ", [renderer.bold("orx"), activity, ...modelBadges, mode], width),
+      fitStatusLine("│  ", [context, cost], width),
+      fitStatusLine("│  ", [credits], width),
+      fitStatusLine("╰─ ", [cwd, permissions, session], width),
+    ].join("\n");
+  }
+
   if (width >= WIDE_LAYOUT_WIDTH) {
     return [
-      fitStatusLine("╭─ ", [renderer.bold("orx"), activity, model, mode, context, cost, credits], width),
+      fitStatusLine(
+        "╭─ ",
+        [renderer.bold("orx"), activity, ...modelBadges, mode, context, cost, credits],
+        width,
+      ),
       fitStatusLine("╰─ ", [cwd, permissions, session], width),
     ].join("\n");
   }
 
   return [
-    fitStatusLine("╭─ ", [renderer.bold("orx"), activity, model, mode], width),
+    fitStatusLine("╭─ ", [renderer.bold("orx"), activity, ...modelBadges, mode], width),
     fitStatusLine("│  ", [context, cost, credits], width),
     fitStatusLine("╰─ ", [cwd, permissions, session], width),
   ].join("\n");
@@ -204,30 +221,37 @@ function compactActivityDetail(activity: TtyActivityState): string {
     .slice(0, 32);
 }
 
-function compactModelLabel(model: string): string {
+function formatModelBadges(
+  model: string,
+  renderer: TerminalRenderer,
+  splitProvider: boolean,
+): string[] {
   const clean = model
     .replace(ANSI_PATTERN, "")
     .replace(CONTROL_PATTERN, " ")
     .replace(/\s+/g, " ")
     .trim();
   if (!clean) {
-    return "unknown";
+    return [keyValue("model", "unknown", renderer, "accent")];
   }
 
   if (clean === "openrouter/auto") {
-    return "auto";
+    return [keyValue("route", "auto", renderer, "accent")];
   }
 
   if (clean === "openrouter/fusion") {
-    return "fusion";
+    return [keyValue("route", "fusion", renderer, "accent")];
   }
 
   const [provider, ...modelParts] = clean.split("/");
-  if (!provider || modelParts.length === 0) {
-    return clean;
+  if (!provider || modelParts.length === 0 || !splitProvider) {
+    return [keyValue("model", clean, renderer, "accent")];
   }
 
-  return `${provider}/${modelParts.join("/")}`;
+  return [
+    keyValue("provider", provider, renderer, "accent"),
+    keyValue("model", modelParts.join("/"), renderer, "accent"),
+  ];
 }
 
 function normalizeActivityFrame(frame: number | undefined): number {

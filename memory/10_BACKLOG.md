@@ -6,10 +6,11 @@ Last updated: 2026-06-29
 
 Urgent UX recovery:
 
-- Continue TTY polish after durable prompt history: any remaining provider badge polish and optional future raw-mode editing only if it preserves script-safe fallback behavior.
+- Continue TTY polish only if a future raw-mode editor can preserve script-safe fallback behavior.
 
 Completed:
 
+- Add wide TTY provider/model badge polish: exact `provider/model` ids render as separate provider/model badges when there is room, OpenRouter routing shortcuts render as compact `route auto` / `route fusion`, narrow terminals keep a single compact model badge, and plain/config/request surfaces keep full model ids.
 - Add durable local TTY prompt history/search: private `~/.orx/history.json` storage with `ORX_CHAT_HISTORY_PATH`, readline preload for single-line prompt recall, prompt-only recording that skips slash commands and secret-like input, `orx history [search|clear]`, `/history [search|clear]`, private modes, and symlink-parent refusal.
 - Add saved local profile controls: private `~/.orx/profiles.json` registry with `ORX_PROFILE_CONFIG_PATH`, no API-key persistence, `orx profile list|save|use|inspect|delete`, global `orx --profile <id>`, `/profile [list|save|use|inspect|delete]`, `active_profile`/`profile_count` status visibility, session snapshot persistence, and stale active-profile clearing on manual routing/theme changes.
 - Add chat slash parity for safe config inspection/editing: `/config show|path|set`, shared redacted config formatting, `ORX_CONFIG_PATH` scope behavior, active-chat config snapshot updates, and secret/control-character unknown-key redaction.
@@ -195,7 +196,7 @@ Next:
 - Completed Phase 12 UX Recovery Slice 2 no-arg launch: `orx` starts chat from cwd, explicit help remains `orx help`/`--help`/`-h`, no-key no-arg fails like `orx chat`, and cwd is persisted in session JSON.
 - Completed Phase 12 UX Recovery Slice 1 model resolver: catalog-backed `/model <id-or-search>`, safe friendly-name resolution, bounded multiple-match choices, explicit slug fallback on catalog outage, and redacted live metadata errors.
 - Completed Phase 12 Slice 1 CLI polish foundation: internal terminal render helpers, ASCII-safe context/cost/credits meters, TTY-only color styling, `/status` context/cost meters, `/credits` usage meter, chat footer meters, and focused render/status/credits/chat tests.
-- Add next Phase 12 UI polish slices: richer multiline/input ergonomics and compact provider badge polish.
+- Add next Phase 12 UI polish slices only if raw-mode input editing can be added without weakening non-TTY/script fallback.
 - Completed Phase 12 saved profile controls: local profile registry, CLI/global profile application, chat `/profile`, status/session visibility, and no-key persisted snapshots.
 - Completed Phase 12 TTY theme controls: config/env/slash theme selection with default, mono, and vivid render themes across status, composer, tool summaries, credits, palette, CLI status/credits/ask, and session snapshots.
 - Completed Phase 12 package/global install hardening: npm `prepare`, temp-prefix `verify:global-install`, symlink-aware bin entrypoint detection, and README source-global install docs.

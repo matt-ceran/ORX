@@ -20,7 +20,7 @@ Urgent UX recovery additions from user testing:
 - TTY command discovery now has `/commands [query]` / `/palette [query]`, a compact TTY palette, and Tab completion for slash command names and aliases.
 - Tab completion now also covers deterministic slash subcommands/arguments for `/mode`, `/fusion`, `/web`, `/mcp`, `/plugins`, `/plugin`, `/bins`, `/hooks`, `/skills`, `/orchestrator`, `/delegate`, `/resume`, `/help`, and `/commands`.
 - Line-based multiline prompt continuation is implemented: a trailing unescaped `\` keeps collecting input, TTY mode shows an `orx …` continuation composer, non-TTY mode shows `...>`, and the collected lines are submitted as one user message.
-- The TTY bottom status notch now uses compact model badges for OpenRouter routing shortcuts, rendering `openrouter/auto` as `auto` and `openrouter/fusion` as `fusion`; full model ids remain unchanged in config, request construction, plain status, and non-TTY output.
+- The TTY bottom status notch now uses compact route badges for OpenRouter routing shortcuts, rendering `openrouter/auto` as `route auto` and `openrouter/fusion` as `route fusion`. Wide TTY layouts split exact `provider/model` ids into separate provider/model badges, while narrow TTY layouts keep a single compact model badge; full model ids remain unchanged in config, request construction, plain status, and non-TTY output.
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
 - Durable TTY prompt history is implemented through private `~/.orx/history.json`, `ORX_CHAT_HISTORY_PATH`, readline preload, `orx history [search|clear]`, and `/history [search|clear]`; it stores sanitized user prompts only and skips slash commands/secret-like input.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save|use|inspect|delete]`.
@@ -91,6 +91,15 @@ Current files:
 
 ## Latest Work
 
+Added wide TTY provider/model badge polish:
+
+- Exact `provider/model` ids in the bottom TTY status notch now render as separate `provider <provider>` and `model <model>` badges when the terminal is wide enough.
+- OpenRouter routing shortcuts now render as `route auto` and `route fusion` in TTY status instead of looking like exact model ids.
+- Narrow TTY status keeps one compact model badge so activity labels, context, cost, credits, permissions, and session markers remain width-safe.
+- Full model ids remain unchanged in config, request construction, plain status, non-TTY output, and OpenRouter metadata summaries.
+- Verification: `npm run build && node --test dist/tui/screen.test.js dist/tui/chat.test.js` with 38 focused tests, `npm run typecheck`, `git diff --check`, full `npm test` with 486 tests, `npm run verify:global-install`, built TTY badge smoke, built `orx status` smoke, and independent verifier recheck with only stale-memory-count feedback fixed.
+- Next likely work remains provider-specific OAuth/token helper polish beyond bearer storage, real-key policy-enabled delegation dogfood when `OPENROUTER_API_KEY` is available, broader provider/plugin preset polish, optional raw-mode editing only if script-safe, and release hardening.
+
 Added durable local TTY prompt history/search:
 
 - Added `src/tui/history.ts` for private prompt history storage under `~/.orx/history.json` or `ORX_CHAT_HISTORY_PATH`, with `0700` parent and `0600` file modes, bounded newest-first entries, deduplication, single-line readline preload, and nested symlink-parent refusal while allowing normal macOS system temp roots.
@@ -98,7 +107,7 @@ Added durable local TTY prompt history/search:
 - Added `orx history`, `orx history search <query>`, `orx history clear`, `/history`, `/history search <query>`, and `/history clear` as no-key/no-network/no-subprocess operator surfaces over the same local file. Prompt history is not model-visible context and is not transcript indexing.
 - Updated README, command memory, tooling policy, backlog, and decisions for the prompt-history privacy boundary.
 - Verification: `npm run typecheck`, `git diff --check`, focused compiled history/chat/CLI/slash tests with 168 tests after verifier fixes, full `npm test` with 484 tests, `npm run verify:global-install`, isolated built-CLI history dogfood, and independent verifier recheck with no findings. Verifier-found issues around cwd/session metadata, stale README slash-list docs, and non-TTY/no-metadata regression coverage are fixed.
-- Next likely work remains provider-specific OAuth/token helper polish beyond bearer storage, real-key policy-enabled delegation dogfood when `OPENROUTER_API_KEY` is available, broader provider/plugin preset polish, optional final TTY raw-mode editing, and release hardening.
+- Next likely work remains provider-specific OAuth/token helper polish beyond bearer storage, real-key policy-enabled delegation dogfood when `OPENROUTER_API_KEY` is available, broader provider/plugin preset polish, optional raw-mode editing only if script-safe, and release hardening.
 
 Added MCP macOS Keychain bearer support:
 
@@ -408,7 +417,7 @@ Implemented line-based multiline prompt continuation:
 - TTY mode renders a continuation `orx …` composer; non-TTY and `NO_COLOR` retain script-safe line-oriented behavior with a plain `...>` continuation prompt.
 - Multiline user scrollback indents continuation lines under the first `you:` line, and slash commands remain single-line-only dispatches.
 - Verification: `npm run typecheck`, `npm run build`, `git diff --check`, focused TUI/CLI build-backed tests, focused source TUI tests with 33 tests, full `npm test` with 380 tests through the independent verifier, and verifier ad hoc probes for escaped backslashes, multiline slash input, interior blank lines, and TTY `NO_COLOR` continuation fallback.
-- That slice's next likely history/search ergonomics work is now complete; remaining TTY polish is provider badge polish or optional future raw-mode editing only with script-safe fallback preserved.
+- That slice's next likely history/search ergonomics work is now complete; provider badge polish is now complete; remaining TTY polish is optional future raw-mode editing only with script-safe fallback preserved.
 
 Implemented framework-aware test metadata:
 
@@ -648,7 +657,7 @@ Implemented and verified Phase 12 TTY input ergonomics: deterministic slash argu
 
 Implemented and verified Phase 12 compact TTY model badge polish:
 
-- The TTY bottom status notch now shortens `openrouter/auto` to `model auto` and `openrouter/fusion` to `model fusion`.
+- The TTY bottom status notch now shortens `openrouter/auto` to `route auto` and `openrouter/fusion` to `route fusion`, while wide exact model ids split into `provider` and `model` badges.
 - This is display-only TTY polish; active config, OpenRouter request model ids, plain `/status`, and non-TTY/footer output still use the full model id.
 - Added focused screen/chat assertions for the compact `auto` badge and verifier manually checked the `fusion` badge path.
 - Verifier reported no findings after typecheck, focused TUI/slash tests, diff check, and a manual render probe. Main-session `npm run typecheck`, `npm test` with 261 tests, full `git diff --check`, and `npm run dev -- status` pass.
