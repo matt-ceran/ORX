@@ -25,6 +25,7 @@ Urgent UX recovery additions from user testing:
 - Durable TTY prompt history is implemented through private `~/.orx/history.json`, `ORX_CHAT_HISTORY_PATH`, readline preload, `orx history [search|clear]`, and `/history [search|clear]`; it stores sanitized user prompts only and skips slash commands/secret-like input.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save <id> [options]|use|inspect|delete]`. `profile save` captures the current config by default and can save inline non-secret overrides for model, mode, Fusion preset, theme, approval policy, and sandbox mode without mutating active config or storing API keys.
 - CLI namespace help is implemented for `auth`, `config`, `profile`/`profiles`, `history`, `mcp`, `plugins`/`plugin`, `bins`/`bin`, `hooks`/`hook`, `tests`/`test`, `code`, `orchestrator`, `delegate`, and `delegates`. `orx <namespace> help|--help|-h` exits 0, prints usage on stdout, leaves stderr empty, and runs before config loading so malformed configs cannot block help.
+- API-key command flag help is implemented for `ask`, `chat`, `models`, `credits`, and `generation`. `orx <api-command> --help|-h` exits 0 before config/profile loading, while bare prompt/filter values such as `orx ask help` remain normal command input.
 - First-run config initialization is implemented through `orx init`, `orx setup`, and `orx config init`. It creates private no-secret starter config files for user or local scope, leaves existing regular config files unchanged, refuses symlink config paths, and tells users to provide credentials through `OPENROUTER_API_KEY` or deliberate manual editing.
 - Core OpenRouter auth ergonomics are implemented through `orx auth`, `orx auth status`, `orx auth setup`, `orx auth env`, `orx auth init`, `orx auth env-file`, and matching `/auth status|setup|env|init|env-file` chat commands. They report API-key readiness without values, print only placeholder exports, create private commented env templates under `~/.orx/auth` or `ORX_AUTH_ENV_DIR`, avoid automatic env-file loading, and refuse auth env-file symlink paths.
 - Safe config inspection/editing is available in both CLI and chat through `orx config show|path|set` and `/config [show|path|set]`. It redacts API-key values, refuses API-key/secret-like arguments, honors `ORX_CONFIG_PATH`, writes private config files through the shared guards, updates the active chat snapshot for edited keys, and keeps `orx config path` usable as a sanitized recovery surface when config parsing fails.
@@ -96,6 +97,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added API-key command flag help preflight:
+
+- Clean first-run dogfooding showed `orx ask --help` fell through to API-key validation and printed missing-key guidance instead of command usage.
+- `orx ask --help|-h`, `orx chat --help|-h`, `orx models --help|-h`, `orx credits --help|-h`, and `orx generation --help|-h` now render usage before config/profile loading, so malformed config files and missing saved profiles cannot block help.
+- Bare command values are preserved as input: `orx ask help` still follows the normal one-shot prompt path instead of being hijacked as help.
+- Verification: `npm run typecheck`, `npm run build`, build-backed `node --test dist/cli.test.js` with 52 tests, built CLI dogfood for malformed config plus `--profile missing ask --help`, full `npm test` with 506 tests, `npm run verify:global-install`, `git diff --check`, and independent verifier review with no findings.
+- Next likely work is another clean first-run dogfood pass focused on MCP setup comfort, plugin authoring docs/templates, code-intelligence depth, or release-hardening polish.
 
 Refined MCP planner model-grant guidance:
 

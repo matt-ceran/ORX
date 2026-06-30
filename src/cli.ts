@@ -253,9 +253,21 @@ const CLI_NAMESPACE_USAGES = {
     "Usage: orx delegates [list|status|plan [saved-team-id]|policy|teams|save <id> --controller <model> --delegate <name> <model>|use <id>|inspect <id>|delete <id>]",
 } as const;
 
+const CLI_API_COMMAND_USAGES = {
+  ask: 'Usage: orx ask [--model <slug>] [--mode <auto|fusion|exact>] [--fusion <preset>] [--mcp-tools] "prompt"',
+  chat: "Usage: orx chat",
+  models: "Usage: orx models [filter]",
+  credits: "Usage: orx credits",
+  generation: "Usage: orx generation <id>",
+} as const;
+
 function isHelpToken(value: string | undefined): boolean {
   const normalized = value?.toLowerCase();
   return normalized === "help" || normalized === "--help" || normalized === "-h";
+}
+
+function isHelpFlagToken(value: string | undefined): boolean {
+  return value === "--help" || value === "-h";
 }
 
 function isNamespaceHelp(args: string[]): boolean {
@@ -305,6 +317,28 @@ function getNamespaceHelpUsage(args: string[]): string | undefined {
   }
 }
 
+function getApiCommandHelpUsage(args: string[]): string | undefined {
+  const command = args[0]?.toLowerCase();
+  if (!command || !args.slice(1).some(isHelpFlagToken)) {
+    return undefined;
+  }
+
+  switch (command) {
+    case "ask":
+      return CLI_API_COMMAND_USAGES.ask;
+    case "chat":
+      return CLI_API_COMMAND_USAGES.chat;
+    case "models":
+      return CLI_API_COMMAND_USAGES.models;
+    case "credits":
+      return CLI_API_COMMAND_USAGES.credits;
+    case "generation":
+      return CLI_API_COMMAND_USAGES.generation;
+    default:
+      return undefined;
+  }
+}
+
 export async function runCli(
   argv: string[],
   env: NodeJS.ProcessEnv = process.env,
@@ -338,6 +372,12 @@ export async function runCli(
   const namespaceHelpUsage = getNamespaceHelpUsage(args);
   if (namespaceHelpUsage) {
     writeLine(io.stdout, namespaceHelpUsage);
+    return 0;
+  }
+
+  const apiCommandHelpUsage = getApiCommandHelpUsage(args);
+  if (apiCommandHelpUsage) {
+    writeLine(io.stdout, apiCommandHelpUsage);
     return 0;
   }
 

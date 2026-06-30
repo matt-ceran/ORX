@@ -1,6 +1,6 @@
 # Commands
 
-Last updated: 2026-06-29
+Last updated: 2026-06-30
 
 ## Repository
 
@@ -45,6 +45,11 @@ Planned behavior:
 ```bash
 npm run dev -- --help
 npm run dev -- --version
+npm run dev -- ask --help
+npm run dev -- chat --help
+npm run dev -- models --help
+npm run dev -- credits --help
+npm run dev -- generation --help
 npm run dev -- mcp help
 npm run dev -- plugins --help
 npm run dev -- profile -h
@@ -103,6 +108,8 @@ If `.orx/config.toml` contains the API key, the `OPENROUTER_API_KEY=...` prefix 
 `orx auth`, `orx auth status`, `orx auth setup`, `orx auth env`, `orx auth init`, `orx auth env-file`, and matching `/auth status|setup|env|init|env-file` slash commands are no-key/no-network setup helpers for the core OpenRouter API key. Status reports whether a key is available from `OPENROUTER_API_KEY`, config, or neither without printing values, and it degrades to `config_unreadable` without leaking malformed config contents. Setup prints a placeholder shell export only. Init creates a private commented template at `~/.orx/auth/openrouter.env` or `ORX_AUTH_ENV_DIR`, with `0700` directory and `0600` file modes, no token values, no overwrite of existing files, no automatic loading, no config writes, and symlink path refusal. Edit and source the file yourself, then run `orx doctor --strict`.
 
 Namespace help is available without reading config: `orx auth help`, `orx config --help`, `orx profile -h`, `orx history help`, `orx mcp help`, `orx plugins --help`, `orx bins -h`, `orx hooks help`, `orx tests --help`, `orx code help`, `orx orchestrator help`, `orx delegate --help`, and `orx delegates -h` print usage on stdout and exit 0. Aliases such as `profiles`, `plugin`, `bin`, `hook`, and `test` render the canonical namespace usage.
+
+API-key command flag help is also available before config/profile loading: `orx ask --help`, `orx chat --help`, `orx models --help`, `orx credits --help`, and `orx generation --help` print usage on stdout and exit 0 even if the config is malformed or a global `--profile` value is missing. Bare values are still command input, so `orx ask help` remains a prompt rather than a help alias.
 
 `orx mcp plan [preset-or-profile]` and `/mcp plan [preset-or-profile]` are onboarding planners for MCP. Use them before and after `orx mcp add-preset`, `orx mcp enable`, auth setup, remote-tool import, or model grants to see the next concrete commands without installing, enabling, trusting, granting, fetching, calling, auditing, or exposing tools to the model. Existing loose MCP state file permissions may still be tightened while local state is read.
 

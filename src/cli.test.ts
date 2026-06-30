@@ -269,6 +269,58 @@ test("namespace help exits successfully without loading config", async () => {
   }
 });
 
+test("API command flag help exits successfully without loading config", async () => {
+  const cwd = createTempDir();
+  const brokenConfigPath = join(cwd, "broken-config.toml");
+  writeFileSync(
+    brokenConfigPath,
+    'api_key = "sk-or-secret-should-not-render"\nthis is not valid toml\n',
+  );
+  let fetchCalls = 0;
+  const fetch = async (): Promise<Response> => {
+    fetchCalls += 1;
+    throw new Error("help must not call fetch");
+  };
+
+  try {
+    const env = { ORX_CONFIG_PATH: brokenConfigPath };
+    const commands: Array<{ args: string[]; usage: RegExp }> = [
+      { args: ["ask", "--help"], usage: /Usage: orx ask/ },
+      { args: ["ask", "-h"], usage: /Usage: orx ask/ },
+      { args: ["chat", "--help"], usage: /Usage: orx chat/ },
+      { args: ["models", "--help"], usage: /Usage: orx models/ },
+      { args: ["credits", "--help"], usage: /Usage: orx credits/ },
+      { args: ["generation", "--help"], usage: /Usage: orx generation/ },
+    ];
+
+    for (const { args, usage } of commands) {
+      const help = createIo({ cwd, fetch });
+      const label = args.join(" ");
+      assert.equal(await runCli(["node", "cli", ...args], env, help.io), 0, label);
+      assert.match(help.stdout(), usage, label);
+      assert.doesNotMatch(help.stdout(), /sk-or-secret|Unable to load config/, label);
+      assert.equal(help.stderr(), "", label);
+    }
+
+    const profiledHelp = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(["node", "cli", "--profile", "missing", "ask", "--help"], env, profiledHelp.io),
+      0,
+    );
+    assert.match(profiledHelp.stdout(), /Usage: orx ask/);
+    assert.doesNotMatch(profiledHelp.stdout(), /missing|sk-or-secret|Unable to load config/);
+    assert.equal(profiledHelp.stderr(), "");
+
+    const askPrompt = createIo({ cwd, fetch });
+    assert.equal(await runCli(["node", "cli", "ask", "help"], {}, askPrompt.io), 1);
+    assert.equal(askPrompt.stdout(), "");
+    assert.match(askPrompt.stderr(), /OpenRouter API key not found/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("cli init creates a no-secret starter config and is idempotent", async () => {
   const cwd = createTempDir();
   const configPath = join(cwd, "user", "config.toml");
