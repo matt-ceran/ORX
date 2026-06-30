@@ -130,7 +130,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
   assert.match(output, /\/scanners \[list\|inspect <profile>\|run semgrep <path> --config <local-config-path> \[--json\]\]/);
   assert.match(output, /\/scan semgrep <path> --config <local-config-path> \[--json\]/);
-  assert.match(output, /\/diagnostics \[list\|inspect <profile>\|run <typescript\|pyright> \[--project <local-project-path>\] \[--json\]\]/);
+  assert.match(output, /\/diagnostics \[list\|inspect <profile>\|run <typescript\|pyright\|gopls> \[--project <local-project-path>\] \[--json\]\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/refs <query>/);
   assert.match(output, /\/imports \[query\]/);
@@ -333,6 +333,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/diagnostics inspect t"), [["typescript ", "typescript-language-server "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run t"), [["typescript "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run p"), [["pyright "], "p"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics run g"), [["gopls "], "g"]);
   assert.deepEqual(completeSlashCommandLine("/diag run typescript --p"), [["--project "], "--p"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/prompts a"), [["activate "], "a"]);
@@ -778,15 +779,18 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     mkdirSync(join(cwd, "node_modules", ".bin"), { recursive: true });
     writeFileSync(join(cwd, "src", "app.ts"), "const value: string = 1;\n");
     writeFileSync(join(cwd, "src", "app.py"), "value: str = 1\n");
+    writeFileSync(join(cwd, "src", "main.go"), "package main\nfunc main() {}\n");
     writeFileSync(join(cwd, "tsconfig.json"), "{\"compilerOptions\":{\"strict\":true},\"include\":[\"src\"]}\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "tsc"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "pyright"), "#!/usr/bin/env node\n");
+    writeFileSync(join(cwd, "node_modules", ".bin", "gopls"), "#!/usr/bin/env node\n");
 
     const list = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics", list.context), "continue");
     assert.match(list.stdout(), /Local diagnostics profiles/);
     assert.match(list.stdout(), /id=typescript state=runnable/);
     assert.match(list.stdout(), /id=pyright state=runnable/);
+    assert.match(list.stdout(), /id=gopls state=runnable/);
 
     const inspect = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics inspect typescript", inspect.context), "continue");
@@ -797,6 +801,12 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.equal(await handleSlashCommand("/diagnostics inspect pyright", inspectPyright.context), "continue");
     assert.match(inspectPyright.stdout(), /Local diagnostics profile: pyright/);
     assert.match(inspectPyright.stdout(), /command_shape: pyright --outputjson --project <project-file-or-directory>/);
+
+    const inspectGopls = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics inspect gopls", inspectGopls.context), "continue");
+    assert.match(inspectGopls.stdout(), /Local diagnostics profile: gopls/);
+    assert.match(inspectGopls.stdout(), /default_project: none; --project <local-go-file> is required/);
+    assert.match(inspectGopls.stdout(), /command_shape: gopls check <go-file>/);
 
     const inspectCatalogOnly = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics inspect clangd", inspectCatalogOnly.context), "continue");
@@ -809,6 +819,13 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     const tscCalls: RunProcessOptions[] = [];
     const diagnosticsRunner: DiagnosticsProcessRunner = async (options) => {
       tscCalls.push(options);
+      if (String(options.command).includes("gopls")) {
+        return mockProcessResult(options, {
+          exitCode: 1,
+          stdout: "src/main.go:7:2: undefined: missing access_token=abcd1234\n",
+          stderr: "Authorization: Bearer should-redact\n",
+        });
+      }
       if (String(options.command).includes("pyright")) {
         return mockProcessResult(options, {
           exitCode: 1,
@@ -916,6 +933,69 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
       "--project",
       "config",
     ]);
+
+    const gopls = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(await handleSlashCommand("/diagnostics run gopls --project src/main.go", gopls.context), "continue");
+    assert.equal(gopls.stdout(), "");
+    assert.match(gopls.stderr(), /Local diagnostics run/);
+    assert.match(gopls.stderr(), /profile: gopls/);
+    assert.match(gopls.stderr(), /status: failed/);
+    assert.match(gopls.stderr(), /binary_source: local_node_modules/);
+    assert.match(gopls.stderr(), /parsed_diagnostics: 1/);
+    assert.match(gopls.stderr(), /src\/main\.go:7:2 error gopls undefined: missing access_token=\[redacted\]/);
+    assert.match(gopls.stderr(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(gopls.stderr(), /abcd1234|should-redact/);
+    assert.match(tscCalls.at(-1)?.command ?? "", /node_modules\/\.bin\/gopls$/);
+    assert.deepEqual(tscCalls.at(-1)?.args, ["check", "src/main.go"]);
+    assert.equal(tscCalls.at(-1)?.shell, false);
+    assert.equal(tscCalls.at(-1)?.inheritEnv, false);
+    assert.equal(tscCalls.at(-1)?.env?.GOPROXY, "off");
+    assert.equal(tscCalls.at(-1)?.env?.GOSUMDB, "off");
+    assert.equal(tscCalls.at(-1)?.env?.GOTOOLCHAIN, "local");
+
+    const beforeGoplsInvalidCalls = tscCalls.length;
+    const goplsMissingProject = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(await handleSlashCommand("/diagnostics run gopls", goplsMissingProject.context), "continue");
+    assert.match(goplsMissingProject.stderr(), /gopls diagnostics require --project <local-go-file>/);
+    assert.equal(tscCalls.length, beforeGoplsInvalidCalls);
+
+    const goplsDirectoryProject = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(
+      await handleSlashCommand("/diagnostics run gopls --project src", goplsDirectoryProject.context),
+      "continue",
+    );
+    assert.match(goplsDirectoryProject.stderr(), /project must be a regular local \.go file/);
+    assert.equal(tscCalls.length, beforeGoplsInvalidCalls);
+
+    const pathOnlyCwd = mkdtempSync(join(tmpdir(), "orx-slash-diagnostics-path-gopls-"));
+    try {
+      writeFileSync(join(pathOnlyCwd, "main.go"), "package main\nfunc main() {}\n");
+      const pathCalls: RunProcessOptions[] = [];
+      const pathOnly = createSlashHarness({
+        cwd: pathOnlyCwd,
+        env: { PATH: "/usr/bin" },
+        diagnosticsRunner: async (options) => {
+          pathCalls.push(options);
+          if (String(options.command) === "gopls" && options.args?.join(" ") === "version") {
+            return mockProcessResult(options, { exitCode: 0, stdout: "golang.org/x/tools/gopls v0.22.0\n" });
+          }
+          return mockProcessResult(options, { exitCode: 0, stdout: "" });
+        },
+      });
+      assert.equal(
+        await handleSlashCommand("/diagnostics run gopls --project main.go", pathOnly.context),
+        "continue",
+      );
+      assert.deepEqual(pathCalls.map((call) => call.args), [
+        ["version"],
+        ["check", "main.go"],
+      ]);
+      assert.equal(pathCalls[0]?.command, "gopls");
+      assert.equal(pathCalls[1]?.command, "gopls");
+      assert.match(pathOnly.stdout(), /binary_source: path/);
+    } finally {
+      rmSync(pathOnlyCwd, { recursive: true, force: true });
+    }
 
     const beforeUnsafeCalls = tscCalls.length;
     const catalogOnly = createSlashHarness({ cwd, diagnosticsRunner });

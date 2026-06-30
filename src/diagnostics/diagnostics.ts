@@ -6,13 +6,13 @@ import { runProcess, type RunProcessOptions, type RunProcessResult } from "../to
 import type { TextTruncation } from "../tools/types.js";
 
 export const DIAGNOSTICS_USAGE =
-  "Usage: orx diagnostics [list|inspect <profile>|run <typescript|pyright> [--project <local-project-path>] [--json]]";
+  "Usage: orx diagnostics [list|inspect <profile>|run <typescript|pyright|gopls> [--project <local-project-path>] [--json]]";
 export const DIAG_USAGE =
-  "Usage: orx diag [list|inspect <profile>|run <typescript|pyright> [--project <local-project-path>] [--json]]";
+  "Usage: orx diag [list|inspect <profile>|run <typescript|pyright|gopls> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAGNOSTICS_USAGE =
-  "Usage: /diagnostics [list|inspect <profile>|run <typescript|pyright> [--project <local-project-path>] [--json]]";
+  "Usage: /diagnostics [list|inspect <profile>|run <typescript|pyright|gopls> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAG_USAGE =
-  "Usage: /diag [list|inspect <profile>|run <typescript|pyright> [--project <local-project-path>] [--json]]";
+  "Usage: /diag [list|inspect <profile>|run <typescript|pyright|gopls> [--project <local-project-path>] [--json]]";
 
 export type DiagnosticProfileId =
   | "typescript"
@@ -33,7 +33,7 @@ export interface DiagnosticProfile {
   networkBoundary: string;
 }
 
-export type RunnableDiagnosticProfileId = "typescript" | "pyright";
+export type RunnableDiagnosticProfileId = "typescript" | "pyright" | "gopls";
 
 export interface LocalDiagnosticsArgs {
   profile: RunnableDiagnosticProfileId;
@@ -153,11 +153,11 @@ const DIAGNOSTIC_PROFILES: DiagnosticProfile[] = [
   {
     id: "gopls",
     label: "gopls",
-    state: "catalog_only",
+    state: "runnable",
     binary: "gopls",
-    summary: "Catalog/readiness placeholder for future Go diagnostics integration.",
-    runSupport: "not runnable in this slice",
-    networkBoundary: "no runnable no-network/no-auth/no-write command shape is enabled yet",
+    summary: "Local Go diagnostics using an already-installed gopls binary.",
+    runSupport: "runnable only through `run gopls --project <local-go-file> [--json]`",
+    networkBoundary: "no installs, package-manager calls, MCP calls, model exposure, or Go proxy/checksum/toolchain downloads by command selection",
   },
   {
     id: "clangd",
@@ -180,14 +180,17 @@ const DIAGNOSTIC_PROFILES: DiagnosticProfile[] = [
 ];
 
 const PROFILE_IDS = new Set<DiagnosticProfileId>(DIAGNOSTIC_PROFILES.map((profile) => profile.id));
-const RUNNABLE_PROFILE_IDS = new Set<RunnableDiagnosticProfileId>(["typescript", "pyright"]);
+const RUNNABLE_PROFILE_IDS = new Set<RunnableDiagnosticProfileId>(["typescript", "pyright", "gopls"]);
 const DEFAULT_TYPESCRIPT_TIMEOUT_MS = 120_000;
 const DEFAULT_PYRIGHT_TIMEOUT_MS = 120_000;
+const DEFAULT_GOPLS_TIMEOUT_MS = 120_000;
 const DEFAULT_DIAGNOSTIC_OUTPUT_BYTES = 128 * 1024;
 const TSC_DISCOVERY_TIMEOUT_MS = 5_000;
 const PYRIGHT_DISCOVERY_TIMEOUT_MS = 5_000;
+const GOPLS_DISCOVERY_TIMEOUT_MS = 5_000;
 const TSC_DISCOVERY_BYTES = 8 * 1024;
 const PYRIGHT_DISCOVERY_BYTES = 8 * 1024;
+const GOPLS_DISCOVERY_BYTES = 8 * 1024;
 const MAX_DIAGNOSTIC_PATH_LENGTH = 4096;
 const MAX_DIAGNOSTIC_PROFILE_LENGTH = 120;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
@@ -273,6 +276,18 @@ export function renderDiagnosticProfileInspect(profile: DiagnosticProfile): stri
       "  run: orx diagnostics run pyright [--project <local-project-file-or-directory>] [--json]",
     );
   }
+  if (profile.id === "gopls") {
+    lines.push(
+      "  default_project: none; --project <local-go-file> is required",
+      "  command_shape: gopls check <go-file>",
+      "  binary_preference: cwd/node_modules/.bin/gopls before PATH gopls",
+      "  project_guard: local regular .go file under cwd; symlink realpath must remain under cwd",
+      "  rejected_projects: URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
+      "  output: bounded and redacted; --json emits ORX-owned structured JSON with parsed text diagnostics",
+      "  go_network_guard: GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local",
+      "  run: orx diagnostics run gopls --project <local-go-file> [--json]",
+    );
+  }
 
   return lines.join("\n");
 }
@@ -341,6 +356,12 @@ export function parseDiagnosticRunArgs(
   }
   const runnableProfile = profile as RunnableDiagnosticProfileId;
   const selectedProjectPath = projectPath ?? defaultProjectPathForProfile(runnableProfile);
+  if (!selectedProjectPath) {
+    return {
+      ok: false,
+      message: `${usage}\ngopls diagnostics require --project <local-go-file>; gopls check accepts file arguments.`,
+    };
+  }
   const projectError = validateProjectPathValue(selectedProjectPath, runnableProfile);
   if (projectError) {
     return { ok: false, message: `${usage}\n${projectError}` };
@@ -371,7 +392,7 @@ export async function runLocalDiagnostics(
   options: RunLocalDiagnosticsOptions,
 ): Promise<LocalDiagnosticsResult> {
   const root = resolve(options.cwd ?? process.cwd());
-  const env = createDiagnosticsEnv(options.env ?? process.env);
+  const env = createDiagnosticsEnv(options.env ?? process.env, options.profile);
   const maxBytes = options.maxBytes ?? DEFAULT_DIAGNOSTIC_OUTPUT_BYTES;
   const timeoutMs = options.timeoutMs ?? defaultTimeoutForProfile(options.profile);
   const runner = options.runner ?? runProcess;
@@ -416,9 +437,7 @@ export async function runLocalDiagnostics(
   const stdout = sanitizeProcessOutput(result.stdout);
   const stderr = sanitizeProcessOutput(result.stderr);
   const status = classifyDiagnosticsRun(result);
-  const diagnostics = options.profile === "typescript"
-    ? parseTypeScriptDiagnostics(`${stdout}\n${stderr}`)
-    : parsePyrightDiagnostics(stdout, root);
+  const diagnostics = parseDiagnosticsForProfile(options.profile, stdout, stderr, root);
 
   return {
     ok: status === "ok",
@@ -593,6 +612,14 @@ function resolveProjectPath(
   }
 
   const relativePath = relative(cwd, resolved).split(/[\\/]/g).join("/") || ".";
+  if (profile === "gopls") {
+    if (!safeIsFile(realResolved)) {
+      return { ok: false, message: "project must be a regular local .go file." };
+    }
+    if (!relativePath.toLowerCase().endsWith(".go")) {
+      return { ok: false, message: "project must be a local .go file." };
+    }
+  }
   if (isFlagLikeValue(relativePath)) {
     return { ok: false, message: "project must not resolve to a dash-prefixed operand." };
   }
@@ -623,15 +650,16 @@ async function resolveDiagnosticCommand(
   }
 
   const binary = diagnosticBinaryForProfile(profile);
+  const discoveryArgs = diagnosticDiscoveryArgsForProfile(profile);
   const pathResult = await runner({
     command: binary,
-    args: ["--version"],
+    args: discoveryArgs,
     cwd,
     env,
     inheritEnv: false,
     shell: false,
-    timeoutMs: profile === "typescript" ? TSC_DISCOVERY_TIMEOUT_MS : PYRIGHT_DISCOVERY_TIMEOUT_MS,
-    maxBytes: profile === "typescript" ? TSC_DISCOVERY_BYTES : PYRIGHT_DISCOVERY_BYTES,
+    timeoutMs: discoveryTimeoutForProfile(profile),
+    maxBytes: discoveryBytesForProfile(profile),
   });
   if (pathResult.exitCode === 0) {
     return { ok: true, command: binary, displayCommand: binary, source: "path" };
@@ -641,7 +669,7 @@ async function resolveDiagnosticCommand(
   }
   return {
     ok: false,
-    message: `${binary} was found but did not respond to --version successfully. ${diagnosticMissingMessage(profile)}`,
+    message: `${binary} was found but did not respond to ${formatCommandLine(binary, discoveryArgs)} successfully. ${diagnosticMissingMessage(profile)}`,
   };
 }
 
@@ -685,9 +713,13 @@ function validateProjectPathValue(value: string, profile: RunnableDiagnosticProf
     return basic;
   }
   if (isRegistryLikeValue(value)) {
-    return profile === "typescript"
-      ? "project must be a local tsconfig file path, not a package, registry, or launcher value."
-      : "project must be a local Pyright project file or directory, not a package, registry, or launcher value.";
+    if (profile === "typescript") {
+      return "project must be a local tsconfig file path, not a package, registry, or launcher value.";
+    }
+    if (profile === "pyright") {
+      return "project must be a local Pyright project file or directory, not a package, registry, or launcher value.";
+    }
+    return "project must be a local Go file, not a package, registry, or launcher value.";
   }
   return undefined;
 }
@@ -743,7 +775,7 @@ function isFlagLikeValue(value: string): boolean {
   return value.trimStart().startsWith("-");
 }
 
-function createDiagnosticsEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+function createDiagnosticsEnv(source: NodeJS.ProcessEnv, profile?: RunnableDiagnosticProfileId): NodeJS.ProcessEnv {
   const allowed = [
     "PATH",
     "HOME",
@@ -764,6 +796,11 @@ function createDiagnosticsEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     if (value !== undefined && isSafeDiagnosticsEnvValue(key, value)) {
       env[key] = value;
     }
+  }
+  if (profile === "gopls") {
+    env.GOPROXY = "off";
+    env.GOSUMDB = "off";
+    env.GOTOOLCHAIN = "local";
   }
   return env;
 }
@@ -860,6 +897,50 @@ function parsePyrightDiagnostics(output: string, root: string): ParsedTypeScript
   return diagnostics;
 }
 
+function parseDiagnosticsForProfile(
+  profile: RunnableDiagnosticProfileId,
+  stdout: string,
+  stderr: string,
+  root: string,
+): ParsedTypeScriptDiagnostic[] {
+  if (profile === "typescript") {
+    return parseTypeScriptDiagnostics(`${stdout}\n${stderr}`);
+  }
+  if (profile === "pyright") {
+    return parsePyrightDiagnostics(stdout, root);
+  }
+  return parseGoplsDiagnostics(`${stdout}\n${stderr}`, root);
+}
+
+function parseGoplsDiagnostics(output: string, root: string): ParsedTypeScriptDiagnostic[] {
+  const diagnostics: ParsedTypeScriptDiagnostic[] = [];
+  const seen = new Set<string>();
+  for (const rawLine of output.replace(/\r\n|\r/g, "\n").split("\n")) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const match = /^(.+?):(\d+):(\d+):\s+(.+)$/.exec(line);
+    if (!match) {
+      continue;
+    }
+    const diagnostic = {
+      file: formatDiagnosticFile(match[1] ?? "", root),
+      line: Number.parseInt(match[2] ?? "1", 10),
+      column: Number.parseInt(match[3] ?? "1", 10),
+      severity: "error" as const,
+      code: "gopls",
+      message: sanitizeInline(match[4] ?? ""),
+    };
+    const key = JSON.stringify(diagnostic);
+    if (!seen.has(key)) {
+      seen.add(key);
+      diagnostics.push(diagnostic);
+    }
+  }
+  return diagnostics;
+}
+
 function invalidDiagnosticsRun(
   options: RunLocalDiagnosticsOptions,
   root: string,
@@ -888,26 +969,62 @@ function buildDiagnosticCommandArgs(profile: RunnableDiagnosticProfileId, projec
   if (profile === "typescript") {
     return ["--noEmit", "--pretty", "false", "--project", projectArg];
   }
-  return ["--outputjson", "--project", projectArg];
+  if (profile === "pyright") {
+    return ["--outputjson", "--project", projectArg];
+  }
+  return ["check", projectArg];
 }
 
-function defaultProjectPathForProfile(profile: RunnableDiagnosticProfileId): string {
-  return profile === "typescript" ? "tsconfig.json" : ".";
+function defaultProjectPathForProfile(profile: RunnableDiagnosticProfileId): string | undefined {
+  if (profile === "typescript") {
+    return "tsconfig.json";
+  }
+  if (profile === "pyright") {
+    return ".";
+  }
+  return undefined;
 }
 
 function defaultTimeoutForProfile(profile: RunnableDiagnosticProfileId): number {
-  return profile === "typescript" ? DEFAULT_TYPESCRIPT_TIMEOUT_MS : DEFAULT_PYRIGHT_TIMEOUT_MS;
+  if (profile === "typescript") {
+    return DEFAULT_TYPESCRIPT_TIMEOUT_MS;
+  }
+  return profile === "pyright" ? DEFAULT_PYRIGHT_TIMEOUT_MS : DEFAULT_GOPLS_TIMEOUT_MS;
 }
 
 function diagnosticBinaryForProfile(profile: RunnableDiagnosticProfileId): string {
-  return profile === "typescript" ? "tsc" : "pyright";
+  if (profile === "typescript") {
+    return "tsc";
+  }
+  return profile === "pyright" ? "pyright" : "gopls";
+}
+
+function diagnosticDiscoveryArgsForProfile(profile: RunnableDiagnosticProfileId): string[] {
+  return profile === "gopls" ? ["version"] : ["--version"];
 }
 
 function diagnosticMissingMessage(profile: RunnableDiagnosticProfileId): string {
   if (profile === "typescript") {
     return "tsc is not installed or not on PATH. Install TypeScript locally in this project or make an existing tsc binary available on PATH; ORX will not install it for you.";
   }
-  return "pyright is not installed or not on PATH. Install Pyright locally in this project or make an existing pyright binary available on PATH; ORX will not install it for you.";
+  if (profile === "pyright") {
+    return "pyright is not installed or not on PATH. Install Pyright locally in this project or make an existing pyright binary available on PATH; ORX will not install it for you.";
+  }
+  return "gopls is not installed or not on PATH. Install gopls locally for this project or make an existing gopls binary available on PATH; ORX will not install it for you.";
+}
+
+function discoveryTimeoutForProfile(profile: RunnableDiagnosticProfileId): number {
+  if (profile === "typescript") {
+    return TSC_DISCOVERY_TIMEOUT_MS;
+  }
+  return profile === "pyright" ? PYRIGHT_DISCOVERY_TIMEOUT_MS : GOPLS_DISCOVERY_TIMEOUT_MS;
+}
+
+function discoveryBytesForProfile(profile: RunnableDiagnosticProfileId): number {
+  if (profile === "typescript") {
+    return TSC_DISCOVERY_BYTES;
+  }
+  return profile === "pyright" ? PYRIGHT_DISCOVERY_BYTES : GOPLS_DISCOVERY_BYTES;
 }
 
 function normalizePyrightSeverity(value: unknown): ParsedTypeScriptDiagnostic["severity"] {
