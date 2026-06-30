@@ -53,7 +53,7 @@ npm run pack:dry-run
 - First-run/readiness: `orx init`, `orx auth`, `orx auth setup`, `orx auth init`, `orx doctor`, `orx doctor --strict`, `orx doctor --json`, `orx guide`, `orx quickstart`, `orx status`.
 - OpenRouter interaction: `orx` / `orx chat`, `orx ask`, `orx models`, `orx credits`, `orx generation`, exact model ids, `openrouter/auto`, `openrouter/fusion`, Fusion presets, streaming metadata, and cost/token summaries when OpenRouter returns them.
 - Config/local UX: `orx config show|path|set`, profiles, themes, prompt history, TTY status/composer polish, multiline input, command discovery, and slash-command completion.
-- Local coding tools: file/search/shell/diff/patch model tools, native `run_tests`, `orx tests`, code maps, symbols, refs, imports, lexical call graphs, and optional local ast-grep previews.
+- Local coding tools: file/search/shell/diff/patch model tools, native `run_tests`, `orx tests` with structured report summaries, code maps, symbols, refs, imports, lexical call graphs, and optional local ast-grep previews.
 - Explicit operator integrations: TypeScript/Pyright diagnostics, Semgrep scanner profile, MCP preset/profile management, guarded MCP calls/model grants, plugin scaffold/validate/install/review, trusted plugin bins/hooks, skills/prompts/rules, and policy-gated delegation.
 - Automation: `npm run verify:release`, `npm run verify:global-install`, and `npm run pack:dry-run`.
 
@@ -71,6 +71,7 @@ OpenRouter remains the normal inference path. Credentials are detected from envi
 ## Known optional post-v0.1 work
 
 - LSP/SCIP and deeper tree-sitter-backed call/reference/import intelligence beyond the current outline and dependency-free indexes.
+- Broader framework-native test report-file requests for default Jest/Vitest/Playwright reporters, if the command-shape compatibility boundary is proven.
 - Sourcegraph/GitHub/GitLab read-only profiles with the same explicit operator boundaries as existing MCP/plugin surfaces.
 - Managed OAuth/device/browser credential flows for MCP providers beyond bearer env vars and opt-in macOS Keychain support.
 - Additional scanner/diagnostics profiles only after deterministic no-network/no-auth command shapes are proven.

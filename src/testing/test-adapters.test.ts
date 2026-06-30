@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -388,6 +388,97 @@ test("parses node structured JUnit reports before stdout fallback", () => {
     suites: 0,
     durationMs: 12.5,
   });
+});
+
+test("requests private structured JSON report files for package scripts with JSON reporters", async () => {
+  const cwd = createTempDir();
+  try {
+    writeFileSync(
+      join(cwd, "package.json"),
+      JSON.stringify({
+        scripts: {
+          "test:jest-json": "node ./fake-json-reporter.mjs jest --json",
+          "test:vitest-json": "node ./fake-json-reporter.mjs vitest --reporter=json",
+          "test:playwright-json": "node ./fake-json-reporter.mjs playwright test --reporter=json",
+          "test:jest-existing-output": "node ./fake-json-reporter.mjs jest --json --outputFile=already.json",
+          "test:vitest-post-step": "node ./fake-json-reporter.mjs vitest --reporter=json && node ./post-step.mjs",
+          "test:vitest-json-post-step": "node ./fake-json-reporter.mjs vitest --reporter=json && node ./post-step.mjs --json",
+        },
+      }),
+    );
+    writeFileSync(
+      join(cwd, "fake-json-reporter.mjs"),
+      [
+        "import { writeFileSync } from 'node:fs';",
+        "const framework = process.argv[2];",
+        "const outputArg = process.argv.find((arg) => arg.startsWith('--outputFile='));",
+        "const outputFile = outputArg?.slice('--outputFile='.length) ?? process.env.PLAYWRIGHT_JSON_OUTPUT_FILE;",
+        "const report = framework === 'playwright'",
+        "  ? { stats: { expected: 3, unexpected: 1, skipped: 1, flaky: 0, duration: 456 } }",
+        "  : { numTotalTests: 5, numPassedTests: 4, numFailedTests: 1, numPendingTests: 0, numTodoTests: 0, numTotalTestSuites: 2, duration: 789 };",
+        "if (outputFile) writeFileSync(outputFile, JSON.stringify(report));",
+        "console.log('Tests: 99 passed, 99 total');",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(cwd, "post-step.mjs"),
+      [
+        "if (process.argv.some((arg) => arg.startsWith('--outputFile='))) {",
+        "  console.error('unexpected report arg');",
+        "  process.exit(11);",
+        "}",
+        "console.log('post-step-ok');",
+        "",
+      ].join("\n"),
+    );
+
+    const jestResult = await runTestTarget({
+      cwd,
+      targetId: "script:test:jest-json",
+      extraArgs: ["--watch=false"],
+    });
+    assert.equal(jestResult.ok, true);
+    assert.equal(jestResult.report?.source, "jest-json");
+    assert.equal(jestResult.report?.total, 5);
+    assert.equal(jestResult.report?.passed, 4);
+    const jestOutputFileArg = jestResult.args.find((arg) => arg.startsWith("--outputFile="));
+    assert.ok(jestOutputFileArg);
+    assert.equal(existsSync(jestOutputFileArg.slice("--outputFile=".length)), false);
+    assert.deepEqual(jestResult.args.filter((arg) => arg === "--"), ["--"]);
+    assert.ok(jestResult.args.indexOf(jestOutputFileArg) < jestResult.args.indexOf("--watch=false"));
+
+    const vitestResult = await runTestTarget({ cwd, targetId: "script:test:vitest-json" });
+    assert.equal(vitestResult.ok, true);
+    assert.equal(vitestResult.report?.source, "vitest-json");
+    assert.equal(vitestResult.report?.total, 5);
+    assert.ok(vitestResult.args.some((arg) => arg.startsWith("--outputFile=")));
+
+    const playwrightResult = await runTestTarget({ cwd, targetId: "script:test:playwright-json" });
+    assert.equal(playwrightResult.ok, true);
+    assert.equal(playwrightResult.report?.source, "playwright-json");
+    assert.equal(playwrightResult.report?.total, 5);
+    assert.equal(playwrightResult.report?.durationMs, 456);
+    assert.equal(playwrightResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+
+    const existingOutputResult = await runTestTarget({ cwd, targetId: "script:test:jest-existing-output" });
+    assert.equal(existingOutputResult.ok, true);
+    assert.equal(existingOutputResult.report?.source, "jest");
+    assert.equal(existingOutputResult.report?.total, 99);
+    assert.equal(existingOutputResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+
+    const postStepResult = await runTestTarget({ cwd, targetId: "script:test:vitest-post-step" });
+    assert.equal(postStepResult.ok, true);
+    assert.equal(postStepResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+    assert.match(postStepResult.stdout ?? "", /post-step-ok/);
+
+    const jsonPostStepResult = await runTestTarget({ cwd, targetId: "script:test:vitest-json-post-step" });
+    assert.equal(jsonPostStepResult.ok, true);
+    assert.equal(jsonPostStepResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+    assert.match(jsonPostStepResult.stdout ?? "", /post-step-ok/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("ignores malformed structured reports and falls back to stdout summary", () => {

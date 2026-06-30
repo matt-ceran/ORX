@@ -27,6 +27,9 @@ export interface TestTarget {
   packageManager?: TestPackageManager;
   scriptName?: string;
   reporter?: string;
+  jsonReporter?: boolean;
+  reportOutputFile?: boolean;
+  reportArgsForwardable?: boolean;
   fileCount?: number;
 }
 
@@ -210,17 +213,14 @@ export async function runTestTarget(options: RunTestOptions = {}): Promise<TestR
   }
 
   const reportRequest = createStructuredReportRequest(target);
-  const args = [
-    ...formatTargetArgsWithStructuredReport(target, reportRequest?.path),
-    ...formatExtraArgsForTarget(target, extraArgs),
-  ];
+  const args = formatTargetRunArgs(target, reportRequest, extraArgs);
 
   try {
     const result = await runProcess({
       command: target.command,
       args,
       cwd: target.cwd,
-      env: createTestProcessEnv(),
+      env: createTestProcessEnv(reportRequest?.env),
       inheritEnv: false,
       timeoutMs: options.timeoutMs ?? DEFAULT_TEST_TIMEOUT_MS,
       maxBytes: options.maxBytes ?? DEFAULT_TEST_OUTPUT_BYTES,
@@ -354,10 +354,16 @@ export function parseStructuredTestReportSummary(
   target: TestTarget,
   reportText: string | undefined,
 ): TestReportSummary | undefined {
-  if (!reportText || target.framework !== "node") {
+  if (!reportText) {
     return undefined;
   }
-  return parseNodeJunitReportSummary(limitReportText(reportText), target.framework);
+  if (target.framework === "node") {
+    return parseNodeJunitReportSummary(limitReportText(reportText), target.framework);
+  }
+  if (target.kind === "package-script" && isFrameworkJsonReportTarget(target)) {
+    return parseFrameworkJsonReportSummary(limitReportText(reportText), target.framework);
+  }
+  return undefined;
 }
 
 function sanitizePackageScripts(
@@ -439,6 +445,9 @@ function createPackageScriptTarget(
     packageManager,
     scriptName,
     reporter: metadata.reporter,
+    jsonReporter: metadata.jsonReporter,
+    reportOutputFile: metadata.reportOutputFile,
+    reportArgsForwardable: metadata.reportArgsForwardable,
   };
 }
 
@@ -1003,12 +1012,21 @@ function limitReportText(text: string): string {
 function inferPackageScriptMetadata(scriptCommand: string): {
   framework: TestFramework;
   reporter?: string;
+  jsonReporter: boolean;
+  reportOutputFile: boolean;
+  reportArgsForwardable: boolean;
 } {
   const segments = tokenizeScriptCommandSegments(scriptCommand);
   const tokens = segments.flat();
+  const finalSegment = segments.at(-1) ?? [];
+  const framework = inferPackageScriptFramework(segments);
+  const finalSegmentFramework = inferPackageScriptFramework(finalSegment.length > 0 ? [finalSegment] : []);
   return {
-    framework: inferPackageScriptFramework(segments),
+    framework,
     reporter: inferPackageScriptReporter(tokens),
+    jsonReporter: packageScriptHasJsonReporter(tokens),
+    reportOutputFile: packageScriptHasReportOutputFile(tokens),
+    reportArgsForwardable: framework === finalSegmentFramework && packageScriptHasJsonReporter(finalSegment),
   };
 }
 
@@ -1161,6 +1179,51 @@ function inferPackageScriptReporter(tokens: string[]): string | undefined {
   return undefined;
 }
 
+function packageScriptHasJsonReporter(tokens: string[]): boolean {
+  for (const [index, rawToken] of tokens.entries()) {
+    const token = stripShellQuotes(rawToken);
+    if (token === "--json") {
+      return true;
+    }
+    if (token === "--reporter" || token === "--reporters") {
+      if (reporterValueIncludesJson(tokens[index + 1] ?? "")) {
+        return true;
+      }
+      continue;
+    }
+    if (token.startsWith("--reporter=") || token.startsWith("--reporters=")) {
+      if (reporterValueIncludesJson(token.slice(token.indexOf("=") + 1))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function reporterValueIncludesJson(reporter: string): boolean {
+  return stripShellQuotes(reporter)
+    .split(/[,:]/)
+    .map((part) => part.trim().toLowerCase())
+    .includes("json");
+}
+
+function packageScriptHasReportOutputFile(tokens: string[]): boolean {
+  for (const rawToken of tokens) {
+    const token = stripShellQuotes(rawToken);
+    if (
+      token === "--outputFile" ||
+      token === "--output-file" ||
+      token.startsWith("--outputFile=") ||
+      token.startsWith("--output-file=") ||
+      token.startsWith("PLAYWRIGHT_JSON_OUTPUT_NAME=") ||
+      token.startsWith("PLAYWRIGHT_JSON_OUTPUT_FILE=")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function normalizeScriptToken(token: string): string {
   const stripped = stripShellQuotes(token).replace(/\\/g, "/").toLowerCase();
   if (!stripped) {
@@ -1224,24 +1287,67 @@ function formatExtraArgsForTarget(target: TestTarget, extraArgs: string[]): stri
     : extraArgs;
 }
 
-function createStructuredReportRequest(target: TestTarget): { directory: string; path: string } | undefined {
-  if (target.kind !== "node-test" || target.framework !== "node") {
+interface StructuredReportRequest {
+  directory: string;
+  path: string;
+  env?: Record<string, string>;
+}
+
+function createStructuredReportRequest(target: TestTarget): StructuredReportRequest | undefined {
+  if (target.kind === "node-test" && target.framework === "node") {
+    const directory = mkdtempSync(join(tmpdir(), "orx-test-report-"));
+    return { directory, path: join(directory, "node-junit.xml") };
+  }
+  if (!canRequestFrameworkJsonReportFile(target)) {
     return undefined;
   }
   const directory = mkdtempSync(join(tmpdir(), "orx-test-report-"));
-  return { directory, path: join(directory, "node-junit.xml") };
+  const path = join(directory, `${target.framework}-results.json`);
+  return target.framework === "playwright"
+    ? { directory, path, env: { PLAYWRIGHT_JSON_OUTPUT_FILE: path } }
+    : { directory, path };
 }
 
-function formatTargetArgsWithStructuredReport(target: TestTarget, reportPath: string | undefined): string[] {
-  if (!reportPath || target.kind !== "node-test" || target.framework !== "node") {
-    return [...target.args];
+function canRequestFrameworkJsonReportFile(target: TestTarget): boolean {
+  return (
+    target.kind === "package-script" &&
+    isFrameworkJsonReportTarget(target) &&
+    target.jsonReporter === true &&
+    target.reportOutputFile !== true &&
+    target.reportArgsForwardable === true
+  );
+}
+
+function isFrameworkJsonReportTarget(target: TestTarget): boolean {
+  return target.framework === "jest" || target.framework === "vitest" || target.framework === "playwright";
+}
+
+function formatTargetRunArgs(
+  target: TestTarget,
+  reportRequest: StructuredReportRequest | undefined,
+  extraArgs: string[],
+): string[] {
+  if (!reportRequest) {
+    return [...target.args, ...formatExtraArgsForTarget(target, extraArgs)];
   }
-  return [
-    target.args[0] ?? "--test",
-    "--test-reporter=junit",
-    `--test-reporter-destination=${reportPath}`,
-    ...target.args.slice(1),
-  ];
+  if (target.kind === "node-test" && target.framework === "node") {
+    return [
+      target.args[0] ?? "--test",
+      "--test-reporter=junit",
+      `--test-reporter-destination=${reportRequest.path}`,
+      ...target.args.slice(1),
+      ...formatExtraArgsForTarget(target, extraArgs),
+    ];
+  }
+  const reportArgs = formatFrameworkJsonReportArgs(target, reportRequest.path);
+  return [...target.args, ...formatExtraArgsForTarget(target, [...reportArgs, ...extraArgs])];
+}
+
+function formatFrameworkJsonReportArgs(target: TestTarget, reportPath: string): string[] {
+  if (target.framework === "jest" || target.framework === "vitest") {
+    return [`--outputFile=${reportPath}`];
+  }
+  return [];
 }
 
 function readStructuredReportFile(path: string): string | undefined {
@@ -1256,8 +1362,8 @@ function readStructuredReportFile(path: string): string | undefined {
   }
 }
 
-function createTestProcessEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
+function createTestProcessEnv(extraEnv: Record<string, string> | undefined = undefined): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv };
   for (const key of Object.keys(env)) {
     if (key.startsWith("NODE_TEST_")) {
       delete env[key];
