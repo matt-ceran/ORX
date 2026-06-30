@@ -315,7 +315,8 @@ export function renderPluginScaffoldResult(result: PluginScaffoldResult): string
     ...relativeCreated.map((path) => `    - ${path}`),
     "  next:",
     `    - review ${result.manifestPath}`,
-    `    - orx plugins install ${result.manifestPath}`,
+    `    - orx plugins validate ${result.targetDirectory}`,
+    `    - orx plugins install ${result.targetDirectory}`,
   ].join("\n");
 }
 

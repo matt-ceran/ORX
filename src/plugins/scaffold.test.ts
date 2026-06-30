@@ -21,6 +21,7 @@ import {
   registerPluginManifest,
   scaffoldPlugin,
   setPluginEnabledState,
+  renderPluginScaffoldResult,
 } from "./index.js";
 
 test("scaffoldPlugin creates a valid inert default plugin bundle", () => {
@@ -54,6 +55,12 @@ test("scaffoldPlugin creates a valid inert default plugin bundle", () => {
     };
     assert.deepEqual(Object.keys(manifest.components).sort(), ["commands", "rules", "skills"]);
     assert.deepEqual(manifest.permissions, { filesystem: [], network: [], env: [], mcp: [] });
+    const rendered = renderPluginScaffoldResult(result);
+    assert.match(rendered, new RegExp(`review ${escapeRegExp(result.manifestPath)}`));
+    assert.match(rendered, new RegExp(`orx plugins validate ${escapeRegExp(targetDirectory)}`));
+    assert.match(rendered, new RegExp(`orx plugins install ${escapeRegExp(targetDirectory)}`));
+    assert.doesNotMatch(rendered, new RegExp(`orx plugins validate ${escapeRegExp(result.manifestPath)}`));
+    assert.doesNotMatch(rendered, new RegExp(`orx plugins install ${escapeRegExp(result.manifestPath)}`));
 
     const registered = registerPluginManifest(result.manifestPath, { registryPath });
     assert.equal(registered.ok, true);
@@ -63,6 +70,10 @@ test("scaffoldPlugin creates a valid inert default plugin bundle", () => {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 test("scaffoldPlugin opt-in integration placeholders expose no runnable entries", () => {
   const cwd = mkdtempSync(join(tmpdir(), "orx-plugin-scaffold-integrations-"));

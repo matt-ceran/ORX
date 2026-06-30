@@ -113,7 +113,7 @@ theme = "vivid"
 
 Allowed theme values are `default`, `mono`, and `vivid`. Chat supports `/theme` to inspect the current theme and `/theme <value>` to change it for the active session/config. `ORX_TTY_THEME` or `ORX_THEME` can override the configured theme for rendering. `NO_COLOR=1` still forces plain output.
 
-Saved profiles:
+Saved profiles and plugin scaffold flow:
 
 ```bash
 npm run dev -- profile list
@@ -131,6 +131,8 @@ npm run dev -- plugins disable acme.example
 npm run dev -- --profile daily status
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- --profile daily ask "Say hello"
 ```
+
+`orx plugins scaffold <directory>` prints next steps that use the manifest path for review, then the directory path for `orx plugins validate <directory>` and `orx plugins install <directory>`.
 
 Profiles persist model, mode, Fusion preset, theme, and permission posture under `~/.orx/profiles.json`; use `ORX_PROFILE_CONFIG_PATH` for isolated runs. Profiles do not store API keys. `orx profile save <id>` and `/profile save <id>` capture the current config by default and can save non-secret overrides with `--model`, `--mode`, `--fusion`/`--fusion-preset`, `--theme`, `--approval-policy`, and `--sandbox-mode` without mutating active config/session state. In chat, `/profile list`, `/profile save <id> [options]`, `/profile use <id>`, `/profile inspect <id>`, and `/profile delete <id>` manage the same registry. Manual `/model`, `/mode`, `/fusion`, or `/theme` changes clear the active profile label.
 

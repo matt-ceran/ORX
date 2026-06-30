@@ -96,6 +96,14 @@ Current files:
 
 ## Latest Work
 
+Added scaffold directory next-step guidance:
+
+- Fresh temp-project dogfooding showed scaffold output still suggested installing the manifest path even though directory install is now supported.
+- Scaffold output now keeps the manifest path for manual review, then points to `orx plugins validate <directory>` and `orx plugins install <directory>` so the generated next steps match the directory-aware install path.
+- Regression coverage asserts the renderer includes directory validate/install commands and does not regress to manifest-path validate/install suggestions.
+- Verification: `git diff --check`, full `npm test` with 502 tests, `npm run verify:global-install`, and independent verifier review with no findings after targeted scaffold/CLI checks.
+- Next likely work is another clean first-run dogfood pass to find the next real CLI friction point, then broader release hardening around MCP/plugin authoring docs/templates, provider auth/OAuth decisions, richer code intelligence, or remaining nested-help polish.
+
 Added plugin install directory input parity:
 
 - Clean dogfooding found that `orx plugins validate <scaffold-directory>` worked, but `orx plugins install <scaffold-directory>` failed because install treated the directory itself as the manifest file.
