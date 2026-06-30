@@ -14,7 +14,14 @@ import {
   renderOpenRouterAuthSetup,
   renderOpenRouterAuthStatus,
 } from "../auth/openrouter.js";
-import { createCodeMap, createCodeSymbolIndex, renderCodeMap, renderCodeSymbols } from "../code-map/index.js";
+import {
+  createCodeMap,
+  createCodeReferenceIndex,
+  createCodeSymbolIndex,
+  renderCodeMap,
+  renderCodeReferences,
+  renderCodeSymbols,
+} from "../code-map/index.js";
 import type { LoadedConfig, OrxConfig, OrxTheme } from "../config/types.js";
 import {
   parseConfigSetArgs,
@@ -504,7 +511,7 @@ const PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS = ["list", "status"] as const;
 const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
-const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols"] as const;
+const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const RULE_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -757,7 +764,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/code": {
-    usage: "/code [map|symbols]",
+    usage: "/code [map|symbols|refs]",
     description: "Run local code intelligence commands",
     group: "Workspace",
     tier: "advanced",
@@ -783,7 +790,22 @@ const COMMANDS: Record<string, SlashDefinition> = {
         );
         return "continue";
       }
-      writeLine(context.io.stderr, "Usage: /code [map|symbols] [query-or-path]");
+      if (subcommand === "refs" || subcommand === "references") {
+        const query = command.args.slice(1).join(" ").trim();
+        if (!query) {
+          writeLine(context.io.stderr, "Usage: /code refs <query>");
+        } else {
+          writeLine(
+            context.io.stdout,
+            renderCodeReferences(createCodeReferenceIndex({
+              cwd: context.io.cwd,
+              query,
+            })),
+          );
+        }
+        return "continue";
+      }
+      writeLine(context.io.stderr, "Usage: /code [map|symbols|refs] [query-or-path]");
       return "continue";
     },
   },
@@ -800,6 +822,28 @@ const COMMANDS: Record<string, SlashDefinition> = {
           query: command.argText || undefined,
         })),
       );
+      return "continue";
+    },
+  },
+  "/refs": {
+    usage: "/refs <query>",
+    description: "Render local code references",
+    group: "Workspace",
+    tier: "advanced",
+    aliases: ["/references"],
+    handler: (command, context): SlashResult => {
+      const query = command.argText.trim();
+      if (!query) {
+        writeLine(context.io.stderr, "Usage: /refs <query>");
+      } else {
+        writeLine(
+          context.io.stdout,
+          renderCodeReferences(createCodeReferenceIndex({
+            cwd: context.io.cwd,
+            query,
+          })),
+        );
+      }
       return "continue";
     },
   },

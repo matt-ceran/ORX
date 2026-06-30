@@ -75,6 +75,30 @@ export interface CodeSymbolIndex {
   truncated: boolean;
 }
 
+export interface CodeReferenceIndexOptions extends CodeMapOptions {
+  query?: string;
+  maxReferences?: number;
+}
+
+export interface CodeReferenceIndex {
+  root: string;
+  query?: string;
+  references: CodeReference[];
+  totalReferences: number;
+  omittedReferences: number;
+  omissions: CodeMapOmission[];
+  truncated: boolean;
+}
+
+export interface CodeReference {
+  query: string;
+  path: string;
+  language: string;
+  line: number;
+  column: number;
+  excerpt: string;
+}
+
 interface ExtractedExportSymbol {
   name: string;
   line: number;
@@ -85,11 +109,14 @@ interface KeywordStatement {
   line: number;
 }
 
+type LexicalState = "code" | "blockComment" | "template" | "singleQuote" | "doubleQuote";
+
 const DEFAULT_MAX_FILES = 160;
 const DEFAULT_MAX_ENTRIES = 8192;
 const DEFAULT_MAX_DEPTH = 8;
 const DEFAULT_MAX_SOURCE_BYTES = 512 * 1024;
 const DEFAULT_MAX_SYMBOL_INDEX_RESULTS = 120;
+const DEFAULT_MAX_REFERENCE_INDEX_RESULTS = 120;
 const MAX_SYMBOLS_PER_FILE = 24;
 const MAX_IMPORTS_PER_FILE = 24;
 const MAX_RENDERED_SOURCE_FILES = 24;
@@ -97,6 +124,8 @@ const MAX_RENDERED_IMPORTS = 8;
 const MAX_RENDERED_SYMBOLS = 10;
 const MAX_RENDERED_OMISSIONS = 12;
 const MAX_RENDERED_CODE_SYMBOLS = 80;
+const MAX_RENDERED_CODE_REFERENCES = 80;
+const MAX_REFERENCE_EXCERPT_CHARS = 160;
 const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/g;
 const EXPORT_DECLARATION_PATTERN =
@@ -436,6 +465,107 @@ export function renderCodeSymbols(index: CodeSymbolIndex): string {
   return lines.join("\n");
 }
 
+export function createCodeReferenceIndex(options: CodeReferenceIndexOptions = {}): CodeReferenceIndex {
+  const map = createCodeMap(options);
+  const query = options.query?.trim();
+  const maxReferences = Math.max(0, options.maxReferences ?? DEFAULT_MAX_REFERENCE_INDEX_RESULTS);
+  if (!query) {
+    return {
+      root: map.root,
+      references: [],
+      totalReferences: 0,
+      omittedReferences: 0,
+      omissions: map.omissions,
+      truncated: map.truncated,
+    };
+  }
+
+  const references: CodeReference[] = [];
+  for (const file of map.sourceFiles.sort((left, right) => left.path.localeCompare(right.path))) {
+    let text;
+    try {
+      text = readFileSync(join(map.root, file.path), "utf8");
+    } catch {
+      continue;
+    }
+    references.push(...extractCodeReferences(text, query, file));
+  }
+
+  const sortedReferences = references.sort((left, right) =>
+    left.path.localeCompare(right.path) ||
+    left.line - right.line ||
+    left.column - right.column ||
+    left.query.localeCompare(right.query));
+  const renderedReferences = sortedReferences.slice(0, maxReferences);
+  return {
+    root: map.root,
+    query,
+    references: renderedReferences,
+    totalReferences: sortedReferences.length,
+    omittedReferences: Math.max(0, sortedReferences.length - renderedReferences.length),
+    omissions: map.omissions,
+    truncated: map.truncated,
+  };
+}
+
+export function renderCodeReferences(index: CodeReferenceIndex): string {
+  const lines = [
+    "Code References",
+    `  root: ${sanitizeInline(index.root)}`,
+    `  references: ${index.totalReferences}${index.truncated ? " (scan truncated)" : ""}`,
+  ];
+  if (index.query) {
+    lines.push(`  query: ${JSON.stringify(sanitizeInline(index.query))}`);
+  } else {
+    lines.push("  query: missing");
+  }
+
+  lines.push("  matches:");
+  if (!index.query) {
+    lines.push("    - none");
+  } else if (index.references.length === 0) {
+    lines.push("    - none");
+  } else {
+    for (const reference of index.references.slice(0, MAX_RENDERED_CODE_REFERENCES)) {
+      lines.push(
+        [
+          `    - query=${JSON.stringify(sanitizeInline(reference.query))}`,
+          `path=${JSON.stringify(sanitizeInline(reference.path))}`,
+          `line=${reference.line}`,
+          `column=${reference.column}`,
+          `language=${JSON.stringify(sanitizeInline(reference.language))}`,
+          `excerpt=${JSON.stringify(sanitizeInline(reference.excerpt))}`,
+        ].join(" "),
+      );
+    }
+    const renderedCount = Math.min(index.references.length, MAX_RENDERED_CODE_REFERENCES);
+    const omitted = Math.max(0, index.totalReferences - renderedCount);
+    if (omitted > 0) {
+      lines.push(`    - ${omitted} more references omitted`);
+    }
+  }
+
+  if (index.omissions.length > 0) {
+    lines.push("  omitted:");
+    for (const omission of index.omissions.slice(0, MAX_RENDERED_OMISSIONS)) {
+      lines.push(
+        [
+          `    - reason=${JSON.stringify(sanitizeInline(omission.reason))}`,
+          omission.path ? `path=${JSON.stringify(sanitizeInline(omission.path))}` : undefined,
+        ]
+          .filter((part): part is string => typeof part === "string")
+          .join(" "),
+      );
+    }
+    if (index.omissions.length > MAX_RENDERED_OMISSIONS) {
+      lines.push(`    - ${index.omissions.length - MAX_RENDERED_OMISSIONS} more omissions omitted`);
+    }
+  }
+
+  lines.push("  usage: orx code refs <query>");
+  return lines.join("\n");
+}
+
 function recordFile(
   path: string,
   size: number,
@@ -605,6 +735,157 @@ function extractImports(text: string): string[] {
     }
   }
   return Array.from(imports).sort((left, right) => left.localeCompare(right));
+}
+
+function extractCodeReferences(text: string, query: string, file: CodeMapSourceFile): CodeReference[] {
+  const references: CodeReference[] = [];
+  const matcher = createReferenceMatcher(query);
+  let lexicalState: LexicalState = "code";
+  let lineNumber = 0;
+  for (const line of text.split(/\r?\n/)) {
+    lineNumber += 1;
+    const stripped = stripNonCodeSegments(line, lexicalState);
+    lexicalState = stripped.nextState;
+    if (!stripped.code.trim()) {
+      continue;
+    }
+    for (const column of matcher(stripped.code)) {
+      references.push({
+        query,
+        path: file.path,
+        language: file.language,
+        line: lineNumber,
+        column,
+        excerpt: line.trim().slice(0, MAX_REFERENCE_EXCERPT_CHARS),
+      });
+    }
+  }
+  return references;
+}
+
+function createReferenceMatcher(query: string): (line: string) => number[] {
+  const isIdentifierQuery = /^[A-Za-z_$][\w$]*$/.test(query);
+  if (isIdentifierQuery) {
+    return (line: string): number[] => {
+      const columns: number[] = [];
+      let index = line.indexOf(query);
+      while (index !== -1) {
+        const before = index > 0 ? line[index - 1] : "";
+        const after = line[index + query.length] ?? "";
+        if (!/[A-Za-z0-9_$]/.test(before) && !/[A-Za-z0-9_$]/.test(after)) {
+          columns.push(index + 1);
+        }
+        index = line.indexOf(query, index + Math.max(1, query.length));
+      }
+      return columns;
+    };
+  }
+
+  const normalizedQuery = query.toLowerCase();
+  return (line: string): number[] => {
+    const normalizedLine = line.toLowerCase();
+    const columns: number[] = [];
+    let index = normalizedLine.indexOf(normalizedQuery);
+    while (index !== -1) {
+      columns.push(index + 1);
+      index = normalizedLine.indexOf(normalizedQuery, index + Math.max(1, normalizedQuery.length));
+    }
+    return columns;
+  };
+}
+
+function stripNonCodeSegments(
+  line: string,
+  initialState: LexicalState,
+): { code: string; nextState: LexicalState } {
+  let state = initialState;
+  let code = "";
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (state === "blockComment") {
+      code += " ";
+      if (char === "*" && next === "/") {
+        state = "code";
+        code += " ";
+        index += 1;
+      }
+      continue;
+    }
+
+    if (state === "singleQuote" || state === "doubleQuote") {
+      code += " ";
+      const quote = state === "singleQuote" ? "'" : "\"";
+      if (char === "\\") {
+        if (index === line.length - 1) {
+          continue;
+        }
+        code += " ";
+        index += 1;
+      } else if (char === quote) {
+        state = "code";
+      }
+      continue;
+    }
+
+    if (state === "template") {
+      code += " ";
+      if (char === "\\") {
+        code += " ";
+        index += 1;
+      } else if (char === "`") {
+        state = "code";
+      }
+      continue;
+    }
+
+    if (char === "/" && next === "/") {
+      code += " ".repeat(line.length - index);
+      break;
+    }
+    if (char === "/" && next === "*") {
+      state = "blockComment";
+      code += "  ";
+      index += 1;
+      continue;
+    }
+    if (char === "`") {
+      state = "template";
+      code += " ";
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      const result = skipQuotedStringSegment(line, index, char);
+      code += " ".repeat(result.endIndex - index + 1);
+      index = result.endIndex;
+      if (!result.closed && line.endsWith("\\")) {
+        state = char === "'" ? "singleQuote" : "doubleQuote";
+      }
+      continue;
+    }
+
+    code += char;
+  }
+  return { code, nextState: state };
+}
+
+function skipQuotedStringSegment(
+  line: string,
+  startIndex: number,
+  quote: "\"" | "'",
+): { endIndex: number; closed: boolean } {
+  for (let index = startIndex + 1; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === "\\") {
+      index += 1;
+      continue;
+    }
+    if (char === quote) {
+      return { endIndex: index, closed: true };
+    }
+  }
+  return { endIndex: line.length - 1, closed: false };
 }
 
 function collectKeywordStatements(text: string, keyword: "import" | "export"): KeywordStatement[] {

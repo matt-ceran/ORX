@@ -38,7 +38,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
-    assert.match(help.stdout(), /code\s+Render local code maps or symbol indexes/);
+    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, or references/);
     assert.match(help.stdout(), /orchestrator\s+Show delegation readiness or refuse session-less changes/);
     assert.match(help.stdout(), /delegate\s+Show\/refuse session delegate changes, policy, or saved teams/);
     assert.match(help.stdout(), /delegates\s+Show delegate readiness, execution policy, or saved teams/);
@@ -1411,6 +1411,24 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.equal(await runCli(["node", "cli", "symbols", "start"], {}, symbolAlias.io), 0);
     assert.match(symbolAlias.stdout(), /Code Symbols/);
     assert.match(symbolAlias.stdout(), /name="start"/);
+
+    const refs = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "code", "refs", "start"], {}, refs.io), 0);
+    assert.match(refs.stdout(), /Code References/);
+    assert.match(refs.stdout(), /query: "start"/);
+    assert.match(refs.stdout(), /path="src\/index\.ts"/);
+    assert.match(refs.stdout(), /line=2/);
+    assert.equal(refs.stderr(), "");
+
+    const refsAlias = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "refs", "start"], {}, refsAlias.io), 0);
+    assert.match(refsAlias.stdout(), /Code References/);
+    assert.match(refsAlias.stdout(), /query: "start"/);
+
+    const missingRefs = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "code", "refs"], {}, missingRefs.io), 1);
+    assert.equal(missingRefs.stdout(), "");
+    assert.match(missingRefs.stderr(), /Usage: orx code refs <query>/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -3,7 +3,14 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createCodeMap, createCodeSymbolIndex, renderCodeMap, renderCodeSymbols } from "./index.js";
+import {
+  createCodeMap,
+  createCodeReferenceIndex,
+  createCodeSymbolIndex,
+  renderCodeMap,
+  renderCodeReferences,
+  renderCodeSymbols,
+} from "./index.js";
 
 test("code map discovers languages entrypoints exports and imports", () => {
   const cwd = createTempDir();
@@ -56,6 +63,15 @@ test("code map discovers languages entrypoints exports and imports", () => {
         "",
       ].join("\n"),
     );
+    writeFileSync(
+      join(cwd, "src", "continued-string.ts"),
+      [
+        "const continued = \"fakeContinuation \\",
+        "helper\";",
+        "export const realContinuation = helper;",
+        "",
+      ].join("\n"),
+    );
     mkdirSync(join(cwd, "node_modules", "pkg"), { recursive: true });
     writeFileSync(join(cwd, "node_modules", "pkg", "ignored.ts"), "export const ignored = true;\n");
 
@@ -64,7 +80,7 @@ test("code map discovers languages entrypoints exports and imports", () => {
     assert.ok(map.scannedFiles >= 3);
     assert.deepEqual(
       map.languageCounts.map((entry) => `${entry.language}:${entry.files}`).sort(),
-      ["JSON:2", "TypeScript:3"],
+      ["JSON:2", "TypeScript:4"],
     );
     assert.ok(map.keyFiles.includes("package.json"));
     assert.ok(map.keyFiles.includes("tsconfig.json"));
@@ -93,23 +109,48 @@ test("code map discovers languages entrypoints exports and imports", () => {
 
     const rendered = renderCodeMap(map);
     assert.match(rendered, /Code Map/);
-    assert.match(rendered, /TypeScript: 3/);
+    assert.match(rendered, /TypeScript: 4/);
     assert.match(rendered, /exports="renamedHelper,run"/);
     assert.match(rendered, /imports="\.\/util\.js,node:fs"/);
 
-    const symbolIndex = createCodeSymbolIndex({ cwd, query: "real" });
+    const symbolIndex = createCodeSymbolIndex({ cwd, query: "Literal" });
     assert.equal(symbolIndex.totalSymbols, 1);
     assert.deepEqual(symbolIndex.symbols.map((symbol) => symbol.name), ["realLiteralExport"]);
     const renderedSymbols = renderCodeSymbols(symbolIndex);
     assert.match(renderedSymbols, /Code Symbols/);
-    assert.match(renderedSymbols, /query: "real"/);
+    assert.match(renderedSymbols, /query: "Literal"/);
     assert.match(renderedSymbols, /name="realLiteralExport"/);
     assert.match(renderedSymbols, /path="src\/literals\.ts"/);
     assert.match(renderedSymbols, /line=9/);
 
     const limitedSymbols = renderCodeSymbols(createCodeSymbolIndex({ cwd, maxSymbols: 1 }));
-    assert.match(limitedSymbols, /symbols: 5/);
-    assert.match(limitedSymbols, /4 more symbols omitted/);
+    assert.match(limitedSymbols, /symbols: 6/);
+    assert.match(limitedSymbols, /5 more symbols omitted/);
+
+    const references = createCodeReferenceIndex({ cwd, query: "helper" });
+    assert.equal(references.totalReferences, 6);
+    assert.deepEqual(
+      references.references.map((reference) => `${reference.path}:${reference.line}:${reference.column}`),
+      [
+        "src/index.ts:1:10",
+        "src/index.ts:5:32",
+        "src/index.ts:6:10",
+        "src/continued-string.ts:3:33",
+        "src/util.ts:1:14",
+        "src/util.ts:2:16",
+      ].sort(),
+    );
+    assert.equal(references.references.some((reference) => reference.path === "src/continued-string.ts" && reference.line === 2), false);
+
+    const literalReferences = createCodeReferenceIndex({ cwd, query: "fakeTemplateExport" });
+    assert.equal(literalReferences.totalReferences, 0);
+
+    const renderedReferences = renderCodeReferences(createCodeReferenceIndex({ cwd, query: "realLiteralExport" }));
+    assert.match(renderedReferences, /Code References/);
+    assert.match(renderedReferences, /query: "realLiteralExport"/);
+    assert.match(renderedReferences, /path="src\/literals\.ts"/);
+    assert.match(renderedReferences, /line=9/);
+    assert.match(renderedReferences, /excerpt="export const realLiteralExport = true;"/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

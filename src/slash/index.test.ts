@@ -122,8 +122,9 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/delegate \[help\|status\|plan\|add\|remove\|clear\|team\|policy\]/);
   assert.match(output, /\/delegates \[list\|status\|plan\|policy\|teams\|save\|use\|inspect\|delete\]/);
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
-  assert.match(output, /\/code \[map\|symbols\]/);
+  assert.match(output, /\/code \[map\|symbols\|refs\]/);
   assert.match(output, /\/symbols \[query\]/);
+  assert.match(output, /\/refs <query>/);
   assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\]\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
@@ -240,6 +241,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/profile save daily --theme v"), [["vivid "], "v"]);
   assert.deepEqual(completeSlashCommandLine("/history c"), [["clear "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/history s"), [["search "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/code r"), [["refs "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/web b"), [["browse "], "b"]);
   assert.deepEqual(completeSlashCommandLine("/web h"), [["help "], "h"]);
   assert.deepEqual(completeSlashCommandLine("/mcp m"), [["model "], "m"]);
@@ -355,6 +357,24 @@ test("map slash command renders a local code map", () => {
     assert.equal(handleSlashCommand("/symbols start", symbolAlias.context), "continue");
     assert.match(symbolAlias.stdout(), /Code Symbols/);
     assert.match(symbolAlias.stdout(), /name="start"/);
+
+    const refs = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/code refs start", refs.context), "continue");
+    assert.match(refs.stdout(), /Code References/);
+    assert.match(refs.stdout(), /query: "start"/);
+    assert.match(refs.stdout(), /path="src\/index\.ts"/);
+    assert.match(refs.stdout(), /line=2/);
+    assert.equal(refs.stderr(), "");
+
+    const refsAlias = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/refs start", refsAlias.context), "continue");
+    assert.match(refsAlias.stdout(), /Code References/);
+    assert.match(refsAlias.stdout(), /query: "start"/);
+
+    const missingRefs = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/code refs", missingRefs.context), "continue");
+    assert.equal(missingRefs.stdout(), "");
+    assert.match(missingRefs.stderr(), /Usage: \/code refs <query>/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
