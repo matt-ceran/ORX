@@ -75,11 +75,11 @@ Implemented under `src/testing/`:
 - package-script test target discovery for safe `test*` scripts
 - inferred Node/Vitest/Jest/Playwright/unknown framework metadata and simple reporter hints for package-script targets
 - direct Node test file fallback when no `test` package script exists
-- compact parsed report counts from direct Node JUnit, private temporary Jest/Vitest/Playwright JSON report files for package scripts that already declare append-safe JSON reporters, whole-object framework JSON already emitted to stdout/stderr, and common Node/Vitest/Jest/Playwright summary output
+- compact parsed report counts from direct Node JUnit, private temporary Jest/Vitest/Playwright JSON report files for package scripts that already declare append-safe JSON reporters or exact final default framework runner invocations, whole-object framework JSON already emitted to stdout/stderr, and common Node/Vitest/Jest/Playwright summary output
 - explicit operator commands `orx tests list|run` and `/tests list|run`
 - model-visible native tool `run_tests`
 
-The test adapter is available to the operator and model loop. Runs use the shared process runner with shell disabled, bounded output, timeout coverage, and sanitized extra arguments. Report parsing reads only ORX-owned private temp reports for direct Node and append-safe existing JSON reporter package scripts plus already-captured sanitized stdout/stderr, then stores numeric summary fields. `/status` and `orx status` show discovered target counts, framework counts, and the default target.
+The test adapter is available to the operator and model loop. Runs use the shared process runner with shell disabled, bounded output, timeout coverage, and sanitized extra arguments. Report parsing reads only ORX-owned private temp reports for direct Node, append-safe existing JSON reporter package scripts, and exact final no-reporter `jest`/`vitest`/`playwright test` package-script invocations plus already-captured sanitized stdout/stderr, then stores numeric summary fields. Wrapper commands, custom reporters, existing output files, per-run reporter/output overrides, and unsafe multi-step package-script shapes stay on stdout/stderr fallback. `/status` and `orx status` show discovered target counts, framework counts, and the default target.
 
 Implemented under `src/code-map/`:
 

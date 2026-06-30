@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -390,13 +390,19 @@ test("parses node structured JUnit reports before stdout fallback", () => {
   });
 });
 
-test("requests private structured JSON report files for package scripts with JSON reporters", async () => {
+test("requests private structured JSON report files for safe package script framework reporters", async () => {
   const cwd = createTempDir();
   try {
     writeFileSync(
       join(cwd, "package.json"),
       JSON.stringify({
         scripts: {
+          "test:jest-default": "jest",
+          "test:vitest-default": "vitest run",
+          "test:playwright-default": "playwright test",
+          "test:react-default": "react-scripts test",
+          "test:custom-node-default": "node ./fake-json-reporter.mjs jest",
+          "test:jest-unsafe-reporter": "jest --reporter='bad reporter'",
           "test:jest-json": "node ./fake-json-reporter.mjs jest --json",
           "test:vitest-json": "node ./fake-json-reporter.mjs vitest --reporter=json",
           "test:playwright-json": "node ./fake-json-reporter.mjs playwright test --reporter=json",
@@ -406,17 +412,41 @@ test("requests private structured JSON report files for package scripts with JSO
         },
       }),
     );
+    const binDir = join(cwd, "node_modules", ".bin");
+    mkdirSync(binDir, { recursive: true });
+    for (const binName of ["jest", "vitest", "playwright", "react-scripts"]) {
+      const binPath = join(binDir, binName);
+      writeFileSync(binPath, "#!/usr/bin/env node\nimport '../../fake-json-reporter.mjs';\n");
+      chmodSync(binPath, 0o755);
+    }
     writeFileSync(
       join(cwd, "fake-json-reporter.mjs"),
       [
         "import { writeFileSync } from 'node:fs';",
-        "const framework = process.argv[2];",
+        "import { basename } from 'node:path';",
+        "const binName = basename(process.argv[1] ?? '');",
+        "const knownBins = new Set(['jest', 'vitest', 'playwright', 'react-scripts']);",
+        "const framework = knownBins.has(binName) ? binName : process.argv[2];",
+        "const args = process.argv.slice(2);",
+        "const reporterValues = [];",
+        "for (const [index, arg] of args.entries()) {",
+        "  if (arg === '--reporter' || arg === '--reporters') reporterValues.push(args[index + 1] ?? '');",
+        "  if (arg.startsWith('--reporter=') || arg.startsWith('--reporters=')) reporterValues.push(arg.slice(arg.indexOf('=') + 1));",
+        "}",
+        "const hasJsonReporter = reporterValues.some((value) => value.split(/[,:]/).includes('json'));",
         "const outputArg = process.argv.find((arg) => arg.startsWith('--outputFile='));",
         "const outputFile = outputArg?.slice('--outputFile='.length) ?? process.env.PLAYWRIGHT_JSON_OUTPUT_FILE;",
+        "const requestedJson = framework === 'jest'",
+        "  ? args.includes('--json')",
+        "  : framework === 'vitest'",
+        "    ? hasJsonReporter",
+        "    : framework === 'playwright'",
+        "      ? args.includes('test') && hasJsonReporter",
+        "      : false;",
         "const report = framework === 'playwright'",
         "  ? { stats: { expected: 3, unexpected: 1, skipped: 1, flaky: 0, duration: 456 } }",
         "  : { numTotalTests: 5, numPassedTests: 4, numFailedTests: 1, numPendingTests: 0, numTodoTests: 0, numTotalTestSuites: 2, duration: 789 };",
-        "if (outputFile) writeFileSync(outputFile, JSON.stringify(report));",
+        "if (outputFile && requestedJson) writeFileSync(outputFile, JSON.stringify(report));",
         "console.log('Tests: 99 passed, 99 total');",
         "",
       ].join("\n"),
@@ -433,6 +463,79 @@ test("requests private structured JSON report files for package scripts with JSO
       ].join("\n"),
     );
 
+    const defaultJestResult = await runTestTarget({ cwd, targetId: "script:test:jest-default" });
+    assert.equal(defaultJestResult.ok, true);
+    assert.equal(defaultJestResult.report?.source, "jest-json");
+    assert.equal(defaultJestResult.report?.total, 5);
+    assert.ok(defaultJestResult.args.includes("--json"));
+    const defaultJestOutputFileArg = defaultJestResult.args.find((arg) => arg.startsWith("--outputFile="));
+    assert.ok(defaultJestOutputFileArg);
+    assert.equal(existsSync(defaultJestOutputFileArg.slice("--outputFile=".length)), false);
+
+    const defaultVitestResult = await runTestTarget({ cwd, targetId: "script:test:vitest-default" });
+    assert.equal(defaultVitestResult.ok, true);
+    assert.equal(defaultVitestResult.report?.source, "vitest-json");
+    assert.equal(defaultVitestResult.report?.total, 5);
+    assert.ok(defaultVitestResult.args.includes("--reporter=json"));
+    assert.ok(defaultVitestResult.args.includes("--reporter=default"));
+    assert.ok(defaultVitestResult.args.some((arg) => arg.startsWith("--outputFile=")));
+
+    const defaultVitestReporterOverrideResult = await runTestTarget({
+      cwd,
+      targetId: "script:test:vitest-default",
+      extraArgs: ["--reporter=dot"],
+    });
+    assert.equal(defaultVitestReporterOverrideResult.ok, true);
+    assert.equal(defaultVitestReporterOverrideResult.report?.source, "generic");
+    assert.equal(defaultVitestReporterOverrideResult.report?.total, 99);
+    assert.ok(defaultVitestReporterOverrideResult.args.includes("--reporter=dot"));
+    assert.equal(defaultVitestReporterOverrideResult.args.includes("--reporter=json"), false);
+    assert.equal(defaultVitestReporterOverrideResult.args.includes("--reporter=default"), false);
+    assert.equal(defaultVitestReporterOverrideResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+
+    const defaultPlaywrightResult = await runTestTarget({ cwd, targetId: "script:test:playwright-default" });
+    assert.equal(defaultPlaywrightResult.ok, true);
+    assert.equal(defaultPlaywrightResult.report?.source, "playwright-json");
+    assert.equal(defaultPlaywrightResult.report?.total, 5);
+    assert.equal(defaultPlaywrightResult.report?.durationMs, 456);
+    assert.ok(defaultPlaywrightResult.args.includes("--reporter=json"));
+    assert.equal(defaultPlaywrightResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+
+    const defaultJestOutputOverrideResult = await runTestTarget({
+      cwd,
+      targetId: "script:test:jest-default",
+      extraArgs: ["--outputFile=custom.json"],
+    });
+    assert.equal(defaultJestOutputOverrideResult.ok, true);
+    assert.equal(defaultJestOutputOverrideResult.report?.source, "jest");
+    assert.equal(defaultJestOutputOverrideResult.report?.total, 99);
+    assert.deepEqual(
+      defaultJestOutputOverrideResult.args.filter((arg) => arg.startsWith("--outputFile=")),
+      ["--outputFile=custom.json"],
+    );
+    assert.equal(defaultJestOutputOverrideResult.args.includes("--json"), false);
+
+    const reactScriptsResult = await runTestTarget({ cwd, targetId: "script:test:react-default" });
+    assert.equal(reactScriptsResult.ok, true);
+    assert.equal(reactScriptsResult.report?.source, "jest");
+    assert.equal(reactScriptsResult.report?.total, 99);
+    assert.equal(reactScriptsResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+    assert.equal(reactScriptsResult.args.includes("--json"), false);
+
+    const customNodeResult = await runTestTarget({ cwd, targetId: "script:test:custom-node-default" });
+    assert.equal(customNodeResult.ok, true);
+    assert.equal(customNodeResult.report?.source, "jest");
+    assert.equal(customNodeResult.report?.total, 99);
+    assert.equal(customNodeResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+    assert.equal(customNodeResult.args.includes("--json"), false);
+
+    const unsafeReporterResult = await runTestTarget({ cwd, targetId: "script:test:jest-unsafe-reporter" });
+    assert.equal(unsafeReporterResult.ok, true);
+    assert.equal(unsafeReporterResult.report?.source, "jest");
+    assert.equal(unsafeReporterResult.report?.total, 99);
+    assert.equal(unsafeReporterResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+    assert.equal(unsafeReporterResult.args.includes("--json"), false);
+
     const jestResult = await runTestTarget({
       cwd,
       targetId: "script:test:jest-json",
@@ -447,6 +550,19 @@ test("requests private structured JSON report files for package scripts with JSO
     assert.equal(existsSync(jestOutputFileArg.slice("--outputFile=".length)), false);
     assert.deepEqual(jestResult.args.filter((arg) => arg === "--"), ["--"]);
     assert.ok(jestResult.args.indexOf(jestOutputFileArg) < jestResult.args.indexOf("--watch=false"));
+
+    const jestJsonOutputOverrideResult = await runTestTarget({
+      cwd,
+      targetId: "script:test:jest-json",
+      extraArgs: ["--outputFile=custom.json"],
+    });
+    assert.equal(jestJsonOutputOverrideResult.ok, true);
+    assert.equal(jestJsonOutputOverrideResult.report?.source, "jest");
+    assert.equal(jestJsonOutputOverrideResult.report?.total, 99);
+    assert.deepEqual(
+      jestJsonOutputOverrideResult.args.filter((arg) => arg.startsWith("--outputFile=")),
+      ["--outputFile=custom.json"],
+    );
 
     const vitestResult = await runTestTarget({ cwd, targetId: "script:test:vitest-json" });
     assert.equal(vitestResult.ok, true);

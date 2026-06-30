@@ -27,9 +27,11 @@ export interface TestTarget {
   packageManager?: TestPackageManager;
   scriptName?: string;
   reporter?: string;
+  reporterDeclared?: boolean;
   jsonReporter?: boolean;
   reportOutputFile?: boolean;
   reportArgsForwardable?: boolean;
+  defaultReportArgsForwardable?: boolean;
   fileCount?: number;
 }
 
@@ -212,7 +214,7 @@ export async function runTestTarget(options: RunTestOptions = {}): Promise<TestR
     };
   }
 
-  const reportRequest = createStructuredReportRequest(target);
+  const reportRequest = createStructuredReportRequest(target, extraArgs);
   const args = formatTargetRunArgs(target, reportRequest, extraArgs);
 
   try {
@@ -445,9 +447,11 @@ function createPackageScriptTarget(
     packageManager,
     scriptName,
     reporter: metadata.reporter,
+    reporterDeclared: metadata.reporterDeclared,
     jsonReporter: metadata.jsonReporter,
     reportOutputFile: metadata.reportOutputFile,
     reportArgsForwardable: metadata.reportArgsForwardable,
+    defaultReportArgsForwardable: metadata.defaultReportArgsForwardable,
   };
 }
 
@@ -1012,9 +1016,11 @@ function limitReportText(text: string): string {
 function inferPackageScriptMetadata(scriptCommand: string): {
   framework: TestFramework;
   reporter?: string;
+  reporterDeclared: boolean;
   jsonReporter: boolean;
   reportOutputFile: boolean;
   reportArgsForwardable: boolean;
+  defaultReportArgsForwardable: boolean;
 } {
   const segments = tokenizeScriptCommandSegments(scriptCommand);
   const tokens = segments.flat();
@@ -1024,9 +1030,12 @@ function inferPackageScriptMetadata(scriptCommand: string): {
   return {
     framework,
     reporter: inferPackageScriptReporter(tokens),
+    reporterDeclared: packageScriptHasReporter(tokens),
     jsonReporter: packageScriptHasJsonReporter(tokens),
     reportOutputFile: packageScriptHasReportOutputFile(tokens),
     reportArgsForwardable: framework === finalSegmentFramework && packageScriptHasJsonReporter(finalSegment),
+    defaultReportArgsForwardable:
+      framework === finalSegmentFramework && finalSegmentSupportsDefaultJsonReportArgs(finalSegment, framework),
   };
 }
 
@@ -1200,6 +1209,25 @@ function packageScriptHasJsonReporter(tokens: string[]): boolean {
   return false;
 }
 
+function packageScriptHasReporter(tokens: string[]): boolean {
+  for (const rawToken of tokens) {
+    const token = stripShellQuotes(rawToken);
+    if (
+      token === "--json" ||
+      token === "--tap" ||
+      token === "--reporter" ||
+      token === "--reporters" ||
+      token === "--test-reporter" ||
+      token.startsWith("--reporter=") ||
+      token.startsWith("--reporters=") ||
+      token.startsWith("--test-reporter=")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function reporterValueIncludesJson(reporter: string): boolean {
   return stripShellQuotes(reporter)
     .split(/[,:]/)
@@ -1222,6 +1250,50 @@ function packageScriptHasReportOutputFile(tokens: string[]): boolean {
     }
   }
   return false;
+}
+
+function finalSegmentSupportsDefaultJsonReportArgs(tokens: string[], framework: TestFramework): boolean {
+  const commandIndex = findFinalSegmentCommandIndex(tokens);
+  if (commandIndex === undefined) {
+    return false;
+  }
+
+  const command = normalizeScriptToken(tokens[commandIndex] ?? "");
+  if (framework === "jest") {
+    return command === "jest";
+  }
+  if (framework === "vitest") {
+    return command === "vitest";
+  }
+  if (framework === "playwright") {
+    return (
+      (command === "playwright" || command === "playwright-core" || command === "@playwright/test") &&
+      normalizeScriptToken(tokens[commandIndex + 1] ?? "") === "test"
+    );
+  }
+  return false;
+}
+
+function findFinalSegmentCommandIndex(tokens: string[]): number | undefined {
+  let index = 0;
+  while (index < tokens.length) {
+    const rawToken = stripShellQuotes(tokens[index] ?? "");
+    const token = normalizeScriptToken(rawToken);
+    if (isShellEnvironmentAssignment(rawToken)) {
+      index += 1;
+      continue;
+    }
+    if (token === "env" || token === "cross-env" || token === "cross-env-shell") {
+      index += 1;
+      continue;
+    }
+    return index;
+  }
+  return undefined;
+}
+
+function isShellEnvironmentAssignment(token: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*=/.test(token);
 }
 
 function normalizeScriptToken(token: string): string {
@@ -1287,35 +1359,55 @@ function formatExtraArgsForTarget(target: TestTarget, extraArgs: string[]): stri
     : extraArgs;
 }
 
+type FrameworkJsonReportRequestMode = "existing-json-reporter" | "default-json-reporter";
+
 interface StructuredReportRequest {
   directory: string;
   path: string;
+  mode: "node-junit" | FrameworkJsonReportRequestMode;
   env?: Record<string, string>;
 }
 
-function createStructuredReportRequest(target: TestTarget): StructuredReportRequest | undefined {
+function createStructuredReportRequest(target: TestTarget, extraArgs: string[] = []): StructuredReportRequest | undefined {
   if (target.kind === "node-test" && target.framework === "node") {
     const directory = mkdtempSync(join(tmpdir(), "orx-test-report-"));
-    return { directory, path: join(directory, "node-junit.xml") };
+    return { directory, path: join(directory, "node-junit.xml"), mode: "node-junit" };
   }
-  if (!canRequestFrameworkJsonReportFile(target)) {
+  const frameworkReportMode = frameworkJsonReportRequestMode(target, extraArgs);
+  if (!frameworkReportMode) {
     return undefined;
   }
   const directory = mkdtempSync(join(tmpdir(), "orx-test-report-"));
   const path = join(directory, `${target.framework}-results.json`);
   return target.framework === "playwright"
-    ? { directory, path, env: { PLAYWRIGHT_JSON_OUTPUT_FILE: path } }
-    : { directory, path };
+    ? { directory, path, mode: frameworkReportMode, env: { PLAYWRIGHT_JSON_OUTPUT_FILE: path } }
+    : { directory, path, mode: frameworkReportMode };
 }
 
-function canRequestFrameworkJsonReportFile(target: TestTarget): boolean {
-  return (
-    target.kind === "package-script" &&
-    isFrameworkJsonReportTarget(target) &&
-    target.jsonReporter === true &&
-    target.reportOutputFile !== true &&
-    target.reportArgsForwardable === true
-  );
+function frameworkJsonReportRequestMode(
+  target: TestTarget,
+  extraArgs: string[] = [],
+): FrameworkJsonReportRequestMode | undefined {
+  if (
+    target.kind !== "package-script" ||
+    !isFrameworkJsonReportTarget(target) ||
+    target.reportOutputFile === true ||
+    packageScriptHasReportOutputFile(extraArgs) ||
+    packageScriptHasReporter(extraArgs)
+  ) {
+    return undefined;
+  }
+  if (target.jsonReporter === true && target.reportArgsForwardable === true) {
+    return "existing-json-reporter";
+  }
+  if (
+    target.reporterDeclared !== true &&
+    target.jsonReporter !== true &&
+    target.defaultReportArgsForwardable === true
+  ) {
+    return "default-json-reporter";
+  }
+  return undefined;
 }
 
 function isFrameworkJsonReportTarget(target: TestTarget): boolean {
@@ -1330,7 +1422,7 @@ function formatTargetRunArgs(
   if (!reportRequest) {
     return [...target.args, ...formatExtraArgsForTarget(target, extraArgs)];
   }
-  if (target.kind === "node-test" && target.framework === "node") {
+  if (reportRequest.mode === "node-junit") {
     return [
       target.args[0] ?? "--test",
       "--test-reporter=junit",
@@ -1339,13 +1431,29 @@ function formatTargetRunArgs(
       ...formatExtraArgsForTarget(target, extraArgs),
     ];
   }
-  const reportArgs = formatFrameworkJsonReportArgs(target, reportRequest.path);
+  const reportArgs = formatFrameworkJsonReportArgs(target, reportRequest.path, reportRequest.mode);
   return [...target.args, ...formatExtraArgsForTarget(target, [...reportArgs, ...extraArgs])];
 }
 
-function formatFrameworkJsonReportArgs(target: TestTarget, reportPath: string): string[] {
-  if (target.framework === "jest" || target.framework === "vitest") {
-    return [`--outputFile=${reportPath}`];
+function formatFrameworkJsonReportArgs(
+  target: TestTarget,
+  reportPath: string,
+  mode: FrameworkJsonReportRequestMode,
+): string[] {
+  if (mode === "existing-json-reporter") {
+    if (target.framework === "jest" || target.framework === "vitest") {
+      return [`--outputFile=${reportPath}`];
+    }
+    return [];
+  }
+  if (target.framework === "jest") {
+    return ["--json", `--outputFile=${reportPath}`];
+  }
+  if (target.framework === "vitest") {
+    return ["--reporter=json", "--reporter=default", `--outputFile=${reportPath}`];
+  }
+  if (target.framework === "playwright") {
+    return ["--reporter=json"];
   }
   return [];
 }
