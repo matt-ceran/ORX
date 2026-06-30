@@ -151,6 +151,59 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "TAP version 13",
+        "ok 1 - loads config",
+        "not ok 2 - rejects bad input",
+        "ok 3 - optional case # SKIP missing fixture",
+        "not ok 4 - future case # TODO not implemented",
+        "1..4",
+        "# tests 4",
+        "# pass 1",
+        "# fail 1",
+        "# skipped 1",
+        "# todo 1",
+        "# duration_ms 12.5",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "tap",
+      total: 4,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+      todo: 1,
+      durationMs: 12.5,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "TAP version 13",
+        "ok 1 - one",
+        "not ok 2 - two",
+        "ok 3 - three # SKIP platform",
+        "not ok 4 - four # TODO later",
+        "1..4",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "tap",
+      total: 4,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+      todo: 1,
+    },
+  );
+
+  assert.deepEqual(
     parseTestReportSummary(createTarget("vitest"), vitestOutput),
     {
       framework: "vitest",
@@ -235,6 +288,8 @@ test("parses common framework report summaries", () => {
 
   assert.equal(parseTestReportSummary(createTarget("unknown"), "2 failed network requests (99)"), undefined);
   assert.equal(parseTestReportSummary(createTarget("playwright"), "2 failed network requests (99)"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "ok 1 - only a log line"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "1..4"), undefined);
 });
 
 test("parses structured framework JSON reports before stdout fallback", () => {

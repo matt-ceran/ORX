@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -699,9 +699,12 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     playwright: parsePlaywrightReportSummary,
     unknown: parseGenericReportSummary,
   };
+  if (framework === "node") {
+    return [parseTapReportSummary, parseNodeReportSummary, parseGenericReportSummary];
+  }
   return framework === "unknown"
-    ? [parseJestReportSummary, parseVitestReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseGenericReportSummary]
-    : [parsers[framework], parseGenericReportSummary];
+    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseGenericReportSummary]
+    : [parsers[framework], parseTapReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -831,6 +834,35 @@ function parseNodeReportSummary(text: string, framework: TestFramework): TestRep
   assignNumber(report, "todo", matchLineNumber(text, "todo"));
   assignNumber(report, "durationMs", matchLineNumber(text, "duration_ms"));
   return report;
+}
+
+function parseTapReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  const hasTapMarker = /^\s*TAP version \d+\s*$/im.test(text);
+  const planTotal = matchTapPlanTotal(text);
+  const counts = parseTapResultCounts(text);
+  const hasResultLines = hasOutcomeCounts(counts);
+  if (!hasTapMarker && (planTotal === undefined || !hasResultLines)) {
+    return undefined;
+  }
+  if (!hasResultLines && planTotal === undefined) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "tap",
+  };
+  const passed = matchLineNumber(text, "pass") ?? counts.passed;
+  const failed = matchLineNumber(text, "fail") ?? counts.failed;
+  const skipped = matchLineNumber(text, "skipped") ?? matchLineNumber(text, "skip") ?? counts.skipped;
+  const todo = matchLineNumber(text, "todo") ?? counts.todo;
+  assignNumber(report, "total", matchLineNumber(text, "tests") ?? planTotal ?? sumDefined(passed, failed, skipped, todo));
+  assignNumber(report, "passed", passed);
+  assignNumber(report, "failed", failed);
+  assignNumber(report, "skipped", skipped);
+  assignNumber(report, "todo", todo);
+  assignNumber(report, "durationMs", matchLineNumber(text, "duration_ms"));
+  return hasReportCounts(report) ? report : undefined;
 }
 
 function parseNodeJunitReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -972,6 +1004,38 @@ function parseStatusCounts(text: string): Partial<Record<"passed" | "failed" | "
   const parenthesizedTotal = text.match(/\((\d+)\)/);
   if (parenthesizedTotal && counts.total === undefined) {
     counts.total = Number.parseInt(parenthesizedTotal[1], 10);
+  }
+  return counts;
+}
+
+function matchTapPlanTotal(text: string): number | undefined {
+  let total: number | undefined;
+  for (const match of text.matchAll(/^1\.\.(\d+)\s*$/gm)) {
+    total = Number.parseInt(match[1] ?? "", 10);
+  }
+  return typeof total === "number" && Number.isInteger(total) && total >= 0 ? total : undefined;
+}
+
+function parseTapResultCounts(
+  text: string,
+): Partial<Record<"passed" | "failed" | "skipped" | "todo", number>> {
+  const counts: Partial<Record<"passed" | "failed" | "skipped" | "todo", number>> = {};
+  for (const match of text.matchAll(/^(not ok|ok)(?:\s+\d+)?(?:\s+-[^\r\n#]*)?(?:\s+#\s*(SKIP|TODO)\b[^\r\n]*)?\s*$/gim)) {
+    const status = (match[1] ?? "").toLowerCase();
+    const directive = (match[2] ?? "").toLowerCase();
+    if (directive === "skip") {
+      counts.skipped = (counts.skipped ?? 0) + 1;
+      continue;
+    }
+    if (directive === "todo") {
+      counts.todo = (counts.todo ?? 0) + 1;
+      continue;
+    }
+    if (status === "ok") {
+      counts.passed = (counts.passed ?? 0) + 1;
+    } else {
+      counts.failed = (counts.failed ?? 0) + 1;
+    }
   }
   return counts;
 }
