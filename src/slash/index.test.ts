@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
+import type { AstGrepRunner } from "../code-map/index.js";
 import type { DelegationState } from "../delegation/index.js";
 import type { OpenRouterCreditsInfo, OpenRouterModelInfo } from "../openrouter/live.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
@@ -122,7 +123,8 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/delegate \[help\|status\|plan\|add\|remove\|clear\|team\|policy\]/);
   assert.match(output, /\/delegates \[list\|status\|plan\|policy\|teams\|save\|use\|inspect\|delete\]/);
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
-  assert.match(output, /\/code \[map\|symbols\|refs\|imports\|calls\]/);
+  assert.match(output, /\/code \[map\|symbols\|refs\|imports\|calls\|ast-grep\]/);
+  assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/refs <query>/);
   assert.match(output, /\/imports \[query\]/);
@@ -303,6 +305,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/code m"), [["map "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/code s"), [["symbols "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/code c"), [["calls "], "c"]);
+  assert.deepEqual(completeSlashCommandLine("/code a"), [["ast-grep "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/prompts a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/rules a"), [["activate "], "a"]);
@@ -413,6 +416,84 @@ test("map slash command renders a local code map", () => {
     const callGraphAlias = createSlashHarness({ cwd });
     assert.equal(handleSlashCommand("/call-graph", callGraphAlias.context), "continue");
     assert.match(callGraphAlias.stdout(), /Code Call Graph/);
+
+    const astGrepCalls: Array<{ command: string; args: string[] }> = [];
+    const astGrepRunner: AstGrepRunner = (command, args) => {
+      astGrepCalls.push({ command, args });
+      if (args.includes("--version")) {
+        return { status: command === "sg" ? 0 : 1, signal: null, stdout: "ast-grep 0.0.0\n", stderr: "" };
+      }
+      return {
+        status: 0,
+        signal: null,
+        stdout: "src/index.ts:3:export function start() { return feature(); }\n",
+        stderr: "",
+      };
+    };
+    const astGrep = createSlashHarness({ cwd, astGrepRunner });
+    assert.equal(handleSlashCommand("/code ast-grep 'function $A' src --lang ts", astGrep.context), "continue");
+    assert.match(astGrep.stdout(), /Code ast-grep/);
+    assert.match(astGrep.stdout(), /status: ok/);
+    assert.match(astGrep.stdout(), /mutation: none/);
+    assert.match(astGrep.stdout(), /src\/index\.ts:3:export function start/);
+    assert.equal(astGrep.stderr(), "");
+    assert.deepEqual(astGrepCalls.at(-1)?.args, [
+      "run",
+      "--pattern",
+      "function $A",
+      "--color",
+      "never",
+      "--heading",
+      "never",
+      "--lang",
+      "ts",
+      "src",
+    ]);
+
+    const astGrepAlias = createSlashHarness({ cwd, astGrepRunner });
+    assert.equal(handleSlashCommand("/ast-grep start src --json", astGrepAlias.context), "continue");
+    assert.equal(astGrepAlias.stdout(), "src/index.ts:3:export function start() { return feature(); }\n");
+
+    const astGrepMissing = createSlashHarness({
+      cwd,
+      astGrepRunner: () => ({
+        status: null,
+        signal: null,
+        stdout: "",
+        stderr: "",
+        error: Object.assign(new Error("not found"), { code: "ENOENT" }),
+      }),
+    });
+    assert.equal(handleSlashCommand("/code ast-grep start", astGrepMissing.context), "continue");
+    assert.match(astGrepMissing.stderr(), /ast-grep is not installed or not on PATH/);
+
+    const astGrepDashTarget = createSlashHarness({ cwd, astGrepRunner });
+    assert.equal(handleSlashCommand("/code ast-grep pattern -- --update-all", astGrepDashTarget.context), "continue");
+    assert.match(astGrepDashTarget.stderr(), /path must not start with a dash/);
+    assert.equal(
+      astGrepCalls.some((call) => call.args.includes("--update-all")),
+      false,
+    );
+
+    const astGrepNormalizedDashTarget = createSlashHarness({ cwd, astGrepRunner });
+    assert.equal(handleSlashCommand("/code ast-grep pattern ./--update-all", astGrepNormalizedDashTarget.context), "continue");
+    assert.match(astGrepNormalizedDashTarget.stderr(), /dash-prefixed operand/);
+
+    const astGrepDashRewrite = createSlashHarness({ cwd, astGrepRunner });
+    assert.equal(handleSlashCommand("/code ast-grep pattern --rewrite --update-all", astGrepDashRewrite.context), "continue");
+    assert.match(astGrepDashRewrite.stderr(), /rewrite must not start with a dash/);
+    assert.equal(
+      astGrepCalls.some((call) => call.args.includes("--update-all")),
+      false,
+    );
+
+    const astGrepDashPattern = createSlashHarness({ cwd, astGrepRunner });
+    assert.equal(handleSlashCommand("/code ast-grep -- --update-all", astGrepDashPattern.context), "continue");
+    assert.match(astGrepDashPattern.stderr(), /pattern must not start with a dash/);
+    assert.equal(
+      astGrepCalls.some((call) => call.args.includes("--update-all")),
+      false,
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -4512,6 +4593,7 @@ function createSlashHarness(
     webSearchFetch?: typeof fetch;
     browserSnapshot?: SlashCommandContext["browserSnapshot"];
     browserResolveHost?: SlashCommandContext["browserResolveHost"];
+    astGrepRunner?: AstGrepRunner;
     braveSearchApiKey?: string;
     tty?: boolean;
     columns?: number;
@@ -4572,6 +4654,7 @@ function createSlashHarness(
       webSearchFetch: options.webSearchFetch,
       browserSnapshot: options.browserSnapshot,
       browserResolveHost: options.browserResolveHost,
+      astGrepRunner: options.astGrepRunner,
       braveSearchApiKey: options.braveSearchApiKey,
       getConfig: () => config,
       setConfig: (nextConfig: OrxConfig) => {

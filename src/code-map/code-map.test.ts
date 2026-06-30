@@ -5,15 +5,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createCodeMap,
+  parseCodeAstGrepArgs,
   createCodeCallGraph,
   createCodeImportGraph,
   createCodeReferenceIndex,
   createCodeSymbolIndex,
+  renderCodeAstGrepResult,
   renderCodeMap,
   renderCodeCallGraph,
   renderCodeImportGraph,
   renderCodeReferences,
   renderCodeSymbols,
+  runCodeAstGrep,
+  type AstGrepRunner,
 } from "./index.js";
 
 test("code map discovers languages entrypoints exports and imports", () => {
@@ -444,6 +448,171 @@ test("code map redacts unsafe paths and reports missing targets", () => {
     const missing = renderCodeMap(createCodeMap({ cwd, targetPath: "missing" }));
     assert.match(missing, /target path does not exist/);
     assert.match(missing, /path="missing"/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("ast-grep adapter builds bounded local search and rewrite preview commands", () => {
+  const cwd = createTempDir();
+  const calls: Array<{ command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }> = [];
+  const runner: AstGrepRunner = (command, args, options) => {
+    calls.push({ command, args, cwd: options.cwd, env: options.env });
+    if (args.includes("--version")) {
+      return { status: command === "sg" ? 0 : 1, signal: null, stdout: "ast-grep 0.0.0\n", stderr: "" };
+    }
+    return {
+      status: 0,
+      signal: null,
+      stdout: "src/index.ts:3:export function start() { return logger(value); }\n",
+      stderr: "",
+    };
+  };
+
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(join(cwd, "src", "index.ts"), "export function start() { return value; }\n");
+
+    const parsed = parseCodeAstGrepArgs([
+      "console.log($A)",
+      "src",
+      "--lang",
+      "ts",
+      "--rewrite",
+      "logger($A)",
+      "--preview",
+    ]);
+    if (!parsed.ok) {
+      assert.fail(parsed.message);
+    }
+
+    const result = runCodeAstGrep({
+      ...parsed.args,
+      cwd,
+      env: {
+        PATH: "/usr/bin",
+        OPENROUTER_API_KEY: "sk-or-v1-secret",
+      },
+      runner,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "ok");
+    assert.equal(result.command, "sg");
+    assert.deepEqual(calls[1]?.args, [
+      "run",
+      "--pattern",
+      "console.log($A)",
+      "--color",
+      "never",
+      "--heading",
+      "never",
+      "--lang",
+      "ts",
+      "--rewrite",
+      "logger($A)",
+      "src",
+    ]);
+    assert.equal(calls[1]?.cwd, cwd);
+    assert.equal(calls[1]?.env.OPENROUTER_API_KEY, undefined);
+    assert.equal(calls[1]?.env.PATH, "/usr/bin");
+
+    const rendered = renderCodeAstGrepResult(result);
+    assert.match(rendered, /Code ast-grep/);
+    assert.match(rendered, /mode: rewrite_preview/);
+    assert.match(rendered, /mutation: none/);
+    assert.match(rendered, /command: "sg" "run" "--pattern" "console\.log\(\$A\)" "--color" "never"/);
+    assert.match(rendered, /src\/index\.ts:3:export function start/);
+
+    const dashTarget = parseCodeAstGrepArgs(["pattern", "--", "--update-all"]);
+    assert.equal(dashTarget.ok, false);
+    if (!dashTarget.ok) {
+      assert.match(dashTarget.message, /path must not start with a dash/);
+    }
+
+    const dashPattern = parseCodeAstGrepArgs(["--", "--update-all"]);
+    assert.equal(dashPattern.ok, false);
+    if (!dashPattern.ok) {
+      assert.match(dashPattern.message, /pattern must not start with a dash/);
+    }
+
+    const dashRewrite = parseCodeAstGrepArgs(["pattern", "--rewrite", "--update-all"]);
+    assert.equal(dashRewrite.ok, false);
+    if (!dashRewrite.ok) {
+      assert.match(dashRewrite.message, /rewrite must not start with a dash/);
+    }
+
+    const dashRewriteEquals = parseCodeAstGrepArgs(["pattern", "--rewrite=--update-all"]);
+    assert.equal(dashRewriteEquals.ok, false);
+    if (!dashRewriteEquals.ok) {
+      assert.match(dashRewriteEquals.message, /rewrite must not start with a dash/);
+    }
+
+    const dashLang = parseCodeAstGrepArgs(["pattern", "--lang", "--update-all"]);
+    assert.equal(dashLang.ok, false);
+    if (!dashLang.ok) {
+      assert.match(dashLang.message, /lang must not start with a dash/);
+    }
+
+    const normalizedDashTarget = runCodeAstGrep({
+      cwd,
+      pattern: "pattern",
+      targetPath: "./--update-all",
+      json: false,
+      preview: false,
+      runner,
+    });
+    assert.equal(normalizedDashTarget.ok, false);
+    assert.equal(normalizedDashTarget.status, "invalid_arguments");
+    assert.match(normalizedDashTarget.message ?? "", /dash-prefixed operand/);
+    assert.equal(
+      calls.some((call) => call.args.includes("--update-all")),
+      false,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("ast-grep adapter reports missing tools and guards paths", () => {
+  const cwd = createTempDir();
+  const calls: Array<{ command: string; args: string[] }> = [];
+  const missingRunner: AstGrepRunner = (command, args) => {
+    calls.push({ command, args });
+    return {
+      status: null,
+      signal: null,
+      stdout: "",
+      stderr: "",
+      error: Object.assign(new Error("not found"), { code: "ENOENT" }),
+    };
+  };
+
+  try {
+    const missing = runCodeAstGrep({
+      cwd,
+      pattern: "console.log($A)",
+      targetPath: ".",
+      json: false,
+      preview: false,
+      runner: missingRunner,
+    });
+    assert.equal(missing.ok, false);
+    assert.equal(missing.status, "tool_missing");
+    assert.equal(calls.length, 2);
+    assert.match(renderCodeAstGrepResult(missing), /ast-grep is not installed or not on PATH/);
+
+    const guarded = runCodeAstGrep({
+      cwd,
+      pattern: "console.log($A)",
+      targetPath: "../outside",
+      json: false,
+      preview: false,
+      runner: missingRunner,
+    });
+    assert.equal(guarded.ok, false);
+    assert.equal(guarded.status, "invalid_arguments");
+    assert.match(renderCodeAstGrepResult(guarded), /must stay inside the current working directory/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

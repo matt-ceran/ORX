@@ -48,6 +48,7 @@ export function renderOperatorGuide(report: DoctorReport): string {
     "  - orx refs <query>",
     "  - orx imports <query>",
     "  - orx calls <query>",
+    "  - orx ast-grep '<pattern>' src --lang ts",
     "mcp_setup:",
     "  - orx mcp presets",
     "  - orx mcp plan context7",

@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { runCli } from "./cli.js";
+import type { AstGrepRunner } from "./code-map/index.js";
 import {
   allowMcpModelToolGrant,
   setMcpProfilePersistentState,
@@ -38,7 +39,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
-    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, or call graphs/);
+    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, or ast-grep searches/);
     assert.match(help.stdout(), /orchestrator\s+Show delegation readiness or refuse session-less changes/);
     assert.match(help.stdout(), /delegate\s+Show\/refuse session delegate changes, policy, or saved teams/);
     assert.match(help.stdout(), /delegates\s+Show delegate readiness, execution policy, or saved teams/);
@@ -1538,6 +1539,99 @@ test("cli code map renders a bounded repository overview without an API key", as
     const callGraphAlias = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "call-graph"], {}, callGraphAlias.io), 0);
     assert.match(callGraphAlias.stdout(), /Code Call Graph/);
+
+    const astGrepCalls: Array<{ command: string; args: string[] }> = [];
+    const astGrepRunner: AstGrepRunner = (command, args) => {
+      astGrepCalls.push({ command, args });
+      if (args.includes("--version")) {
+        return { status: command === "sg" ? 0 : 1, signal: null, stdout: "ast-grep 0.0.0\n", stderr: "" };
+      }
+      return {
+        status: 0,
+        signal: null,
+        stdout: "src/index.ts:3:export function start() { return feature(); }\n",
+        stderr: "",
+      };
+    };
+    const astGrep = createIo({ cwd, astGrepRunner });
+    assert.equal(
+      await runCli(["node", "cli", "code", "ast-grep", "function $A", "src", "--lang", "ts"], {}, astGrep.io),
+      0,
+    );
+    assert.match(astGrep.stdout(), /Code ast-grep/);
+    assert.match(astGrep.stdout(), /status: ok/);
+    assert.match(astGrep.stdout(), /mutation: none/);
+    assert.match(astGrep.stdout(), /src\/index\.ts:3:export function start/);
+    assert.equal(astGrep.stderr(), "");
+    assert.deepEqual(astGrepCalls.at(-1)?.args, [
+      "run",
+      "--pattern",
+      "function $A",
+      "--color",
+      "never",
+      "--heading",
+      "never",
+      "--lang",
+      "ts",
+      "src",
+    ]);
+
+    const astGrepAlias = createIo({ cwd, astGrepRunner });
+    assert.equal(await runCli(["node", "cli", "ast-grep", "start", "src", "--json"], {}, astGrepAlias.io), 0);
+    assert.equal(astGrepAlias.stdout(), "src/index.ts:3:export function start() { return feature(); }\n");
+
+    const astGrepMissing = createIo({
+      cwd,
+      astGrepRunner: () => ({
+        status: null,
+        signal: null,
+        stdout: "",
+        stderr: "",
+        error: Object.assign(new Error("not found"), { code: "ENOENT" }),
+      }),
+    });
+    assert.equal(await runCli(["node", "cli", "code", "ast-grep", "start"], {}, astGrepMissing.io), 1);
+    assert.match(astGrepMissing.stderr(), /ast-grep is not installed or not on PATH/);
+
+    const astGrepDashTarget = createIo({ cwd, astGrepRunner });
+    assert.equal(
+      await runCli(["node", "cli", "code", "ast-grep", "pattern", "--", "--update-all"], {}, astGrepDashTarget.io),
+      1,
+    );
+    assert.match(astGrepDashTarget.stderr(), /path must not start with a dash/);
+    assert.equal(
+      astGrepCalls.some((call) => call.args.includes("--update-all")),
+      false,
+    );
+
+    const astGrepNormalizedDashTarget = createIo({ cwd, astGrepRunner });
+    assert.equal(
+      await runCli(["node", "cli", "code", "ast-grep", "pattern", "./--update-all"], {}, astGrepNormalizedDashTarget.io),
+      1,
+    );
+    assert.match(astGrepNormalizedDashTarget.stderr(), /dash-prefixed operand/);
+
+    const astGrepDashRewrite = createIo({ cwd, astGrepRunner });
+    assert.equal(
+      await runCli(["node", "cli", "code", "ast-grep", "pattern", "--rewrite", "--update-all"], {}, astGrepDashRewrite.io),
+      1,
+    );
+    assert.match(astGrepDashRewrite.stderr(), /rewrite must not start with a dash/);
+    assert.equal(
+      astGrepCalls.some((call) => call.args.includes("--update-all")),
+      false,
+    );
+
+    const astGrepDashPattern = createIo({ cwd, astGrepRunner });
+    assert.equal(
+      await runCli(["node", "cli", "code", "ast-grep", "--", "--update-all"], {}, astGrepDashPattern.io),
+      1,
+    );
+    assert.match(astGrepDashPattern.stderr(), /pattern must not start with a dash/);
+    assert.equal(
+      astGrepCalls.some((call) => call.args.includes("--update-all")),
+      false,
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -4770,6 +4864,7 @@ function createIo(
     mcpCallFetch?: typeof fetch;
     mcpKeychainRunner?: McpMacosKeychainCommandRunner;
     mcpKeychainPlatform?: NodeJS.Platform;
+    astGrepRunner?: AstGrepRunner;
     stdin?: NodeJS.ReadableStream;
     cwd?: string;
     tty?: boolean;
@@ -4804,6 +4899,7 @@ function createIo(
       mcpCallFetch: options.mcpCallFetch,
       mcpKeychainRunner: options.mcpKeychainRunner,
       mcpKeychainPlatform: options.mcpKeychainPlatform,
+      astGrepRunner: options.astGrepRunner,
     },
     stdout() {
       return stdoutText;

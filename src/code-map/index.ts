@@ -6,6 +6,18 @@ import {
 } from "node:fs";
 import { basename, extname, join, posix, relative, resolve } from "node:path";
 import { redactSecrets } from "../mcp/audit.js";
+export {
+  CODE_AST_GREP_USAGE,
+  SLASH_CODE_AST_GREP_USAGE,
+  parseCodeAstGrepArgs,
+  parseCodeAstGrepArgText,
+  renderCodeAstGrepResult,
+  runCodeAstGrep,
+  type AstGrepRunner,
+  type CodeAstGrepArgs,
+  type CodeAstGrepParseResult,
+  type CodeAstGrepResult,
+} from "./ast-grep.js";
 
 export interface CodeMapOptions {
   cwd?: string;

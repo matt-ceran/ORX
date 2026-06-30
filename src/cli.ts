@@ -12,16 +12,21 @@ import {
 import { BIN_NAME } from "./constants.js";
 import { formatToolCallStart, formatToolResult, runAgentTurn } from "./agent/index.js";
 import {
+  CODE_AST_GREP_USAGE,
   createCodeMap,
   createCodeCallGraph,
   createCodeImportGraph,
   createCodeReferenceIndex,
   createCodeSymbolIndex,
+  parseCodeAstGrepArgs,
   renderCodeMap,
+  renderCodeAstGrepResult,
   renderCodeCallGraph,
   renderCodeImportGraph,
   renderCodeReferences,
   renderCodeSymbols,
+  runCodeAstGrep,
+  type AstGrepRunner,
 } from "./code-map/index.js";
 import {
   initializeConfig,
@@ -234,6 +239,7 @@ interface CliIo {
   mcpKeychainRunner?: McpMacosKeychainCommandRunner;
   mcpKeychainPlatform?: NodeJS.Platform;
   browserSnapshot?: BrowserSnapshotDriver;
+  astGrepRunner?: AstGrepRunner;
 }
 
 interface AskCommand {
@@ -258,7 +264,7 @@ const CLI_NAMESPACE_USAGES = {
   bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
   tests: "Usage: orx tests [list|run [target-id] [-- args...]]",
-  code: "Usage: orx code [map|symbols|refs|imports|calls] [query-or-path]",
+  code: "Usage: orx code [map|symbols|refs|imports|calls|ast-grep] [query-or-path]",
   orchestrator: "Usage: orx orchestrator [status|plan|openrouter <model>|clear]",
   delegate: "Usage: orx delegate [status|plan [saved-team-id]|add <name> openrouter <model>|remove <name>|clear|team|policy]",
   delegates:
@@ -718,6 +724,10 @@ export async function runCli(
     return runCodeCallGraphCommand(args.slice(1), io);
   }
 
+  if (first === "ast-grep") {
+    return runCodeAstGrepCommand(args.slice(1), io);
+  }
+
   if (first === "orchestrator") {
     return runOrchestratorCommand(args.slice(1), io, delegationPolicyPath);
   }
@@ -814,7 +824,7 @@ function helpText(): string {
     "  bins          List, inspect, trust, untrust, or run plugin bins",
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  tests         Discover or run native test targets",
-    "  code          Render local code maps, symbol indexes, references, imports, or call graphs",
+    "  code          Render local code maps, symbol indexes, references, imports, calls, or ast-grep searches",
     "  orchestrator  Show delegation readiness or refuse session-less changes",
     "  delegate      Show/refuse session delegate changes, policy, or saved teams",
     "  delegates     Show delegate readiness, execution policy, or saved teams",
@@ -1000,6 +1010,9 @@ function runCodeCommand(args: string[], io: CliIo): number {
   if (subcommand === "calls" || subcommand === "call-graph" || subcommand === "callgraph") {
     return runCodeCallGraphCommand(args.slice(1), io);
   }
+  if (subcommand === "ast-grep" || subcommand === "astgrep" || subcommand === "sg") {
+    return runCodeAstGrepCommand(args.slice(1), io);
+  }
 
   writeLine(io.stderr, CLI_NAMESPACE_USAGES.code);
   return 1;
@@ -1037,6 +1050,32 @@ function runCodeCallGraphCommand(args: string[], io: CliIo): number {
   const query = args.join(" ").trim() || undefined;
   writeLine(io.stdout, renderCodeCallGraph(createCodeCallGraph({ cwd: io.cwd, query })));
   return 0;
+}
+
+function runCodeAstGrepCommand(args: string[], io: CliIo): number {
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, CODE_AST_GREP_USAGE);
+    return 0;
+  }
+  const parsed = parseCodeAstGrepArgs(args, CODE_AST_GREP_USAGE);
+  if (!parsed.ok) {
+    writeLine(io.stderr, parsed.message);
+    return 1;
+  }
+  const result = runCodeAstGrep({
+    ...parsed.args,
+    cwd: io.cwd,
+    runner: io.astGrepRunner,
+  });
+  if (parsed.args.json && result.ok) {
+    writeLine(io.stdout, result.stdout.trimEnd());
+    return 0;
+  }
+  writeLine(
+    result.ok ? io.stdout : io.stderr,
+    renderCodeAstGrepResult(result, CODE_AST_GREP_USAGE),
+  );
+  return result.ok ? 0 : 1;
 }
 
 function runOrchestratorCommand(args: string[], io: CliIo, delegationPolicyPath: string): number {

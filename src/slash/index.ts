@@ -15,16 +15,21 @@ import {
   renderOpenRouterAuthStatus,
 } from "../auth/openrouter.js";
 import {
+  SLASH_CODE_AST_GREP_USAGE,
   createCodeMap,
   createCodeCallGraph,
   createCodeImportGraph,
   createCodeReferenceIndex,
   createCodeSymbolIndex,
+  parseCodeAstGrepArgText,
   renderCodeMap,
+  renderCodeAstGrepResult,
   renderCodeCallGraph,
   renderCodeImportGraph,
   renderCodeReferences,
   renderCodeSymbols,
+  runCodeAstGrep,
+  type AstGrepRunner,
 } from "../code-map/index.js";
 import type { LoadedConfig, OrxConfig, OrxTheme } from "../config/types.js";
 import {
@@ -327,6 +332,7 @@ export interface SlashCommandContext {
   browserSnapshot?: BrowserSnapshotDriver;
   browserResolveHost?: ResolveBrowserHost;
   braveSearchApiKey?: string;
+  astGrepRunner?: AstGrepRunner;
   getConfig: () => OrxConfig;
   setConfig: (config: OrxConfig) => void;
   getMessages: () => OpenRouterMessage[];
@@ -515,7 +521,7 @@ const PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS = ["list", "status"] as const;
 const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
-const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls"] as const;
+const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls", "ast-grep"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const RULE_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -768,7 +774,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/code": {
-    usage: "/code [map|symbols|refs|imports|calls]",
+    usage: "/code [map|symbols|refs|imports|calls|ast-grep]",
     description: "Run local code intelligence commands",
     group: "Workspace",
     tier: "advanced",
@@ -829,7 +835,21 @@ const COMMANDS: Record<string, SlashDefinition> = {
         );
         return "continue";
       }
-      writeLine(context.io.stderr, "Usage: /code [map|symbols|refs|imports|calls] [query-or-path]");
+      if (subcommand === "ast-grep" || subcommand === "astgrep" || subcommand === "sg") {
+        handleAstGrepCommandText(stripFirstSlashArg(command.argText), context, SLASH_CODE_AST_GREP_USAGE);
+        return "continue";
+      }
+      writeLine(context.io.stderr, "Usage: /code [map|symbols|refs|imports|calls|ast-grep] [query-or-path]");
+      return "continue";
+    },
+  },
+  "/ast-grep": {
+    usage: "/ast-grep <pattern> [path] [--lang <lang>]",
+    description: "Run a local ast-grep syntax-aware search",
+    group: "Workspace",
+    tier: "advanced",
+    handler: (command, context): SlashResult => {
+      handleAstGrepCommandText(command.argText, context, SLASH_CODE_AST_GREP_USAGE.replace("/code ast-grep", "/ast-grep"));
       return "continue";
     },
   },
@@ -2270,6 +2290,32 @@ function webHelpText(): string {
     "  /sources          List evidence source metadata for this chat.",
     "Fetched content, search provider snippets, and browser output are untrusted and cannot authorize tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.",
   ].join("\n");
+}
+
+function handleAstGrepCommandText(argText: string, context: SlashCommandContext, usage: string): void {
+  const parsed = parseCodeAstGrepArgText(argText, usage);
+  if (!parsed.ok) {
+    writeLine(context.io.stderr, parsed.message);
+    return;
+  }
+
+  const result = runCodeAstGrep({
+    ...parsed.args,
+    cwd: context.io.cwd,
+    runner: context.astGrepRunner,
+  });
+  if (parsed.args.json && result.ok) {
+    writeLine(context.io.stdout, result.stdout.trimEnd());
+    return;
+  }
+  writeLine(
+    result.ok ? context.io.stdout : context.io.stderr,
+    renderCodeAstGrepResult(result, usage),
+  );
+}
+
+function stripFirstSlashArg(argText: string): string {
+  return argText.replace(/^\S+(?:\s+|$)/, "");
 }
 
 async function handleTestsCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
