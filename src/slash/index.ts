@@ -16,9 +16,11 @@ import {
 } from "../auth/openrouter.js";
 import {
   createCodeMap,
+  createCodeImportGraph,
   createCodeReferenceIndex,
   createCodeSymbolIndex,
   renderCodeMap,
+  renderCodeImportGraph,
   renderCodeReferences,
   renderCodeSymbols,
 } from "../code-map/index.js";
@@ -511,7 +513,7 @@ const PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS = ["list", "status"] as const;
 const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
-const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs"] as const;
+const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const RULE_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -764,7 +766,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/code": {
-    usage: "/code [map|symbols|refs]",
+    usage: "/code [map|symbols|refs|imports]",
     description: "Run local code intelligence commands",
     group: "Workspace",
     tier: "advanced",
@@ -805,7 +807,17 @@ const COMMANDS: Record<string, SlashDefinition> = {
         }
         return "continue";
       }
-      writeLine(context.io.stderr, "Usage: /code [map|symbols|refs] [query-or-path]");
+      if (subcommand === "imports" || subcommand === "import-graph" || subcommand === "graph") {
+        writeLine(
+          context.io.stdout,
+          renderCodeImportGraph(createCodeImportGraph({
+            cwd: context.io.cwd,
+            query: command.args.slice(1).join(" ").trim() || undefined,
+          })),
+        );
+        return "continue";
+      }
+      writeLine(context.io.stderr, "Usage: /code [map|symbols|refs|imports] [query-or-path]");
       return "continue";
     },
   },
@@ -844,6 +856,23 @@ const COMMANDS: Record<string, SlashDefinition> = {
           })),
         );
       }
+      return "continue";
+    },
+  },
+  "/imports": {
+    usage: "/imports [query]",
+    description: "Render local import graph edges",
+    group: "Workspace",
+    tier: "advanced",
+    aliases: ["/import-graph"],
+    handler: (command, context): SlashResult => {
+      writeLine(
+        context.io.stdout,
+        renderCodeImportGraph(createCodeImportGraph({
+          cwd: context.io.cwd,
+          query: command.argText || undefined,
+        })),
+      );
       return "continue";
     },
   },

@@ -88,7 +88,8 @@ Implemented under `src/code-map/`:
 - language, key-file, package/config/source entrypoint, and JavaScript/TypeScript import/export summaries
 - exported-symbol indexes with file paths and line numbers
 - bounded JavaScript/TypeScript code-reference indexes that skip comments, strings, and template literals
-- explicit operator commands `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `orx code refs`, `orx refs`, `/map`, `/code map`, `/code symbols`, `/symbols`, `/code refs`, and `/refs`
+- local JavaScript/TypeScript import-edge graphs with static import, re-export, require, dynamic import, relative resolution, and visible per-file cap omissions where possible
+- explicit operator commands `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `orx code refs`, `orx refs`, `orx code imports`, `orx imports`, `/map`, `/code map`, `/code symbols`, `/symbols`, `/code refs`, `/refs`, `/code imports`, and `/imports`
 
 The code-map adapter is local-only, no-key, and not model-autonomous. It reads bounded local file metadata/content, redacts secret-like rendered paths and symbols, skips symlinks, and reports omissions/truncation instead of following unbounded trees.
 

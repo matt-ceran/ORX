@@ -5,9 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createCodeMap,
+  createCodeImportGraph,
   createCodeReferenceIndex,
   createCodeSymbolIndex,
   renderCodeMap,
+  renderCodeImportGraph,
   renderCodeReferences,
   renderCodeSymbols,
 } from "./index.js";
@@ -48,6 +50,22 @@ test("code map discovers languages entrypoints exports and imports", () => {
         "",
       ].join("\n"),
     );
+    mkdirSync(join(cwd, "src", "feature"), { recursive: true });
+    writeFileSync(
+      join(cwd, "src", "feature", "index.ts"),
+      [
+        "export const feature = true;",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(cwd, "src", "feature-user.ts"),
+      [
+        "import { feature } from './feature';",
+        "export const usesFeature = feature;",
+        "",
+      ].join("\n"),
+    );
     writeFileSync(
       join(cwd, "src", "literals.ts"),
       [
@@ -80,7 +98,7 @@ test("code map discovers languages entrypoints exports and imports", () => {
     assert.ok(map.scannedFiles >= 3);
     assert.deepEqual(
       map.languageCounts.map((entry) => `${entry.language}:${entry.files}`).sort(),
-      ["JSON:2", "TypeScript:4"],
+      ["JSON:2", "TypeScript:6"],
     );
     assert.ok(map.keyFiles.includes("package.json"));
     assert.ok(map.keyFiles.includes("tsconfig.json"));
@@ -109,7 +127,7 @@ test("code map discovers languages entrypoints exports and imports", () => {
 
     const rendered = renderCodeMap(map);
     assert.match(rendered, /Code Map/);
-    assert.match(rendered, /TypeScript: 4/);
+    assert.match(rendered, /TypeScript: 6/);
     assert.match(rendered, /exports="renamedHelper,run"/);
     assert.match(rendered, /imports="\.\/util\.js,node:fs"/);
 
@@ -124,8 +142,8 @@ test("code map discovers languages entrypoints exports and imports", () => {
     assert.match(renderedSymbols, /line=9/);
 
     const limitedSymbols = renderCodeSymbols(createCodeSymbolIndex({ cwd, maxSymbols: 1 }));
-    assert.match(limitedSymbols, /symbols: 6/);
-    assert.match(limitedSymbols, /5 more symbols omitted/);
+    assert.match(limitedSymbols, /symbols: 8/);
+    assert.match(limitedSymbols, /7 more symbols omitted/);
 
     const references = createCodeReferenceIndex({ cwd, query: "helper" });
     assert.equal(references.totalReferences, 6);
@@ -151,6 +169,88 @@ test("code map discovers languages entrypoints exports and imports", () => {
     assert.match(renderedReferences, /path="src\/literals\.ts"/);
     assert.match(renderedReferences, /line=9/);
     assert.match(renderedReferences, /excerpt="export const realLiteralExport = true;"/);
+
+    const importGraph = createCodeImportGraph({ cwd });
+    assert.equal(importGraph.totalEdges, 3);
+    assert.equal(importGraph.localEdges, 2);
+    assert.equal(importGraph.externalImports, 1);
+    assert.equal(importGraph.unresolvedLocalImports, 0);
+    assert.ok(importGraph.edges.some((edge) =>
+      edge.kind === "local" &&
+      edge.from === "src/index.ts" &&
+      edge.to === "src/util.ts" &&
+      edge.specifier === "./util.js"));
+    assert.ok(importGraph.edges.some((edge) =>
+      edge.kind === "local" &&
+      edge.from === "src/feature-user.ts" &&
+      edge.to === "src/feature/index.ts" &&
+      edge.specifier === "./feature"));
+    assert.ok(importGraph.edges.some((edge) =>
+      edge.kind === "external" &&
+      edge.from === "src/index.ts" &&
+      edge.specifier === "node:fs"));
+
+    const filteredGraph = createCodeImportGraph({ cwd, query: "feature" });
+    assert.equal(filteredGraph.totalEdges, 1);
+    assert.equal(filteredGraph.localEdges, 1);
+    assert.equal(filteredGraph.filesWithImports, 1);
+
+    const renderedGraph = renderCodeImportGraph(importGraph);
+    assert.match(renderedGraph, /Code Import Graph/);
+    assert.match(renderedGraph, /local_edges: 2/);
+    assert.match(renderedGraph, /external_imports: 1/);
+    assert.match(renderedGraph, /from="src\/feature-user\.ts" to="src\/feature\/index\.ts"/);
+    assert.match(renderedGraph, /specifier="\.\/util\.js"/);
+    assert.match(renderedGraph, /to="external" specifier="node:fs"/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("import graph includes re-export and dynamic import edges with bounded omissions", () => {
+  const cwd = createTempDir();
+  try {
+    mkdirSync(join(cwd, "src", "feature"), { recursive: true });
+    writeFileSync(join(cwd, "src", "feature", "index.ts"), "export const feature = true;\n");
+    writeFileSync(join(cwd, "src", "reexport.ts"), "export { feature as forwardedFeature } from './feature';\n");
+    writeFileSync(
+      join(cwd, "src", "lazy.ts"),
+      [
+        "const ignored = \"import('./not-real')\";",
+        "export async function loadFeature() {",
+        "  return import('./feature');",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(cwd, "src", "many-imports.ts"),
+      Array.from({ length: 26 }, (_, index) => `import value${index} from './dep-${index}';`).join("\n"),
+    );
+    for (let index = 0; index < 26; index += 1) {
+      writeFileSync(join(cwd, "src", `dep-${index}.ts`), `export const value${index} = ${index};\n`);
+    }
+
+    const graph = createCodeImportGraph({ cwd });
+    assert.equal(graph.truncated, true);
+    assert.ok(graph.omissions.some((omission) =>
+      omission.path === "src/many-imports.ts" &&
+      omission.reason === "source imports exceeded per-file code-map bounds"));
+    assert.ok(graph.edges.some((edge) =>
+      edge.kind === "local" &&
+      edge.from === "src/reexport.ts" &&
+      edge.to === "src/feature/index.ts" &&
+      edge.specifier === "./feature"));
+    assert.ok(graph.edges.some((edge) =>
+      edge.kind === "local" &&
+      edge.from === "src/lazy.ts" &&
+      edge.to === "src/feature/index.ts" &&
+      edge.specifier === "./feature"));
+    assert.equal(graph.edges.some((edge) => edge.specifier === "./not-real"), false);
+
+    const rendered = renderCodeImportGraph(graph);
+    assert.match(rendered, /imports: \d+ \(truncated\)/);
+    assert.match(rendered, /source imports exceeded per-file code-map bounds/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -78,7 +78,7 @@ Minimum plugin metadata:
 | P0 | Official OpenRouter MCP | Use for live model search, pricing, rankings, benchmarks, credits, docs, providers, generation lookup, and prompt/model test calls. Keep normal inference in ORX's direct OpenRouter API client. |
 | P0 | Native filesystem/search/shell/git/patch | Build directly in ORX for predictability, concise schemas, diffs, truncation, and session metadata. |
 | P0 | Native test runner adapters | Detect and run package scripts, Node test runner, Vitest, Jest, Playwright, and similar project commands with parsed/truncated output. |
-| P1 | Tree-sitter and ast-grep | Add repo maps, symbol slices, syntax-aware search, import graphs, and codemod previews. |
+| P1 | Tree-sitter and ast-grep | Add richer repo maps, symbol slices, syntax-aware search, import/dependency graphs, and codemod previews beyond the dependency-free code intelligence. |
 | P1 | LSP/SCIP bridge | Add diagnostics, go-to-definition, references, hover, and safe code-action/rename paths where practical. |
 | P1 | GitHub MCP | Add official GitHub MCP as read-only/scoped profile first; keep local git native. |
 | P1 | Sourcegraph MCP/API | Add optional read-only profile for multi-repo code search, navigation, history, and deep search. |

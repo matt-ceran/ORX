@@ -4,7 +4,7 @@ import {
   readFileSync,
   readdirSync,
 } from "node:fs";
-import { basename, extname, join, relative, resolve } from "node:path";
+import { basename, extname, join, posix, relative, resolve } from "node:path";
 import { redactSecrets } from "../mcp/audit.js";
 
 export interface CodeMapOptions {
@@ -38,6 +38,7 @@ export interface CodeMapSourceFile {
   bytes: number;
   exports: string[];
   imports: string[];
+  importsTruncated: boolean;
   symbols: CodeMapSymbol[];
 }
 
@@ -99,6 +100,33 @@ export interface CodeReference {
   excerpt: string;
 }
 
+export interface CodeImportGraphOptions extends CodeMapOptions {
+  query?: string;
+  maxEdges?: number;
+}
+
+export interface CodeImportGraph {
+  root: string;
+  query?: string;
+  edges: CodeImportEdge[];
+  totalEdges: number;
+  omittedEdges: number;
+  filesWithImports: number;
+  localEdges: number;
+  externalImports: number;
+  unresolvedLocalImports: number;
+  omissions: CodeMapOmission[];
+  truncated: boolean;
+}
+
+export interface CodeImportEdge {
+  from: string;
+  to?: string;
+  specifier: string;
+  kind: "local" | "external" | "unresolved_local";
+  language: string;
+}
+
 interface ExtractedExportSymbol {
   name: string;
   line: number;
@@ -109,6 +137,11 @@ interface KeywordStatement {
   line: number;
 }
 
+interface ExtractedImports {
+  imports: string[];
+  truncated: boolean;
+}
+
 type LexicalState = "code" | "blockComment" | "template" | "singleQuote" | "doubleQuote";
 
 const DEFAULT_MAX_FILES = 160;
@@ -117,6 +150,7 @@ const DEFAULT_MAX_DEPTH = 8;
 const DEFAULT_MAX_SOURCE_BYTES = 512 * 1024;
 const DEFAULT_MAX_SYMBOL_INDEX_RESULTS = 120;
 const DEFAULT_MAX_REFERENCE_INDEX_RESULTS = 120;
+const DEFAULT_MAX_IMPORT_GRAPH_EDGES = 160;
 const MAX_SYMBOLS_PER_FILE = 24;
 const MAX_IMPORTS_PER_FILE = 24;
 const MAX_RENDERED_SOURCE_FILES = 24;
@@ -125,6 +159,7 @@ const MAX_RENDERED_SYMBOLS = 10;
 const MAX_RENDERED_OMISSIONS = 12;
 const MAX_RENDERED_CODE_SYMBOLS = 80;
 const MAX_RENDERED_CODE_REFERENCES = 80;
+const MAX_RENDERED_IMPORT_GRAPH_EDGES = 100;
 const MAX_REFERENCE_EXCERPT_CHARS = 160;
 const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/g;
@@ -133,6 +168,8 @@ const EXPORT_DECLARATION_PATTERN =
 const NAMED_EXPORT_PATTERN = /\bexport\s*\{([^}]{1,1000})\}/g;
 const DEFAULT_EXPORT_PATTERN = /\bexport\s+default\b/g;
 const IMPORT_FROM_PATTERN = /\bimport\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?["']([^"']+)["']/g;
+const EXPORT_FROM_PATTERN = /\bexport\s+(?:type\s+)?(?:\*|\*\s+as\s+[A-Za-z_$][\w$]*|\{[^}]{0,1000}\})\s+from\s+["']([^"']+)["']/g;
+const DYNAMIC_IMPORT_PATTERN = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
 const REQUIRE_PATTERN = /\brequire\(\s*["']([^"']+)["']\s*\)/g;
 const SINGLE_LINE_EXPORT_START_PATTERN =
   /^export\s+(?:declare\s+)?(?:async\s+)?(?:function|class|interface|type|const|let|var|enum|default)\b/;
@@ -177,6 +214,7 @@ const LANGUAGE_BY_EXTENSION: Record<string, string> = {
 };
 
 const SOURCE_EXTENSIONS = new Set([".cjs", ".cts", ".js", ".jsx", ".mjs", ".mts", ".ts", ".tsx"]);
+const SOURCE_EXTENSION_RESOLUTION_ORDER = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 const KEY_FILE_NAMES = new Set([
   "AGENTS.md",
   "README.md",
@@ -566,6 +604,121 @@ export function renderCodeReferences(index: CodeReferenceIndex): string {
   return lines.join("\n");
 }
 
+export function createCodeImportGraph(options: CodeImportGraphOptions = {}): CodeImportGraph {
+  const map = createCodeMap(options);
+  const query = options.query?.trim();
+  const normalizedQuery = query?.toLowerCase();
+  const maxEdges = Math.max(0, options.maxEdges ?? DEFAULT_MAX_IMPORT_GRAPH_EDGES);
+  const sourcePaths = new Set(map.sourceFiles.map((file) => file.path));
+  const edges = map.sourceFiles.flatMap((file) =>
+    file.imports.map((specifier): CodeImportEdge => {
+      const resolved = resolveLocalImport(file.path, specifier, sourcePaths);
+      if (resolved) {
+        return {
+          from: file.path,
+          to: resolved,
+          specifier,
+          kind: "local",
+          language: file.language,
+        };
+      }
+      return {
+        from: file.path,
+        specifier,
+        kind: isRelativeImport(specifier) ? "unresolved_local" : "external",
+        language: file.language,
+      };
+    }),
+  );
+  const sortedEdges = edges.sort((left, right) =>
+    left.from.localeCompare(right.from) ||
+    left.kind.localeCompare(right.kind) ||
+    left.specifier.localeCompare(right.specifier) ||
+    (left.to ?? "").localeCompare(right.to ?? ""));
+  const filteredEdges = normalizedQuery
+    ? sortedEdges.filter((edge) =>
+        edge.from.toLowerCase().includes(normalizedQuery) ||
+        (edge.to ?? "").toLowerCase().includes(normalizedQuery) ||
+        edge.specifier.toLowerCase().includes(normalizedQuery) ||
+        edge.kind.toLowerCase().includes(normalizedQuery) ||
+        edge.language.toLowerCase().includes(normalizedQuery))
+    : sortedEdges;
+  const renderedEdges = filteredEdges.slice(0, maxEdges);
+
+  return {
+    root: map.root,
+    query: query || undefined,
+    edges: renderedEdges,
+    totalEdges: filteredEdges.length,
+    omittedEdges: Math.max(0, filteredEdges.length - renderedEdges.length),
+    filesWithImports: new Set(filteredEdges.map((edge) => edge.from)).size,
+    localEdges: filteredEdges.filter((edge) => edge.kind === "local").length,
+    externalImports: filteredEdges.filter((edge) => edge.kind === "external").length,
+    unresolvedLocalImports: filteredEdges.filter((edge) => edge.kind === "unresolved_local").length,
+    omissions: map.omissions,
+    truncated: map.truncated || map.sourceFiles.some((file) => file.importsTruncated),
+  };
+}
+
+export function renderCodeImportGraph(graph: CodeImportGraph): string {
+  const lines = [
+    "Code Import Graph",
+    `  root: ${sanitizeInline(graph.root)}`,
+    `  imports: ${graph.totalEdges}${graph.truncated ? " (truncated)" : ""}`,
+  ];
+  if (graph.query) {
+    lines.push(`  query: ${JSON.stringify(sanitizeInline(graph.query))}`);
+  }
+
+  lines.push("  summary:");
+  lines.push(`    files_with_imports: ${graph.filesWithImports}`);
+  lines.push(`    local_edges: ${graph.localEdges}`);
+  lines.push(`    external_imports: ${graph.externalImports}`);
+  lines.push(`    unresolved_local_imports: ${graph.unresolvedLocalImports}`);
+
+  lines.push("  edges:");
+  if (graph.edges.length === 0) {
+    lines.push("    - none");
+  } else {
+    for (const edge of graph.edges.slice(0, MAX_RENDERED_IMPORT_GRAPH_EDGES)) {
+      lines.push(
+        [
+          `    - from=${JSON.stringify(sanitizeInline(edge.from))}`,
+          `to=${JSON.stringify(sanitizeInline(edge.to ?? edge.kind))}`,
+          `specifier=${JSON.stringify(sanitizeInline(edge.specifier))}`,
+          `kind=${edge.kind}`,
+          `language=${JSON.stringify(sanitizeInline(edge.language))}`,
+        ].join(" "),
+      );
+    }
+    const renderedCount = Math.min(graph.edges.length, MAX_RENDERED_IMPORT_GRAPH_EDGES);
+    const omitted = Math.max(0, graph.totalEdges - renderedCount);
+    if (omitted > 0) {
+      lines.push(`    - ${omitted} more import edges omitted`);
+    }
+  }
+
+  if (graph.omissions.length > 0) {
+    lines.push("  omitted:");
+    for (const omission of graph.omissions.slice(0, MAX_RENDERED_OMISSIONS)) {
+      lines.push(
+        [
+          `    - reason=${JSON.stringify(sanitizeInline(omission.reason))}`,
+          omission.path ? `path=${JSON.stringify(sanitizeInline(omission.path))}` : undefined,
+        ]
+          .filter((part): part is string => typeof part === "string")
+          .join(" "),
+      );
+    }
+    if (graph.omissions.length > MAX_RENDERED_OMISSIONS) {
+      lines.push(`    - ${graph.omissions.length - MAX_RENDERED_OMISSIONS} more omissions omitted`);
+    }
+  }
+
+  lines.push("  usage: orx code imports [query]");
+  return lines.join("\n");
+}
+
 function recordFile(
   path: string,
   size: number,
@@ -604,12 +757,17 @@ function recordFile(
   }
 
   const extractedSymbols = extractExportSymbols(text);
+  const extractedImports = extractImports(text);
+  if (extractedImports.truncated) {
+    state.omissions.push({ path: relativePath, reason: "source imports exceeded per-file code-map bounds" });
+  }
   state.sourceFiles.push({
     path: relativePath,
     language,
     bytes: size,
     exports: extractedSymbols.map((symbol) => symbol.name).sort((left, right) => left.localeCompare(right)),
-    imports: extractImports(text),
+    imports: extractedImports.imports,
+    importsTruncated: extractedImports.truncated,
     symbols: extractedSymbols.map((symbol) => ({
       name: symbol.name,
       kind: "export",
@@ -618,6 +776,62 @@ function recordFile(
       line: symbol.line,
     })),
   });
+}
+
+function resolveLocalImport(
+  fromPath: string,
+  specifier: string,
+  sourcePaths: Set<string>,
+): string | undefined {
+  if (!isRelativeImport(specifier)) {
+    return undefined;
+  }
+  const basePath = posix.normalize(posix.join(posix.dirname(fromPath), specifier));
+  if (basePath === "." || basePath.startsWith("../") || basePath.includes("/../")) {
+    return undefined;
+  }
+  for (const candidate of buildLocalImportCandidates(basePath)) {
+    if (sourcePaths.has(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function buildLocalImportCandidates(basePath: string): string[] {
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const addCandidate = (candidate: string): void => {
+    const normalized = posix.normalize(candidate);
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      candidates.push(normalized);
+    }
+  };
+  const extension = extname(basePath);
+
+  if (extension) {
+    addCandidate(basePath);
+    const withoutExtension = basePath.slice(0, -extension.length);
+    for (const sourceExtension of SOURCE_EXTENSION_RESOLUTION_ORDER) {
+      addCandidate(`${withoutExtension}${sourceExtension}`);
+    }
+  } else {
+    addCandidate(basePath);
+    for (const sourceExtension of SOURCE_EXTENSION_RESOLUTION_ORDER) {
+      addCandidate(`${basePath}${sourceExtension}`);
+    }
+  }
+
+  for (const sourceExtension of SOURCE_EXTENSION_RESOLUTION_ORDER) {
+    addCandidate(posix.join(basePath, `index${sourceExtension}`));
+  }
+
+  return candidates;
+}
+
+function isRelativeImport(specifier: string): boolean {
+  return specifier === "." || specifier === ".." || specifier.startsWith("./") || specifier.startsWith("../");
 }
 
 function discoverEntrypoints(
@@ -713,28 +927,40 @@ function extractExportSymbols(text: string): ExtractedExportSymbol[] {
   return sortExtractedSymbols(symbols);
 }
 
-function extractImports(text: string): string[] {
+function extractImports(text: string): ExtractedImports {
   const imports = new Set<string>();
+  let truncated = false;
   for (const statement of collectKeywordStatements(text, "import")) {
-    collectRegexMatches(statement.text, IMPORT_FROM_PATTERN, imports, MAX_IMPORTS_PER_FILE);
-    if (imports.size >= MAX_IMPORTS_PER_FILE) {
-      return Array.from(imports).sort((left, right) => left.localeCompare(right));
-    }
+    truncated = collectRegexMatches(statement.text, IMPORT_FROM_PATTERN, imports, MAX_IMPORTS_PER_FILE) || truncated;
   }
 
+  for (const statement of collectKeywordStatements(text, "export")) {
+    truncated = collectRegexMatches(statement.text, EXPORT_FROM_PATTERN, imports, MAX_IMPORTS_PER_FILE) || truncated;
+  }
+
+  let lexicalState: LexicalState = "code";
   for (const line of text.split(/\r?\n/)) {
+    const stripped = stripNonCodeSegments(line, lexicalState);
+    lexicalState = stripped.nextState;
     const statement = line.trim();
-    if (!statement || statement.startsWith("//") || statement.startsWith("*")) {
+    if (!stripped.code.trim() || !statement || statement.startsWith("//") || statement.startsWith("*")) {
       continue;
     }
-    if (statement.includes("require(") && !statement.startsWith("\"") && !statement.startsWith("'")) {
-      collectRegexMatches(statement, REQUIRE_PATTERN, imports, MAX_IMPORTS_PER_FILE);
+    if (/\bimport\s*\(/.test(stripped.code)) {
+      truncated =
+        collectRegexMatchesAtCodePositions(line, stripped.code, DYNAMIC_IMPORT_PATTERN, "import", imports, MAX_IMPORTS_PER_FILE) ||
+        truncated;
     }
-    if (imports.size >= MAX_IMPORTS_PER_FILE) {
-      return Array.from(imports).sort((left, right) => left.localeCompare(right));
+    if (/\brequire\s*\(/.test(stripped.code)) {
+      truncated =
+        collectRegexMatchesAtCodePositions(line, stripped.code, REQUIRE_PATTERN, "require", imports, MAX_IMPORTS_PER_FILE) ||
+        truncated;
     }
   }
-  return Array.from(imports).sort((left, right) => left.localeCompare(right));
+  return {
+    imports: Array.from(imports).sort((left, right) => left.localeCompare(right)),
+    truncated,
+  };
 }
 
 function extractCodeReferences(text: string, query: string, file: CodeMapSourceFile): CodeReference[] {
@@ -1001,17 +1227,45 @@ function collectRegexMatches(
   pattern: RegExp,
   target: Set<string>,
   limit: number,
-): void {
+): boolean {
   pattern.lastIndex = 0;
+  let truncated = false;
   for (const match of text.matchAll(pattern)) {
     const value = String(match[1] ?? "").trim();
-    if (value) {
+    if (value && target.size < limit) {
       target.add(value);
     }
-    if (target.size >= limit) {
-      return;
+    if (value && target.size >= limit && !target.has(value)) {
+      truncated = true;
     }
   }
+  return truncated;
+}
+
+function collectRegexMatchesAtCodePositions(
+  text: string,
+  code: string,
+  pattern: RegExp,
+  token: string,
+  target: Set<string>,
+  limit: number,
+): boolean {
+  pattern.lastIndex = 0;
+  let truncated = false;
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? -1;
+    if (index < 0 || code.slice(index, index + token.length) !== token) {
+      continue;
+    }
+    const value = String(match[1] ?? "").trim();
+    if (value && target.size < limit) {
+      target.add(value);
+    }
+    if (value && target.size >= limit && !target.has(value)) {
+      truncated = true;
+    }
+  }
+  return truncated;
 }
 
 function formatListField(name: string, values: string[], limit: number): string {

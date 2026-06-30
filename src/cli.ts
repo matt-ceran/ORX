@@ -13,9 +13,11 @@ import { BIN_NAME } from "./constants.js";
 import { formatToolCallStart, formatToolResult, runAgentTurn } from "./agent/index.js";
 import {
   createCodeMap,
+  createCodeImportGraph,
   createCodeReferenceIndex,
   createCodeSymbolIndex,
   renderCodeMap,
+  renderCodeImportGraph,
   renderCodeReferences,
   renderCodeSymbols,
 } from "./code-map/index.js";
@@ -254,7 +256,7 @@ const CLI_NAMESPACE_USAGES = {
   bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
   tests: "Usage: orx tests [list|run [target-id] [-- args...]]",
-  code: "Usage: orx code [map|symbols|refs] [query-or-path]",
+  code: "Usage: orx code [map|symbols|refs|imports] [query-or-path]",
   orchestrator: "Usage: orx orchestrator [status|plan|openrouter <model>|clear]",
   delegate: "Usage: orx delegate [status|plan [saved-team-id]|add <name> openrouter <model>|remove <name>|clear|team|policy]",
   delegates:
@@ -706,6 +708,10 @@ export async function runCli(
     return runCodeReferencesCommand(args.slice(1), io);
   }
 
+  if (first === "imports" || first === "import-graph") {
+    return runCodeImportGraphCommand(args.slice(1), io);
+  }
+
   if (first === "orchestrator") {
     return runOrchestratorCommand(args.slice(1), io, delegationPolicyPath);
   }
@@ -802,7 +808,7 @@ function helpText(): string {
     "  bins          List, inspect, trust, untrust, or run plugin bins",
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  tests         Discover or run native test targets",
-    "  code          Render local code maps, symbol indexes, or references",
+    "  code          Render local code maps, symbol indexes, references, or import graphs",
     "  orchestrator  Show delegation readiness or refuse session-less changes",
     "  delegate      Show/refuse session delegate changes, policy, or saved teams",
     "  delegates     Show delegate readiness, execution policy, or saved teams",
@@ -982,6 +988,9 @@ function runCodeCommand(args: string[], io: CliIo): number {
   if (subcommand === "refs" || subcommand === "references") {
     return runCodeReferencesCommand(args.slice(1), io);
   }
+  if (subcommand === "imports" || subcommand === "import-graph" || subcommand === "graph") {
+    return runCodeImportGraphCommand(args.slice(1), io);
+  }
 
   writeLine(io.stderr, CLI_NAMESPACE_USAGES.code);
   return 1;
@@ -1006,6 +1015,12 @@ function runCodeReferencesCommand(args: string[], io: CliIo): number {
     return 1;
   }
   writeLine(io.stdout, renderCodeReferences(createCodeReferenceIndex({ cwd: io.cwd, query })));
+  return 0;
+}
+
+function runCodeImportGraphCommand(args: string[], io: CliIo): number {
+  const query = args.join(" ").trim() || undefined;
+  writeLine(io.stdout, renderCodeImportGraph(createCodeImportGraph({ cwd: io.cwd, query })));
   return 0;
 }
 

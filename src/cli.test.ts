@@ -38,7 +38,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
-    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, or references/);
+    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, or import graphs/);
     assert.match(help.stdout(), /orchestrator\s+Show delegation readiness or refuse session-less changes/);
     assert.match(help.stdout(), /delegate\s+Show\/refuse session delegate changes, policy, or saved teams/);
     assert.match(help.stdout(), /delegates\s+Show delegate readiness, execution policy, or saved teams/);
@@ -1454,13 +1454,16 @@ test("cli code map renders a bounded repository overview without an API key", as
     );
     writeFileSync(
       join(cwd, "src", "index.ts"),
-      "import './side-effect.js';\nexport function start() { return 'ok'; }\n",
+      "import './side-effect.js';\nimport { feature } from './feature';\nexport function start() { return feature; }\n",
     );
+    writeFileSync(join(cwd, "src", "side-effect.ts"), "export const sideEffect = true;\n");
+    mkdirSync(join(cwd, "src", "feature"), { recursive: true });
+    writeFileSync(join(cwd, "src", "feature", "index.ts"), "export const feature = 'ok';\n");
 
     const mapped = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "code", "map"], {}, mapped.io), 0);
     assert.match(mapped.stdout(), /Code Map/);
-    assert.match(mapped.stdout(), /TypeScript: 1/);
+    assert.match(mapped.stdout(), /TypeScript: 3/);
     assert.match(mapped.stdout(), /kind=package label="main"/);
     assert.match(mapped.stdout(), /path="src\/index\.ts"/);
     assert.match(mapped.stdout(), /exports="start"/);
@@ -1469,7 +1472,7 @@ test("cli code map renders a bounded repository overview without an API key", as
     const alias = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "map", "src"], {}, alias.io), 0);
     assert.match(alias.stdout(), /root: .*src/);
-    assert.match(alias.stdout(), /source_files: 1/);
+    assert.match(alias.stdout(), /source_files: 3/);
 
     const symbols = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "code", "symbols", "start"], {}, symbols.io), 0);
@@ -1489,7 +1492,7 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.match(refs.stdout(), /Code References/);
     assert.match(refs.stdout(), /query: "start"/);
     assert.match(refs.stdout(), /path="src\/index\.ts"/);
-    assert.match(refs.stdout(), /line=2/);
+    assert.match(refs.stdout(), /line=3/);
     assert.equal(refs.stderr(), "");
 
     const refsAlias = createIo({ cwd });
@@ -1501,6 +1504,20 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.equal(await runCli(["node", "cli", "code", "refs"], {}, missingRefs.io), 1);
     assert.equal(missingRefs.stdout(), "");
     assert.match(missingRefs.stderr(), /Usage: orx code refs <query>/);
+
+    const imports = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "code", "imports"], {}, imports.io), 0);
+    assert.match(imports.stdout(), /Code Import Graph/);
+    assert.match(imports.stdout(), /local_edges: 2/);
+    assert.match(imports.stdout(), /from="src\/index\.ts" to="src\/feature\/index\.ts"/);
+    assert.match(imports.stdout(), /from="src\/index\.ts" to="src\/side-effect\.ts"/);
+
+    const importAlias = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "imports", "feature"], {}, importAlias.io), 0);
+    assert.match(importAlias.stdout(), /Code Import Graph/);
+    assert.match(importAlias.stdout(), /query: "feature"/);
+    assert.match(importAlias.stdout(), /imports: 1/);
+    assert.match(importAlias.stdout(), /to="src\/feature\/index\.ts"/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

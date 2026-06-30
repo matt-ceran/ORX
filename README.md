@@ -119,9 +119,11 @@ orx code symbols
 orx symbols renderCode
 orx code refs renderCode
 orx refs renderCode
+orx code imports src
+orx imports renderCode
 ```
 
-The code map scans a bounded local tree, skips generated/vendor directories such as `node_modules`, `.git`, `.orx`, `dist`, `build`, and `coverage`, summarizes languages, key files, package/config/source entrypoints, and top JavaScript/TypeScript source imports/exports, and redacts secret-like rendered paths or symbols. The symbol index reuses the same bounded scan to list exported JavaScript/TypeScript symbols with file paths and line numbers. The reference index reuses the same bounded scan to find JavaScript/TypeScript code references for a query while skipping comments, string literals, and template literals.
+The code map scans a bounded local tree, skips generated/vendor directories such as `node_modules`, `.git`, `.orx`, `dist`, `build`, and `coverage`, summarizes languages, key files, package/config/source entrypoints, and top JavaScript/TypeScript source imports/exports, and redacts secret-like rendered paths or symbols. The symbol index reuses the same bounded scan to list exported JavaScript/TypeScript symbols with file paths and line numbers. The reference index reuses the same bounded scan to find JavaScript/TypeScript code references for a query while skipping comments, string literals, and template literals. The import graph reuses the same bounded scan to render JavaScript/TypeScript import edges, including static imports, re-export-from edges, CommonJS `require(...)`, and string-literal dynamic `import(...)`, resolve local relative imports to source files where possible, and count external or unresolved local imports.
 
 Delegation/orchestration CLI commands are no-key and sessionless. `orx orchestrator`, `orx delegate`, and `orx delegates` render delegation status, readiness blockers, saved-team guidance, and the current policy boundary. `orx delegates plan <saved-team-id>` and `orx delegate plan <saved-team-id>` preview a saved team against the current execution policy without loading it into chat. Mutating live-session forms such as `orx orchestrator openrouter <model>` and `orx delegate add <name> openrouter <model>` validate arguments, then refuse because the noninteractive CLI has no active chat session to mutate.
 
@@ -360,9 +362,10 @@ The chat UI keeps in-session message history for the current process, streams as
 /history [search <query>|clear]
 /tests [list|run]
 /map [path]
-/code [map|symbols|refs]
+/code [map|symbols|refs|imports]
 /symbols [query]
 /refs <query>
+/imports [query]
 /plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold|validate|inspect|register|install|enable|disable]
 /plugin [list|status]
 /bins [list|inspect|trust|untrust|run]

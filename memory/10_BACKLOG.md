@@ -90,6 +90,7 @@ Completed:
 - Add dependency-free local code maps: bounded tree scan, language/key-file/entrypoint summaries, JavaScript/TypeScript import/export extraction, `orx code map`, `orx map`, `orx code-map`, `/map`, and `/code map`.
 - Add dependency-free local symbol indexes: exported JavaScript/TypeScript symbol names with file paths and line numbers through `orx code symbols`, `orx symbols`, `/code symbols`, and `/symbols`.
 - Add dependency-free local reference indexes: bounded JavaScript/TypeScript code-reference lookup through `orx code refs <query>`, `orx refs <query>`, `/code refs <query>`, and `/refs <query>`, reusing code-map traversal/redaction and skipping comments, strings, and template literals.
+- Add dependency-free local import graphs: bounded JavaScript/TypeScript import-edge summaries through `orx code imports [query]`, `orx imports [query]`, `/code imports [query]`, and `/imports [query]`, reusing code-map traversal/redaction, covering static imports, re-export-from edges, CommonJS `require(...)`, and string-literal dynamic `import(...)`, resolving local relative imports where possible, and surfacing per-file import-cap omissions.
 
 Next:
 
@@ -183,7 +184,7 @@ Next:
   - Add manifest-defined executable command schemas: enabled plugin `components.commandSchemas` JSON can declare `/plugin:<plugin-id>:exec:<slug>` aliases with bounded metadata, direct bin references, optional `maxArgs`, and execution through the existing trusted-current bin runtime only.
   - Add local plugin authoring scaffold: `orx plugins scaffold <directory>` and `/plugins scaffold <directory>` create valid local `orx-plugin.json` authoring bundles without registry writes, default to inert skills/prompt-commands/rules markdown, support `--minimal`, and add opt-in empty placeholders for hooks, bins, MCP, command schemas, assets, and docs behind existing review gates.
   - Add no-side-effect plugin manifest validation: `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>` parse sanitized manifests, render manifest/component hashes, permission counts, and missing component warnings, and leave registry/cache/trust/runtime state unchanged.
-  - Add initial local code intelligence: `src/code-map/` dependency-free bounded repository maps, exported-symbol indexes, and reference indexes exposed through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `orx code refs`, `orx refs`, `/map`, `/code map`, `/code symbols`, `/symbols`, `/code refs`, and `/refs`, with language/key-file/entrypoint, JavaScript/TypeScript import/export, exported-symbol, and code-reference summaries.
+  - Add initial local code intelligence: `src/code-map/` dependency-free bounded repository maps, exported-symbol indexes, reference indexes, and import graphs exposed through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `orx code refs`, `orx refs`, `orx code imports`, `orx imports`, `/map`, `/code map`, `/code symbols`, `/symbols`, `/code refs`, `/refs`, `/code imports`, and `/imports`, with language/key-file/entrypoint, JavaScript/TypeScript import/export, exported-symbol, code-reference, and bounded import-edge summaries.
 
 - Extend browser automation beyond static DNS-bound document snapshots when a safe browser-network/proxy design can preserve SSRF protections.
 - Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
@@ -193,7 +194,7 @@ Next:
 - Extend manifest-defined executable command schemas with richer argument forms only if they can stay bin-backed and operator-explicit.
 - Extend model-loop MCP controls with clearer prompt-injection boundaries and optional operator grants for any future billable/write model exposure.
 - Extend plugin metadata further only where needed for remote source UX, marketplace/catalog trust, or executable surface policy decisions.
-- Add tree-sitter and ast-grep code intelligence for richer call graphs, syntax-aware search, and codemod previews beyond the dependency-free code map, exported-symbol index, and reference index.
+- Add tree-sitter and ast-grep code intelligence for richer call graphs, syntax-aware search, and codemod previews beyond the dependency-free code map, exported-symbol index, reference index, and import graph.
 - Add structured Vitest/Jest/Playwright/Node report ingestion beyond current summary-line parsing when framework-native JSON/report files can be requested safely.
 - Add LSP/SCIP bridge research spike for diagnostics, references, hover, and go-to-definition.
 - Add Sourcegraph read-only profile for multi-repo search/navigation/history.

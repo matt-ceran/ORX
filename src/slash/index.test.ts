@@ -122,9 +122,10 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/delegate \[help\|status\|plan\|add\|remove\|clear\|team\|policy\]/);
   assert.match(output, /\/delegates \[list\|status\|plan\|policy\|teams\|save\|use\|inspect\|delete\]/);
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
-  assert.match(output, /\/code \[map\|symbols\|refs\]/);
+  assert.match(output, /\/code \[map\|symbols\|refs\|imports\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/refs <query>/);
+  assert.match(output, /\/imports \[query\]/);
   assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\]\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
@@ -242,6 +243,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/history c"), [["clear "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/history s"), [["search "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/code r"), [["refs "], "r"]);
+  assert.deepEqual(completeSlashCommandLine("/code i"), [["imports "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/web b"), [["browse "], "b"]);
   assert.deepEqual(completeSlashCommandLine("/web h"), [["help "], "h"]);
   assert.deepEqual(completeSlashCommandLine("/mcp m"), [["model "], "m"]);
@@ -330,20 +332,23 @@ test("map slash command renders a local code map", () => {
     );
     writeFileSync(
       join(cwd, "src", "index.ts"),
-      "import value from './value.js';\nexport const start = value;\n",
+      "import value from './value.js';\nimport { feature } from './feature';\nexport const start = feature || value;\n",
     );
+    writeFileSync(join(cwd, "src", "value.ts"), "export default true;\n");
+    mkdirSync(join(cwd, "src", "feature"), { recursive: true });
+    writeFileSync(join(cwd, "src", "feature", "index.ts"), "export const feature = true;\n");
 
     const harness = createSlashHarness({ cwd });
     assert.equal(handleSlashCommand("/map", harness.context), "continue");
     assert.match(harness.stdout(), /Code Map/);
-    assert.match(harness.stdout(), /TypeScript: 1/);
+    assert.match(harness.stdout(), /TypeScript: 3/);
     assert.match(harness.stdout(), /path="src\/index\.ts"/);
     assert.match(harness.stdout(), /exports="start"/);
     assert.equal(harness.stderr(), "");
 
     const scoped = createSlashHarness({ cwd });
     assert.equal(handleSlashCommand("/code map src", scoped.context), "continue");
-    assert.match(scoped.stdout(), /source_files: 1/);
+    assert.match(scoped.stdout(), /source_files: 3/);
     assert.match(scoped.stdout(), /root: .*src/);
 
     const symbols = createSlashHarness({ cwd });
@@ -363,7 +368,7 @@ test("map slash command renders a local code map", () => {
     assert.match(refs.stdout(), /Code References/);
     assert.match(refs.stdout(), /query: "start"/);
     assert.match(refs.stdout(), /path="src\/index\.ts"/);
-    assert.match(refs.stdout(), /line=2/);
+    assert.match(refs.stdout(), /line=3/);
     assert.equal(refs.stderr(), "");
 
     const refsAlias = createSlashHarness({ cwd });
@@ -375,6 +380,19 @@ test("map slash command renders a local code map", () => {
     assert.equal(handleSlashCommand("/code refs", missingRefs.context), "continue");
     assert.equal(missingRefs.stdout(), "");
     assert.match(missingRefs.stderr(), /Usage: \/code refs <query>/);
+
+    const imports = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/code imports", imports.context), "continue");
+    assert.match(imports.stdout(), /Code Import Graph/);
+    assert.match(imports.stdout(), /local_edges: 2/);
+    assert.match(imports.stdout(), /from="src\/index\.ts" to="src\/feature\/index\.ts"/);
+    assert.match(imports.stdout(), /from="src\/index\.ts" to="src\/value\.ts"/);
+
+    const importsAlias = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/imports feature", importsAlias.context), "continue");
+    assert.match(importsAlias.stdout(), /Code Import Graph/);
+    assert.match(importsAlias.stdout(), /query: "feature"/);
+    assert.match(importsAlias.stdout(), /imports: 1/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
