@@ -103,6 +103,14 @@ Implemented under `src/security/`:
 
 The scanner adapter is local-only, no-key, and not model-autonomous. ORX never installs Semgrep, never uses Semgrep registry/URL configs, never forwards ORX/OpenRouter/Brave/API token-like env values, and never exposes scanners as model tools. Semgrep runs use shell-disabled process execution, `--metrics off`, cwd-confined target/config path guards with symlink realpath checks, dash-prefixed operand rejection, secret/control-character argument rejection, and bounded/redacted stdout/stderr. Snyk, Socket, OSV-Scanner, CodeQL, and Trivy remain catalog/readiness-only until a no-network/no-auth local command shape is proven.
 
+Implemented under `src/diagnostics/`:
+
+- diagnostics profile catalog for TypeScript, TypeScript Language Server, Pyright, rust-analyzer, gopls, clangd, and SCIP TypeScript
+- explicit operator commands `orx diagnostics list`, `orx diagnostics inspect <profile>`, `orx diagnostics run typescript [--project <local-tsconfig-path>] [--json]`, `orx diag run typescript ...`, `/diagnostics ...`, and `/diag ...`
+- runnable TypeScript adapter only when an already-installed local or PATH `tsc` binary is available
+
+The diagnostics adapter is local-only, no-key, and not model-autonomous. ORX never installs TypeScript, never invokes package managers or launchers, never forwards ORX/OpenRouter/Brave/API token-like env values, and never exposes diagnostics as model tools. TypeScript runs use shell-disabled process execution, `tsc --noEmit --pretty false --project <tsconfig>`, cwd-confined project-file guards with symlink realpath checks, URL/registry/package/dash/control/secret-like argument rejection, bounded/redacted stdout/stderr, parsed TypeScript diagnostic summaries, and optional ORX-owned JSON metadata. TypeScript Language Server, Pyright, rust-analyzer, gopls, clangd, and SCIP TypeScript remain catalog/readiness-only until a no-network/no-auth local command shape is proven.
+
 ## MCP And Third-Party Tool Policy
 
 - Keep core local coding tools native: file reads, file writes, search, shell, patches, and local git.

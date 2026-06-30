@@ -7,7 +7,9 @@ import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { runCli } from "./cli.js";
+import { getNativeToolDefinitions } from "./agent/index.js";
 import type { AstGrepRunner } from "./code-map/index.js";
+import type { DiagnosticsProcessRunner } from "./diagnostics/index.js";
 import type { ScannerProcessRunner } from "./security/index.js";
 import type { RunProcessOptions, RunProcessResult } from "./tools/process.js";
 import {
@@ -44,6 +46,8 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, or ast-grep searches/);
     assert.match(help.stdout(), /scanners\s+List, inspect, or run local security scanner profiles/);
     assert.match(help.stdout(), /scan\s+Alias for a local scanner run/);
+    assert.match(help.stdout(), /diagnostics\s+List, inspect, or run local diagnostics profiles/);
+    assert.match(help.stdout(), /diag\s+Alias for diagnostics/);
     assert.match(help.stdout(), /orchestrator\s+Show delegation readiness or refuse session-less changes/);
     assert.match(help.stdout(), /delegate\s+Show\/refuse session delegate changes, policy, or saved teams/);
     assert.match(help.stdout(), /delegates\s+Show delegate readiness, execution policy, or saved teams/);
@@ -171,6 +175,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(guide.stdout(), /local_code:/);
     assert.match(guide.stdout(), /orx refs <query>/);
     assert.match(guide.stdout(), /orx calls <query>/);
+    assert.match(guide.stdout(), /orx diagnostics run typescript/);
     assert.match(guide.stdout(), /mcp_setup:/);
     assert.match(guide.stdout(), /orx mcp plan context7/);
     assert.match(guide.stdout(), /plugins_setup:/);
@@ -330,6 +335,8 @@ test("namespace help exits successfully without loading config", async () => {
       { args: ["scanners"], usage: /Usage: orx scanners/ },
       { args: ["scanner"], usage: /Usage: orx scanners/ },
       { args: ["scan"], usage: /Usage: orx scan/ },
+      { args: ["diagnostics"], usage: /Usage: orx diagnostics/ },
+      { args: ["diag"], usage: /Usage: orx diag/ },
       { args: ["orchestrator"], usage: /Usage: orx orchestrator/ },
       { args: ["delegate"], usage: /Usage: orx delegate/ },
       { args: ["delegates"], usage: /Usage: orx delegates/ },
@@ -1776,6 +1783,158 @@ test("cli scanner commands list, inspect, and run semgrep with a mocked local bi
     );
     assert.match(unsafeSymlink.stderr(), /config resolves outside the current working directory/);
     rmSync(outside, { recursive: true, force: true });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli diagnostics commands list, inspect, and run TypeScript with guarded local execution", async () => {
+  const cwd = createTempDir();
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    mkdirSync(join(cwd, "node_modules", ".bin"), { recursive: true });
+    writeFileSync(join(cwd, "src", "app.ts"), "const value: string = 1;\n");
+    writeFileSync(join(cwd, "tsconfig.json"), "{\"compilerOptions\":{\"strict\":true},\"include\":[\"src\"]}\n");
+    writeFileSync(join(cwd, "node_modules", ".bin", "tsc"), "#!/usr/bin/env node\n");
+
+    const list = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "list"], {}, list.io), 0);
+    assert.match(list.stdout(), /Local diagnostics profiles/);
+    assert.match(list.stdout(), /id=typescript state=runnable/);
+    assert.match(list.stdout(), /id=pyright state=catalog_only/);
+
+    const inspect = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diag", "inspect", "typescript"], {}, inspect.io), 0);
+    assert.match(inspect.stdout(), /Local diagnostics profile: typescript/);
+    assert.match(inspect.stdout(), /command_shape: tsc --noEmit --pretty false --project <tsconfig>/);
+
+    const inspectCatalogOnly = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "gopls"], {}, inspectCatalogOnly.io), 0);
+    assert.match(inspectCatalogOnly.stdout(), /state: catalog_only/);
+
+    const inspectUsage = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diag", "inspect"], {}, inspectUsage.io), 1);
+    assert.match(inspectUsage.stderr(), /^Usage: orx diag inspect <profile>/);
+
+    const tscCalls: Array<Parameters<DiagnosticsProcessRunner>[0]> = [];
+    const diagnosticsRunner: DiagnosticsProcessRunner = async (options) => {
+      tscCalls.push(options);
+      return mockProcessResult(options, {
+        exitCode: 0,
+        stdout: "TypeScript clean\n",
+      });
+    };
+    const run = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "diagnostics", "run", "typescript"],
+        {
+          OPENROUTER_API_KEY: "sk-or-v1-secret",
+          BRAVE_SEARCH_API_KEY: "brave-secret",
+          ORX_PLUGIN_REGISTRY_PATH: "should-not-forward",
+          HOME: join(cwd, "sk-or-v1-home-secret"),
+          PATH: "/usr/bin",
+          LANG: "C",
+        },
+        run.io,
+      ),
+      0,
+    );
+    assert.match(run.stdout(), /Local diagnostics run/);
+    assert.match(run.stdout(), /status: ok/);
+    assert.match(run.stdout(), /binary_source: local_node_modules/);
+    assert.match(run.stdout(), /model_tool: not_exposed/);
+    assert.doesNotMatch(run.stdout(), /sk-or-v1-secret|brave-secret|should-not-forward/);
+    assert.equal(run.stderr(), "");
+    assert.match(tscCalls.at(-1)?.command ?? "", /node_modules\/\.bin\/tsc$/);
+    assert.deepEqual(tscCalls.at(-1)?.args, [
+      "--noEmit",
+      "--pretty",
+      "false",
+      "--project",
+      "tsconfig.json",
+    ]);
+    assert.equal(tscCalls.at(-1)?.shell, false);
+    assert.equal(tscCalls.at(-1)?.inheritEnv, false);
+    assert.equal(tscCalls.at(-1)?.env?.PATH, "/usr/bin");
+    assert.equal(tscCalls.at(-1)?.env?.LANG, "C");
+    assert.equal(tscCalls.at(-1)?.env?.OPENROUTER_API_KEY, undefined);
+    assert.equal(tscCalls.at(-1)?.env?.BRAVE_SEARCH_API_KEY, undefined);
+    assert.equal(tscCalls.at(-1)?.env?.ORX_PLUGIN_REGISTRY_PATH, undefined);
+    assert.equal(tscCalls.at(-1)?.env?.HOME, undefined);
+
+    const json = createIo({
+      cwd,
+      diagnosticsRunner: async (options) => mockProcessResult(options, {
+        exitCode: 2,
+        stdout: "src/app.ts(1,7): error TS2322: Type 'number' is not assignable to type 'string'. access_token=abcd1234\n",
+        stderr: "Authorization: Bearer should-redact\n",
+      }),
+    });
+    assert.equal(
+      await runCli(["node", "cli", "diag", "run", "typescript", "--json"], {}, json.io),
+      1,
+    );
+    const report = JSON.parse(json.stdout());
+    assert.equal(report.surface, "orx.local_diagnostics");
+    assert.equal(report.status, "failed");
+    assert.equal(report.model_tool, "not_exposed");
+    assert.equal(report.command.shell, false);
+    assert.equal(report.diagnostics[0].code, "TS2322");
+    assert.equal(report.diagnostics[0].file, "src/app.ts");
+    assert.equal(report.raw_output.stdout.truncated, false);
+    assert.doesNotMatch(json.stdout(), /abcd1234|should-redact/);
+    assert.equal(json.stderr(), "");
+
+    const missingCwd = createTempDir();
+    const missing = createIo({
+      cwd: missingCwd,
+      diagnosticsRunner: async (options) => mockProcessResult(options, {
+        exitCode: null,
+        error: { code: "ENOENT", message: "spawn tsc ENOENT" },
+      }),
+    });
+    writeFileSync(join(missingCwd, "tsconfig.json"), "{}\n");
+    assert.equal(await runCli(["node", "cli", "diagnostics", "run", "typescript"], {}, missing.io), 1);
+    assert.match(missing.stderr(), /tsc is not installed or not on PATH/);
+    rmSync(missingCwd, { recursive: true, force: true });
+
+    const beforeUnsafeCalls = tscCalls.length;
+    const catalogOnly = createIo({ cwd, diagnosticsRunner });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "run", "pyright"], {}, catalogOnly.io), 1);
+    assert.match(catalogOnly.stderr(), /catalog\/readiness-only/);
+    assert.equal(tscCalls.length, beforeUnsafeCalls);
+
+    const unsafeProject = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "run", "typescript", "--project", "https://example.com/tsconfig.json"], {}, unsafeProject.io),
+      1,
+    );
+    assert.match(unsafeProject.stderr(), /not a URL/);
+    assert.equal(tscCalls.length, beforeUnsafeCalls);
+
+    const unsafeRegistryProject = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "run", "typescript", "--project", "typescript@latest"], {}, unsafeRegistryProject.io),
+      1,
+    );
+    assert.match(unsafeRegistryProject.stderr(), /not a package, registry, or launcher value/);
+    assert.equal(tscCalls.length, beforeUnsafeCalls);
+
+    const outside = createTempDir();
+    writeFileSync(join(outside, "tsconfig.json"), "{}\n");
+    symlinkSync(join(outside, "tsconfig.json"), join(cwd, "outside-tsconfig.json"));
+    const unsafeSymlink = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "run", "typescript", "--project", "outside-tsconfig.json"], {}, unsafeSymlink.io),
+      1,
+    );
+    assert.match(unsafeSymlink.stderr(), /project resolves outside the current working directory/);
+    rmSync(outside, { recursive: true, force: true });
+
+    const toolNames = getNativeToolDefinitions().map((tool) => tool.function.name).sort();
+    assert.equal(toolNames.includes("diagnostics"), false);
+    assert.equal(toolNames.includes("diag"), false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -5010,6 +5169,7 @@ function createIo(
     mcpKeychainPlatform?: NodeJS.Platform;
     astGrepRunner?: AstGrepRunner;
     scannerRunner?: ScannerProcessRunner;
+    diagnosticsRunner?: DiagnosticsProcessRunner;
     stdin?: NodeJS.ReadableStream;
     cwd?: string;
     tty?: boolean;
@@ -5046,6 +5206,7 @@ function createIo(
       mcpKeychainPlatform: options.mcpKeychainPlatform,
       astGrepRunner: options.astGrepRunner,
       scannerRunner: options.scannerRunner,
+      diagnosticsRunner: options.diagnosticsRunner,
     },
     stdout() {
       return stdoutText;

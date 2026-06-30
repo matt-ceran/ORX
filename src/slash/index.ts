@@ -44,6 +44,20 @@ import {
   TERMINAL_THEMES,
 } from "../constants.js";
 import {
+  SLASH_DIAG_USAGE,
+  SLASH_DIAGNOSTICS_USAGE,
+  findDiagnosticProfile,
+  parseDiagnosticRunArgText,
+  renderDiagnosticInspectUsage,
+  renderDiagnosticProfileInspect,
+  renderDiagnosticProfiles,
+  renderMissingDiagnosticProfile,
+  renderTypeScriptDiagnosticsJson,
+  renderTypeScriptDiagnosticsResult,
+  runTypeScriptDiagnostics,
+  type DiagnosticsProcessRunner,
+} from "../diagnostics/index.js";
+import {
   DelegationStateError,
   DelegationPolicyError,
   addOpenRouterDelegate,
@@ -279,6 +293,7 @@ type WritableLike = Pick<NodeJS.WriteStream, "write">;
 
 export interface SlashCommand {
   name: string;
+  originalName?: string;
   argText: string;
   args: string[];
 }
@@ -346,6 +361,7 @@ export interface SlashCommandContext {
   braveSearchApiKey?: string;
   astGrepRunner?: AstGrepRunner;
   scannerRunner?: ScannerProcessRunner;
+  diagnosticsRunner?: DiagnosticsProcessRunner;
   getConfig: () => OrxConfig;
   setConfig: (config: OrxConfig) => void;
   getMessages: () => OpenRouterMessage[];
@@ -539,6 +555,18 @@ const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "inspect", "run"] as const;
 const SCANNER_PROFILE_COMPLETIONS = ["semgrep", "snyk", "socket", "osv-scanner", "codeql", "trivy"] as const;
 const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep"] as const;
 const SCANNER_RUN_OPTION_COMPLETIONS = ["--config", "--json"] as const;
+const DIAGNOSTICS_SUBCOMMAND_COMPLETIONS = ["list", "inspect", "run"] as const;
+const DIAGNOSTIC_PROFILE_COMPLETIONS = [
+  "typescript",
+  "typescript-language-server",
+  "pyright",
+  "rust-analyzer",
+  "gopls",
+  "clangd",
+  "scip-typescript",
+] as const;
+const RUNNABLE_DIAGNOSTIC_PROFILE_COMPLETIONS = ["typescript"] as const;
+const DIAGNOSTIC_RUN_OPTION_COMPLETIONS = ["--project", "--json"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const RULE_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -888,6 +916,17 @@ const COMMANDS: Record<string, SlashDefinition> = {
     tier: "advanced",
     handler: async (command, context): Promise<SlashResult> => {
       await handleScanAliasCommand(command, context);
+      return "continue";
+    },
+  },
+  "/diagnostics": {
+    usage: SLASH_DIAGNOSTICS_USAGE.replace(/^Usage:\s*/, ""),
+    description: "List, inspect, or run local diagnostics profiles",
+    group: "Workspace",
+    tier: "advanced",
+    aliases: ["/diag"],
+    handler: async (command, context): Promise<SlashResult> => {
+      await handleDiagnosticsCommand(command, context, SLASH_DIAGNOSTICS_USAGE);
       return "continue";
     },
   },
@@ -1509,7 +1548,7 @@ export function handleSlashCommand(
     return "continue";
   }
 
-  return definition.handler({ ...command, name: canonicalName }, context);
+  return definition.handler({ ...command, name: canonicalName, originalName: command.name }, context);
 }
 
 export function listSlashCommands(): SlashCommandMetadata[] {
@@ -1877,6 +1916,20 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       }
       if (argIndex >= 2) {
         return [...SCANNER_RUN_OPTION_COMPLETIONS];
+      }
+      return [];
+    case "/diagnostics":
+      if (argIndex === 0) {
+        return [...DIAGNOSTICS_SUBCOMMAND_COMPLETIONS];
+      }
+      if (firstArg === "inspect" && argIndex === 1) {
+        return [...DIAGNOSTIC_PROFILE_COMPLETIONS];
+      }
+      if (firstArg === "run" && argIndex === 1) {
+        return [...RUNNABLE_DIAGNOSTIC_PROFILE_COMPLETIONS];
+      }
+      if (firstArg === "run" && argIndex >= 2) {
+        return [...DIAGNOSTIC_RUN_OPTION_COMPLETIONS];
       }
       return [];
     case "/skills":
@@ -2407,6 +2460,71 @@ async function handleScannersCommand(command: SlashCommand, context: SlashComman
 
 async function handleScanAliasCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
   await handleScannerRunText(command.argText, context, SLASH_SCAN_USAGE);
+}
+
+async function handleDiagnosticsCommand(
+  command: SlashCommand,
+  context: SlashCommandContext,
+  usage: string,
+): Promise<void> {
+  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(context.io.stdout, renderDiagnosticProfiles());
+    return;
+  }
+
+  if (subcommand === "inspect" || subcommand === "show") {
+    const profileId = command.args[1];
+    if (!profileId || command.args.length !== 2) {
+      const inspectUsage = command.originalName === "/diag"
+        ? renderDiagnosticInspectUsage(SLASH_DIAG_USAGE)
+        : renderDiagnosticInspectUsage(usage);
+      writeLine(context.io.stderr, inspectUsage);
+      return;
+    }
+    const profile = findDiagnosticProfile(profileId);
+    if (!profile) {
+      writeLine(context.io.stderr, renderMissingDiagnosticProfile(profileId));
+      return;
+    }
+    writeLine(context.io.stdout, renderDiagnosticProfileInspect(profile));
+    return;
+  }
+
+  if (subcommand === "run") {
+    await handleDiagnosticsRunText(stripFirstSlashArg(command.argText), context, usage);
+    return;
+  }
+
+  writeLine(context.io.stderr, usage);
+}
+
+async function handleDiagnosticsRunText(
+  argText: string,
+  context: SlashCommandContext,
+  usage: string,
+): Promise<void> {
+  const parsed = parseDiagnosticRunArgText(argText, usage);
+  if (!parsed.ok) {
+    writeLine(context.io.stderr, parsed.message);
+    return;
+  }
+
+  const result = await runTypeScriptDiagnostics({
+    ...parsed.args,
+    cwd: context.io.cwd,
+    env: context.env,
+    runner: context.diagnosticsRunner,
+  });
+  if (parsed.args.json) {
+    writeLine(context.io.stdout, renderTypeScriptDiagnosticsJson(result));
+    return;
+  }
+  writeLine(
+    result.ok ? context.io.stdout : context.io.stderr,
+    renderTypeScriptDiagnosticsResult(result, usage),
+  );
 }
 
 async function handleScannerRunText(

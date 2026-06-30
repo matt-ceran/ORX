@@ -66,6 +66,20 @@ import {
   validateOpenRouterModel,
   type DelegationState,
 } from "./delegation/index.js";
+import {
+  DIAG_USAGE,
+  DIAGNOSTICS_USAGE,
+  findDiagnosticProfile,
+  parseDiagnosticRunArgs,
+  renderDiagnosticInspectUsage,
+  renderDiagnosticProfileInspect,
+  renderDiagnosticProfiles,
+  renderMissingDiagnosticProfile,
+  renderTypeScriptDiagnosticsJson,
+  renderTypeScriptDiagnosticsResult,
+  runTypeScriptDiagnostics,
+  type DiagnosticsProcessRunner,
+} from "./diagnostics/index.js";
 import type { AskRequestOverrides } from "./openrouter/request.js";
 import type { OpenRouterMessage } from "./openrouter/types.js";
 import { formatOpenRouterMetadata } from "./openrouter/summary.js";
@@ -253,6 +267,7 @@ interface CliIo {
   browserSnapshot?: BrowserSnapshotDriver;
   astGrepRunner?: AstGrepRunner;
   scannerRunner?: ScannerProcessRunner;
+  diagnosticsRunner?: DiagnosticsProcessRunner;
 }
 
 interface AskCommand {
@@ -280,6 +295,8 @@ const CLI_NAMESPACE_USAGES = {
   code: "Usage: orx code [map|symbols|refs|imports|calls|ast-grep] [query-or-path]",
   scanners: SCANNERS_USAGE,
   scan: SCAN_USAGE,
+  diagnostics: DIAGNOSTICS_USAGE,
+  diag: DIAG_USAGE,
   orchestrator: "Usage: orx orchestrator [status|plan|openrouter <model>|clear]",
   delegate: "Usage: orx delegate [status|plan [saved-team-id]|add <name> openrouter <model>|remove <name>|clear|team|policy]",
   delegates:
@@ -362,6 +379,10 @@ function getNamespaceHelpUsage(args: string[]): string | undefined {
       return CLI_NAMESPACE_USAGES.scanners;
     case "scan":
       return CLI_NAMESPACE_USAGES.scan;
+    case "diagnostics":
+      return CLI_NAMESPACE_USAGES.diagnostics;
+    case "diag":
+      return CLI_NAMESPACE_USAGES.diag;
     case "orchestrator":
       return CLI_NAMESPACE_USAGES.orchestrator;
     case "delegate":
@@ -756,6 +777,14 @@ export async function runCli(
     return runScanAliasCommand(args.slice(1), io, env);
   }
 
+  if (first === "diagnostics") {
+    return runDiagnosticsCommand(args.slice(1), io, env, DIAGNOSTICS_USAGE);
+  }
+
+  if (first === "diag") {
+    return runDiagnosticsCommand(args.slice(1), io, env, DIAG_USAGE);
+  }
+
   if (first === "orchestrator") {
     return runOrchestratorCommand(args.slice(1), io, delegationPolicyPath);
   }
@@ -855,6 +884,8 @@ function helpText(): string {
     "  code          Render local code maps, symbol indexes, references, imports, calls, or ast-grep searches",
     "  scanners      List, inspect, or run local security scanner profiles",
     "  scan          Alias for a local scanner run",
+    "  diagnostics  List, inspect, or run local diagnostics profiles",
+    "  diag          Alias for diagnostics",
     "  orchestrator  Show delegation readiness or refuse session-less changes",
     "  delegate      Show/refuse session delegate changes, policy, or saved teams",
     "  delegates     Show delegate readiness, execution policy, or saved teams",
@@ -1150,6 +1181,76 @@ async function runScanAliasCommand(args: string[], io: CliIo, env: NodeJS.Proces
     return 0;
   }
   return runScannerRunCommand(args, io, env, SCAN_USAGE);
+}
+
+async function runDiagnosticsCommand(
+  args: string[],
+  io: CliIo,
+  env: NodeJS.ProcessEnv,
+  usage: string,
+): Promise<number> {
+  const subcommand = args[0]?.toLowerCase() ?? "list";
+
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, usage);
+    return 0;
+  }
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(io.stdout, renderDiagnosticProfiles());
+    return 0;
+  }
+
+  if (subcommand === "inspect" || subcommand === "show") {
+    const profileId = args[1];
+    if (!profileId || args.length !== 2) {
+      writeLine(io.stderr, renderDiagnosticInspectUsage(usage));
+      return 1;
+    }
+    const profile = findDiagnosticProfile(profileId);
+    if (!profile) {
+      writeLine(io.stderr, renderMissingDiagnosticProfile(profileId));
+      return 1;
+    }
+    writeLine(io.stdout, renderDiagnosticProfileInspect(profile));
+    return 0;
+  }
+
+  if (subcommand === "run") {
+    return runDiagnosticsRunCommand(args.slice(1), io, env, usage);
+  }
+
+  writeLine(io.stderr, usage);
+  return 1;
+}
+
+async function runDiagnosticsRunCommand(
+  args: string[],
+  io: CliIo,
+  env: NodeJS.ProcessEnv,
+  usage: string,
+): Promise<number> {
+  const parsed = parseDiagnosticRunArgs(args, usage);
+  if (!parsed.ok) {
+    writeLine(io.stderr, parsed.message);
+    return 1;
+  }
+
+  const result = await runTypeScriptDiagnostics({
+    ...parsed.args,
+    cwd: io.cwd,
+    env,
+    runner: io.diagnosticsRunner,
+  });
+  if (parsed.args.json) {
+    writeLine(io.stdout, renderTypeScriptDiagnosticsJson(result));
+    return result.ok ? 0 : 1;
+  }
+  writeLine(
+    result.ok ? io.stdout : io.stderr,
+    renderTypeScriptDiagnosticsResult(result, usage),
+  );
+  return result.ok ? 0 : 1;
 }
 
 async function runScannerRunCommand(

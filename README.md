@@ -9,7 +9,7 @@ ORX is planned as a personal CLI for using OpenRouter models with a polished ter
 - Launch with a dedicated `orx` command.
 - Switch between exact models, `openrouter/auto`, and `openrouter/fusion`.
 - Support OpenRouter Fusion presets and custom panel configuration.
-- Provide local coding-agent tools for file reads, search, patching, shell commands, diffs, test runs, scanner runs, and session history.
+- Provide local coding-agent tools for file reads, search, patching, shell commands, diffs, test runs, diagnostics/scanner runs, and session history.
 - Track model, mode, token usage, and estimated cost.
 - Use a professional terminal UI with streaming output, slash commands, status footer, and colored tool output.
 
@@ -68,6 +68,9 @@ orx code symbols
 orx code calls
 orx scanners list
 orx scanners inspect semgrep
+orx diagnostics list
+orx diagnostics inspect typescript
+orx diagnostics run typescript
 orx orchestrator
 orx delegates plan
 orx delegates policy
@@ -136,6 +139,10 @@ orx code calls renderCode
 orx calls renderCode
 orx code ast-grep 'console.log($A)' src --lang ts
 orx ast-grep 'console.log($A)' src --lang ts --rewrite 'logger($A)' --preview
+orx diagnostics list
+orx diagnostics inspect typescript
+orx diagnostics run typescript
+orx diag run typescript --json
 orx scanners list
 orx scanners inspect semgrep
 orx scanners run semgrep src --config semgrep.yml
@@ -145,6 +152,17 @@ orx scan semgrep src --config semgrep.yml --json
 The code map scans a bounded local tree, skips generated/vendor directories such as `node_modules`, `.git`, `.orx`, `dist`, `build`, and `coverage`, summarizes languages, key files, package/config/source entrypoints, and top JavaScript/TypeScript source imports/exports, and redacts secret-like rendered paths or symbols. The symbol index reuses the same bounded scan to list exported JavaScript/TypeScript symbols with file paths and line numbers. The reference index reuses the same bounded scan to find JavaScript/TypeScript code references for a query while skipping comments, string literals, and template literals. The import graph reuses the same bounded scan to render JavaScript/TypeScript import edges, including static imports, re-export-from edges, CommonJS `require(...)`, and string-literal dynamic `import(...)`, resolve local relative imports to source files where possible, and count external or unresolved local imports.
 The call graph reuses the same local bounds and redaction to infer JavaScript/TypeScript callable definitions and direct local call edges from a conservative lexical scan. It is not AST-backed; duplicate callee names are marked ambiguous instead of pretending to know the exact target.
 The ast-grep command runs an operator-invoked local `sg` or `ast-grep` binary with shell disabled, a cleaned environment, bounded/redacted output, and a path guard that keeps searches inside the current working directory. ORX does not install ast-grep and does not modify files; `--rewrite <template> --preview` passes ast-grep rewrite preview arguments without `--update-all` or other mutation flags. If neither `sg` nor `ast-grep` is on `PATH`, ORX exits nonzero and prints local setup guidance.
+
+Local diagnostics profiles are explicit operator commands, not model tools:
+
+```sh
+orx diagnostics list
+orx diagnostics inspect typescript
+orx diagnostics run typescript
+orx diag run typescript --json
+```
+
+The first runnable profile is TypeScript. ORX never installs TypeScript; it uses a project-local `node_modules/.bin/tsc` when present, otherwise an existing `tsc` on `PATH`, and runs `tsc --noEmit --pretty false --project <tsconfig>`. The default project is `tsconfig.json`. `--project` must name a local file under the current working directory, with symlink realpaths also staying inside cwd; URLs, registry/package/launcher-like values, dash-prefixed values, control characters, and secret-like values are rejected before spawning. Runs use shell-disabled process execution, a minimal env without ORX/OpenRouter/Brave/API token values, bounded/redacted stdout and stderr, and optional ORX-owned `--json` metadata. TypeScript Language Server, Pyright, rust-analyzer, gopls, clangd, and SCIP TypeScript are currently catalog/readiness profiles only.
 
 Local security scanner profiles are explicit operator commands, not model tools:
 
@@ -400,6 +418,10 @@ The chat UI keeps in-session message history for the current process, streams as
 /imports [query]
 /calls [query]
 /ast-grep <pattern> [path] [--lang <lang>]
+/scanners [list|inspect <profile>|run semgrep <path> --config <local-config-path> [--json]]
+/scan semgrep <path> --config <local-config-path> [--json]
+/diagnostics [list|inspect <profile>|run typescript [--project <local-tsconfig-path>] [--json]]
+/diag [list|inspect <profile>|run typescript [--project <local-tsconfig-path>] [--json]]
 /plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold|validate|inspect|register|install|enable|disable]
 /plugin [list|status]
 /bins [list|inspect|trust|untrust|run]

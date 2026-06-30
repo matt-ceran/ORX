@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
 import type { AstGrepRunner } from "../code-map/index.js";
+import type { DiagnosticsProcessRunner } from "../diagnostics/index.js";
 import type { DelegationState } from "../delegation/index.js";
 import type { OpenRouterCreditsInfo, OpenRouterModelInfo } from "../openrouter/live.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
@@ -129,6 +130,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
   assert.match(output, /\/scanners \[list\|inspect <profile>\|run semgrep <path> --config <local-config-path> \[--json\]\]/);
   assert.match(output, /\/scan semgrep <path> --config <local-config-path> \[--json\]/);
+  assert.match(output, /\/diagnostics \[list\|inspect <profile>\|run typescript \[--project <local-tsconfig-path>\] \[--json\]\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/refs <query>/);
   assert.match(output, /\/imports \[query\]/);
@@ -316,6 +318,10 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/scanners run semgrep src --c"), [["--config "], "--c"]);
   assert.deepEqual(completeSlashCommandLine("/scan s"), [["semgrep "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/scan semgrep src --j"), [["--json "], "--j"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics r"), [["run "], "r"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics inspect t"), [["typescript ", "typescript-language-server "], "t"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics run t"), [["typescript "], "t"]);
+  assert.deepEqual(completeSlashCommandLine("/diag run typescript --p"), [["--project "], "--p"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/prompts a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/rules a"), [["activate "], "a"]);
@@ -630,6 +636,122 @@ test("scanner slash commands list, inspect, and run Semgrep with a mocked local 
       "continue",
     );
     assert.match(unsafeSymlink.stderr(), /config resolves outside the current working directory/);
+    rmSync(outside, { recursive: true, force: true });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("diagnostics slash commands list, inspect, and run TypeScript with a mocked local binary", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-slash-diagnostics-"));
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    mkdirSync(join(cwd, "node_modules", ".bin"), { recursive: true });
+    writeFileSync(join(cwd, "src", "app.ts"), "const value: string = 1;\n");
+    writeFileSync(join(cwd, "tsconfig.json"), "{\"compilerOptions\":{\"strict\":true},\"include\":[\"src\"]}\n");
+    writeFileSync(join(cwd, "node_modules", ".bin", "tsc"), "#!/usr/bin/env node\n");
+
+    const list = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics", list.context), "continue");
+    assert.match(list.stdout(), /Local diagnostics profiles/);
+    assert.match(list.stdout(), /id=typescript state=runnable/);
+    assert.match(list.stdout(), /id=pyright state=catalog_only/);
+
+    const inspect = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics inspect typescript", inspect.context), "continue");
+    assert.match(inspect.stdout(), /Local diagnostics profile: typescript/);
+    assert.match(inspect.stdout(), /command_shape: tsc --noEmit --pretty false --project <tsconfig>/);
+
+    const inspectCatalogOnly = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics inspect clangd", inspectCatalogOnly.context), "continue");
+    assert.match(inspectCatalogOnly.stdout(), /state: catalog_only/);
+
+    const inspectUsage = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diag inspect", inspectUsage.context), "continue");
+    assert.match(inspectUsage.stderr(), /^Usage: \/diag inspect <profile>/);
+
+    const tscCalls: RunProcessOptions[] = [];
+    const diagnosticsRunner: DiagnosticsProcessRunner = async (options) => {
+      tscCalls.push(options);
+      return mockProcessResult(options, {
+        exitCode: 2,
+        stdout: "src/app.ts(1,7): error TS2322: Type 'number' is not assignable to type 'string'. access_token=abcd1234\n",
+        stderr: "Authorization: Bearer should-redact\n",
+      });
+    };
+
+    const run = createSlashHarness({
+      cwd,
+      diagnosticsRunner,
+      env: {
+        OPENROUTER_API_KEY: "sk-or-v1-secret",
+        BRAVE_SEARCH_API_KEY: "brave-secret",
+        ORX_PLUGIN_REGISTRY_PATH: "should-not-forward",
+        HOME: join(cwd, "sk-or-v1-home-secret"),
+        PATH: "/usr/bin",
+        LANG: "C",
+      },
+    });
+    assert.equal(await handleSlashCommand("/diagnostics run typescript", run.context), "continue");
+    assert.equal(run.stdout(), "");
+    assert.match(run.stderr(), /Local diagnostics run/);
+    assert.match(run.stderr(), /status: failed/);
+    assert.match(run.stderr(), /binary_source: local_node_modules/);
+    assert.match(run.stderr(), /parsed_diagnostics: 1/);
+    assert.match(run.stderr(), /src\/app\.ts:1:7 error TS2322/);
+    assert.match(run.stderr(), /access_token=\[redacted\]/);
+    assert.match(run.stderr(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(run.stderr(), /abcd1234|should-redact|sk-or-v1-secret|brave-secret|should-not-forward/);
+    assert.match(tscCalls.at(-1)?.command ?? "", /node_modules\/\.bin\/tsc$/);
+    assert.deepEqual(tscCalls.at(-1)?.args, [
+      "--noEmit",
+      "--pretty",
+      "false",
+      "--project",
+      "tsconfig.json",
+    ]);
+    assert.equal(tscCalls.at(-1)?.shell, false);
+    assert.equal(tscCalls.at(-1)?.inheritEnv, false);
+    assert.equal(tscCalls.at(-1)?.env?.PATH, "/usr/bin");
+    assert.equal(tscCalls.at(-1)?.env?.LANG, "C");
+    assert.equal(tscCalls.at(-1)?.env?.OPENROUTER_API_KEY, undefined);
+    assert.equal(tscCalls.at(-1)?.env?.BRAVE_SEARCH_API_KEY, undefined);
+    assert.equal(tscCalls.at(-1)?.env?.ORX_PLUGIN_REGISTRY_PATH, undefined);
+    assert.equal(tscCalls.at(-1)?.env?.HOME, undefined);
+
+    const json = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(await handleSlashCommand("/diag run typescript --json", json.context), "continue");
+    const report = JSON.parse(json.stdout());
+    assert.equal(report.surface, "orx.local_diagnostics");
+    assert.equal(report.status, "failed");
+    assert.equal(report.model_tool, "not_exposed");
+    assert.equal(report.diagnostics[0].code, "TS2322");
+    assert.doesNotMatch(json.stdout(), /abcd1234|should-redact/);
+    assert.equal(json.stderr(), "");
+
+    const beforeUnsafeCalls = tscCalls.length;
+    const catalogOnly = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(await handleSlashCommand("/diagnostics run pyright", catalogOnly.context), "continue");
+    assert.match(catalogOnly.stderr(), /catalog\/readiness-only/);
+    assert.equal(tscCalls.length, beforeUnsafeCalls);
+
+    const unsafeProject = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(
+      await handleSlashCommand("/diagnostics run typescript --project https://example.com/tsconfig.json", unsafeProject.context),
+      "continue",
+    );
+    assert.match(unsafeProject.stderr(), /not a URL/);
+    assert.equal(tscCalls.length, beforeUnsafeCalls);
+
+    const outside = mkdtempSync(join(tmpdir(), "orx-slash-diagnostics-outside-"));
+    writeFileSync(join(outside, "tsconfig.json"), "{}\n");
+    symlinkSync(join(outside, "tsconfig.json"), join(cwd, "outside-tsconfig.json"));
+    const unsafeSymlink = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(
+      await handleSlashCommand("/diagnostics run typescript --project outside-tsconfig.json", unsafeSymlink.context),
+      "continue",
+    );
+    assert.match(unsafeSymlink.stderr(), /project resolves outside the current working directory/);
     rmSync(outside, { recursive: true, force: true });
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -4732,6 +4854,7 @@ function createSlashHarness(
     browserResolveHost?: SlashCommandContext["browserResolveHost"];
     astGrepRunner?: AstGrepRunner;
     scannerRunner?: ScannerProcessRunner;
+    diagnosticsRunner?: DiagnosticsProcessRunner;
     braveSearchApiKey?: string;
     tty?: boolean;
     columns?: number;
@@ -4794,6 +4917,7 @@ function createSlashHarness(
       browserResolveHost: options.browserResolveHost,
       astGrepRunner: options.astGrepRunner,
       scannerRunner: options.scannerRunner,
+      diagnosticsRunner: options.diagnosticsRunner,
       braveSearchApiKey: options.braveSearchApiKey,
       getConfig: () => config,
       setConfig: (nextConfig: OrxConfig) => {
