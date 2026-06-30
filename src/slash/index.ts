@@ -57,10 +57,10 @@ import {
   renderDiagnosticInspectUsage,
   renderDiagnosticProfileInspect,
   renderDiagnosticProfiles,
+  renderLocalDiagnosticsJson,
+  renderLocalDiagnosticsResult,
   renderMissingDiagnosticProfile,
-  renderTypeScriptDiagnosticsJson,
-  renderTypeScriptDiagnosticsResult,
-  runTypeScriptDiagnostics,
+  runLocalDiagnostics,
   type DiagnosticsProcessRunner,
 } from "../diagnostics/index.js";
 import {
@@ -574,7 +574,7 @@ const DIAGNOSTIC_PROFILE_COMPLETIONS = [
   "clangd",
   "scip-typescript",
 ] as const;
-const RUNNABLE_DIAGNOSTIC_PROFILE_COMPLETIONS = ["typescript"] as const;
+const RUNNABLE_DIAGNOSTIC_PROFILE_COMPLETIONS = ["typescript", "pyright"] as const;
 const DIAGNOSTIC_RUN_OPTION_COMPLETIONS = ["--project", "--json"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -2584,19 +2584,19 @@ async function handleDiagnosticsRunText(
     return;
   }
 
-  const result = await runTypeScriptDiagnostics({
+  const result = await runLocalDiagnostics({
     ...parsed.args,
     cwd: context.io.cwd,
     env: context.env,
     runner: context.diagnosticsRunner,
   });
   if (parsed.args.json) {
-    writeLine(context.io.stdout, renderTypeScriptDiagnosticsJson(result));
+    writeLine(context.io.stdout, renderLocalDiagnosticsJson(result));
     return;
   }
   writeLine(
     result.ok ? context.io.stdout : context.io.stderr,
-    renderTypeScriptDiagnosticsResult(result, usage),
+    renderLocalDiagnosticsResult(result, usage),
   );
 }
 

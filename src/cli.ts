@@ -80,10 +80,10 @@ import {
   renderDiagnosticInspectUsage,
   renderDiagnosticProfileInspect,
   renderDiagnosticProfiles,
+  renderLocalDiagnosticsJson,
+  renderLocalDiagnosticsResult,
   renderMissingDiagnosticProfile,
-  renderTypeScriptDiagnosticsJson,
-  renderTypeScriptDiagnosticsResult,
-  runTypeScriptDiagnostics,
+  runLocalDiagnostics,
   type DiagnosticsProcessRunner,
 } from "./diagnostics/index.js";
 import type { AskRequestOverrides } from "./openrouter/request.js";
@@ -1291,19 +1291,19 @@ async function runDiagnosticsRunCommand(
     return 1;
   }
 
-  const result = await runTypeScriptDiagnostics({
+  const result = await runLocalDiagnostics({
     ...parsed.args,
     cwd: io.cwd,
     env,
     runner: io.diagnosticsRunner,
   });
   if (parsed.args.json) {
-    writeLine(io.stdout, renderTypeScriptDiagnosticsJson(result));
+    writeLine(io.stdout, renderLocalDiagnosticsJson(result));
     return result.ok ? 0 : 1;
   }
   writeLine(
     result.ok ? io.stdout : io.stderr,
-    renderTypeScriptDiagnosticsResult(result, usage),
+    renderLocalDiagnosticsResult(result, usage),
   );
   return result.ok ? 0 : 1;
 }

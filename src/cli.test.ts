@@ -1829,21 +1829,29 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
   const cwd = createTempDir();
   try {
     mkdirSync(join(cwd, "src"), { recursive: true });
+    mkdirSync(join(cwd, "config"), { recursive: true });
     mkdirSync(join(cwd, "node_modules", ".bin"), { recursive: true });
     writeFileSync(join(cwd, "src", "app.ts"), "const value: string = 1;\n");
+    writeFileSync(join(cwd, "src", "app.py"), "value: str = 1\n");
     writeFileSync(join(cwd, "tsconfig.json"), "{\"compilerOptions\":{\"strict\":true},\"include\":[\"src\"]}\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "tsc"), "#!/usr/bin/env node\n");
+    writeFileSync(join(cwd, "node_modules", ".bin", "pyright"), "#!/usr/bin/env node\n");
 
     const list = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diagnostics", "list"], {}, list.io), 0);
     assert.match(list.stdout(), /Local diagnostics profiles/);
     assert.match(list.stdout(), /id=typescript state=runnable/);
-    assert.match(list.stdout(), /id=pyright state=catalog_only/);
+    assert.match(list.stdout(), /id=pyright state=runnable/);
 
     const inspect = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diag", "inspect", "typescript"], {}, inspect.io), 0);
     assert.match(inspect.stdout(), /Local diagnostics profile: typescript/);
     assert.match(inspect.stdout(), /command_shape: tsc --noEmit --pretty false --project <tsconfig>/);
+
+    const inspectPyright = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diag", "inspect", "pyright"], {}, inspectPyright.io), 0);
+    assert.match(inspectPyright.stdout(), /Local diagnostics profile: pyright/);
+    assert.match(inspectPyright.stdout(), /command_shape: pyright --outputjson --project <project-file-or-directory>/);
 
     const inspectCatalogOnly = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "gopls"], {}, inspectCatalogOnly.io), 0);
@@ -1856,6 +1864,26 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     const tscCalls: Array<Parameters<DiagnosticsProcessRunner>[0]> = [];
     const diagnosticsRunner: DiagnosticsProcessRunner = async (options) => {
       tscCalls.push(options);
+      if (String(options.command).includes("pyright")) {
+        return mockProcessResult(options, {
+          exitCode: 1,
+          stdout: JSON.stringify({
+            version: "1.1.0",
+            time: "0sec",
+            generalDiagnostics: [
+              {
+                file: join(cwd, "src", "app.py"),
+                severity: "error",
+                message: "Expression of type \"Literal[1]\" cannot be assigned to declared type \"str\" access_token=abcd1234",
+                range: { start: { line: 0, character: 13 }, end: { line: 0, character: 14 } },
+                rule: "reportAssignmentType",
+              },
+            ],
+            summary: { filesAnalyzed: 1, errorCount: 1, warningCount: 0, informationCount: 0, timeInSec: 0.1 },
+          }),
+          stderr: "Authorization: Bearer should-redact\n",
+        });
+      }
       return mockProcessResult(options, {
         exitCode: 0,
         stdout: "TypeScript clean\n",
@@ -1923,6 +1951,39 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.doesNotMatch(json.stdout(), /abcd1234|should-redact/);
     assert.equal(json.stderr(), "");
 
+    const pyright = createIo({ cwd, diagnosticsRunner });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "run", "pyright"], {}, pyright.io), 1);
+    assert.equal(pyright.stdout(), "");
+    assert.match(pyright.stderr(), /Local diagnostics run/);
+    assert.match(pyright.stderr(), /profile: pyright/);
+    assert.match(pyright.stderr(), /status: failed/);
+    assert.match(pyright.stderr(), /binary_source: local_node_modules/);
+    assert.match(pyright.stderr(), /parsed_diagnostics: 1/);
+    assert.match(pyright.stderr(), /src\/app\.py:1:14 error reportAssignmentType/);
+    assert.match(pyright.stderr(), /access_token=\[redacted\]/);
+    assert.match(pyright.stderr(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(pyright.stderr(), /abcd1234|should-redact/);
+    assert.match(tscCalls.at(-1)?.command ?? "", /node_modules\/\.bin\/pyright$/);
+    assert.deepEqual(tscCalls.at(-1)?.args, [
+      "--outputjson",
+      "--project",
+      ".",
+    ]);
+    assert.equal(tscCalls.at(-1)?.shell, false);
+    assert.equal(tscCalls.at(-1)?.inheritEnv, false);
+
+    const pyrightProject = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "run", "pyright", "--project", "config"], {}, pyrightProject.io),
+      1,
+    );
+    assert.match(pyrightProject.stderr(), /project: config/);
+    assert.deepEqual(tscCalls.at(-1)?.args, [
+      "--outputjson",
+      "--project",
+      "config",
+    ]);
+
     const missingCwd = createTempDir();
     const missing = createIo({
       cwd: missingCwd,
@@ -1938,7 +1999,7 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
 
     const beforeUnsafeCalls = tscCalls.length;
     const catalogOnly = createIo({ cwd, diagnosticsRunner });
-    assert.equal(await runCli(["node", "cli", "diagnostics", "run", "pyright"], {}, catalogOnly.io), 1);
+    assert.equal(await runCli(["node", "cli", "diagnostics", "run", "rust-analyzer"], {}, catalogOnly.io), 1);
     assert.match(catalogOnly.stderr(), /catalog\/readiness-only/);
     assert.equal(tscCalls.length, beforeUnsafeCalls);
 

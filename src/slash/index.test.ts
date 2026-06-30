@@ -130,7 +130,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
   assert.match(output, /\/scanners \[list\|inspect <profile>\|run semgrep <path> --config <local-config-path> \[--json\]\]/);
   assert.match(output, /\/scan semgrep <path> --config <local-config-path> \[--json\]/);
-  assert.match(output, /\/diagnostics \[list\|inspect <profile>\|run typescript \[--project <local-tsconfig-path>\] \[--json\]\]/);
+  assert.match(output, /\/diagnostics \[list\|inspect <profile>\|run <typescript\|pyright> \[--project <local-project-path>\] \[--json\]\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/refs <query>/);
   assert.match(output, /\/imports \[query\]/);
@@ -326,6 +326,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/diagnostics r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics inspect t"), [["typescript ", "typescript-language-server "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run t"), [["typescript "], "t"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics run p"), [["pyright "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/diag run typescript --p"), [["--project "], "--p"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/prompts a"), [["activate "], "a"]);
@@ -684,21 +685,29 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
   const cwd = mkdtempSync(join(tmpdir(), "orx-slash-diagnostics-"));
   try {
     mkdirSync(join(cwd, "src"), { recursive: true });
+    mkdirSync(join(cwd, "config"), { recursive: true });
     mkdirSync(join(cwd, "node_modules", ".bin"), { recursive: true });
     writeFileSync(join(cwd, "src", "app.ts"), "const value: string = 1;\n");
+    writeFileSync(join(cwd, "src", "app.py"), "value: str = 1\n");
     writeFileSync(join(cwd, "tsconfig.json"), "{\"compilerOptions\":{\"strict\":true},\"include\":[\"src\"]}\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "tsc"), "#!/usr/bin/env node\n");
+    writeFileSync(join(cwd, "node_modules", ".bin", "pyright"), "#!/usr/bin/env node\n");
 
     const list = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics", list.context), "continue");
     assert.match(list.stdout(), /Local diagnostics profiles/);
     assert.match(list.stdout(), /id=typescript state=runnable/);
-    assert.match(list.stdout(), /id=pyright state=catalog_only/);
+    assert.match(list.stdout(), /id=pyright state=runnable/);
 
     const inspect = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics inspect typescript", inspect.context), "continue");
     assert.match(inspect.stdout(), /Local diagnostics profile: typescript/);
     assert.match(inspect.stdout(), /command_shape: tsc --noEmit --pretty false --project <tsconfig>/);
+
+    const inspectPyright = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics inspect pyright", inspectPyright.context), "continue");
+    assert.match(inspectPyright.stdout(), /Local diagnostics profile: pyright/);
+    assert.match(inspectPyright.stdout(), /command_shape: pyright --outputjson --project <project-file-or-directory>/);
 
     const inspectCatalogOnly = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics inspect clangd", inspectCatalogOnly.context), "continue");
@@ -711,6 +720,25 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     const tscCalls: RunProcessOptions[] = [];
     const diagnosticsRunner: DiagnosticsProcessRunner = async (options) => {
       tscCalls.push(options);
+      if (String(options.command).includes("pyright")) {
+        return mockProcessResult(options, {
+          exitCode: 1,
+          stdout: JSON.stringify({
+            version: "1.1.0",
+            generalDiagnostics: [
+              {
+                file: join(cwd, "src", "app.py"),
+                severity: "error",
+                message: "Expression of type \"Literal[1]\" cannot be assigned to declared type \"str\" access_token=abcd1234",
+                range: { start: { line: 0, character: 13 }, end: { line: 0, character: 14 } },
+                rule: "reportAssignmentType",
+              },
+            ],
+            summary: { filesAnalyzed: 1, errorCount: 1, warningCount: 0, informationCount: 0, timeInSec: 0.1 },
+          }),
+          stderr: "Authorization: Bearer should-redact\n",
+        });
+      }
       return mockProcessResult(options, {
         exitCode: 2,
         stdout: "src/app.ts(1,7): error TS2322: Type 'number' is not assignable to type 'string'. access_token=abcd1234\n",
@@ -767,9 +795,42 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.doesNotMatch(json.stdout(), /abcd1234|should-redact/);
     assert.equal(json.stderr(), "");
 
+    const pyright = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(await handleSlashCommand("/diagnostics run pyright", pyright.context), "continue");
+    assert.equal(pyright.stdout(), "");
+    assert.match(pyright.stderr(), /Local diagnostics run/);
+    assert.match(pyright.stderr(), /profile: pyright/);
+    assert.match(pyright.stderr(), /status: failed/);
+    assert.match(pyright.stderr(), /binary_source: local_node_modules/);
+    assert.match(pyright.stderr(), /parsed_diagnostics: 1/);
+    assert.match(pyright.stderr(), /src\/app\.py:1:14 error reportAssignmentType/);
+    assert.match(pyright.stderr(), /access_token=\[redacted\]/);
+    assert.match(pyright.stderr(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(pyright.stderr(), /abcd1234|should-redact/);
+    assert.match(tscCalls.at(-1)?.command ?? "", /node_modules\/\.bin\/pyright$/);
+    assert.deepEqual(tscCalls.at(-1)?.args, [
+      "--outputjson",
+      "--project",
+      ".",
+    ]);
+    assert.equal(tscCalls.at(-1)?.shell, false);
+    assert.equal(tscCalls.at(-1)?.inheritEnv, false);
+
+    const pyrightProject = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(
+      await handleSlashCommand("/diagnostics run pyright --project config", pyrightProject.context),
+      "continue",
+    );
+    assert.match(pyrightProject.stderr(), /project: config/);
+    assert.deepEqual(tscCalls.at(-1)?.args, [
+      "--outputjson",
+      "--project",
+      "config",
+    ]);
+
     const beforeUnsafeCalls = tscCalls.length;
     const catalogOnly = createSlashHarness({ cwd, diagnosticsRunner });
-    assert.equal(await handleSlashCommand("/diagnostics run pyright", catalogOnly.context), "continue");
+    assert.equal(await handleSlashCommand("/diagnostics run rust-analyzer", catalogOnly.context), "continue");
     assert.match(catalogOnly.stderr(), /catalog\/readiness-only/);
     assert.equal(tscCalls.length, beforeUnsafeCalls);
 

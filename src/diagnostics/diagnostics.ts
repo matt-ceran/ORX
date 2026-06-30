@@ -6,13 +6,13 @@ import { runProcess, type RunProcessOptions, type RunProcessResult } from "../to
 import type { TextTruncation } from "../tools/types.js";
 
 export const DIAGNOSTICS_USAGE =
-  "Usage: orx diagnostics [list|inspect <profile>|run typescript [--project <local-tsconfig-path>] [--json]]";
+  "Usage: orx diagnostics [list|inspect <profile>|run <typescript|pyright> [--project <local-project-path>] [--json]]";
 export const DIAG_USAGE =
-  "Usage: orx diag [list|inspect <profile>|run typescript [--project <local-tsconfig-path>] [--json]]";
+  "Usage: orx diag [list|inspect <profile>|run <typescript|pyright> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAGNOSTICS_USAGE =
-  "Usage: /diagnostics [list|inspect <profile>|run typescript [--project <local-tsconfig-path>] [--json]]";
+  "Usage: /diagnostics [list|inspect <profile>|run <typescript|pyright> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAG_USAGE =
-  "Usage: /diag [list|inspect <profile>|run typescript [--project <local-tsconfig-path>] [--json]]";
+  "Usage: /diag [list|inspect <profile>|run <typescript|pyright> [--project <local-project-path>] [--json]]";
 
 export type DiagnosticProfileId =
   | "typescript"
@@ -33,14 +33,18 @@ export interface DiagnosticProfile {
   networkBoundary: string;
 }
 
-export interface TypeScriptDiagnosticsArgs {
-  profile: DiagnosticProfileId;
+export type RunnableDiagnosticProfileId = "typescript" | "pyright";
+
+export interface LocalDiagnosticsArgs {
+  profile: RunnableDiagnosticProfileId;
   projectPath: string;
   json: boolean;
 }
 
+export type TypeScriptDiagnosticsArgs = LocalDiagnosticsArgs;
+
 export type DiagnosticRunParseResult =
-  | { ok: true; args: TypeScriptDiagnosticsArgs }
+  | { ok: true; args: LocalDiagnosticsArgs }
   | { ok: false; message: string };
 
 export type DiagnosticRunStatus =
@@ -55,14 +59,14 @@ export interface ParsedTypeScriptDiagnostic {
   file: string;
   line: number;
   column: number;
-  severity: "error" | "warning" | "message";
+  severity: "error" | "warning" | "message" | "information";
   code: string;
   message: string;
 }
 
 export type DiagnosticsProcessRunner = (options: RunProcessOptions) => Promise<RunProcessResult>;
 
-export interface RunTypeScriptDiagnosticsOptions extends TypeScriptDiagnosticsArgs {
+export interface RunLocalDiagnosticsOptions extends LocalDiagnosticsArgs {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   runner?: DiagnosticsProcessRunner;
@@ -70,10 +74,12 @@ export interface RunTypeScriptDiagnosticsOptions extends TypeScriptDiagnosticsAr
   maxBytes?: number;
 }
 
-export interface TypeScriptDiagnosticsResult {
+export type RunTypeScriptDiagnosticsOptions = RunLocalDiagnosticsOptions;
+
+export interface LocalDiagnosticsResult {
   ok: boolean;
   status: DiagnosticRunStatus;
-  profile: "typescript";
+  profile: RunnableDiagnosticProfileId;
   root: string;
   projectPath: string;
   json: boolean;
@@ -93,12 +99,14 @@ export interface TypeScriptDiagnosticsResult {
   message?: string;
 }
 
+export type TypeScriptDiagnosticsResult = LocalDiagnosticsResult;
+
 interface ResolvedDiagnosticPath {
   arg: string;
   displayPath: string;
 }
 
-interface ResolvedTscCommand {
+interface ResolvedDiagnosticCommand {
   ok: true;
   command: string;
   source: "local_node_modules" | "path";
@@ -127,11 +135,11 @@ const DIAGNOSTIC_PROFILES: DiagnosticProfile[] = [
   {
     id: "pyright",
     label: "Pyright",
-    state: "catalog_only",
+    state: "runnable",
     binary: "pyright",
-    summary: "Catalog/readiness placeholder for future Python diagnostics integration.",
-    runSupport: "not runnable in this slice",
-    networkBoundary: "no runnable no-network/no-auth/no-write command shape is enabled yet",
+    summary: "Local Python diagnostics using an already-installed Pyright binary.",
+    runSupport: "runnable only through `run pyright [--project <local-project-file-or-directory>] [--json]`",
+    networkBoundary: "no installs, package-manager calls, MCP calls, network calls, or model exposure",
   },
   {
     id: "rust-analyzer",
@@ -172,10 +180,14 @@ const DIAGNOSTIC_PROFILES: DiagnosticProfile[] = [
 ];
 
 const PROFILE_IDS = new Set<DiagnosticProfileId>(DIAGNOSTIC_PROFILES.map((profile) => profile.id));
+const RUNNABLE_PROFILE_IDS = new Set<RunnableDiagnosticProfileId>(["typescript", "pyright"]);
 const DEFAULT_TYPESCRIPT_TIMEOUT_MS = 120_000;
+const DEFAULT_PYRIGHT_TIMEOUT_MS = 120_000;
 const DEFAULT_DIAGNOSTIC_OUTPUT_BYTES = 128 * 1024;
 const TSC_DISCOVERY_TIMEOUT_MS = 5_000;
+const PYRIGHT_DISCOVERY_TIMEOUT_MS = 5_000;
 const TSC_DISCOVERY_BYTES = 8 * 1024;
+const PYRIGHT_DISCOVERY_BYTES = 8 * 1024;
 const MAX_DIAGNOSTIC_PATH_LENGTH = 4096;
 const MAX_DIAGNOSTIC_PROFILE_LENGTH = 120;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
@@ -250,6 +262,17 @@ export function renderDiagnosticProfileInspect(profile: DiagnosticProfile): stri
       "  run: orx diagnostics run typescript [--project <local-tsconfig-path>] [--json]",
     );
   }
+  if (profile.id === "pyright") {
+    lines.push(
+      "  default_project: . under cwd",
+      "  command_shape: pyright --outputjson --project <project-file-or-directory>",
+      "  binary_preference: cwd/node_modules/.bin/pyright before PATH pyright",
+      "  project_guard: local regular file or directory under cwd; symlink realpath must remain under cwd",
+      "  rejected_projects: URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
+      "  output: bounded and redacted; --json emits ORX-owned structured JSON with parsed generalDiagnostics",
+      "  run: orx diagnostics run pyright [--project <local-project-file-or-directory>] [--json]",
+    );
+  }
 
   return lines.join("\n");
 }
@@ -259,10 +282,7 @@ export function renderMissingDiagnosticProfile(profileId: string): string {
 }
 
 export function renderDiagnosticInspectUsage(usage: string): string {
-  return usage.replace(
-    "[list|inspect <profile>|run typescript [--project <local-tsconfig-path>] [--json]]",
-    "inspect <profile>",
-  );
+  return usage.replace(/\[list\|inspect <profile>\|run .+$/, "inspect <profile>");
 }
 
 export function parseDiagnosticRunArgs(
@@ -270,7 +290,7 @@ export function parseDiagnosticRunArgs(
   usage = DIAGNOSTICS_USAGE,
 ): DiagnosticRunParseResult {
   const positional: string[] = [];
-  let projectPath = "tsconfig.json";
+  let projectPath: string | undefined;
   let json = false;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -313,13 +333,15 @@ export function parseDiagnosticRunArgs(
   if (!PROFILE_IDS.has(profile)) {
     return { ok: false, message: renderMissingDiagnosticProfile(profile) };
   }
-  if (profile !== "typescript") {
+  if (!RUNNABLE_PROFILE_IDS.has(profile as RunnableDiagnosticProfileId)) {
     return {
       ok: false,
       message: `Diagnostics profile ${profile} is catalog/readiness-only in this slice; no run path is enabled.`,
     };
   }
-  const projectError = validateProjectPathValue(projectPath);
+  const runnableProfile = profile as RunnableDiagnosticProfileId;
+  const selectedProjectPath = projectPath ?? defaultProjectPathForProfile(runnableProfile);
+  const projectError = validateProjectPathValue(selectedProjectPath, runnableProfile);
   if (projectError) {
     return { ok: false, message: `${usage}\n${projectError}` };
   }
@@ -327,8 +349,8 @@ export function parseDiagnosticRunArgs(
   return {
     ok: true,
     args: {
-      profile,
-      projectPath,
+      profile: runnableProfile,
+      projectPath: selectedProjectPath,
       json,
     },
   };
@@ -345,31 +367,27 @@ export function parseDiagnosticRunArgText(
   return parseDiagnosticRunArgs(tokens, usage);
 }
 
-export async function runTypeScriptDiagnostics(
-  options: RunTypeScriptDiagnosticsOptions,
-): Promise<TypeScriptDiagnosticsResult> {
+export async function runLocalDiagnostics(
+  options: RunLocalDiagnosticsOptions,
+): Promise<LocalDiagnosticsResult> {
   const root = resolve(options.cwd ?? process.cwd());
   const env = createDiagnosticsEnv(options.env ?? process.env);
   const maxBytes = options.maxBytes ?? DEFAULT_DIAGNOSTIC_OUTPUT_BYTES;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TYPESCRIPT_TIMEOUT_MS;
+  const timeoutMs = options.timeoutMs ?? defaultTimeoutForProfile(options.profile);
   const runner = options.runner ?? runProcess;
   const emptyText = emptyDiagnosticText();
 
-  if (options.profile !== "typescript") {
-    return invalidTypeScriptRun(options, root, "Only the typescript diagnostics profile is runnable in this slice.");
-  }
-
-  const project = resolveProjectPath(root, options.projectPath);
+  const project = resolveProjectPath(root, options.projectPath, options.profile);
   if (!project.ok) {
-    return invalidTypeScriptRun(options, root, project.message);
+    return invalidDiagnosticsRun(options, root, project.message);
   }
 
-  const command = await resolveTscCommand(root, env, runner);
+  const command = await resolveDiagnosticCommand(root, env, runner, options.profile);
   if (!command.ok) {
     return {
       ok: false,
       status: "tool_missing",
-      profile: "typescript",
+      profile: options.profile,
       root,
       projectPath: project.displayPath,
       json: options.json,
@@ -384,7 +402,7 @@ export async function runTypeScriptDiagnostics(
     };
   }
 
-  const spawnArgs = ["--noEmit", "--pretty", "false", "--project", project.arg];
+  const spawnArgs = buildDiagnosticCommandArgs(options.profile, project.arg);
   const result = await runner({
     command: command.command,
     args: spawnArgs,
@@ -397,13 +415,15 @@ export async function runTypeScriptDiagnostics(
   });
   const stdout = sanitizeProcessOutput(result.stdout);
   const stderr = sanitizeProcessOutput(result.stderr);
-  const status = classifyTypeScriptRun(result);
-  const diagnostics = parseTypeScriptDiagnostics(`${stdout}\n${stderr}`);
+  const status = classifyDiagnosticsRun(result);
+  const diagnostics = options.profile === "typescript"
+    ? parseTypeScriptDiagnostics(`${stdout}\n${stderr}`)
+    : parsePyrightDiagnostics(stdout, root);
 
   return {
     ok: status === "ok",
     status,
-    profile: "typescript",
+    profile: options.profile,
     root,
     projectPath: project.displayPath,
     json: options.json,
@@ -424,8 +444,14 @@ export async function runTypeScriptDiagnostics(
   };
 }
 
-export function renderTypeScriptDiagnosticsResult(
-  result: TypeScriptDiagnosticsResult,
+export async function runTypeScriptDiagnostics(
+  options: RunTypeScriptDiagnosticsOptions,
+): Promise<TypeScriptDiagnosticsResult> {
+  return runLocalDiagnostics(options);
+}
+
+export function renderLocalDiagnosticsResult(
+  result: LocalDiagnosticsResult,
   usage = DIAGNOSTICS_USAGE,
 ): string {
   const lines = [
@@ -455,7 +481,7 @@ export function renderTypeScriptDiagnosticsResult(
     lines.push(`  duration_ms: ${result.durationMs}`);
   }
   if (result.status === "tool_missing") {
-    lines.push(`  setup: ${typescriptMissingMessage()}`);
+    lines.push(`  setup: ${diagnosticMissingMessage(result.profile)}`);
   }
   if (result.message && result.status !== "tool_missing") {
     lines.push(`  message: ${sanitizeInline(result.message)}`);
@@ -486,7 +512,14 @@ export function renderTypeScriptDiagnosticsResult(
   return lines.join("\n");
 }
 
-export function renderTypeScriptDiagnosticsJson(result: TypeScriptDiagnosticsResult): string {
+export function renderTypeScriptDiagnosticsResult(
+  result: TypeScriptDiagnosticsResult,
+  usage = DIAGNOSTICS_USAGE,
+): string {
+  return renderLocalDiagnosticsResult(result, usage);
+}
+
+export function renderLocalDiagnosticsJson(result: LocalDiagnosticsResult): string {
   return JSON.stringify({
     schema_version: 1,
     surface: "orx.local_diagnostics",
@@ -522,11 +555,16 @@ export function renderTypeScriptDiagnosticsJson(result: TypeScriptDiagnosticsRes
   }, null, 2);
 }
 
+export function renderTypeScriptDiagnosticsJson(result: TypeScriptDiagnosticsResult): string {
+  return renderLocalDiagnosticsJson(result);
+}
+
 function resolveProjectPath(
   cwd: string,
   value: string,
+  profile: RunnableDiagnosticProfileId,
 ): ({ ok: true } & ResolvedDiagnosticPath) | { ok: false; message: string } {
-  const validation = validateProjectPathValue(value);
+  const validation = validateProjectPathValue(value, profile);
   if (validation) {
     return { ok: false, message: validation };
   }
@@ -547,8 +585,11 @@ function resolveProjectPath(
   if (!isPathInside(root, realResolved)) {
     return { ok: false, message: "project resolves outside the current working directory." };
   }
-  if (!safeIsFile(realResolved)) {
+  if (profile === "typescript" && !safeIsFile(realResolved)) {
     return { ok: false, message: "project must be a regular local file." };
+  }
+  if (profile === "pyright" && !safeIsFile(realResolved) && !safeIsDirectory(realResolved)) {
+    return { ok: false, message: "project must be a regular local file or directory." };
   }
 
   const relativePath = relative(cwd, resolved).split(/[\\/]/g).join("/") || ".";
@@ -567,12 +608,13 @@ function resolveProjectPath(
   return { ok: true, arg: relativePath, displayPath: relativePath };
 }
 
-async function resolveTscCommand(
+async function resolveDiagnosticCommand(
   cwd: string,
   env: NodeJS.ProcessEnv,
   runner: DiagnosticsProcessRunner,
-): Promise<ResolvedTscCommand | { ok: false; message: string }> {
-  const local = resolveLocalTscCommand(cwd);
+  profile: RunnableDiagnosticProfileId,
+): Promise<ResolvedDiagnosticCommand | { ok: false; message: string }> {
+  const local = resolveLocalDiagnosticCommand(cwd, profile);
   if (local.ok) {
     return local;
   }
@@ -580,32 +622,37 @@ async function resolveTscCommand(
     return { ok: false, message: local.message };
   }
 
+  const binary = diagnosticBinaryForProfile(profile);
   const pathResult = await runner({
-    command: "tsc",
+    command: binary,
     args: ["--version"],
     cwd,
     env,
     inheritEnv: false,
     shell: false,
-    timeoutMs: TSC_DISCOVERY_TIMEOUT_MS,
-    maxBytes: TSC_DISCOVERY_BYTES,
+    timeoutMs: profile === "typescript" ? TSC_DISCOVERY_TIMEOUT_MS : PYRIGHT_DISCOVERY_TIMEOUT_MS,
+    maxBytes: profile === "typescript" ? TSC_DISCOVERY_BYTES : PYRIGHT_DISCOVERY_BYTES,
   });
   if (pathResult.exitCode === 0) {
-    return { ok: true, command: "tsc", displayCommand: "tsc", source: "path" };
+    return { ok: true, command: binary, displayCommand: binary, source: "path" };
   }
   if (pathResult.error && isCommandMissingError(pathResult.error)) {
-    return { ok: false, message: typescriptMissingMessage() };
+    return { ok: false, message: diagnosticMissingMessage(profile) };
   }
   return {
     ok: false,
-    message: `tsc was found but did not respond to --version successfully. ${typescriptMissingMessage()}`,
+    message: `${binary} was found but did not respond to --version successfully. ${diagnosticMissingMessage(profile)}`,
   };
 }
 
-function resolveLocalTscCommand(cwd: string): ResolvedTscCommand | { ok: false; message?: string } {
-  const candidates = process.platform === "win32"
-    ? ["node_modules/.bin/tsc.cmd", "node_modules/.bin/tsc"]
-    : ["node_modules/.bin/tsc", "node_modules/.bin/tsc.cmd"];
+function resolveLocalDiagnosticCommand(
+  cwd: string,
+  profile: RunnableDiagnosticProfileId,
+): ResolvedDiagnosticCommand | { ok: false; message?: string } {
+  const binary = diagnosticBinaryForProfile(profile);
+  const localName = process.platform === "win32" ? `${binary}.cmd` : binary;
+  const alternateName = process.platform === "win32" ? binary : `${binary}.cmd`;
+  const candidates = [`node_modules/.bin/${localName}`, `node_modules/.bin/${alternateName}`];
   const root = safeRealpath(cwd) ?? cwd;
   for (const candidate of candidates) {
     const absolute = resolve(cwd, candidate);
@@ -614,13 +661,13 @@ function resolveLocalTscCommand(cwd: string): ResolvedTscCommand | { ok: false; 
     }
     const real = safeRealpath(absolute);
     if (!real) {
-      return { ok: false, message: "Local node_modules/.bin/tsc exists but could not be resolved." };
+      return { ok: false, message: `Local node_modules/.bin/${binary} exists but could not be resolved.` };
     }
     if (!isPathInside(root, real)) {
-      return { ok: false, message: "Local node_modules/.bin/tsc resolves outside the current working directory." };
+      return { ok: false, message: `Local node_modules/.bin/${binary} resolves outside the current working directory.` };
     }
     if (!safeIsFile(real)) {
-      return { ok: false, message: "Local node_modules/.bin/tsc must resolve to a regular file." };
+      return { ok: false, message: `Local node_modules/.bin/${binary} must resolve to a regular file.` };
     }
     return {
       ok: true,
@@ -632,13 +679,15 @@ function resolveLocalTscCommand(cwd: string): ResolvedTscCommand | { ok: false; 
   return { ok: false };
 }
 
-function validateProjectPathValue(value: string): string | undefined {
+function validateProjectPathValue(value: string, profile: RunnableDiagnosticProfileId): string | undefined {
   const basic = validateDiagnosticValue("project", value, MAX_DIAGNOSTIC_PATH_LENGTH);
   if (basic) {
     return basic;
   }
   if (isRegistryLikeValue(value)) {
-    return "project must be a local tsconfig file path, not a package, registry, or launcher value.";
+    return profile === "typescript"
+      ? "project must be a local tsconfig file path, not a package, registry, or launcher value."
+      : "project must be a local Pyright project file or directory, not a package, registry, or launcher value.";
   }
   return undefined;
 }
@@ -729,7 +778,7 @@ function isSafeDiagnosticsEnvValue(key: string, value: string): boolean {
   return !SECRET_LIKE_PATTERN.test(value);
 }
 
-function classifyTypeScriptRun(result: RunProcessResult): DiagnosticRunStatus {
+function classifyDiagnosticsRun(result: RunProcessResult): DiagnosticRunStatus {
   if (result.timedOut) {
     return "timed_out";
   }
@@ -770,16 +819,57 @@ function parseTypeScriptDiagnostics(output: string): ParsedTypeScriptDiagnostic[
   return diagnostics;
 }
 
-function invalidTypeScriptRun(
-  options: RunTypeScriptDiagnosticsOptions,
+function parsePyrightDiagnostics(output: string, root: string): ParsedTypeScriptDiagnostic[] {
+  const trimmed = output.trim();
+  if (!trimmed) {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return [];
+  }
+  if (!isRecord(parsed) || !Array.isArray(parsed.generalDiagnostics)) {
+    return [];
+  }
+  const diagnostics: ParsedTypeScriptDiagnostic[] = [];
+  const seen = new Set<string>();
+  for (const entry of parsed.generalDiagnostics) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    const range = isRecord(entry.range) ? entry.range : undefined;
+    const start = range && isRecord(range.start) ? range.start : undefined;
+    const line = toOneBasedNumber(start?.line);
+    const column = toOneBasedNumber(start?.character);
+    const diagnostic = {
+      file: formatDiagnosticFile(entry.file, root),
+      line,
+      column,
+      severity: normalizePyrightSeverity(entry.severity),
+      code: typeof entry.rule === "string" && entry.rule.trim() ? sanitizeInline(entry.rule) : "pyright",
+      message: typeof entry.message === "string" ? sanitizeInline(entry.message) : "[redacted]",
+    };
+    const key = JSON.stringify(diagnostic);
+    if (!seen.has(key)) {
+      seen.add(key);
+      diagnostics.push(diagnostic);
+    }
+  }
+  return diagnostics;
+}
+
+function invalidDiagnosticsRun(
+  options: RunLocalDiagnosticsOptions,
   root: string,
   message: string,
-): TypeScriptDiagnosticsResult {
+): LocalDiagnosticsResult {
   const emptyText = emptyDiagnosticText();
   return {
     ok: false,
     status: "invalid_arguments",
-    profile: "typescript",
+    profile: options.profile,
     root,
     projectPath: options.projectPath,
     json: options.json,
@@ -792,6 +882,58 @@ function invalidTypeScriptRun(
     diagnostics: [],
     message,
   };
+}
+
+function buildDiagnosticCommandArgs(profile: RunnableDiagnosticProfileId, projectArg: string): string[] {
+  if (profile === "typescript") {
+    return ["--noEmit", "--pretty", "false", "--project", projectArg];
+  }
+  return ["--outputjson", "--project", projectArg];
+}
+
+function defaultProjectPathForProfile(profile: RunnableDiagnosticProfileId): string {
+  return profile === "typescript" ? "tsconfig.json" : ".";
+}
+
+function defaultTimeoutForProfile(profile: RunnableDiagnosticProfileId): number {
+  return profile === "typescript" ? DEFAULT_TYPESCRIPT_TIMEOUT_MS : DEFAULT_PYRIGHT_TIMEOUT_MS;
+}
+
+function diagnosticBinaryForProfile(profile: RunnableDiagnosticProfileId): string {
+  return profile === "typescript" ? "tsc" : "pyright";
+}
+
+function diagnosticMissingMessage(profile: RunnableDiagnosticProfileId): string {
+  if (profile === "typescript") {
+    return "tsc is not installed or not on PATH. Install TypeScript locally in this project or make an existing tsc binary available on PATH; ORX will not install it for you.";
+  }
+  return "pyright is not installed or not on PATH. Install Pyright locally in this project or make an existing pyright binary available on PATH; ORX will not install it for you.";
+}
+
+function normalizePyrightSeverity(value: unknown): ParsedTypeScriptDiagnostic["severity"] {
+  if (value === "error" || value === "warning" || value === "information") {
+    return value;
+  }
+  return "message";
+}
+
+function toOneBasedNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.trunc(value) + 1 : 1;
+}
+
+function formatDiagnosticFile(value: unknown, root: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    return "[unknown]";
+  }
+  const absolute = resolve(value);
+  if (isPathInside(root, absolute)) {
+    return sanitizeInline(relative(root, absolute).split(/[\\/]/g).join("/") || ".");
+  }
+  return sanitizeInline(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function splitDiagnosticArgText(text: string): string[] | string {
@@ -901,10 +1043,6 @@ function formatShellToken(value: string): string {
   return JSON.stringify(value);
 }
 
-function typescriptMissingMessage(): string {
-  return "tsc is not installed or not on PATH. Install TypeScript locally in this project or make an existing tsc binary available on PATH; ORX will not install it for you.";
-}
-
 function isCommandMissingError(error: { code?: string }): boolean {
   return error.code === "ENOENT" || error.code === "ENOTDIR";
 }
@@ -924,6 +1062,14 @@ function safeRealpath(path: string): string | undefined {
 function safeIsFile(path: string): boolean {
   try {
     return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function safeIsDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
   } catch {
     return false;
   }
