@@ -38,6 +38,7 @@ node dist/cli.js status
 node dist/cli.js doctor
 node dist/cli.js doctor --strict
 node dist/cli.js doctor --json
+node dist/cli.js guide
 ```
 
 To install the source checkout as a global `orx` command without manually running a build:
@@ -54,6 +55,8 @@ orx status
 orx doctor
 orx doctor --strict
 orx doctor --json
+orx guide
+orx quickstart
 orx config show
 orx config set theme vivid
 orx history
@@ -78,7 +81,7 @@ For first-run setup, `orx init` creates a private starter config at `~/.orx/conf
 
 Config is discovered from repo-local `.orx/config.toml` development defaults and `~/.orx/config.toml`. `OPENROUTER_API_KEY` takes precedence for API key detection. The `status` command reports whether a key is present without printing it. `orx config show` and `/config show` render the effective config with API-key values redacted, `orx config path` and `/config path` show the local/user config paths, and `orx config set <key> <value> [--local]` or `/config set <key> <value> [--local]` edit supported non-secret keys: `model`, `mode`, `fusion_preset`, `theme`, `approval_policy`, and `sandbox_mode`. If config parsing fails, normal commands fail with a sanitized message, while `orx config path` still renders local/user paths so the bad file can be found without leaking contents. Config edits default to the user config path, honor `ORX_CONFIG_PATH` for isolated runs, use private file modes for created files, update the current chat snapshot for the edited key, and refuse API-key storage through CLI arguments.
 
-`orx doctor` is a no-network readiness overview for day-to-day setup checks. It starts with a concise readiness summary (`overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation`), then shows runtime defaults, MCP profile state, plugin review counts, saved delegation teams, delegation policy state, and concrete next commands without calling OpenRouter, remote MCP servers, plugin bins, or plugin hooks. When the core API key is missing, doctor points to `orx auth setup` and `orx auth init`. `orx doctor --strict` renders the same report but exits nonzero unless `ready_to_use: yes`, making it suitable for local release/install checks. `orx doctor --json` renders the same readiness data as structured redacted JSON, and can be combined with `--strict`. Use `orx status`, `orx mcp status`, `orx plugins doctor`, and `orx delegates plan` for deeper detail.
+`orx doctor` is a no-network readiness overview for day-to-day setup checks. It starts with a concise readiness summary (`overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation`), then shows runtime defaults, MCP profile state, plugin review counts, saved delegation teams, delegation policy state, and concrete next commands without calling OpenRouter, remote MCP servers, plugin bins, or plugin hooks. When the core API key is missing, doctor points to `orx auth setup` and `orx auth init`. `orx doctor --strict` renders the same report but exits nonzero unless `ready_to_use: yes`, making it suitable for local release/install checks. `orx doctor --json` renders the same readiness data as structured redacted JSON, and can be combined with `--strict`. `orx guide` and its `orx quickstart` alias render a no-network operator path over the same readiness data, covering first chat launch, profiles/themes, local tests/code intelligence, MCP preset setup, plugin authoring/install review, and delegation setup without config, trust, grant, catalog, plugin, delegation, or data-content writes; like other readiness reads, existing loose local state file permissions may be tightened. Use `orx status`, `orx mcp status`, `orx plugins doctor`, and `orx delegates plan` for deeper detail.
 
 Interactive TTY chat stores sanitized user prompts, but not slash commands or secret-like input, in a private local prompt history file at `~/.orx/history.json`; set `ORX_CHAT_HISTORY_PATH` to isolate it. Readline preloads that history for up-arrow recall. Use `orx history`, `orx history search <query>`, `orx history clear`, `/history`, `/history search <query>`, and `/history clear` to inspect or clear it without network calls.
 

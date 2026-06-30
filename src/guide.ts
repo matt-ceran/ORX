@@ -1,0 +1,72 @@
+import type { DoctorReport } from "./doctor.js";
+
+export const GUIDE_USAGE = "Usage: orx guide";
+
+export function renderOperatorGuide(report: DoctorReport): string {
+  const { json } = report;
+  const mcpProfiles =
+    json.mcp.active_profiles.length > 0 ? json.mcp.active_profiles.join(",") : "none";
+  const chatCommand = json.runtime.api_key_present ? "orx" : "orx auth setup";
+
+  return [
+    "ORX guide",
+    "readiness:",
+    `  overall: ${json.summary.overall}`,
+    `  ready_to_use: ${json.summary.ready_to_use}`,
+    `  chat: ${json.summary.chat}`,
+    `  mcp: ${json.summary.mcp}`,
+    `  plugins: ${json.summary.plugins}`,
+    `  delegation: ${json.summary.delegation}`,
+    "current_setup:",
+    `  cwd: ${json.runtime.cwd}`,
+    `  model: ${json.runtime.model}`,
+    `  mode: ${json.runtime.mode}`,
+    `  theme: ${json.runtime.theme}`,
+    `  permissions: ${json.runtime.approval_policy}/${json.runtime.sandbox_mode}`,
+    `  active_profile: ${json.runtime.active_profile ?? "none"}`,
+    `  saved_profiles: ${json.runtime.saved_profiles}`,
+    `  mcp_active_profiles: ${mcpProfiles}`,
+    `  plugins_installed: ${json.plugins.installed}`,
+    `  plugins_enabled: ${json.plugins.enabled}`,
+    `  test_targets: ${json.runtime.test_targets}`,
+    "start_here:",
+    ...json.next_steps.map((step) => `  - ${step}`),
+    "daily_flow:",
+    `  - ${chatCommand}`,
+    "  - orx doctor --strict",
+    "  - orx status",
+    "customize:",
+    "  - orx config show",
+    "  - orx config set theme vivid",
+    "  - orx profile save daily --model openrouter/fusion --mode fusion --fusion general-budget --theme vivid",
+    "  - orx --profile daily status",
+    "local_code:",
+    "  - orx tests list",
+    "  - orx tests run",
+    "  - orx code map",
+    "  - orx code symbols <query>",
+    "  - orx refs <query>",
+    "mcp_setup:",
+    "  - orx mcp presets",
+    "  - orx mcp plan context7",
+    "  - orx mcp add-preset context7",
+    "  - orx mcp enable user:context7",
+    "  - orx mcp allow-model-tool user:context7 resolve-library-id",
+    "plugins_setup:",
+    "  - orx plugins catalog",
+    "  - orx plugins scaffold ./my-plugin",
+    "  - orx plugins validate ./my-plugin",
+    "  - orx plugins install ./my-plugin",
+    "  - orx plugins doctor",
+    "delegation_setup:",
+    "  - orx delegates policy",
+    "  - in chat: /delegate add reviewer openrouter <model>",
+    "  - in chat: /delegates save review-team",
+    "boundaries:",
+    "  network_calls: none",
+    "  remote_mcp_calls: none",
+    "  plugin_execution: none",
+    "  state_mutation: no config, trust, grant, catalog, plugin, delegation, or data-content writes",
+    "  permission_tightening: possible for existing loose local state files while reading readiness",
+  ].join("\n");
+}

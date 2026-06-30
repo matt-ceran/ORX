@@ -10,6 +10,7 @@ Urgent UX recovery:
 
 Completed:
 
+- Add no-network operator guide: `orx guide` and `orx quickstart` render a first-run/daily-use path over doctor readiness data, covering chat launch, config/profile/theme customization, local tests/code intelligence, MCP setup, plugin setup, delegation setup, explicit no-network/no-execution/no-content-write boundaries, and the existing local permission-tightening read behavior.
 - Add plugin review alias flag help: exact `orx plugins review|doctor|audit --help|-h` now prints usage before config/profile loading, and malformed trailing operands such as `orx plugins doctor bogus --help` fail with usage instead of silently running review.
 - Polish no-auth MCP auth readiness wording: `orx mcp auth <no-auth-profile>` and matching slash/setup output now render `credential_mode`, `effective_bearer`, and Keychain status as `not_required` instead of showing missing bearer state for profiles that do not need credentials.
 - Add nested MCP/plugin onboarding flag help: exact supported forms such as `orx mcp plan --help`, `orx mcp add-preset --help`, `orx mcp presets inspect --help`, `orx plugins scaffold --help`, `orx plugins install --help`, and `orx plugins catalog --help` now print usage before config/profile loading; unsupported nested shapes still fail instead of being promoted to generic help success.

@@ -43,6 +43,8 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /delegate\s+Show\/refuse session delegate changes, policy, or saved teams/);
     assert.match(help.stdout(), /delegates\s+Show delegate readiness, execution policy, or saved teams/);
     assert.match(help.stdout(), /doctor\s+Run a no-network readiness check; use --strict to fail when not ready/);
+    assert.match(help.stdout(), /guide\s+Show a no-network quickstart for daily use, MCP, plugins, and delegation/);
+    assert.match(help.stdout(), /quickstart\s+Alias for guide/);
     assert.doesNotMatch(help.stdout(), /ORX chat/);
     assert.equal(help.stderr(), "");
   }
@@ -152,6 +154,42 @@ test("help, version, and status work without an API key", async () => {
     assert.equal(fetchCalls, 0);
     assert.equal(doctor.stderr(), "");
 
+    const guide = createIo({ cwd, fetch: doctor.io.fetch });
+    assert.equal(await runCli(["node", "cli", "guide"], diagnosticEnv, guide.io), 0);
+    assert.match(guide.stdout(), /ORX guide/);
+    assert.match(guide.stdout(), /ready_to_use: limited_core_cli_only/);
+    assert.match(guide.stdout(), /chat: blocked_missing_openrouter_api_key/);
+    assert.match(guide.stdout(), /start_here:/);
+    assert.match(guide.stdout(), /run orx auth setup to configure OPENROUTER_API_KEY/);
+    assert.match(guide.stdout(), /customize:/);
+    assert.match(guide.stdout(), /orx profile save daily --model openrouter\/fusion --mode fusion/);
+    assert.match(guide.stdout(), /local_code:/);
+    assert.match(guide.stdout(), /orx refs <query>/);
+    assert.match(guide.stdout(), /mcp_setup:/);
+    assert.match(guide.stdout(), /orx mcp plan context7/);
+    assert.match(guide.stdout(), /plugins_setup:/);
+    assert.match(guide.stdout(), /orx plugins scaffold \.\/my-plugin/);
+    assert.match(guide.stdout(), /delegation_setup:/);
+    assert.match(guide.stdout(), /in chat: \/delegate add reviewer openrouter <model>/);
+    assert.match(guide.stdout(), /boundaries:/);
+    assert.match(guide.stdout(), /network_calls: none/);
+    assert.match(
+      guide.stdout(),
+      /state_mutation: no config, trust, grant, catalog, plugin, delegation, or data-content writes/,
+    );
+    assert.match(
+      guide.stdout(),
+      /permission_tightening: possible for existing loose local state files while reading readiness/,
+    );
+    assert.equal(guide.stderr(), "");
+    assert.equal(fetchCalls, 0);
+
+    const quickstart = createIo({ cwd, fetch: doctor.io.fetch });
+    assert.equal(await runCli(["node", "cli", "quickstart"], diagnosticEnv, quickstart.io), 0);
+    assert.match(quickstart.stdout(), /ORX guide/);
+    assert.equal(quickstart.stderr(), "");
+    assert.equal(fetchCalls, 0);
+
     const strictDoctor = createIo({ cwd, fetch: doctor.io.fetch });
     assert.equal(await runCli(["node", "cli", "doctor", "--strict"], diagnosticEnv, strictDoctor.io), 1);
     assert.match(strictDoctor.stdout(), /ready_to_use: limited_core_cli_only/);
@@ -202,6 +240,16 @@ test("help, version, and status work without an API key", async () => {
     assert.match(doctorHelp.stdout(), /Usage: orx doctor \[--strict\] \[--json\]/);
     assert.equal(doctorHelp.stderr(), "");
 
+    const guideHelp = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "guide", "--help"], diagnosticEnv, guideHelp.io), 0);
+    assert.match(guideHelp.stdout(), /Usage: orx guide/);
+    assert.equal(guideHelp.stderr(), "");
+
+    const quickstartHelp = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "quickstart", "-h"], diagnosticEnv, quickstartHelp.io), 0);
+    assert.match(quickstartHelp.stdout(), /Usage: orx guide/);
+    assert.equal(quickstartHelp.stderr(), "");
+
     const doctorUnknown = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "doctor", "--yaml"], diagnosticEnv, doctorUnknown.io), 1);
     assert.match(doctorUnknown.stderr(), /Unknown doctor option: --yaml/);
@@ -218,6 +266,18 @@ test("help, version, and status work without an API key", async () => {
     );
     assert.match(doctorSecretOption.stderr(), /Unknown doctor option: \[redacted\]/);
     assert.doesNotMatch(doctorSecretOption.stderr(), /sk-or-v1-secret-doctor-option/);
+
+    const guideSecretOption = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "guide", "sk-or-v1-secret-guide-option"],
+        diagnosticEnv,
+        guideSecretOption.io,
+      ),
+      1,
+    );
+    assert.match(guideSecretOption.stderr(), /Unknown guide option: \[redacted\]/);
+    assert.doesNotMatch(guideSecretOption.stderr(), /sk-or-v1-secret-guide-option/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -233,6 +293,18 @@ test("namespace help exits successfully without loading config", async () => {
 
   try {
     const env = { ORX_CONFIG_PATH: brokenConfigPath };
+    const guideHelp = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "guide", "--help"], env, guideHelp.io), 0);
+    assert.match(guideHelp.stdout(), /Usage: orx guide/);
+    assert.doesNotMatch(guideHelp.stdout(), /sk-or-secret|Unable to load config/);
+    assert.equal(guideHelp.stderr(), "");
+
+    const quickstartHelp = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "quickstart", "-h"], env, quickstartHelp.io), 0);
+    assert.match(quickstartHelp.stdout(), /Usage: orx guide/);
+    assert.doesNotMatch(quickstartHelp.stdout(), /sk-or-secret|Unable to load config/);
+    assert.equal(quickstartHelp.stderr(), "");
+
     const commands: Array<{ args: string[]; usage: RegExp }> = [
       { args: ["auth"], usage: /Usage: orx auth/ },
       { args: ["config"], usage: /Usage: orx config/ },

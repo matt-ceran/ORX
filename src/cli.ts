@@ -197,6 +197,7 @@ import {
 import type { BrowserSnapshotDriver } from "./research/index.js";
 import { resolveSessionDirectory } from "./sessions/index.js";
 import { createDoctorReport } from "./doctor.js";
+import { GUIDE_USAGE, renderOperatorGuide } from "./guide.js";
 import { formatStatus } from "./status.js";
 import {
   discoverTestTargets,
@@ -471,6 +472,11 @@ export async function runCli(
     return 0;
   }
 
+  if ((first === "guide" || first === "quickstart") && args.length === 2 && isHelpToken(args[1])) {
+    writeLine(io.stdout, GUIDE_USAGE);
+    return 0;
+  }
+
   const namespaceHelpUsage = getNamespaceHelpUsage(args);
   if (namespaceHelpUsage) {
     writeLine(io.stdout, namespaceHelpUsage);
@@ -596,6 +602,29 @@ export async function runCli(
       );
       return 1;
     }
+    return 0;
+  }
+
+  if (first === "guide" || first === "quickstart") {
+    const guideOptions = parseGuideArgs(args.slice(1));
+    if (typeof guideOptions === "string") {
+      writeLine(io.stderr, guideOptions);
+      return 1;
+    }
+    const report = createDoctorReport({
+      cwd: io.cwd,
+      loadedConfig,
+      mcpConfigPath,
+      mcpProfileCatalogPath,
+      pluginCatalogPath,
+      pluginBinsConfigPath,
+      pluginHooksConfigPath,
+      pluginRegistryPath,
+      profileConfigPath,
+      delegationTeamConfigPath,
+      delegationPolicyPath,
+    });
+    writeLine(io.stdout, renderOperatorGuide(report));
     return 0;
   }
 
@@ -779,6 +808,8 @@ function helpText(): string {
     "  delegates     Show delegate readiness, execution policy, or saved teams",
     "  status        Show runtime status and config defaults",
     "  doctor        Run a no-network readiness check; use --strict to fail when not ready",
+    "  guide         Show a no-network quickstart for daily use, MCP, plugins, and delegation",
+    "  quickstart    Alias for guide",
     "  help          Show this help message",
     "  version       Show the current version",
     "",
@@ -3723,6 +3754,17 @@ function parseDoctorArgs(args: string[]): { strict: boolean; help: boolean; json
   }
 
   return { strict, help, json };
+}
+
+function parseGuideArgs(args: string[]): true | string {
+  for (const arg of args) {
+    if (arg === "--help" || arg === "-h" || arg.toLowerCase() === "help") {
+      return GUIDE_USAGE;
+    }
+    return `Unknown guide option: ${formatDoctorOptionForMessage(arg)}\n${GUIDE_USAGE}`;
+  }
+
+  return true;
 }
 
 function loadConfigWithProfile(options: {
