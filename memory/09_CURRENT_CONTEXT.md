@@ -1,6 +1,6 @@
 # Current Context
 
-Last updated: 2026-06-29
+Last updated: 2026-06-30
 
 ## Fast Phase 12 Handoff
 
@@ -30,7 +30,7 @@ Urgent UX recovery additions from user testing:
 - Safe config inspection/editing is available in both CLI and chat through `orx config show|path|set` and `/config [show|path|set]`. It redacts API-key values, refuses API-key/secret-like arguments, honors `ORX_CONFIG_PATH`, writes private config files through the shared guards, updates the active chat snapshot for edited keys, and keeps `orx config path` usable as a sanitized recovery surface when config parsing fails.
 - `orx doctor` is the top-level no-network readiness overview. It now starts with concise `overall`, `ready_to_use`, `core_cli`, `chat`, `mcp`, `plugins`, and `delegation` labels before local runtime/MCP/plugin/delegation details and next commands; missing-key next steps point to `orx auth setup` and `orx auth init`; `orx doctor --strict` renders the same report and exits nonzero unless `ready_to_use: yes`, and `orx doctor --json` emits the same readiness data as redacted structured JSON for automation.
 - Plugin registry controls are available both in chat and noninteractive CLI: `orx plugins list|inspect|register|install|enable|disable` and matching `/plugins ...` commands; installed-plugin inspect/enable/disable accept exact `publisher.name@version` ids or unversioned `publisher.name` ids when exactly one installed version matches. Plugin enablement persists only a state marker and does not by itself trust executable surfaces.
-- Plugin authoring scaffold is implemented through `orx plugins scaffold <directory>` and `/plugins scaffold <directory>`. It creates a valid local `orx-plugin.json` authoring bundle without registry writes; defaults are inert skills/prompt-commands/rules markdown, `--minimal` writes only the manifest, and `--with` adds opt-in empty placeholders for hooks, bins, MCP, command schemas, assets, and docs behind the existing review gates.
+- Plugin authoring scaffold is implemented through `orx plugins scaffold <directory>` and `/plugins scaffold <directory>`. It creates a valid local `orx-plugin.json` authoring bundle without registry writes; non-minimal scaffolds include a non-runtime `AUTHORING.md` guide, defaults are inert skills/prompt-commands/rules markdown, `--minimal` writes only the manifest, and `--with` adds opt-in empty placeholders for hooks, bins, MCP, command schemas, assets, and docs behind the existing review gates.
 - Plugin manifest validation is implemented through `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>`. It parses/sanitizes manifests, renders manifest/component hashes, permission counts, missing component warnings, and explicitly leaves registry/cache/trust/runtime state unchanged.
 - Plugin install/register accepts local manifest paths, local plugin directories containing `orx-plugin.json`, or catalog ids through `orx plugins install|register <manifest-path-or-directory-or-catalog-id>` and matching `/plugins ...` commands. This keeps scaffold -> validate -> install usable with the same directory argument while preserving pinned git catalog installs.
 - Plugin install/register now snapshots sanitized manifests plus declared components and declared hook cwd directories into ORX-owned plugin cache storage before registry persistence; enabled skill/hook discovery resolves from the cached manifest path, not the original source checkout.
@@ -96,6 +96,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added richer plugin scaffold authoring templates:
+
+- First-run scaffold dogfooding showed the generated plugin bundle was valid but still too placeholder-like for comfortable authoring.
+- Non-minimal `orx plugins scaffold <directory>` and `/plugins scaffold <directory>` now write a root `AUTHORING.md` guide that is not declared as a runtime component, plus richer inert skill, prompt-command, rule, and docs templates with explicit trust-boundary language and review commands.
+- Runtime placeholders remain empty by design: `hooks/hooks.json`, `mcp.json`, `command-schemas.json`, and `bin/` still expose zero hook, MCP, executable-command, or bin entries until the author deliberately adds reviewed content.
+- Verification: `npm run typecheck`, `npm run build`, focused build-backed scaffold/validate/CLI/slash coverage with 148 tests, isolated built CLI scaffold -> validate -> install -> enable -> review -> bins/hooks/commands dogfood, full `npm test` with 504 tests, `npm run verify:global-install`, and `git diff --check`. Independent verifier pass was rerun after the first verifier agent was interrupted.
+- Next likely work is another clean first-run dogfood pass focused on MCP setup comfort, plugin authoring docs/templates, code-intelligence depth, or release-hardening polish.
 
 Added MCP setup planner:
 

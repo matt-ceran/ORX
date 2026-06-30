@@ -99,6 +99,8 @@ Later 2026-06-28 update: `orx mcp auth init|env-file <profile>` and matching sla
 
 Later 2026-06-28 update: `orx mcp auth keychain [status|set|delete] <profile>` and matching slash commands now manage optional macOS Keychain bearer items; MCP calls use them only after explicit `ORX_MCP_KEYCHAIN=1`.
 
+Later 2026-06-30 update: non-minimal plugin scaffolds now include a root `AUTHORING.md` guide plus richer inert skill, prompt-command, rule, and docs templates. The guide is not declared as a runtime component, and integration placeholders remain empty (`hooks/hooks.json`, `mcp.json`, `command-schemas.json`, and `bin/`) so enabling a fresh scaffold still exposes no hook, MCP, executable-command, or bin entries until the author adds reviewed content.
+
 Implement:
 
 - `src/plugins/manifest`: parse ORX plugin manifests and compatibility manifests where practical.

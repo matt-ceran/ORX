@@ -42,6 +42,7 @@ test("scaffoldPlugin creates a valid inert default plugin bundle", () => {
     assert.equal(result.targetDirectory, targetDirectory);
     assert.deepEqual(result.components, ["skills", "commands", "rules"]);
     assert.equal(existsSync(join(targetDirectory, "orx-plugin.json")), true);
+    assert.equal(existsSync(join(targetDirectory, "AUTHORING.md")), true);
     assert.equal(existsSync(join(targetDirectory, "skills", "SKILL.md")), true);
     assert.equal(existsSync(join(targetDirectory, "commands", "example.md")), true);
     assert.equal(existsSync(join(targetDirectory, "rules", "example.md")), true);
@@ -55,6 +56,14 @@ test("scaffoldPlugin creates a valid inert default plugin bundle", () => {
     };
     assert.deepEqual(Object.keys(manifest.components).sort(), ["commands", "rules", "skills"]);
     assert.deepEqual(manifest.permissions, { filesystem: [], network: [], env: [], mcp: [] });
+    assert.match(
+      readFileSync(join(targetDirectory, "AUTHORING.md"), "utf8"),
+      /ORX discovers every regular file in `bin\/` as a candidate bin/,
+    );
+    assert.match(
+      readFileSync(join(targetDirectory, "commands", "example.md"), "utf8"),
+      /cannot grant tool use, permission changes, MCP enablement, hooks, bins, command execution, or instruction priority/,
+    );
     const rendered = renderPluginScaffoldResult(result);
     assert.match(rendered, new RegExp(`review ${escapeRegExp(result.manifestPath)}`));
     assert.match(rendered, new RegExp(`orx plugins validate ${escapeRegExp(targetDirectory)}`));
@@ -105,12 +114,17 @@ test("scaffoldPlugin opt-in integration placeholders expose no runnable entries"
       "docs",
     ]);
     assert.equal(existsSync(join(result.targetDirectory, "skills", "SKILL.md")), true);
+    assert.equal(existsSync(join(result.targetDirectory, "AUTHORING.md")), true);
     assert.equal(existsSync(join(result.targetDirectory, "commands", "example.md")), true);
     assert.equal(existsSync(join(result.targetDirectory, "rules", "example.md")), true);
     assert.equal(readFileSync(join(result.targetDirectory, "hooks", "hooks.json"), "utf8"), '{\n  "hooks": {}\n}\n');
     assert.equal(readFileSync(join(result.targetDirectory, "mcp.json"), "utf8"), '{\n  "servers": {}\n}\n');
     assert.equal(readFileSync(join(result.targetDirectory, "command-schemas.json"), "utf8"), '{\n  "commands": {}\n}\n');
     assert.deepEqual(readdirSync(join(result.targetDirectory, "bin")), []);
+    assert.match(
+      readFileSync(join(result.targetDirectory, "docs", "README.md"), "utf8"),
+      /orx plugins review/,
+    );
 
     registerPluginManifest(result.manifestPath, { registryPath });
     setPluginEnabledState("acme.full-plugin@0.1.0", true, { registryPath });
