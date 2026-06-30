@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -703,8 +703,8 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     return [parseTapReportSummary, parseNodeReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseGenericReportSummary]
-    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseGenericReportSummary];
+    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGenericReportSummary]
+    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -1035,6 +1035,40 @@ function parsePytestReportSummary(text: string, framework: TestFramework): TestR
   return hasReportCounts(report) ? report : undefined;
 }
 
+function parseCargoReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  const counts: Partial<Record<"passed" | "failed" | "skipped", number>> = {};
+  let durationMs: number | undefined;
+  let hasParsedSummary = false;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const match = /^test result:\s*(?:ok|FAILED)\.\s+(.+)$/i.exec(rawLine.trim());
+    if (!match) {
+      continue;
+    }
+    const candidate = parseCargoStatusLine(match[1] ?? "");
+    if (candidate) {
+      counts.passed = sumDefined(counts.passed, candidate.counts.passed);
+      counts.failed = sumDefined(counts.failed, candidate.counts.failed);
+      counts.skipped = sumDefined(counts.skipped, candidate.counts.skipped);
+      durationMs = sumDefined(durationMs, candidate.durationMs);
+      hasParsedSummary = true;
+    }
+  }
+  if (!hasParsedSummary) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "cargo",
+  };
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
+  assignNumber(report, "total", sumDefined(report.passed, report.failed, report.skipped));
+  assignNumber(report, "durationMs", durationMs);
+  return hasReportCounts(report) ? report : undefined;
+}
+
 function parseGenericReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
   const line = matchFirstNamedLine(text, ["Tests", "Test Results", "Test Summary", "Summary", "Results"]);
   if (!line) {
@@ -1118,6 +1152,61 @@ function parsePytestStatusLine(line: string): {
 
 function parsePytestDurationMs(text: string): number | undefined {
   const match = text.match(/\bin\s+(\d+(?:\.\d+)?)s$/i);
+  if (!match) {
+    return undefined;
+  }
+  return Math.round(Number.parseFloat(match[1] ?? "") * 1000 * 1000) / 1000;
+}
+
+function parseCargoStatusLine(line: string): {
+  counts: Partial<Record<"passed" | "failed" | "skipped", number>>;
+  durationMs?: number;
+} | undefined {
+  const counts: Partial<Record<"passed" | "failed" | "skipped", number>> = {};
+  let durationMs: number | undefined;
+  let hasOutcome = false;
+  for (const rawPart of line.split(/\s*;\s*/)) {
+    const part = rawPart.trim();
+    if (!part) {
+      return undefined;
+    }
+
+    const countMatch = /^(\d+)\s+(passed|failed|ignored|measured|filtered out)$/i.exec(part);
+    if (countMatch) {
+      const count = Number.parseInt(countMatch[1] ?? "", 10);
+      if (!Number.isInteger(count) || count < 0) {
+        return undefined;
+      }
+      const label = (countMatch[2] ?? "").toLowerCase();
+      if (label === "passed") {
+        counts.passed = (counts.passed ?? 0) + count;
+        hasOutcome = true;
+      } else if (label === "failed") {
+        counts.failed = (counts.failed ?? 0) + count;
+        hasOutcome = true;
+      } else if (label === "ignored") {
+        counts.skipped = (counts.skipped ?? 0) + count;
+        hasOutcome = true;
+      }
+      continue;
+    }
+
+    const candidateDurationMs = parseCargoDurationMs(part);
+    if (candidateDurationMs !== undefined) {
+      if (durationMs !== undefined) {
+        return undefined;
+      }
+      durationMs = candidateDurationMs;
+      continue;
+    }
+
+    return undefined;
+  }
+  return hasOutcome ? { counts, durationMs } : undefined;
+}
+
+function parseCargoDurationMs(text: string): number | undefined {
+  const match = text.match(/^finished in\s+(\d+(?:\.\d+)?)s$/i);
   if (!match) {
     return undefined;
   }
