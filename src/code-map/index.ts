@@ -41,6 +41,8 @@ export {
   type CodeTreeSitterRepoDependencyEdge,
   type CodeTreeSitterRepoImportEdge,
   type CodeTreeSitterRepoImports,
+  type CodeTreeSitterRepoOutline,
+  type CodeTreeSitterRepoOutlineEntry,
   type CodeTreeSitterRepoReferences,
   type CodeTreeSitterRepoReferenceMatch,
   type CodeTreeSitterReferenceMatch,

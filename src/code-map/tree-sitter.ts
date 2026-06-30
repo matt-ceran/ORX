@@ -5,9 +5,9 @@ import { redactSecrets } from "../mcp/audit.js";
 import { truncateText } from "../tools/truncation.js";
 import type { TextTruncation } from "../tools/types.js";
 
-export const CODE_TREE_SITTER_USAGE = "Usage: orx code tree-sitter [parse|outline|imports|refs|calls|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]";
+export const CODE_TREE_SITTER_USAGE = "Usage: orx code tree-sitter [parse|outline|imports|refs|calls|repo-outline|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]";
 export const CODE_TREE_SITTER_OUTLINE_USAGE = "Usage: orx code outline <file>";
-export const SLASH_CODE_TREE_SITTER_USAGE = "Usage: /code tree-sitter [parse|outline|imports|refs|calls|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]";
+export const SLASH_CODE_TREE_SITTER_USAGE = "Usage: /code tree-sitter [parse|outline|imports|refs|calls|repo-outline|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]";
 export const SLASH_CODE_TREE_SITTER_OUTLINE_USAGE = "Usage: /code outline <file>";
 
 export interface CodeTreeSitterArgs {
@@ -22,6 +22,7 @@ export type CodeTreeSitterMode =
   | "imports"
   | "refs"
   | "calls"
+  | "repo-outline"
   | "repo-refs"
   | "repo-calls"
   | "repo-imports"
@@ -88,6 +89,7 @@ export interface CodeTreeSitterResult {
   stdoutTruncation: TextTruncation;
   stderrTruncation: TextTruncation;
   outline?: CodeTreeSitterOutline;
+  repoOutline?: CodeTreeSitterRepoOutline;
   imports?: CodeTreeSitterImports;
   repoImports?: CodeTreeSitterRepoImports;
   repoDependencies?: CodeTreeSitterRepoDependencies;
@@ -112,6 +114,25 @@ export interface CodeTreeSitterOutlineEntry {
   line?: number;
   column?: number;
   depth: number;
+}
+
+export interface CodeTreeSitterRepoOutline {
+  targetPath: string;
+  entries: CodeTreeSitterRepoOutlineEntry[];
+  totalEntries: number;
+  omittedEntries: number;
+  filesScanned: number;
+  filesWithOutline: number;
+  omittedFiles: number;
+  failedFiles: number;
+  timedOutFiles: number;
+  truncated: boolean;
+  warnings: string[];
+  omissions: CodeTreeSitterRepoOmission[];
+}
+
+export interface CodeTreeSitterRepoOutlineEntry extends CodeTreeSitterOutlineEntry {
+  path: string;
 }
 
 export interface CodeTreeSitterImports {
@@ -260,6 +281,7 @@ const DEFAULT_TREE_SITTER_IMPORT_EDGES = 160;
 const DEFAULT_TREE_SITTER_REFERENCE_MATCHES = 200;
 const DEFAULT_TREE_SITTER_CALL_EDGES = 160;
 const DEFAULT_TREE_SITTER_REPO_FILES = 80;
+const DEFAULT_TREE_SITTER_REPO_OUTLINE_ENTRIES = 400;
 const DEFAULT_TREE_SITTER_REPO_MATCHES = 400;
 const DEFAULT_TREE_SITTER_REPO_CALL_EDGES = 400;
 const DEFAULT_TREE_SITTER_REPO_IMPORT_EDGES = 400;
@@ -400,11 +422,12 @@ export function parseCodeTreeSitterArgs(
   const explicitMode = normalizeTreeSitterMode(first);
   const hasExplicitMode = explicitMode !== undefined;
   const mode = hasExplicitMode ? explicitMode : options.defaultMode ?? "parse";
+  const isRepoOutline = mode === "repo-outline";
   const isRepoRefs = mode === "repo-refs";
   const isRepoCalls = mode === "repo-calls";
   const isRepoImports = mode === "repo-imports";
   const isRepoDeps = mode === "repo-deps";
-  const isRepoNoQuery = isRepoCalls || isRepoImports || isRepoDeps;
+  const isRepoNoQuery = isRepoOutline || isRepoCalls || isRepoImports || isRepoDeps;
   const targetPath = isRepoRefs
     ? hasExplicitMode ? positional[2] ?? "." : positional[1] ?? "."
     : isRepoNoQuery
@@ -491,6 +514,18 @@ export function runCodeTreeSitter(options: RunCodeTreeSitterOptions): CodeTreeSi
       root,
       targetPath: options.targetPath,
       query: query ?? "",
+      env,
+      runner,
+      maxBytes,
+      timeoutMs,
+      emptyText,
+    });
+  }
+
+  if (mode === "repo-outline") {
+    return runCodeTreeSitterRepoOutline({
+      root,
+      targetPath: options.targetPath,
       env,
       runner,
       maxBytes,
@@ -639,6 +674,154 @@ export function runCodeTreeSitter(options: RunCodeTreeSitterOptions): CodeTreeSi
     references,
     calls,
     message: result.error && !timedOut ? sanitizeInline(result.error.message) : undefined,
+  };
+}
+
+function runCodeTreeSitterRepoOutline(options: {
+  root: string;
+  targetPath: string;
+  env: NodeJS.ProcessEnv;
+  runner: TreeSitterRunner;
+  maxBytes: number;
+  timeoutMs: number;
+  emptyText: { text: string; truncation: TextTruncation };
+}): CodeTreeSitterResult {
+  const target = resolveTreeSitterRepoTarget(options.root, options.targetPath);
+  if (!target.ok) {
+    return {
+      ok: false,
+      status: "invalid_arguments",
+      mode: "repo-outline",
+      root: options.root,
+      targetPath: options.targetPath,
+      args: [],
+      timedOut: false,
+      stdout: "",
+      stderr: "",
+      stdoutTruncation: options.emptyText.truncation,
+      stderrTruncation: options.emptyText.truncation,
+      message: target.message,
+    };
+  }
+
+  const command = resolveTreeSitterCommand(options.root, options.env, options.runner);
+  if (!command.ok) {
+    return {
+      ok: false,
+      status: "tool_missing",
+      mode: "repo-outline",
+      root: options.root,
+      targetPath: target.displayPath,
+      args: [],
+      timedOut: false,
+      stdout: "",
+      stderr: "",
+      stdoutTruncation: options.emptyText.truncation,
+      stderrTruncation: options.emptyText.truncation,
+      message: command.message,
+    };
+  }
+
+  const discovered = discoverTreeSitterRepoFiles(options.root, target.resolvedPath);
+  const startedAt = performance.now();
+  const entries: CodeTreeSitterRepoOutlineEntry[] = [];
+  const warnings: string[] = [];
+  const omissions = [...discovered.omissions];
+  const failureLines: string[] = [];
+  let totalEntries = 0;
+  let filesWithOutline = 0;
+  let failedFiles = 0;
+  let timedOutFiles = 0;
+  let outlineTruncated = false;
+
+  for (const filePath of discovered.files) {
+    const result = options.runner(TREE_SITTER_COMMAND, ["parse", filePath], {
+      cwd: options.root,
+      env: options.env,
+      shell: false,
+      encoding: "utf8",
+      timeout: options.timeoutMs,
+      maxBuffer: Math.max(options.maxBytes * 2, options.maxBytes + 4096),
+    });
+    const timedOut = result.error?.code === "ETIMEDOUT";
+    const status = classifyTreeSitterRun(result, timedOut);
+    if (status !== "ok") {
+      failedFiles += 1;
+      if (timedOut) {
+        timedOutFiles += 1;
+      }
+      const reason = timedOut ? "tree-sitter parse timed out" : "tree-sitter parse failed";
+      omissions.push({ path: filePath, reason });
+      const stderr = truncateSanitizedOutput(result.stderr ?? result.error?.message ?? "", 512).text.trim();
+      failureLines.push(`${filePath}: ${reason}${stderr ? `: ${stderr}` : ""}`);
+      continue;
+    }
+
+    const stdout = truncateSanitizedOutput(result.stdout ?? "", options.maxBytes);
+    const source = readTreeSitterSource(options.root, filePath);
+    const outline = createTreeSitterOutline(stdout.text, source, {
+      maxEntries: DEFAULT_TREE_SITTER_OUTLINE_ENTRIES,
+      parseOutputTruncated: stdout.truncation.truncated,
+    });
+    if (outline.totalEntries > 0) {
+      filesWithOutline += 1;
+    }
+    totalEntries += outline.totalEntries;
+    for (const entry of outline.entries) {
+      if (entries.length >= DEFAULT_TREE_SITTER_REPO_OUTLINE_ENTRIES) {
+        continue;
+      }
+      entries.push({ ...entry, path: filePath });
+    }
+    if (outline.truncated) {
+      outlineTruncated = true;
+      omissions.push({ path: filePath, reason: "AST outline entries exceeded per-file bounds" });
+    }
+  }
+
+  if (discovered.files.length === 0) {
+    warnings.push("no source files found for bounded tree-sitter repo outline");
+  }
+  if (discovered.truncated) {
+    warnings.push("tree-sitter repo file scan hit bounds; later files were omitted");
+  }
+  if (totalEntries > entries.length) {
+    warnings.push("tree-sitter repo outline entries hit bounds; later entries were omitted");
+  }
+  if (failedFiles > 0) {
+    warnings.push("some files could not be parsed by tree-sitter; omissions list includes file-level failures");
+  }
+
+  const stderr = truncateSanitizedOutput(failureLines.join("\n"), options.maxBytes);
+  return {
+    ok: true,
+    status: "ok",
+    mode: "repo-outline",
+    root: options.root,
+    targetPath: target.displayPath,
+    command: TREE_SITTER_COMMAND,
+    args: ["parse", "<bounded repo source files>"],
+    commandLine: `${JSON.stringify(TREE_SITTER_COMMAND)} "parse" "<bounded repo source files>"`,
+    timedOut: timedOutFiles > 0,
+    durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+    stdout: "",
+    stderr: stderr.text,
+    stdoutTruncation: options.emptyText.truncation,
+    stderrTruncation: stderr.truncation,
+    repoOutline: {
+      targetPath: target.displayPath,
+      entries,
+      totalEntries,
+      omittedEntries: Math.max(0, totalEntries - entries.length),
+      filesScanned: discovered.files.length,
+      filesWithOutline,
+      omittedFiles: discovered.omittedFiles + failedFiles,
+      failedFiles,
+      timedOutFiles,
+      truncated: discovered.truncated || totalEntries > entries.length || outlineTruncated,
+      warnings,
+      omissions,
+    },
   };
 }
 
@@ -1261,6 +1444,9 @@ export function renderCodeTreeSitterResult(
   if (result.mode === "outline") {
     return renderCodeTreeSitterOutlineResult(result, usage);
   }
+  if (result.mode === "repo-outline") {
+    return renderCodeTreeSitterRepoOutlineResult(result, usage);
+  }
   if (result.mode === "imports") {
     return renderCodeTreeSitterImportsResult(result, usage);
   }
@@ -1393,6 +1579,80 @@ function renderCodeTreeSitterOutlineResult(
 
   lines.push("  raw_parse: use tree-sitter parse mode for the full AST");
   lines.push("  fallback: lexical code-map, symbols, refs, imports, and calls remain available without tree-sitter");
+  lines.push(`  usage: ${usage.replace(/^Usage:\s*/, "")}`);
+  return lines.join("\n");
+}
+
+function renderCodeTreeSitterRepoOutlineResult(
+  result: CodeTreeSitterResult,
+  usage: string,
+): string {
+  const lines = [
+    "Code tree-sitter repo outline",
+    `  status: ${result.status}`,
+    `  root: ${sanitizeInline(result.root)}`,
+    `  path: ${sanitizeInline(result.targetPath)}`,
+    "  mode: AST-backed bounded repo outline previews via optional tree-sitter CLI (not semantic symbol resolution)",
+    "  mutation: none",
+  ];
+  if (result.commandLine) {
+    lines.push(`  command: ${result.commandLine}`);
+  }
+  if (result.durationMs !== undefined) {
+    lines.push(`  duration_ms: ${result.durationMs}`);
+  }
+  if (result.status === "tool_missing") {
+    lines.push(`  setup: ${treeSitterMissingMessage()}`);
+  }
+  if (result.message && result.status !== "tool_missing") {
+    lines.push(`  message: ${sanitizeInline(result.message)}`);
+  }
+
+  const repoOutline = result.repoOutline;
+  lines.push(`  files_scanned: ${repoOutline?.filesScanned ?? 0}`);
+  lines.push(`  files_with_outline: ${repoOutline?.filesWithOutline ?? 0}`);
+  lines.push(`  outline_entries: ${repoOutline?.totalEntries ?? 0}${repoOutline?.truncated ? " (truncated)" : ""}`);
+  if (repoOutline && repoOutline.omittedFiles > 0) {
+    lines.push(`  omitted_files: ${repoOutline.omittedFiles}`);
+  }
+
+  lines.push("  outline:");
+  if (!repoOutline || repoOutline.entries.length === 0) {
+    lines.push("    - none");
+  } else {
+    for (const entry of repoOutline.entries) {
+      lines.push(formatRepoOutlineEntry(entry));
+    }
+    if (repoOutline.omittedEntries > 0) {
+      lines.push(`    - ${repoOutline.omittedEntries} more AST outline entries omitted`);
+    }
+  }
+
+  if (repoOutline && repoOutline.omissions.length > 0) {
+    lines.push("  omissions:");
+    for (const omission of repoOutline.omissions.slice(0, 12)) {
+      lines.push(formatRepoOmission(omission));
+    }
+    if (repoOutline.omissions.length > 12) {
+      lines.push(`    - ${repoOutline.omissions.length - 12} more omissions omitted`);
+    }
+  }
+
+  if (repoOutline && repoOutline.warnings.length > 0) {
+    lines.push("  warnings:");
+    for (const warning of repoOutline.warnings) {
+      lines.push(`    - ${sanitizeInline(warning)}`);
+    }
+  }
+
+  lines.push("  stderr:");
+  lines.push(...indentOutput(result.stderr));
+  if (result.stderrTruncation.truncated) {
+    lines.push(`    - stderr truncated: ${result.stderrTruncation.omittedBytes}B omitted`);
+  }
+
+  lines.push("  raw_parse: use tree-sitter parse mode for a single-file raw AST");
+  lines.push("  fallback: lexical code-map and symbols remain available without tree-sitter");
   lines.push(`  usage: ${usage.replace(/^Usage:\s*/, "")}`);
   return lines.join("\n");
 }
@@ -2317,6 +2577,7 @@ function normalizeTreeSitterMode(value: string | undefined): CodeTreeSitterMode 
     value === "imports" ||
     value === "refs" ||
     value === "calls" ||
+    value === "repo-outline" ||
     value === "repo-refs" ||
     value === "repo-calls" ||
     value === "repo-imports" ||
@@ -2326,6 +2587,9 @@ function normalizeTreeSitterMode(value: string | undefined): CodeTreeSitterMode 
   }
   if (value === "reference" || value === "references") {
     return "refs";
+  }
+  if (value === "repo-outlines" || value === "outlines-all" || value === "outline-all") {
+    return "repo-outline";
   }
   if (value === "repo-ref" || value === "repo-references" || value === "refs-all" || value === "references-all") {
     return "repo-refs";
@@ -3026,6 +3290,18 @@ function normalizeModuleSpecifier(value: string | undefined): string | undefined
 function formatOutlineEntry(entry: CodeTreeSitterOutlineEntry): string {
   const parts = [
     `    - kind=${JSON.stringify(sanitizeInline(entry.kind))}`,
+    entry.name ? `name=${JSON.stringify(sanitizeInline(entry.name))}` : undefined,
+    entry.line !== undefined ? `line=${entry.line}` : undefined,
+    entry.column !== undefined ? `column=${entry.column}` : undefined,
+    `depth=${entry.depth}`,
+  ];
+  return parts.filter((part): part is string => typeof part === "string").join(" ");
+}
+
+function formatRepoOutlineEntry(entry: CodeTreeSitterRepoOutlineEntry): string {
+  const parts = [
+    `    - path=${JSON.stringify(sanitizeInline(entry.path))}`,
+    `kind=${JSON.stringify(sanitizeInline(entry.kind))}`,
     entry.name ? `name=${JSON.stringify(sanitizeInline(entry.name))}` : undefined,
     entry.line !== undefined ? `line=${entry.line}` : undefined,
     entry.column !== undefined ? `column=${entry.column}` : undefined,
