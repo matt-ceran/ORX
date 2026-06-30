@@ -4,10 +4,11 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { redactSecrets } from "../mcp/audit.js";
 import { runProcess, type RunProcessResult } from "../tools/process.js";
 
@@ -30,6 +31,7 @@ export interface TestTarget {
   reporterDeclared?: boolean;
   jsonReporter?: boolean;
   reportOutputFile?: boolean;
+  reportOutputPath?: string;
   reportArgsForwardable?: boolean;
   defaultReportArgsForwardable?: boolean;
   fileCount?: number;
@@ -105,6 +107,7 @@ const MAX_SCAN_ENTRIES = 4096;
 const MAX_SCAN_DEPTH = 5;
 const MAX_EXTRA_ARGS = 32;
 const MAX_EXTRA_ARG_LENGTH = 512;
+const MAX_REPORT_OUTPUT_PATH_LENGTH = 512;
 const DEFAULT_TEST_TIMEOUT_MS = 120_000;
 const DEFAULT_TEST_OUTPUT_BYTES = 64 * 1024;
 const MAX_REPORT_PARSE_BYTES = 32 * 1024;
@@ -230,10 +233,12 @@ export async function runTestTarget(options: RunTestOptions = {}): Promise<TestR
       signal: options.signal,
     });
 
-    const structuredReportText = reportRequest ? readStructuredReportFile(reportRequest.path) : undefined;
+    const structuredReportText = reportRequest
+      ? readStructuredReportFile(reportRequest.path, reportRequest.previousState, reportRequest.root)
+      : undefined;
     return formatTestProcessResult(target, args, result, structuredReportText);
   } finally {
-    if (reportRequest) {
+    if (reportRequest?.directory) {
       rmSync(reportRequest.directory, { recursive: true, force: true });
     }
   }
@@ -450,6 +455,7 @@ function createPackageScriptTarget(
     reporterDeclared: metadata.reporterDeclared,
     jsonReporter: metadata.jsonReporter,
     reportOutputFile: metadata.reportOutputFile,
+    reportOutputPath: metadata.reportOutputPath,
     reportArgsForwardable: metadata.reportArgsForwardable,
     defaultReportArgsForwardable: metadata.defaultReportArgsForwardable,
   };
@@ -1019,6 +1025,7 @@ function inferPackageScriptMetadata(scriptCommand: string): {
   reporterDeclared: boolean;
   jsonReporter: boolean;
   reportOutputFile: boolean;
+  reportOutputPath?: string;
   reportArgsForwardable: boolean;
   defaultReportArgsForwardable: boolean;
 } {
@@ -1027,15 +1034,19 @@ function inferPackageScriptMetadata(scriptCommand: string): {
   const finalSegment = segments.at(-1) ?? [];
   const framework = inferPackageScriptFramework(segments);
   const finalSegmentFramework = inferPackageScriptFramework(finalSegment.length > 0 ? [finalSegment] : []);
+  const finalSegmentSupportsReportArgs = finalSegmentSupportsDefaultJsonReportArgs(finalSegment, framework);
   return {
     framework,
     reporter: inferPackageScriptReporter(tokens),
     reporterDeclared: packageScriptHasReporter(tokens),
-    jsonReporter: packageScriptHasJsonReporter(tokens),
+    jsonReporter: packageScriptHasJsonReporter(tokens, framework),
     reportOutputFile: packageScriptHasReportOutputFile(tokens),
-    reportArgsForwardable: framework === finalSegmentFramework && packageScriptHasJsonReporter(finalSegment),
-    defaultReportArgsForwardable:
-      framework === finalSegmentFramework && finalSegmentSupportsDefaultJsonReportArgs(finalSegment, framework),
+    reportOutputPath: finalSegmentSupportsReportArgs ? packageScriptReportOutputFile(finalSegment) : undefined,
+    reportArgsForwardable:
+      framework === finalSegmentFramework &&
+      packageScriptHasJsonReporter(finalSegment, framework) &&
+      finalSegmentSupportsReportArgs,
+    defaultReportArgsForwardable: framework === finalSegmentFramework && finalSegmentSupportsReportArgs,
   };
 }
 
@@ -1188,11 +1199,17 @@ function inferPackageScriptReporter(tokens: string[]): string | undefined {
   return undefined;
 }
 
-function packageScriptHasJsonReporter(tokens: string[]): boolean {
+function packageScriptHasJsonReporter(tokens: string[], framework: TestFramework): boolean {
   for (const [index, rawToken] of tokens.entries()) {
     const token = stripShellQuotes(rawToken);
     if (token === "--json") {
-      return true;
+      if (framework === "jest") {
+        return true;
+      }
+      continue;
+    }
+    if (framework !== "vitest" && framework !== "playwright") {
+      continue;
     }
     if (token === "--reporter" || token === "--reporters") {
       if (reporterValueIncludesJson(tokens[index + 1] ?? "")) {
@@ -1250,6 +1267,22 @@ function packageScriptHasReportOutputFile(tokens: string[]): boolean {
     }
   }
   return false;
+}
+
+function packageScriptReportOutputFile(tokens: string[]): string | undefined {
+  for (const [index, rawToken] of tokens.entries()) {
+    const token = stripShellQuotes(rawToken);
+    if (token === "--outputFile" || token === "--output-file") {
+      return stripShellQuotes(tokens[index + 1] ?? "");
+    }
+    if (token.startsWith("--outputFile=") || token.startsWith("--output-file=")) {
+      return token.slice(token.indexOf("=") + 1);
+    }
+    if (token.startsWith("PLAYWRIGHT_JSON_OUTPUT_FILE=")) {
+      return token.slice(token.indexOf("=") + 1);
+    }
+  }
+  return undefined;
 }
 
 function finalSegmentSupportsDefaultJsonReportArgs(tokens: string[], framework: TestFramework): boolean {
@@ -1361,10 +1394,18 @@ function formatExtraArgsForTarget(target: TestTarget, extraArgs: string[]): stri
 
 type FrameworkJsonReportRequestMode = "existing-json-reporter" | "default-json-reporter";
 
+interface StructuredReportFileState {
+  exists: boolean;
+  size?: number;
+  mtimeMs?: number;
+}
+
 interface StructuredReportRequest {
-  directory: string;
+  directory?: string;
   path: string;
-  mode: "node-junit" | FrameworkJsonReportRequestMode;
+  mode: "node-junit" | FrameworkJsonReportRequestMode | "declared-json-reporter";
+  previousState?: StructuredReportFileState;
+  root?: string;
   env?: Record<string, string>;
 }
 
@@ -1372,6 +1413,10 @@ function createStructuredReportRequest(target: TestTarget, extraArgs: string[] =
   if (target.kind === "node-test" && target.framework === "node") {
     const directory = mkdtempSync(join(tmpdir(), "orx-test-report-"));
     return { directory, path: join(directory, "node-junit.xml"), mode: "node-junit" };
+  }
+  const declaredReportRequest = createDeclaredFrameworkJsonReportRequest(target, extraArgs);
+  if (declaredReportRequest) {
+    return declaredReportRequest;
   }
   const frameworkReportMode = frameworkJsonReportRequestMode(target, extraArgs);
   if (!frameworkReportMode) {
@@ -1382,6 +1427,41 @@ function createStructuredReportRequest(target: TestTarget, extraArgs: string[] =
   return target.framework === "playwright"
     ? { directory, path, mode: frameworkReportMode, env: { PLAYWRIGHT_JSON_OUTPUT_FILE: path } }
     : { directory, path, mode: frameworkReportMode };
+}
+
+function createDeclaredFrameworkJsonReportRequest(
+  target: TestTarget,
+  extraArgs: string[] = [],
+): StructuredReportRequest | undefined {
+  if (target.kind !== "package-script" || !isFrameworkJsonReportTarget(target)) {
+    return undefined;
+  }
+  const outputPath = packageScriptReportOutputFile(extraArgs) ?? target.reportOutputPath;
+  if (!outputPath) {
+    return undefined;
+  }
+  const extraReporterDeclared = packageScriptHasReporter(extraArgs);
+  const extraJsonReporterDeclared = packageScriptHasJsonReporter(extraArgs, target.framework);
+  if (extraReporterDeclared && !extraJsonReporterDeclared) {
+    return undefined;
+  }
+  const packageJsonReporterIsForwardable = target.jsonReporter === true && target.reportArgsForwardable === true;
+  const extraJsonReporterIsForwardable =
+    extraJsonReporterDeclared &&
+    (target.reportArgsForwardable === true || target.defaultReportArgsForwardable === true);
+  if (!packageJsonReporterIsForwardable && !extraJsonReporterIsForwardable) {
+    return undefined;
+  }
+  const path = resolveReportOutputFilePath(target.cwd, outputPath);
+  if (!path) {
+    return undefined;
+  }
+  return {
+    path,
+    mode: "declared-json-reporter",
+    previousState: captureStructuredReportFileState(path),
+    root: target.cwd,
+  };
 }
 
 function frameworkJsonReportRequestMode(
@@ -1431,6 +1511,9 @@ function formatTargetRunArgs(
       ...formatExtraArgsForTarget(target, extraArgs),
     ];
   }
+  if (reportRequest.mode === "declared-json-reporter") {
+    return [...target.args, ...formatExtraArgsForTarget(target, extraArgs)];
+  }
   const reportArgs = formatFrameworkJsonReportArgs(target, reportRequest.path, reportRequest.mode);
   return [...target.args, ...formatExtraArgsForTarget(target, [...reportArgs, ...extraArgs])];
 }
@@ -1458,16 +1541,88 @@ function formatFrameworkJsonReportArgs(
   return [];
 }
 
-function readStructuredReportFile(path: string): string | undefined {
+function readStructuredReportFile(
+  path: string,
+  previousState: StructuredReportFileState | undefined = undefined,
+  root: string | undefined = undefined,
+): string | undefined {
   try {
+    if (root && resolveReportOutputFilePath(root, path) !== path) {
+      return undefined;
+    }
     const stat = lstatSync(path);
     if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_STRUCTURED_REPORT_BYTES) {
+      return undefined;
+    }
+    if (
+      previousState?.exists === true &&
+      previousState.size === stat.size &&
+      previousState.mtimeMs === stat.mtimeMs
+    ) {
       return undefined;
     }
     return readFileSync(path, "utf8");
   } catch {
     return undefined;
   }
+}
+
+function captureStructuredReportFileState(path: string): StructuredReportFileState {
+  try {
+    const stat = lstatSync(path);
+    return {
+      exists: true,
+      size: stat.size,
+      mtimeMs: stat.mtimeMs,
+    };
+  } catch {
+    return { exists: false };
+  }
+}
+
+function resolveReportOutputFilePath(root: string, value: string): string | undefined {
+  const normalized = stripShellQuotes(value).trim();
+  if (
+    normalized.length === 0 ||
+    normalized.length > MAX_REPORT_OUTPUT_PATH_LENGTH ||
+    normalized.startsWith("-") ||
+    CONTROL_CHAR_PATTERN.test(normalized) ||
+    SECRET_LIKE_PATTERN.test(normalized) ||
+    /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(normalized)
+  ) {
+    return undefined;
+  }
+
+  const resolved = resolve(root, normalized);
+  if (!isPathInside(root, resolved)) {
+    return undefined;
+  }
+
+  const realRoot = safeRealpath(root) ?? root;
+  const realParent = safeRealpath(dirname(resolved));
+  if (realParent && !isPathInside(realRoot, realParent)) {
+    return undefined;
+  }
+
+  const realFile = existsSync(resolved) ? safeRealpath(resolved) : undefined;
+  if (realFile && !isPathInside(realRoot, realFile)) {
+    return undefined;
+  }
+
+  return resolved;
+}
+
+function safeRealpath(path: string): string | undefined {
+  try {
+    return realpathSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+function isPathInside(parent: string, child: string): boolean {
+  const relativePath = relative(parent, child);
+  return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
 }
 
 function createTestProcessEnv(extraEnv: Record<string, string> | undefined = undefined): NodeJS.ProcessEnv {

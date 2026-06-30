@@ -71,7 +71,7 @@ OpenRouter remains the normal inference path. Credentials are detected from envi
 ## Known optional post-v0.1 work
 
 - LSP/SCIP and deeper tree-sitter-backed call/reference/import intelligence beyond the current outline and dependency-free indexes.
-- Broader test report integrations for custom reporters, configured reporter files, or wrapper commands beyond the current direct Node, existing JSON reporter, and exact default Jest/Vitest/Playwright runner paths.
+- Broader test report integrations for non-JSON/custom reporters, config-only reporter files, or wrapper commands beyond the current direct Node, declared JSON output, existing JSON reporter, and exact default Jest/Vitest/Playwright runner paths.
 - Sourcegraph/GitHub/GitLab read-only profiles with the same explicit operator boundaries as existing MCP/plugin surfaces.
 - Managed OAuth/device/browser credential flows for MCP providers beyond bearer env vars and opt-in macOS Keychain support.
 - Additional scanner/diagnostics profiles only after deterministic no-network/no-auth command shapes are proven.
