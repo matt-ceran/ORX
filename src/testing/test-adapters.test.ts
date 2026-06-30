@@ -306,11 +306,31 @@ test("parses common framework report summaries", () => {
     },
   );
 
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "================ 2 failed, 3 passed, 1 skipped, 1 xfailed in 1.23s ================",
+    ),
+    {
+      framework: "unknown",
+      source: "pytest",
+      total: 7,
+      passed: 3,
+      failed: 2,
+      skipped: 1,
+      todo: 1,
+      durationMs: 1230,
+    },
+  );
+
   assert.equal(parseTestReportSummary(createTarget("unknown"), "2 failed network requests (99)"), undefined);
   assert.equal(parseTestReportSummary(createTarget("playwright"), "2 failed network requests (99)"), undefined);
   assert.equal(parseTestReportSummary(createTarget("unknown"), "ok 1 - only a log line"), undefined);
   assert.equal(parseTestReportSummary(createTarget("unknown"), "1..4"), undefined);
   assert.equal(parseTestReportSummary(createTarget("unknown"), "1 pending migration"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 failed network requests in 1.2s"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "1 warning in 0.1s"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 failed, 3 passed in 1.2s after cleanup"), undefined);
 });
 
 test("parses structured framework JSON reports before stdout fallback", () => {

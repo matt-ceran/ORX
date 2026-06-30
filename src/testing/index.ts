@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -703,8 +703,8 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     return [parseTapReportSummary, parseNodeReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parseGenericReportSummary]
-    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parseGenericReportSummary];
+    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseGenericReportSummary]
+    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -1006,6 +1006,35 @@ function parseMochaReportSummary(text: string, framework: TestFramework): TestRe
   return hasReportCounts(report) ? report : undefined;
 }
 
+function parsePytestReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  let parsed: {
+    counts: Partial<Record<"passed" | "failed" | "skipped" | "todo", number>>;
+    durationMs?: number;
+  } | undefined;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim().replace(/^=+\s*/, "").replace(/\s*=+$/, "").trim();
+    const candidate = parsePytestStatusLine(line);
+    if (candidate) {
+      parsed = candidate;
+    }
+  }
+  if (!parsed) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "pytest",
+  };
+  assignNumber(report, "passed", parsed.counts.passed);
+  assignNumber(report, "failed", parsed.counts.failed);
+  assignNumber(report, "skipped", parsed.counts.skipped);
+  assignNumber(report, "todo", parsed.counts.todo);
+  assignNumber(report, "total", sumDefined(report.passed, report.failed, report.skipped, report.todo));
+  assignNumber(report, "durationMs", parsed.durationMs);
+  return hasReportCounts(report) ? report : undefined;
+}
+
 function parseGenericReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
   const line = matchFirstNamedLine(text, ["Tests", "Test Results", "Test Summary", "Summary", "Results"]);
   if (!line) {
@@ -1042,6 +1071,57 @@ function parseStatusCounts(text: string): Partial<Record<"passed" | "failed" | "
     counts.total = Number.parseInt(parenthesizedTotal[1], 10);
   }
   return counts;
+}
+
+function parsePytestStatusLine(line: string): {
+  counts: Partial<Record<"passed" | "failed" | "skipped" | "todo", number>>;
+  durationMs?: number;
+} | undefined {
+  const durationMs = parsePytestDurationMs(line);
+  if (durationMs === undefined) {
+    return undefined;
+  }
+  const statusText = line.replace(/\s+in\s+\d+(?:\.\d+)?s$/i, "").trim();
+  if (!statusText) {
+    return undefined;
+  }
+
+  const counts: Partial<Record<"passed" | "failed" | "skipped" | "todo", number>> = {};
+  let hasOutcome = false;
+  for (const rawPart of statusText.split(/\s*,\s*/)) {
+    const part = rawPart.trim();
+    const match = /^(\d+)\s+(passed|failed|skipped|xfailed|xpassed|error|errors|warning|warnings|deselected|rerun|reruns)$/i.exec(part);
+    if (!match) {
+      return undefined;
+    }
+    const count = Number.parseInt(match[1] ?? "", 10);
+    if (!Number.isInteger(count) || count < 0) {
+      return undefined;
+    }
+    const label = (match[2] ?? "").toLowerCase();
+    if (label === "passed") {
+      counts.passed = (counts.passed ?? 0) + count;
+      hasOutcome = true;
+    } else if (label === "failed" || label === "error" || label === "errors") {
+      counts.failed = (counts.failed ?? 0) + count;
+      hasOutcome = true;
+    } else if (label === "skipped") {
+      counts.skipped = (counts.skipped ?? 0) + count;
+      hasOutcome = true;
+    } else if (label === "xfailed" || label === "xpassed") {
+      counts.todo = (counts.todo ?? 0) + count;
+      hasOutcome = true;
+    }
+  }
+  return hasOutcome ? { counts, durationMs } : undefined;
+}
+
+function parsePytestDurationMs(text: string): number | undefined {
+  const match = text.match(/\bin\s+(\d+(?:\.\d+)?)s$/i);
+  if (!match) {
+    return undefined;
+  }
+  return Math.round(Number.parseFloat(match[1] ?? "") * 1000 * 1000) / 1000;
 }
 
 function matchTapPlanTotal(text: string): number | undefined {
