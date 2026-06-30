@@ -17,6 +17,9 @@
     "test": "npm run build && node --test \"dist/**/*.test.js\"",
     "verify:global-install": "node scripts/verify-global-install.mjs",
     "verify:release": "node scripts/verify-release.mjs",
+    "overnight": "node scripts/overnight-loop.mjs run",
+    "overnight:init": "node scripts/overnight-loop.mjs init",
+    "overnight:dashboard": "node scripts/overnight-loop.mjs dashboard",
     "prepare": "npm run build"
   },
   "dependencies": {

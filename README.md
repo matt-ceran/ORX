@@ -97,6 +97,26 @@ npm run verify:release
 
 The release gate is deterministic and no-real-key/no-network by command selection. It clears operator `OPENROUTER_API_KEY` and `BRAVE_SEARCH_API_KEY` values, runs `git diff --check`, typecheck, full `npm test`, the global install verifier, and built CLI smokes for `doctor --json`, `guide`, `code calls`, `plugins review`, and `mcp presets` against isolated temporary ORX state. The nested global-install chat-launch smoke uses a non-secret placeholder key only to start chat and immediately run `/exit`; it does not submit prompts or call OpenRouter. The gate does not call remote MCP endpoints, plugin bins, or plugin hooks.
 
+For unattended implementation passes, use the local overnight harness:
+
+```sh
+npm run overnight:init -- --reset
+npm run overnight:dashboard
+OPENROUTER_API_KEY=... npm run overnight -- --max-slices 1
+```
+
+Run the dashboard in its own terminal. It uses a fixed alternate-screen view and reads `.orx/overnight/latest/state.json` plus `.orx/overnight/latest/events.jsonl`, so progress updates do not scroll the terminal. The runner creates one implementor prompt and one verifier prompt per queued slice, runs implementor -> local checks -> verifier, and pauses unless the verifier log ends with `VERDICT: PASS` on its final non-empty line. `--commit` commits the verified slice's newly changed paths after that verifier pass, leaving pre-existing dirty paths untouched; add `--push` only when the verified slice should be pushed automatically. Use `--require-clean` only when a commit-enabled run should pause before implementation if the worktree starts dirty. State, prompts, logs, and agent session files stay under gitignored `.orx/overnight/latest`.
+
+By default, the harness uses the built ORX CLI (`node dist/cli.js ask <prompt>`) for both roles, so normal ORX credential/config behavior applies. To use another local agent command, set command templates before running:
+
+```sh
+ORX_OVERNIGHT_IMPLEMENTOR_CMD='my-agent --prompt-file {promptFile}' \
+ORX_OVERNIGHT_VERIFIER_CMD='my-verifier --prompt-file {promptFile}' \
+npm run overnight -- --max-slices 1
+```
+
+Templates can use `{promptFile}`, `{runDir}`, `{sliceId}`, and `{role}`. If a template omits `{promptFile}`, the harness sends the prompt on stdin. The harness itself does not fetch remote MCP tools, run plugin hooks/bins, or expose new model tools; any network or model behavior comes from the explicit agent command selected by the operator.
+
 Interactive TTY chat stores sanitized user prompts, but not slash commands or secret-like input, in a private local prompt history file at `~/.orx/history.json`; set `ORX_CHAT_HISTORY_PATH` to isolate it. Readline preloads that history for up-arrow recall. Use `orx history`, `orx history search <query>`, `orx history clear`, `/history`, `/history search <query>`, and `/history clear` to inspect or clear it without network calls.
 
 Saved local profiles can bundle model, mode, Fusion preset, theme, and permission posture without storing API keys:
