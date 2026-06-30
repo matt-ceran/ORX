@@ -40,6 +40,7 @@ Urgent UX recovery additions from user testing:
 - Local user MCP profile catalogs are implemented through `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`. Declarations are namespaced as `user:<profile-id>`, currently support sanitized `remote-http` transports, appear in `/mcp`, `orx mcp`, `/status`, interactive chat, and `orx ask --mcp-tools`, and share the same enable/trusted-hash/schema-change/tool-grant/model-grant/auth/audit gates as built-in and plugin MCP profiles.
 - Local user MCP catalog management commands are implemented through `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands. They write private local catalog files, preserve existing array/object/legacy `servers` declarations during edits, and avoid manual JSON editing for common remote MCP setup.
 - Built-in MCP provider presets are implemented through `orx mcp presets`, `orx mcp presets inspect <preset>`, `orx mcp add-preset <preset>`, `/mcp presets`, `/mcp presets inspect <preset>`, and `/mcp add-preset <preset>`. Templates now include `context7`, `microsoft-learn`, `github-readonly`, `sentry-readonly`, `figma`, `browser`, `cloudflare-docs`, and `cloudflare-api`, and inspect/install flows leave enablement, trust, grants, calls, and model exposure as separate explicit steps.
+- Read-only MCP setup planning is implemented through `orx mcp plan [preset-or-profile]` and `/mcp plan [preset-or-profile]`. It accepts provider preset ids or installed MCP profile ids, reports whether the next step is preset install, enable/trust, auth setup, remote tool review/import, operator grants, or read-only model grants, and performs no install/enable/trust/grant/fetch/call/model-exposure side effects.
 - Reviewed remote MCP tool import is implemented through `orx mcp import-remote-tools <profile>` and `/mcp import-remote-tools <profile>`. It is limited to local `user:` catalog profiles, uses the existing enabled/trusted/unchanged guarded `tools/list` path, stores sanitized read-only non-billable declarations only, skips unsupported names, audits hashes only, and leaves newly changed profiles behind the pending schema-change retrust gate.
 - MCP auth readiness inspection is implemented through `orx mcp auth <profile>` and `/mcp auth <profile>`. It shows profile-specific and fallback bearer env names, managed env-file path, set/unset status, effective readiness, profile hashes, provider-specific credential guidance for recognized exact MCP endpoints, and OAuth limitations without network calls or secret persistence.
 - MCP auth setup guidance is implemented through `orx mcp auth setup <profile>`, `orx mcp auth env <profile>`, `/mcp auth setup <profile>`, and `/mcp auth env <profile>`. It prints copyable placeholder exports only for auth-required profiles, shows no-auth profiles as not requiring setup, renders provider-specific setup URLs/scope hints only after exact HTTPS host/path matching, never displays token values, and performs no network calls, subprocess calls, or config writes beyond normal redacted audit metadata.
@@ -95,6 +96,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added MCP setup planner:
+
+- Clean first-run dogfooding showed MCP primitives were strong but still required operators to manually assemble preset install, enable/trust, auth, remote-tool review/import, grants, calls, and model exposure steps.
+- `orx mcp plan [preset-or-profile]` and `/mcp plan [preset-or-profile]` now render a shared deterministic setup plan for provider presets and installed profiles, including disabled, schema-change, auth-needed, no-tools/remote-review, operator-grant, and read-only model-grant states.
+- The planner does not install, enable, trust, grant, fetch remote tools, call MCP tools, expose tools to the model, write audit logs, or contact provider endpoints; like other MCP reads, it may tighten loose existing MCP state file permissions while loading local state.
+- Verification: `npm run typecheck`, `npm run build`, focused build-backed MCP/CLI/slash coverage with 213 tests, built CLI dogfood for Context7/GitHub/OpenRouter/custom-profile planner progression, full `npm test` with 504 tests, `npm run verify:global-install`, `git diff --check`, and independent verifier recheck after fixes.
+- Next likely work is commit/push, then another first-run dogfood pass focused on plugin authoring docs/templates or broader release polish.
 
 Added scaffold directory next-step guidance:
 

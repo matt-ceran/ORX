@@ -172,6 +172,14 @@ export {
   type McpProviderPresetTool,
 } from "./provider-presets.js";
 export {
+  createMcpSetupPlan,
+  renderMcpSetupPlan,
+  type McpSetupPlan,
+  type McpSetupPlanKind,
+  type McpSetupPlanOptions,
+  type McpSetupPlanStatus,
+} from "./plan.js";
+export {
   hashMcpProfile,
   hashMcpProfiles,
   mcpProfileHashInput,

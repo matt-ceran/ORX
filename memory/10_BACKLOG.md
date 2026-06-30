@@ -10,6 +10,7 @@ Urgent UX recovery:
 
 Completed:
 
+- Add MCP setup planner: `orx mcp plan [preset-or-profile]` and `/mcp plan [preset-or-profile]` now guide preset/profile onboarding through install, enable/trust, auth, remote-tool review/import, operator grants, and read-only model grants without install/enable/trust/grant/fetch/call/model-exposure side effects; existing loose MCP state file permissions may still be tightened during reads.
 - Add scaffold directory next-step guidance: `orx plugins scaffold <directory>` and `/plugins scaffold <directory>` now render next steps that keep the manifest path for review, then validate and install the scaffold directory so the first-run authoring flow matches directory-aware plugin install.
 - Add plugin install directory input parity: `orx plugins install|register <directory>` and `/plugins install|register <directory>` now resolve existing local plugin directories to `orx-plugin.json`, so scaffold -> validate -> install can reuse the same directory argument while direct manifest paths and catalog ids still work.
 - Add CLI namespace help polish: `orx <namespace> help|--help|-h` now exits 0 and prints usage for auth, config, profiles, history, MCP, plugins, bins, hooks, tests, code, and delegation namespaces, including common aliases, before config loading so malformed configs cannot block help.

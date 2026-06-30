@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -17,6 +18,7 @@ import {
   allowMcpModelToolGrant,
   allowMcpToolGrant,
   callRemoteMcpTool,
+  createMcpSetupPlan,
   deleteMcpMacosKeychainBearer,
   discoverMcpProfile,
   evaluateMcpModelToolPolicy,
@@ -46,6 +48,7 @@ import {
   renderMcpProfileAuthSetup,
   renderMcpProfileTools,
   renderMcpProviderPresets,
+  renderMcpSetupPlan,
   renderUserMcpProfileCatalog,
   redactSecrets,
   removeUserMcpProfile,
@@ -408,6 +411,134 @@ test("MCP provider presets install local user catalog profiles", () => {
     const unknown = installMcpProviderPreset("missing", { profileCatalogPath });
     assert.equal(unknown.ok, false);
     assert.match(unknown.message, /Unknown MCP provider preset/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("MCP setup planner guides preset, profile, auth, and grant next steps without data mutations", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-plan-"));
+  const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+  const configPath = join(cwd, "mcp", "profiles.json");
+
+  try {
+    const presetPlan = renderMcpSetupPlan(
+      createMcpSetupPlan("context7", { profileCatalogPath, configPath }),
+    );
+    assert.match(presetPlan, /status: preset_available/);
+    assert.match(presetPlan, /profile: user:context7/);
+    assert.match(presetPlan, /orx mcp add-preset context7/);
+    assert.match(presetPlan, /data_state_writes: none/);
+    assert.match(presetPlan, /permission_tightening: possible_on_existing_mcp_state_reads/);
+    assert.match(presetPlan, /plan_side_effects: no install, enable, trust, grant, fetch, call, audit, or model exposure/);
+    assert.equal(existsSync(profileCatalogPath), false);
+    assert.equal(existsSync(configPath), false);
+
+    installMcpProviderPreset("context7", { profileCatalogPath });
+    const disabledPlan = renderMcpSetupPlan(
+      createMcpSetupPlan("context7", { profileCatalogPath, configPath }),
+    );
+    assert.match(disabledPlan, /status: installed_disabled/);
+    assert.match(disabledPlan, /state: disabled/);
+    assert.match(disabledPlan, /orx mcp enable user:context7/);
+    assert.doesNotMatch(disabledPlan, /orx mcp allow-model-tool/);
+
+    setMcpProfilePersistentState("user:context7", "enabled", {
+      profileCatalogPath,
+      configPath,
+    });
+    const enabledPlan = renderMcpSetupPlan(
+      createMcpSetupPlan("context7", { profileCatalogPath, configPath }),
+    );
+    assert.match(enabledPlan, /status: ready_for_model_grants/);
+    assert.match(enabledPlan, /auth_status: not_required/);
+    assert.match(enabledPlan, /model_grantable=2/);
+    assert.match(enabledPlan, /orx mcp allow-model-tool user:context7 query-docs/);
+    assert.match(enabledPlan, /orx ask --mcp-tools "Use query-docs from user:context7"/);
+    assert.match(enabledPlan, /in chat: \/mcp model enable/);
+
+    installMcpProviderPreset("github-readonly", { profileCatalogPath });
+    setMcpProfilePersistentState("user:github-readonly", "enabled", {
+      profileCatalogPath,
+      configPath,
+    });
+    const githubPlan = renderMcpSetupPlan(
+      createMcpSetupPlan("github-readonly", { profileCatalogPath, configPath, env: {} }),
+    );
+    assert.match(githubPlan, /status: auth_setup_needed/);
+    assert.match(githubPlan, /auth_status: missing/);
+    assert.match(githubPlan, /orx mcp auth setup user:github-readonly/);
+    assert.match(githubPlan, /orx mcp auth init user:github-readonly/);
+    assert.doesNotMatch(githubPlan, /orx mcp remote-tools user:github-readonly/);
+    assert.doesNotMatch(githubPlan, /orx mcp import-remote-tools user:github-readonly/);
+    assert.doesNotMatch(githubPlan, /orx mcp call user:github-readonly/);
+    assert.doesNotMatch(githubPlan, /orx mcp allow-model-tool user:github-readonly/);
+
+    installMcpProviderPreset("cloudflare-api", { profileCatalogPath });
+    setMcpProfilePersistentState("user:cloudflare-api", "enabled", {
+      profileCatalogPath,
+      configPath,
+    });
+    const cloudflarePlan = renderMcpSetupPlan(
+      createMcpSetupPlan("cloudflare-api", {
+        profileCatalogPath,
+        configPath,
+        env: { ORX_MCP_BEARER_USER_CLOUDFLARE_API: "bearer-token" },
+      }),
+    );
+    assert.match(cloudflarePlan, /risk_warning: high_risk_or_write_capable_profile/);
+    assert.match(cloudflarePlan, /operator-grant-only tools=execute/);
+    assert.match(cloudflarePlan, /orx mcp allow-tool user:cloudflare-api execute/);
+    assert.doesNotMatch(cloudflarePlan, /allow-model-tool user:cloudflare-api execute/);
+
+    const unknownPlan = renderMcpSetupPlan(
+      createMcpSetupPlan("sk-or-v1-secret-plan-target", { profileCatalogPath, configPath }),
+    );
+    assert.match(unknownPlan, /target: \[redacted\]/);
+    assert.doesNotMatch(unknownPlan, /sk-or-v1-secret-plan-target/);
+
+    upsertUserMcpRemoteProfile(
+      "context7",
+      {
+        name: "Private docs",
+        url: "https://mcp.private.example/mcp",
+        authRequired: true,
+        notes: "User profile reusing a preset id.",
+      },
+      { profileCatalogPath },
+    );
+    const customContextPlan = renderMcpSetupPlan(
+      createMcpSetupPlan("user:context7", { profileCatalogPath, configPath }),
+    );
+    assert.match(customContextPlan, /profile: user:context7/);
+    assert.match(customContextPlan, /url: https:\/\/mcp\.private\.example\/mcp/);
+    assert.doesNotMatch(customContextPlan, /preset: context7/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("MCP setup planner discloses read-time permission tightening on existing state", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-plan-permissions-"));
+  const configDir = join(cwd, "mcp");
+  const configPath = join(configDir, "profiles.json");
+
+  try {
+    mkdirSync(configDir, { recursive: true, mode: 0o777 });
+    writeFileSync(
+      configPath,
+      JSON.stringify({ version: 1, profiles: {}, toolGrants: {}, modelToolGrants: {} }),
+      { mode: 0o666 },
+    );
+    chmodSync(configDir, 0o777);
+    chmodSync(configPath, 0o666);
+
+    const rendered = renderMcpSetupPlan(createMcpSetupPlan("context7", { configPath }));
+    assert.match(rendered, /data_state_writes: none/);
+    assert.match(rendered, /permission_tightening: possible_on_existing_mcp_state_reads/);
+    assert.match(rendered, /plan_side_effects: no install, enable, trust, grant, fetch, call, audit, or model exposure/);
+    assert.equal(statSync(configDir).mode & 0o777, 0o700);
+    assert.equal(statSync(configPath).mode & 0o777, 0o600);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

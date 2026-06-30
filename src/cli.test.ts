@@ -33,7 +33,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /auth\s+Show OpenRouter API-key setup status or create an env template/);
     assert.match(help.stdout(), /config\s+Show or edit local ORX configuration/);
     assert.match(help.stdout(), /history\s+Search or clear local prompt history/);
-    assert.match(help.stdout(), /mcp\s+List, edit, inspect, enable, disable, and grant MCP tool policy/);
+    assert.match(help.stdout(), /mcp\s+Plan, inspect, enable, auth, call, and grant MCP tool policy/);
     assert.match(help.stdout(), /plugins\s+List catalog entries, scaffold, validate, install, enable, or disable plugins/);
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
@@ -1934,9 +1934,11 @@ test("cli mcp commands use user MCP profile catalog", async () => {
 test("cli mcp provider presets install local catalog profiles", async () => {
   const cwd = createTempDir();
   const profileCatalogPath = join(cwd, "mcp", "profile-catalog.json");
+  const mcpConfigPath = join(cwd, "mcp", "profiles.json");
   const auditLogPath = join(cwd, "audit", "mcp.jsonl");
   const authEnvDir = join(cwd, "mcp", "auth-env");
   const env = {
+    ORX_MCP_CONFIG_PATH: mcpConfigPath,
     ORX_MCP_PROFILE_CATALOG_PATH: profileCatalogPath,
     ORX_MCP_AUDIT_PATH: auditLogPath,
     ORX_MCP_AUTH_ENV_DIR: authEnvDir,
@@ -1980,6 +1982,14 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(cloudflareInspect.stdout(), /write_capable: yes/);
     assert.match(cloudflareInspect.stdout(), /execute risk=destructive auth=yes billable=no/);
 
+    const presetPlan = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "plan", "context7"], env, presetPlan.io), 0);
+    assert.match(presetPlan.stdout(), /MCP setup plan: context7/);
+    assert.match(presetPlan.stdout(), /status: preset_available/);
+    assert.match(presetPlan.stdout(), /orx mcp add-preset context7/);
+    assert.match(presetPlan.stdout(), /data_state_writes: none/);
+    assert.match(presetPlan.stdout(), /plan_side_effects: no install, enable, trust, grant, fetch, call, audit, or model exposure/);
+
     const pluginList = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "catalog"], env, pluginList.io), 0);
     assert.match(pluginList.stdout(), /profiles: 0/);
@@ -1994,6 +2004,31 @@ test("cli mcp provider presets install local catalog profiles", async () => {
       0,
     );
     assert.match(added.stdout(), /MCP provider preset context7 stored as user:docs/);
+
+    const disabledPlan = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "plan", "user:docs"], env, disabledPlan.io), 0);
+    assert.match(disabledPlan.stdout(), /MCP setup plan: user:docs/);
+    assert.match(disabledPlan.stdout(), /status: installed_disabled/);
+    assert.match(disabledPlan.stdout(), /orx mcp enable user:docs/);
+    assert.doesNotMatch(disabledPlan.stdout(), /orx mcp allow-model-tool/);
+
+    const enabledPlanProfile = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "enable", "user:docs"], env, enabledPlanProfile.io), 0);
+    assert.match(enabledPlanProfile.stdout(), /MCP profile user:docs enabled/);
+
+    const readyPlan = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "plan", "user:docs"], env, readyPlan.io), 0);
+    assert.match(readyPlan.stdout(), /status: ready_for_model_grants/);
+    assert.match(readyPlan.stdout(), /orx mcp allow-model-tool user:docs query-docs/);
+    assert.match(readyPlan.stdout(), /in chat: \/mcp model enable/);
+
+    const unknownPlan = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "plan", "sk-or-v1-secret-plan-target"], env, unknownPlan.io),
+      1,
+    );
+    assert.match(unknownPlan.stderr(), /target: \[redacted\]/);
+    assert.doesNotMatch(unknownPlan.stderr(), /sk-or-v1-secret-plan-target/);
 
     const inspected = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "inspect", "user:docs"], env, inspected.io), 0);

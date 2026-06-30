@@ -56,6 +56,7 @@ import {
   allowMcpModelToolGrant,
   allowMcpToolGrant,
   callRemoteMcpTool,
+  createMcpSetupPlan,
   deleteMcpMacosKeychainBearer,
   discoverMcpProfile,
   findMcpProviderPreset,
@@ -82,6 +83,7 @@ import {
   renderMcpProfileAuthSetup,
   renderMcpProfileInspect,
   renderMcpProfileTools,
+  renderMcpSetupPlan,
   renderMcpStatus,
   renderUserMcpProfileCatalog,
   resolveMcpBearerCredential,
@@ -423,6 +425,7 @@ const WEB_SUBCOMMAND_COMPLETIONS = ["help", "fetch", "search", "browse"] as cons
 const MCP_SUBCOMMAND_COMPLETIONS = [
   "list",
   "status",
+  "plan",
   "catalog",
   "presets",
   "add-preset",
@@ -1106,7 +1109,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|catalog|presets [inspect]|add-preset|add-profile|add-tool|model|inspect|auth|auth setup|auth env|auth init|auth env-file|auth keychain|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
+    usage: "/mcp [list|plan [preset-or-profile]|catalog|presets [inspect]|add-preset|add-profile|add-tool|model|inspect|auth|auth setup|auth env|auth init|auth env-file|auth keychain|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
     description: "Show and manage MCP profiles, local user catalogs, remote metadata, and tool grants",
     group: "Integrations",
     tier: "advanced",
@@ -1632,6 +1635,9 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       }
       if (firstArg === "model" && argIndex === 1) {
         return [...MCP_MODEL_SUBCOMMAND_COMPLETIONS];
+      }
+      if (firstArg === "plan" && argIndex === 1) {
+        return [...MCP_PROVIDER_PRESET_COMPLETIONS, ...MCP_PROFILE_COMPLETIONS];
       }
       if (firstArg === "auth" && argIndex === 1) {
         return [...MCP_AUTH_ACTION_COMPLETIONS, ...MCP_PROFILE_COMPLETIONS];
@@ -3616,6 +3622,21 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
     return;
   }
 
+  if (subcommand === "plan" || subcommand === "setup-plan") {
+    if (command.args.length > 2) {
+      writeLine(context.io.stderr, "Usage: /mcp plan [preset-or-profile]");
+      return;
+    }
+
+    const plan = createMcpSetupPlan(command.args[1], {
+      ...registryOptions,
+      env: context.mcpAuthEnv ?? context.env,
+      cwd: context.io.cwd,
+    });
+    writeLine(plan.kind === "unknown" ? context.io.stderr : context.io.stdout, renderMcpSetupPlan(plan));
+    return;
+  }
+
   if (subcommand === "catalog" || subcommand === "user-catalog") {
     if (command.args.length !== 1) {
       writeLine(context.io.stderr, "Usage: /mcp catalog");
@@ -4426,7 +4447,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /mcp [list|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: /mcp [list|plan [preset-or-profile]|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
 }
 

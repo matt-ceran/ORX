@@ -178,7 +178,9 @@ orx hooks untrust plugin:acme.example@1.0.0:format
 orx mcp presets
 orx mcp presets inspect context7
 orx mcp presets inspect sentry-readonly
+orx mcp plan context7
 orx mcp add-preset context7
+orx mcp plan context7
 orx mcp add-preset microsoft-learn --id mslearn
 orx mcp add-preset github-readonly
 orx mcp add-preset cloudflare-api
@@ -197,6 +199,8 @@ orx mcp auth keychain set user:context7
 orx mcp remove-tool user:context7 resolve-library-id
 orx mcp remove-profile user:context7
 ```
+
+`orx mcp plan [preset-or-profile]` and `/mcp plan [preset-or-profile]` render a setup plan for MCP onboarding. The planner accepts built-in preset ids such as `context7` or installed profile ids such as `user:context7`, reports whether the next step is preset install, enable/trust, auth setup, remote tool review/import, operator grants, or read-only model grants, and prints concrete follow-up commands. It does not install, enable, trust, grant, fetch remote tools, call MCP tools, expose tools to the model, write audit logs, or contact provider endpoints; like other MCP reads, it may tighten loose existing MCP state file permissions while loading local state.
 
 Plugin scaffold creates a local authoring directory with a valid `orx-plugin.json`. By default it writes only inert `skills`, prompt `commands`, and advisory `rules` markdown. `--minimal` writes only the manifest, and `--with` can add optional component placeholders such as empty `hooks/hooks.json`, empty `mcp.json`, empty `command-schemas.json`, an empty `bin/` directory, `assets/`, and `docs/`. Scaffolding never registers, enables, trusts, grants, fetches, or executes anything. `orx plugins validate <manifest-path-or-directory>` previews the sanitized manifest, component hashes, missing component warnings, and permission counts without writing registry/cache state or running plugin code. Review the generated files and then install the manifest explicitly.
 
@@ -360,7 +364,7 @@ The chat UI keeps in-session message history for the current process, streams as
 /skills [list|status|activate]
 /prompts [list|status|activate]
 /rules [list|status|activate]
-/mcp [catalog|presets [inspect]|add-preset|list|inspect|auth|auth setup|auth env|auth init|auth env-file|auth keychain|tools|enable|disable|add-profile|remove-profile|add-tool|remove-tool|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool|discover|remote-tools|import-remote-tools|call|model]
+/mcp [list|plan [preset-or-profile]|catalog|presets [inspect]|add-preset|inspect|auth|auth setup|auth env|auth init|auth env-file|auth keychain|tools|enable|disable|add-profile|remove-profile|add-tool|remove-tool|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool|discover|remote-tools|import-remote-tools|call|model]
 /orchestrator [status|plan|openrouter <model>|clear]
 /delegate [help|status|plan|add|remove|clear|team|policy]
 /delegates [list|status|plan|policy|teams|save|use|inspect|delete]
