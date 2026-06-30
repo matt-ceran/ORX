@@ -10,6 +10,7 @@ Urgent UX recovery:
 
 Completed:
 
+- Refine MCP planner model-grant guidance: `orx mcp plan <profile>` and `/mcp plan <profile>` now distinguish `ready_for_model_grants` from `ready_for_model_use`, show `orx ask --mcp-tools` and `/mcp model enable` only after an active allowed read-only model grant exists, and reject poisoned/legacy active-hash model grants for billable/write tools from model-use readiness.
 - Add richer plugin scaffold authoring templates: non-minimal `orx plugins scaffold <directory>` and `/plugins scaffold <directory>` now write a non-runtime `AUTHORING.md` guide plus stronger inert skill, prompt-command, rule, and docs templates while keeping hook, MCP, command-schema, and bin placeholders empty so no new runnable plugin entries appear until the author deliberately adds reviewed content.
 - Add MCP setup planner: `orx mcp plan [preset-or-profile]` and `/mcp plan [preset-or-profile]` now guide preset/profile onboarding through install, enable/trust, auth, remote-tool review/import, operator grants, and read-only model grants without install/enable/trust/grant/fetch/call/model-exposure side effects; existing loose MCP state file permissions may still be tightened during reads.
 - Add scaffold directory next-step guidance: `orx plugins scaffold <directory>` and `/plugins scaffold <directory>` now render next steps that keep the manifest path for review, then validate and install the scaffold directory so the first-run authoring flow matches directory-aware plugin install.

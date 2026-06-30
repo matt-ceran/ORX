@@ -2020,7 +2020,24 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.equal(await runCli(["node", "cli", "mcp", "plan", "user:docs"], env, readyPlan.io), 0);
     assert.match(readyPlan.stdout(), /status: ready_for_model_grants/);
     assert.match(readyPlan.stdout(), /orx mcp allow-model-tool user:docs query-docs/);
-    assert.match(readyPlan.stdout(), /in chat: \/mcp model enable/);
+    assert.doesNotMatch(readyPlan.stdout(), /orx ask --mcp-tools/);
+    assert.doesNotMatch(readyPlan.stdout(), /in chat: \/mcp model enable/);
+
+    const modelGrant = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "allow-model-tool", "user:docs", "query-docs"], env, modelGrant.io),
+      0,
+    );
+    assert.match(modelGrant.stdout(), /Model MCP tool grant stored for user:docs\/query-docs/);
+
+    const modelUsePlan = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "plan", "user:docs"], env, modelUsePlan.io), 0);
+    assert.match(modelUsePlan.stdout(), /status: ready_for_model_use/);
+    assert.match(modelUsePlan.stdout(), /model_grantable=1/);
+    assert.match(modelUsePlan.stdout(), /grants: tool=0 stale_tool=0 model=1 stale_model=0/);
+    assert.match(modelUsePlan.stdout(), /orx ask --mcp-tools "Use query-docs from user:docs"/);
+    assert.match(modelUsePlan.stdout(), /orx mcp allow-model-tool user:docs resolve-library-id/);
+    assert.doesNotMatch(modelUsePlan.stdout(), /orx mcp allow-model-tool user:docs query-docs/);
 
     const unknownPlan = createIo({ cwd });
     assert.equal(

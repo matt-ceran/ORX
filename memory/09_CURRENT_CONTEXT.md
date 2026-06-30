@@ -97,6 +97,14 @@ Current files:
 
 ## Latest Work
 
+Refined MCP planner model-grant guidance:
+
+- Clean MCP preset dogfooding showed `orx mcp plan` still reported `ready_for_model_grants` after a read-only model MCP grant already existed, and it did not clearly surface the immediate `orx ask --mcp-tools` path for the granted tool.
+- `orx mcp plan <profile>` and `/mcp plan <profile>` now distinguish `ready_for_model_grants` from `ready_for_model_use`. Before a grant, the plan suggests `orx mcp allow-model-tool ...` and does not advertise model-use commands. After an active allowed model grant, it suggests `orx ask --mcp-tools "Use <tool> from <profile>"`, `in chat: /mcp model enable`, and any remaining eligible model grants separately.
+- A verifier-found edge case is fixed: manually poisoned or legacy active-hash model grants for billable/write tools no longer trigger `ready_for_model_use`; planner model-use readiness now requires the stricter model policy decision to be `allowed`.
+- Verification: `npm run typecheck`, focused build-backed MCP/CLI/slash coverage with 214 tests, built CLI Context7 grant-flow dogfood, full `npm test` with 505 tests, `npm run verify:global-install`, `git diff --check`, and independent verifier recheck with no findings after the poisoned-grant fix.
+- Next likely work is another clean first-run dogfood pass focused on MCP setup comfort, plugin authoring docs/templates, code-intelligence depth, or release-hardening polish.
+
 Added richer plugin scaffold authoring templates:
 
 - First-run scaffold dogfooding showed the generated plugin bundle was valid but still too placeholder-like for comfortable authoring.

@@ -3143,7 +3143,23 @@ test("mcp slash commands install provider presets", async () => {
     assert.equal(await handleSlashCommand("/mcp plan user:mslearn", harness.context), "continue");
     assert.match(harness.stdout(), /status: ready_for_model_grants/);
     assert.match(harness.stdout(), /orx mcp allow-model-tool user:mslearn microsoft_code_sample_search/);
-    assert.match(harness.stdout(), /in chat: \/mcp model enable/);
+    assert.doesNotMatch(harness.stdout(), /in chat: \/mcp model enable/);
+
+    assert.equal(
+      await handleSlashCommand("/mcp allow-model-tool user:mslearn microsoft_code_sample_search", harness.context),
+      "continue",
+    );
+    assert.match(harness.stdout(), /Model MCP tool grant stored for user:mslearn\/microsoft_code_sample_search/);
+
+    const modelUsePlanStart = harness.stdout().length;
+    assert.equal(await handleSlashCommand("/mcp plan user:mslearn", harness.context), "continue");
+    const modelUsePlanOutput = harness.stdout().slice(modelUsePlanStart);
+    assert.match(modelUsePlanOutput, /status: ready_for_model_use/);
+    assert.match(modelUsePlanOutput, /model_grantable=2/);
+    assert.match(modelUsePlanOutput, /grants: tool=0 stale_tool=0 model=1 stale_model=0/);
+    assert.match(modelUsePlanOutput, /orx ask --mcp-tools "Use microsoft_code_sample_search from user:mslearn"/);
+    assert.match(modelUsePlanOutput, /orx mcp allow-model-tool user:mslearn microsoft_docs_fetch/);
+    assert.doesNotMatch(modelUsePlanOutput, /orx mcp allow-model-tool user:mslearn microsoft_code_sample_search/);
 
     assert.equal(await handleSlashCommand("/mcp plan sk-or-v1-secret-plan-target", harness.context), "continue");
     assert.match(harness.stderr(), /target: \[redacted\]/);

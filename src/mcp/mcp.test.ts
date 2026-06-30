@@ -454,8 +454,24 @@ test("MCP setup planner guides preset, profile, auth, and grant next steps witho
     assert.match(enabledPlan, /auth_status: not_required/);
     assert.match(enabledPlan, /model_grantable=2/);
     assert.match(enabledPlan, /orx mcp allow-model-tool user:context7 query-docs/);
-    assert.match(enabledPlan, /orx ask --mcp-tools "Use query-docs from user:context7"/);
-    assert.match(enabledPlan, /in chat: \/mcp model enable/);
+    assert.doesNotMatch(enabledPlan, /orx ask --mcp-tools/);
+    assert.doesNotMatch(enabledPlan, /in chat: \/mcp model enable/);
+
+    const modelGrant = allowMcpModelToolGrant("user:context7", "query-docs", {
+      profileCatalogPath,
+      configPath,
+      now: () => new Date("2026-06-30T01:30:00.000Z"),
+    });
+    assert.equal(modelGrant.ok, true);
+    const modelUsePlan = renderMcpSetupPlan(
+      createMcpSetupPlan("context7", { profileCatalogPath, configPath }),
+    );
+    assert.match(modelUsePlan, /status: ready_for_model_use/);
+    assert.match(modelUsePlan, /model_grantable=1/);
+    assert.match(modelUsePlan, /grants: tool=0 stale_tool=0 model=1 stale_model=0/);
+    assert.match(modelUsePlan, /orx ask --mcp-tools "Use query-docs from user:context7"/);
+    assert.match(modelUsePlan, /orx mcp allow-model-tool user:context7 resolve-library-id/);
+    assert.doesNotMatch(modelUsePlan, /orx mcp allow-model-tool user:context7 query-docs/);
 
     installMcpProviderPreset("github-readonly", { profileCatalogPath });
     setMcpProfilePersistentState("user:github-readonly", "enabled", {
@@ -539,6 +555,44 @@ test("MCP setup planner discloses read-time permission tightening on existing st
     assert.match(rendered, /plan_side_effects: no install, enable, trust, grant, fetch, call, audit, or model exposure/);
     assert.equal(statSync(configDir).mode & 0o777, 0o700);
     assert.equal(statSync(configPath).mode & 0o777, 0o600);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("MCP setup planner does not treat unsafe active model grants as ready for model use", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-mcp-plan-unsafe-model-grant-"));
+  const configPath = join(cwd, "mcp", "profiles.json");
+
+  try {
+    setMcpProfilePersistentState("openrouter", "enabled", { configPath });
+    const summary = getMcpStatusSummary({ configPath });
+    const openrouterHash = summary.profileHashes.openrouter;
+    assert.ok(openrouterHash);
+
+    const config = loadMcpProfilesConfig({ configPath });
+    config.modelToolGrants["openrouter/chat-send"] = {
+      profileId: "openrouter",
+      toolName: "chat-send",
+      profileHash: openrouterHash,
+      risk: "billable",
+      billable: true,
+      grantedAt: "2026-06-30T01:40:00.000Z",
+    };
+    saveMcpProfilesConfig(config, { configPath });
+
+    const rendered = renderMcpSetupPlan(
+      createMcpSetupPlan("openrouter", {
+        configPath,
+        env: { ORX_MCP_BEARER_OPENROUTER: "test-bearer" },
+      }),
+    );
+    assert.match(rendered, /model=1 stale_model=0/);
+    assert.match(rendered, /status: ready_for_model_grants/);
+    assert.match(rendered, /orx mcp allow-model-tool openrouter models-list/);
+    assert.doesNotMatch(rendered, /status: ready_for_model_use/);
+    assert.doesNotMatch(rendered, /orx ask --mcp-tools "Use chat-send from openrouter"/);
+    assert.doesNotMatch(rendered, /in chat: \/mcp model enable/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

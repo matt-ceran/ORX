@@ -101,6 +101,8 @@ Later 2026-06-28 update: `orx mcp auth keychain [status|set|delete] <profile>` a
 
 Later 2026-06-30 update: non-minimal plugin scaffolds now include a root `AUTHORING.md` guide plus richer inert skill, prompt-command, rule, and docs templates. The guide is not declared as a runtime component, and integration placeholders remain empty (`hooks/hooks.json`, `mcp.json`, `command-schemas.json`, and `bin/`) so enabling a fresh scaffold still exposes no hook, MCP, executable-command, or bin entries until the author adds reviewed content.
 
+Later 2026-06-30 update: `orx mcp plan <profile>` and `/mcp plan <profile>` now distinguish `ready_for_model_grants` from `ready_for_model_use`. Model-use readiness and `orx ask --mcp-tools` suggestions require both an active model grant and an allowed model policy decision, so poisoned/legacy current-hash grants for billable or write-capable tools do not advertise model-visible use.
+
 Implement:
 
 - `src/plugins/manifest`: parse ORX plugin manifests and compatibility manifests where practical.

@@ -26,6 +26,7 @@ export type McpSetupPlanStatus =
   | "schema_change_pending"
   | "auth_setup_needed"
   | "remote_tool_review_needed"
+  | "ready_for_model_use"
   | "ready_for_model_grants"
   | "ready_for_operator_calls"
   | "operator_grants_required"
@@ -272,6 +273,9 @@ function getProfilePlanStatus(
   }
 
   const counts = countProfilePlanTools(report.evaluations);
+  if (counts.activeModelGrants > 0) {
+    return "ready_for_model_use";
+  }
   if (counts.modelGrantable > 0) {
     return "ready_for_model_grants";
   }
@@ -336,12 +340,18 @@ function buildProfileNextCommands(
     commands.push(`orx mcp allow-tool ${profileId} ${riskyDenied.toolName}`);
   }
 
+  const activeModelGrant = report.evaluations.find(isActiveModelGrantEvaluation);
+  if (activeModelGrant) {
+    commands.push(
+      `orx ask --mcp-tools "Use ${activeModelGrant.toolName} from ${profileId}"`,
+      "in chat: /mcp model enable",
+    );
+  }
+
   const modelGrantable = report.evaluations.find(isModelGrantableEvaluation);
   if (modelGrantable) {
     commands.push(
       `orx mcp allow-model-tool ${profileId} ${modelGrantable.toolName}`,
-      `orx ask --mcp-tools "Use ${modelGrantable.toolName} from ${profileId}"`,
-      "in chat: /mcp model enable",
     );
   }
 
@@ -418,6 +428,7 @@ function countProfilePlanTools(evaluations: McpToolPolicyEvaluation[]): {
   allowed: number;
   denied: number;
   blocked: number;
+  activeModelGrants: number;
   modelGrantable: number;
   riskyDenied: number;
 } {
@@ -425,11 +436,16 @@ function countProfilePlanTools(evaluations: McpToolPolicyEvaluation[]): {
     allowed: evaluations.filter((evaluation) => evaluation.decision === "allowed").length,
     denied: evaluations.filter((evaluation) => evaluation.decision === "denied").length,
     blocked: evaluations.filter((evaluation) => evaluation.decision.startsWith("blocked_by_")).length,
+    activeModelGrants: evaluations.filter(isActiveModelGrantEvaluation).length,
     modelGrantable: evaluations.filter(isModelGrantableEvaluation).length,
     riskyDenied: evaluations.filter(
       (evaluation) => evaluation.decision === "denied" && isDefaultDeniedEvaluation(evaluation),
     ).length,
   };
+}
+
+function isActiveModelGrantEvaluation(evaluation: McpToolPolicyEvaluation): boolean {
+  return evaluation.modelGrantStatus === "active" && evaluation.modelPolicyDecision === "allowed";
 }
 
 function isModelGrantableEvaluation(evaluation: McpToolPolicyEvaluation): boolean {
