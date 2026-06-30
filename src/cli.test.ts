@@ -321,6 +321,77 @@ test("API command flag help exits successfully without loading config", async ()
   }
 });
 
+test("MCP and plugin onboarding subcommand flag help exits successfully without loading config", async () => {
+  const cwd = createTempDir();
+  const brokenConfigPath = join(cwd, "broken-config.toml");
+  writeFileSync(
+    brokenConfigPath,
+    'api_key = "sk-or-secret-should-not-render"\nthis is not valid toml\n',
+  );
+  let fetchCalls = 0;
+  const fetch = async (): Promise<Response> => {
+    fetchCalls += 1;
+    throw new Error("help must not call fetch");
+  };
+
+  try {
+    const env = { ORX_CONFIG_PATH: brokenConfigPath };
+    const commands: Array<{ args: string[]; usage: RegExp }> = [
+      { args: ["mcp", "plan", "--help"], usage: /Usage: orx mcp plan/ },
+      { args: ["mcp", "add-preset", "--help"], usage: /Usage: orx mcp add-preset/ },
+      { args: ["mcp", "presets", "--help"], usage: /Usage: orx mcp presets/ },
+      { args: ["mcp", "presets", "inspect", "--help"], usage: /Usage: orx mcp presets inspect/ },
+      { args: ["plugins", "scaffold", "--help"], usage: /Usage: orx plugins scaffold/ },
+      { args: ["plugins", "validate", "--help"], usage: /Usage: orx plugins validate/ },
+      { args: ["plugins", "install", "--help"], usage: /Usage: orx plugins install/ },
+      { args: ["plugins", "register", "-h"], usage: /Usage: orx plugins register/ },
+      { args: ["plugins", "catalog", "--help"], usage: /Usage: orx plugins catalog/ },
+    ];
+
+    for (const { args, usage } of commands) {
+      const help = createIo({ cwd, fetch });
+      const label = args.join(" ");
+      assert.equal(await runCli(["node", "cli", ...args], env, help.io), 0, label);
+      assert.match(help.stdout(), usage, label);
+      assert.doesNotMatch(help.stdout(), /sk-or-secret|Unable to load config/, label);
+      assert.equal(help.stderr(), "", label);
+    }
+
+    const profiledHelp = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "--profile", "missing", "mcp", "plan", "--help"],
+        env,
+        profiledHelp.io,
+      ),
+      0,
+    );
+    assert.match(profiledHelp.stdout(), /Usage: orx mcp plan/);
+    assert.doesNotMatch(profiledHelp.stdout(), /missing|sk-or-secret|Unable to load config/);
+    assert.equal(profiledHelp.stderr(), "");
+
+    const unsupportedCatalogHelp = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(["node", "cli", "plugins", "catalog", "bogus", "--help"], {}, unsupportedCatalogHelp.io),
+      1,
+    );
+    assert.equal(unsupportedCatalogHelp.stdout(), "");
+    assert.match(unsupportedCatalogHelp.stderr(), /Usage: orx plugins catalog/);
+
+    const unsupportedPresetHelp = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "presets", "bogus", "--help"], env, unsupportedPresetHelp.io),
+      1,
+    );
+    assert.equal(unsupportedPresetHelp.stdout(), "");
+    assert.match(unsupportedPresetHelp.stderr(), /Unable to load config/);
+    assert.doesNotMatch(unsupportedPresetHelp.stderr(), /sk-or-secret/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("cli init creates a no-secret starter config and is idempotent", async () => {
   const cwd = createTempDir();
   const configPath = join(cwd, "user", "config.toml");

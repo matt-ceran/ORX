@@ -261,6 +261,23 @@ const CLI_API_COMMAND_USAGES = {
   generation: "Usage: orx generation <id>",
 } as const;
 
+const CLI_MCP_SUBCOMMAND_USAGES = {
+  plan: "Usage: orx mcp plan [preset-or-profile]",
+  presets: "Usage: orx mcp presets [inspect <preset>]",
+  presetsInspect: "Usage: orx mcp presets inspect <preset>",
+  addPreset: "Usage: orx mcp add-preset <preset> [--id <profile-id>] [--url <url>] [--auth-required|--no-auth]",
+} as const;
+
+const CLI_PLUGIN_SUBCOMMAND_USAGES = {
+  scaffold:
+    "Usage: orx plugins scaffold <directory> [--name <id>] [--publisher <id>] [--version <version>] [--description <text>] [--with <components>] [--minimal]",
+  validate: "Usage: orx plugins validate <manifest-path-or-directory>",
+  install: "Usage: orx plugins install <manifest-path-or-directory-or-catalog-id>",
+  register: "Usage: orx plugins register <manifest-path-or-directory-or-catalog-id>",
+  catalog:
+    "Usage: orx plugins catalog [list|inspect <id>|updates [id]|update <id>|add-local <manifest-path-or-directory>|add-git <id> <repository> <resolved-commit>|remove <id>]",
+} as const;
+
 function isHelpToken(value: string | undefined): boolean {
   const normalized = value?.toLowerCase();
   return normalized === "help" || normalized === "--help" || normalized === "-h";
@@ -312,6 +329,77 @@ function getNamespaceHelpUsage(args: string[]): string | undefined {
       return CLI_NAMESPACE_USAGES.delegate;
     case "delegates":
       return CLI_NAMESPACE_USAGES.delegates;
+    default:
+      return undefined;
+  }
+}
+
+function getNestedCommandHelpUsage(args: string[]): string | undefined {
+  if (!args.slice(1).includes("--help") && !args.slice(1).includes("-h")) {
+    return undefined;
+  }
+
+  const command = args[0]?.toLowerCase();
+  if (command === "mcp") {
+    return getMcpSubcommandHelpUsage(args.slice(1));
+  }
+  if (command === "plugins" || command === "plugin") {
+    return getPluginSubcommandHelpUsage(args.slice(1));
+  }
+
+  return undefined;
+}
+
+function getMcpSubcommandHelpUsage(args: string[]): string | undefined {
+  const subcommand = args[0]?.toLowerCase();
+  switch (subcommand) {
+    case "plan":
+    case "setup-plan":
+      return args.length === 2 && isHelpFlagToken(args[1])
+        ? CLI_MCP_SUBCOMMAND_USAGES.plan
+        : undefined;
+    case "presets":
+    case "preset":
+      if (args.length === 2 && isHelpFlagToken(args[1])) {
+        return CLI_MCP_SUBCOMMAND_USAGES.presets;
+      }
+      if (args.length === 3 && args[1]?.toLowerCase() === "inspect" && isHelpFlagToken(args[2])) {
+        return CLI_MCP_SUBCOMMAND_USAGES.presetsInspect;
+      }
+      return undefined;
+    case "add-preset":
+      return args.length === 2 && isHelpFlagToken(args[1])
+        ? CLI_MCP_SUBCOMMAND_USAGES.addPreset
+        : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function getPluginSubcommandHelpUsage(args: string[]): string | undefined {
+  const subcommand = args[0]?.toLowerCase();
+  switch (subcommand) {
+    case "scaffold":
+      return args.length === 2 && isHelpFlagToken(args[1])
+        ? CLI_PLUGIN_SUBCOMMAND_USAGES.scaffold
+        : undefined;
+    case "validate":
+    case "check":
+      return args.length === 2 && isHelpFlagToken(args[1])
+        ? CLI_PLUGIN_SUBCOMMAND_USAGES.validate
+        : undefined;
+    case "install":
+      return args.length === 2 && isHelpFlagToken(args[1])
+        ? CLI_PLUGIN_SUBCOMMAND_USAGES.install
+        : undefined;
+    case "register":
+      return args.length === 2 && isHelpFlagToken(args[1])
+        ? CLI_PLUGIN_SUBCOMMAND_USAGES.register
+        : undefined;
+    case "catalog":
+      return args.length === 2 && isHelpFlagToken(args[1])
+        ? CLI_PLUGIN_SUBCOMMAND_USAGES.catalog
+        : undefined;
     default:
       return undefined;
   }
@@ -378,6 +466,12 @@ export async function runCli(
   const apiCommandHelpUsage = getApiCommandHelpUsage(args);
   if (apiCommandHelpUsage) {
     writeLine(io.stdout, apiCommandHelpUsage);
+    return 0;
+  }
+
+  const nestedCommandHelpUsage = getNestedCommandHelpUsage(args);
+  if (nestedCommandHelpUsage) {
+    writeLine(io.stdout, nestedCommandHelpUsage);
     return 0;
   }
 
