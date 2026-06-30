@@ -34,6 +34,8 @@ export interface TestTarget {
   reportOutputPath?: string;
   reportArgsForwardable?: boolean;
   defaultReportArgsForwardable?: boolean;
+  configJsonReporter?: boolean;
+  configReportOutputPath?: string;
   fileCount?: number;
 }
 
@@ -108,6 +110,7 @@ const MAX_SCAN_DEPTH = 5;
 const MAX_EXTRA_ARGS = 32;
 const MAX_EXTRA_ARG_LENGTH = 512;
 const MAX_REPORT_OUTPUT_PATH_LENGTH = 512;
+const MAX_TEST_CONFIG_BYTES = 64 * 1024;
 const DEFAULT_TEST_TIMEOUT_MS = 120_000;
 const DEFAULT_TEST_OUTPUT_BYTES = 64 * 1024;
 const MAX_REPORT_PARSE_BYTES = 32 * 1024;
@@ -441,6 +444,7 @@ function createPackageScriptTarget(
 ): TestTarget {
   const commandArgs = packageScriptArgs(packageManager, scriptName);
   const metadata = inferPackageScriptMetadata(scriptCommand);
+  const configReport = inferFrameworkConfigReport(root, metadata.framework);
   return {
     id: `script:${scriptName}`,
     kind: "package-script",
@@ -458,6 +462,8 @@ function createPackageScriptTarget(
     reportOutputPath: metadata.reportOutputPath,
     reportArgsForwardable: metadata.reportArgsForwardable,
     defaultReportArgsForwardable: metadata.defaultReportArgsForwardable,
+    configJsonReporter: configReport?.jsonReporter,
+    configReportOutputPath: configReport?.outputPath,
   };
 }
 
@@ -483,6 +489,101 @@ function createNodeTestTarget(root: string, files: string[]): TestTarget {
     cwd: root,
     fileCount: files.length,
   };
+}
+
+function inferFrameworkConfigReport(
+  root: string,
+  framework: TestFramework,
+): { jsonReporter: boolean; outputPath?: string } | undefined {
+  if (!isFrameworkJsonReportFramework(framework)) {
+    return undefined;
+  }
+  for (const fileName of frameworkConfigFileNames(framework)) {
+    const text = readBoundedTestConfigFile(join(root, fileName));
+    if (text === undefined) {
+      continue;
+    }
+    const outputPath = parseFrameworkConfigJsonOutputPath(text, framework);
+    if (outputPath) {
+      return { jsonReporter: true, outputPath };
+    }
+  }
+  return undefined;
+}
+
+function frameworkConfigFileNames(framework: TestFramework): string[] {
+  switch (framework) {
+    case "jest":
+      return [
+        "jest.config.js",
+        "jest.config.cjs",
+        "jest.config.mjs",
+        "jest.config.ts",
+        "jest.config.json",
+      ];
+    case "vitest":
+      return [
+        "vitest.config.js",
+        "vitest.config.cjs",
+        "vitest.config.mjs",
+        "vitest.config.ts",
+        "vitest.config.mts",
+        "vitest.config.cts",
+      ];
+    case "playwright":
+      return [
+        "playwright.config.js",
+        "playwright.config.cjs",
+        "playwright.config.mjs",
+        "playwright.config.ts",
+        "playwright.config.mts",
+        "playwright.config.cts",
+      ];
+    default:
+      return [];
+  }
+}
+
+function readBoundedTestConfigFile(path: string): string | undefined {
+  try {
+    const stat = lstatSync(path);
+    if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_TEST_CONFIG_BYTES) {
+      return undefined;
+    }
+    return readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+function parseFrameworkConfigJsonOutputPath(text: string, framework: TestFramework): string | undefined {
+  const outputPath = parseConfigOutputFileValue(text);
+  if (!outputPath) {
+    return undefined;
+  }
+  if (framework === "jest") {
+    return /\bjson\s*:\s*true\b/.test(text) ? outputPath : undefined;
+  }
+  if (framework === "vitest") {
+    return configReporterIncludesJson(text) ? outputPath : undefined;
+  }
+  if (framework === "playwright") {
+    return configReporterIncludesJson(text) ? outputPath : undefined;
+  }
+  return undefined;
+}
+
+function configReporterIncludesJson(text: string): boolean {
+  return /\breporters?\s*:\s*(?:["']json["']|\[[\s\S]{0,2000}?["']json["'])/.test(text);
+}
+
+function parseConfigOutputFileValue(text: string): string | undefined {
+  const keyedOutput = /\boutputFile\s*:\s*\{[\s\S]{0,1000}?\bjson\s*:\s*(["'])([^"'\r\n]{1,512})\1/.exec(text);
+  if (keyedOutput?.[2]) {
+    return keyedOutput[2];
+  }
+  const output = /\boutputFile\s*:\s*(["'])([^"'\r\n]{1,512})\1/.exec(text);
+  return output?.[2];
 }
 
 function findNodeTestFiles(root: string): {
@@ -1403,7 +1504,7 @@ interface StructuredReportFileState {
 interface StructuredReportRequest {
   directory?: string;
   path: string;
-  mode: "node-junit" | FrameworkJsonReportRequestMode | "declared-json-reporter";
+  mode: "node-junit" | FrameworkJsonReportRequestMode | "declared-json-reporter" | "config-json-reporter";
   previousState?: StructuredReportFileState;
   root?: string;
   env?: Record<string, string>;
@@ -1417,6 +1518,10 @@ function createStructuredReportRequest(target: TestTarget, extraArgs: string[] =
   const declaredReportRequest = createDeclaredFrameworkJsonReportRequest(target, extraArgs);
   if (declaredReportRequest) {
     return declaredReportRequest;
+  }
+  const configReportRequest = createConfigFrameworkJsonReportRequest(target, extraArgs);
+  if (configReportRequest) {
+    return configReportRequest;
   }
   const frameworkReportMode = frameworkJsonReportRequestMode(target, extraArgs);
   if (!frameworkReportMode) {
@@ -1464,6 +1569,36 @@ function createDeclaredFrameworkJsonReportRequest(
   };
 }
 
+function createConfigFrameworkJsonReportRequest(
+  target: TestTarget,
+  extraArgs: string[] = [],
+): StructuredReportRequest | undefined {
+  if (
+    target.kind !== "package-script" ||
+    !isFrameworkJsonReportTarget(target) ||
+    target.defaultReportArgsForwardable !== true ||
+    target.reporterDeclared === true ||
+    target.jsonReporter === true ||
+    target.reportOutputFile === true ||
+    target.configJsonReporter !== true ||
+    !target.configReportOutputPath ||
+    packageScriptHasReporter(extraArgs) ||
+    packageScriptHasReportOutputFile(extraArgs)
+  ) {
+    return undefined;
+  }
+  const path = resolveReportOutputFilePath(target.cwd, target.configReportOutputPath);
+  if (!path) {
+    return undefined;
+  }
+  return {
+    path,
+    mode: "config-json-reporter",
+    previousState: captureStructuredReportFileState(path),
+    root: target.cwd,
+  };
+}
+
 function frameworkJsonReportRequestMode(
   target: TestTarget,
   extraArgs: string[] = [],
@@ -1491,7 +1626,11 @@ function frameworkJsonReportRequestMode(
 }
 
 function isFrameworkJsonReportTarget(target: TestTarget): boolean {
-  return target.framework === "jest" || target.framework === "vitest" || target.framework === "playwright";
+  return isFrameworkJsonReportFramework(target.framework);
+}
+
+function isFrameworkJsonReportFramework(framework: TestFramework): boolean {
+  return framework === "jest" || framework === "vitest" || framework === "playwright";
 }
 
 function formatTargetRunArgs(
@@ -1512,6 +1651,9 @@ function formatTargetRunArgs(
     ];
   }
   if (reportRequest.mode === "declared-json-reporter") {
+    return [...target.args, ...formatExtraArgsForTarget(target, extraArgs)];
+  }
+  if (reportRequest.mode === "config-json-reporter") {
     return [...target.args, ...formatExtraArgsForTarget(target, extraArgs)];
   }
   const reportArgs = formatFrameworkJsonReportArgs(target, reportRequest.path, reportRequest.mode);

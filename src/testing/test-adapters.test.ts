@@ -732,6 +732,150 @@ test("ignores malformed structured reports and falls back to stdout summary", ()
   );
 });
 
+test("reads config-declared JSON report files only for direct framework scripts", async () => {
+  const cwd = createTempDir();
+  const outsideReportDir = mkdtempSync(join(tmpdir(), "orx-config-report-outside-"));
+  const previousOutsideReportDir = process.env.ORX_TEST_OUTSIDE_REPORT_DIR;
+  process.env.ORX_TEST_OUTSIDE_REPORT_DIR = outsideReportDir;
+  try {
+    writeFileSync(
+      join(cwd, "package.json"),
+      JSON.stringify({
+        scripts: {
+          "test:jest-config": "jest",
+          "test:vitest-config": "vitest run",
+          "test:playwright-config": "playwright test",
+          "test:jest-config-stale": "ORX_FAKE_SKIP_CONFIG=1 jest",
+          "test:jest-config-symlink": "ORX_FAKE_SYMLINK_CONFIG=1 jest",
+          "test:custom-jest-config": "node ./fake-config-reporter.mjs jest",
+          "test:vitest-config-post-step": "vitest run && node ./post-step.mjs",
+        },
+      }),
+    );
+    writeFileSync(
+      join(cwd, "jest.config.js"),
+      "module.exports = { json: true, outputFile: 'reports/jest-config.json' };\n",
+    );
+    writeFileSync(
+      join(cwd, "vitest.config.ts"),
+      "export default { test: { reporters: ['default', 'json'], outputFile: { json: 'reports/vitest-config.json' } } };\n",
+    );
+    writeFileSync(
+      join(cwd, "playwright.config.ts"),
+      "export default { reporter: [['list'], ['json', { outputFile: 'reports/playwright-config.json' }]] };\n",
+    );
+
+    const binDir = join(cwd, "node_modules", ".bin");
+    mkdirSync(binDir, { recursive: true });
+    for (const binName of ["jest", "vitest", "playwright"]) {
+      const binPath = join(binDir, binName);
+      writeFileSync(binPath, "#!/usr/bin/env node\nimport '../../fake-config-reporter.mjs';\n");
+      chmodSync(binPath, 0o755);
+    }
+    writeFileSync(
+      join(cwd, "fake-config-reporter.mjs"),
+      [
+        "import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';",
+        "import { basename, dirname } from 'node:path';",
+        "const binName = basename(process.argv[1] ?? '');",
+        "const knownBins = new Set(['jest', 'vitest', 'playwright']);",
+        "const framework = knownBins.has(binName) ? binName : process.argv[2];",
+        "const args = process.argv.slice(2);",
+        "const report = framework === 'playwright'",
+        "  ? { stats: { expected: 3, unexpected: 1, skipped: 1, flaky: 0, duration: 456 } }",
+        "  : { numTotalTests: 5, numPassedTests: 4, numFailedTests: 1, numPendingTests: 0, numTodoTests: 0, numTotalTestSuites: 2, duration: 789 };",
+        "const outputByFramework = new Map([",
+        "  ['jest', 'reports/jest-config.json'],",
+        "  ['vitest', 'reports/vitest-config.json'],",
+        "  ['playwright', 'reports/playwright-config.json'],",
+        "]);",
+        "const reporterValues = [];",
+        "for (const [index, arg] of args.entries()) {",
+        "  if (arg === '--reporter' || arg === '--reporters') reporterValues.push(args[index + 1] ?? '');",
+        "  if (arg.startsWith('--reporter=') || arg.startsWith('--reporters=')) reporterValues.push(arg.slice(arg.indexOf('=') + 1));",
+        "}",
+        "const hasNonJsonReporterOverride = reporterValues.some((value) => !value.split(/[,:]/).includes('json'));",
+        "const hasOutputOverride = args.some((arg) => arg === '--outputFile' || arg === '--output-file' || arg.startsWith('--outputFile=') || arg.startsWith('--output-file='));",
+        "const outputFile = outputByFramework.get(framework);",
+        "if (outputFile && !process.env.ORX_FAKE_SKIP_CONFIG && !hasNonJsonReporterOverride && !hasOutputOverride) {",
+        "  if (process.env.ORX_FAKE_SYMLINK_CONFIG && process.env.ORX_TEST_OUTSIDE_REPORT_DIR) {",
+        "    rmSync('reports', { recursive: true, force: true });",
+        "    mkdirSync(process.env.ORX_TEST_OUTSIDE_REPORT_DIR, { recursive: true });",
+        "    symlinkSync(process.env.ORX_TEST_OUTSIDE_REPORT_DIR, 'reports', 'dir');",
+        "  } else {",
+        "    mkdirSync(dirname(outputFile), { recursive: true });",
+        "  }",
+        "  writeFileSync(outputFile, JSON.stringify(report));",
+        "}",
+        "console.log('Tests: 99 passed, 99 total');",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(join(cwd, "post-step.mjs"), "console.log('post-step-ok');\n");
+
+    const jestConfigResult = await runTestTarget({ cwd, targetId: "script:test:jest-config" });
+    assert.equal(jestConfigResult.ok, true);
+    assert.equal(jestConfigResult.report?.source, "jest-json");
+    assert.equal(jestConfigResult.report?.total, 5);
+    assert.equal(jestConfigResult.args.includes("--json"), false);
+    assert.equal(jestConfigResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+    assert.equal(existsSync(join(cwd, "reports", "jest-config.json")), true);
+
+    const vitestConfigResult = await runTestTarget({ cwd, targetId: "script:test:vitest-config" });
+    assert.equal(vitestConfigResult.ok, true);
+    assert.equal(vitestConfigResult.report?.source, "vitest-json");
+    assert.equal(vitestConfigResult.report?.total, 5);
+    assert.equal(vitestConfigResult.args.includes("--reporter=json"), false);
+    assert.equal(vitestConfigResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+
+    const playwrightConfigResult = await runTestTarget({ cwd, targetId: "script:test:playwright-config" });
+    assert.equal(playwrightConfigResult.ok, true);
+    assert.equal(playwrightConfigResult.report?.source, "playwright-json");
+    assert.equal(playwrightConfigResult.report?.total, 5);
+    assert.equal(playwrightConfigResult.report?.durationMs, 456);
+    assert.equal(playwrightConfigResult.args.includes("--reporter=json"), false);
+
+    const reporterOverrideResult = await runTestTarget({
+      cwd,
+      targetId: "script:test:jest-config",
+      extraArgs: ["--reporter=dot"],
+    });
+    assert.equal(reporterOverrideResult.ok, true);
+    assert.equal(reporterOverrideResult.report?.source, "jest");
+    assert.equal(reporterOverrideResult.report?.total, 99);
+
+    const staleResult = await runTestTarget({ cwd, targetId: "script:test:jest-config-stale" });
+    assert.equal(staleResult.ok, true);
+    assert.equal(staleResult.report?.source, "jest");
+    assert.equal(staleResult.report?.total, 99);
+
+    const customWrapperResult = await runTestTarget({ cwd, targetId: "script:test:custom-jest-config" });
+    assert.equal(customWrapperResult.ok, true);
+    assert.equal(customWrapperResult.report?.source, "jest");
+    assert.equal(customWrapperResult.report?.total, 99);
+
+    const postStepResult = await runTestTarget({ cwd, targetId: "script:test:vitest-config-post-step" });
+    assert.equal(postStepResult.ok, true);
+    assert.notEqual(postStepResult.report?.source, "vitest-json");
+    assert.equal(postStepResult.report?.total, 99);
+    assert.match(postStepResult.stdout ?? "", /post-step-ok/);
+
+    const symlinkResult = await runTestTarget({ cwd, targetId: "script:test:jest-config-symlink" });
+    assert.equal(symlinkResult.ok, true);
+    assert.equal(symlinkResult.report?.source, "jest");
+    assert.equal(symlinkResult.report?.total, 99);
+    assert.equal(existsSync(join(outsideReportDir, "jest-config.json")), true);
+  } finally {
+    if (previousOutsideReportDir === undefined) {
+      delete process.env.ORX_TEST_OUTSIDE_REPORT_DIR;
+    } else {
+      process.env.ORX_TEST_OUTSIDE_REPORT_DIR = previousOutsideReportDir;
+    }
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(outsideReportDir, { recursive: true, force: true });
+  }
+});
+
 test("infers package-script frameworks and report metadata", () => {
   const cwd = createTempDir();
   try {
