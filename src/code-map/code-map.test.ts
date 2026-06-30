@@ -1002,7 +1002,295 @@ test("tree-sitter repo refs scans bounded source files without semantic overclai
     assert.equal(unsupportedFile.repoReferences?.filesScanned, 0);
     assert.ok(unsupportedFile.repoReferences?.omissions.some((omission) =>
       omission.path === "src/notes.md" &&
-      omission.reason === "source file extension is not supported for tree-sitter repo refs"));
+      omission.reason === "source file extension is not supported for tree-sitter repo scan"));
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("tree-sitter repo calls scans bounded source files without semantic overclaim", () => {
+  const cwd = createTempDir();
+  const calls: Array<{ command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }> = [];
+  const runner: TreeSitterRunner = (command, args, options) => {
+    calls.push({ command, args, cwd: options.cwd, env: options.env });
+    if (args.includes("--version")) {
+      return { status: command === "tree-sitter" ? 0 : 1, signal: null, stdout: "tree-sitter 0.0.0\n", stderr: "" };
+    }
+    if (args[1] === "src/index.ts") {
+      return {
+        status: 0,
+        signal: null,
+        stdout: [
+          "(program [0, 0] - [4, 0]",
+          "  (import_statement [0, 0] - [0, 31]",
+          "    (import_clause [0, 7] - [0, 17]",
+          "      (named_imports [0, 7] - [0, 17]",
+          "        name: (identifier [0, 9] - [0, 15]))))",
+          "  (export_statement [1, 0] - [1, 49]",
+          "    declaration: (function_declaration [1, 7] - [1, 49]",
+          "      name: (identifier [1, 16] - [1, 21])",
+          "      body: (statement_block [1, 24] - [1, 49]",
+          "        (return_statement [1, 26] - [1, 46]",
+          "          (call_expression [1, 33] - [1, 46]",
+          "            function: (identifier [1, 33] - [1, 39])))))",
+          "  (expression_statement [2, 0] - [2, 7]",
+          "    (call_expression [2, 0] - [2, 6]",
+          "      function: (identifier [2, 0] - [2, 4])))",
+          "",
+        ].join("\n"),
+        stderr: "",
+      };
+    }
+    if (args[1] === "src/util.ts") {
+      return {
+        status: 0,
+        signal: null,
+        stdout: [
+          "(program [0, 0] - [2, 0]",
+          "  (export_statement [0, 0] - [0, 46]",
+          "    declaration: (function_declaration [0, 7] - [0, 46]",
+          "      name: (identifier [0, 16] - [0, 22])",
+          "      body: (statement_block [0, 25] - [0, 46]",
+          "        (return_statement [0, 27] - [0, 44]",
+          "          (call_expression [0, 34] - [0, 43]",
+          "            function: (identifier [0, 34] - [0, 41]))))))",
+          "",
+        ].join("\n"),
+        stderr: "",
+      };
+    }
+    return { status: 1, signal: null, stdout: "", stderr: `unexpected file ${args[1]}` };
+  };
+
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    mkdirSync(join(cwd, "node_modules", "pkg"), { recursive: true });
+    writeFileSync(
+      join(cwd, "src", "index.ts"),
+      [
+        "import { helper } from './util';",
+        "export function start() { return helper(value); }",
+        "boot();",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(join(cwd, "src", "util.ts"), "export function helper() { return compute(); }\n");
+    writeFileSync(join(cwd, "src", "notes.md"), "helper();\n");
+    writeFileSync(join(cwd, "node_modules", "pkg", "ignored.ts"), "ignored();\n");
+
+    const parsed = parseCodeTreeSitterArgs(["repo-calls", "src"]);
+    if (!parsed.ok) {
+      assert.fail(parsed.message);
+    }
+    const result = runCodeTreeSitter({
+      ...parsed.args,
+      cwd,
+      env: {
+        PATH: "/usr/bin",
+        OPENROUTER_API_KEY: "sk-or-v1-secret",
+      },
+      runner,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.mode, "repo-calls");
+    assert.equal(result.repoCalls?.targetPath, "src");
+    assert.equal(result.repoCalls?.filesScanned, 2);
+    assert.equal(result.repoCalls?.filesWithCalls, 2);
+    assert.equal(result.repoCalls?.totalEdges, 3);
+    assert.equal(result.repoCalls?.failedFiles, 0);
+    assert.equal(calls[1]?.env.OPENROUTER_API_KEY, undefined);
+    assert.deepEqual(
+      calls.filter((call) => call.args[0] === "parse").map((call) => call.args[1]),
+      ["src/index.ts", "src/util.ts"],
+    );
+    assert.deepEqual(
+      result.repoCalls?.edges.map((edge) => `${edge.path}:${edge.caller?.name ?? "[top-level]"}:${edge.callee}:${edge.line}:${edge.column}`),
+      [
+        "src/index.ts:start:helper:2:34",
+        "src/index.ts:[top-level]:boot:3:1",
+        "src/util.ts:helper:compute:1:35",
+      ],
+    );
+
+    const rendered = renderCodeTreeSitterResult(result);
+    assert.match(rendered, /Code tree-sitter repo calls/);
+    assert.match(rendered, /not semantic call resolution/);
+    assert.match(rendered, /files_scanned: 2/);
+    assert.match(rendered, /files_with_calls: 2/);
+    assert.match(rendered, /calls: 3/);
+    assert.match(rendered, /path="src\/index\.ts" caller="start" caller_kind="function_declaration" caller_line=2 callee="helper" line=2 column=34/);
+    assert.match(rendered, /path="src\/util\.ts" caller="helper" caller_kind="function_declaration" caller_line=1 callee="compute" line=1 column=35/);
+    assert.doesNotMatch(rendered, /node_modules/);
+
+    const defaultTarget = parseCodeTreeSitterArgs(["repo-calls"]);
+    assert.equal(defaultTarget.ok, true);
+    if (defaultTarget.ok) {
+      assert.equal(defaultTarget.args.targetPath, ".");
+      assert.equal(defaultTarget.args.mode, "repo-calls");
+    }
+
+    const invalidTarget = runCodeTreeSitter({
+      cwd,
+      targetPath: "../outside",
+      mode: "repo-calls",
+      runner,
+    });
+    assert.equal(invalidTarget.ok, false);
+    assert.equal(invalidTarget.status, "invalid_arguments");
+    assert.match(renderCodeTreeSitterResult(invalidTarget), /must stay inside/);
+
+    const generatedTarget = runCodeTreeSitter({
+      cwd,
+      targetPath: "node_modules",
+      mode: "repo-calls",
+      runner,
+    });
+    assert.equal(generatedTarget.ok, false);
+    assert.equal(generatedTarget.status, "invalid_arguments");
+    assert.match(renderCodeTreeSitterResult(generatedTarget), /generated or vendor directories/);
+
+    const unsupportedFile = runCodeTreeSitter({
+      cwd,
+      targetPath: "src/notes.md",
+      mode: "repo-calls",
+      runner,
+    });
+    assert.equal(unsupportedFile.ok, true);
+    assert.equal(unsupportedFile.repoCalls?.filesScanned, 0);
+    assert.ok(unsupportedFile.repoCalls?.omissions.some((omission) =>
+      omission.path === "src/notes.md" &&
+      omission.reason === "source file extension is not supported for tree-sitter repo scan"));
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("tree-sitter repo calls reports file-level parse failures and timeouts", () => {
+  const cwd = createTempDir();
+  const runner: TreeSitterRunner = (command, args) => {
+    if (args.includes("--version")) {
+      return { status: command === "tree-sitter" ? 0 : 1, signal: null, stdout: "tree-sitter 0.0.0\n", stderr: "" };
+    }
+    if (args[1] === "src/bad.ts") {
+      return { status: 1, signal: null, stdout: "", stderr: "parse failed" };
+    }
+    if (args[1] === "src/slow.ts") {
+      return {
+        status: null,
+        signal: null,
+        stdout: "",
+        stderr: "slow parse",
+        error: Object.assign(new Error("timed out"), { code: "ETIMEDOUT" }),
+      };
+    }
+    return {
+      status: 0,
+      signal: null,
+      stdout: [
+        "(program [0, 0] - [2, 0]",
+        "  (export_statement [0, 0] - [0, 41]",
+        "    declaration: (function_declaration [0, 7] - [0, 41]",
+        "      name: (identifier [0, 16] - [0, 18])",
+        "      body: (statement_block [0, 21] - [0, 41]",
+        "        (return_statement [0, 23] - [0, 39]",
+        "          (call_expression [0, 30] - [0, 38]",
+        "            function: (identifier [0, 30] - [0, 34]))))))",
+        "",
+      ].join("\n"),
+      stderr: "",
+    };
+  };
+
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(join(cwd, "src", "bad.ts"), "broken();\n");
+    writeFileSync(join(cwd, "src", "ok.ts"), "export function ok() { return call(); }\n");
+    writeFileSync(join(cwd, "src", "slow.ts"), "slow();\n");
+
+    const result = runCodeTreeSitter({
+      cwd,
+      targetPath: "src",
+      mode: "repo-calls",
+      runner,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "ok");
+    assert.equal(result.timedOut, true);
+    assert.equal(result.repoCalls?.filesScanned, 3);
+    assert.equal(result.repoCalls?.filesWithCalls, 1);
+    assert.equal(result.repoCalls?.totalEdges, 1);
+    assert.equal(result.repoCalls?.failedFiles, 2);
+    assert.equal(result.repoCalls?.timedOutFiles, 1);
+    assert.equal(result.repoCalls?.omittedFiles, 2);
+    assert.ok(result.repoCalls?.warnings.includes("some files could not be parsed by tree-sitter; omissions list includes file-level failures"));
+    assert.ok(result.repoCalls?.omissions.some((omission) =>
+      omission.path === "src/bad.ts" &&
+      omission.reason === "tree-sitter parse failed"));
+    assert.ok(result.repoCalls?.omissions.some((omission) =>
+      omission.path === "src/slow.ts" &&
+      omission.reason === "tree-sitter parse timed out"));
+
+    const rendered = renderCodeTreeSitterResult(result);
+    assert.match(rendered, /Code tree-sitter repo calls/);
+    assert.match(rendered, /omitted_files: 2/);
+    assert.match(rendered, /path="src\/bad\.ts" reason="tree-sitter parse failed"/);
+    assert.match(rendered, /path="src\/slow\.ts" reason="tree-sitter parse timed out"/);
+    assert.match(rendered, /src\/bad\.ts: tree-sitter parse failed: parse failed/);
+    assert.match(rendered, /src\/slow\.ts: tree-sitter parse timed out: slow parse/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("tree-sitter repo calls reports truncated parse output", () => {
+  const cwd = createTempDir();
+  const runner: TreeSitterRunner = (command, args) => {
+    if (args.includes("--version")) {
+      return { status: command === "tree-sitter" ? 0 : 1, signal: null, stdout: "tree-sitter 0.0.0\n", stderr: "" };
+    }
+    return {
+      status: 0,
+      signal: null,
+      stdout: [
+        "(program [0, 0] - [2, 0]",
+        "  (export_statement [0, 0] - [0, 41]",
+        "    declaration: (function_declaration [0, 7] - [0, 41]",
+        "      name: (identifier [0, 16] - [0, 18])",
+        "      body: (statement_block [0, 21] - [0, 41]",
+        "        (return_statement [0, 23] - [0, 39]",
+        "          (call_expression [0, 30] - [0, 38]",
+        "            function: (identifier [0, 30] - [0, 34]))))))",
+        "  (comment [1, 0] - [1, 120])",
+        "",
+      ].join("\n"),
+      stderr: "",
+    };
+  };
+
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(join(cwd, "src", "ok.ts"), "export function ok() { return call(); }\n");
+
+    const result = runCodeTreeSitter({
+      cwd,
+      targetPath: "src",
+      mode: "repo-calls",
+      maxBytes: 96,
+      runner,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.repoCalls?.filesScanned, 1);
+    assert.equal(result.repoCalls?.truncated, true);
+    assert.ok(result.repoCalls?.omissions.some((omission) =>
+      omission.path === "src/ok.ts" &&
+      omission.reason === "AST call edges exceeded per-file bounds"));
+
+    const rendered = renderCodeTreeSitterResult(result);
+    assert.match(rendered, /calls: \d+ \(truncated\)/);
+    assert.match(rendered, /path="src\/ok\.ts" reason="AST call edges exceeded per-file bounds"/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

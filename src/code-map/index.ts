@@ -35,6 +35,8 @@ export {
   type CodeTreeSitterOutlineEntry,
   type CodeTreeSitterParseResult,
   type CodeTreeSitterReferences,
+  type CodeTreeSitterRepoCallEdge,
+  type CodeTreeSitterRepoCalls,
   type CodeTreeSitterRepoReferences,
   type CodeTreeSitterRepoReferenceMatch,
   type CodeTreeSitterReferenceMatch,
