@@ -11,6 +11,7 @@ Urgent UX recovery:
 Completed:
 
 - Add structured Node test report ingestion: direct Node fallback requests native JUnit into a private temporary report file, parses bounded counts before stdout fallback, deletes the report directory, and strips inherited `NODE_TEST_*` control variables from child test runs.
+- Add structured Jest/Vitest/Playwright JSON test report ingestion: when package scripts already emit whole-object JSON result output to stdout or stderr, ORX parses bounded Jest/Vitest-style numeric result objects and Playwright `stats` objects before summary-line fallback, without adding reporter flags, report files, installs, network, or model-tool exposure changes.
 - Add runnable Pyright diagnostics profile: `orx diagnostics run pyright [--project <local-project-path>] [--json]`, `orx diag run pyright ...`, `/diagnostics run pyright ...`, and `/diag run pyright ...` use an already-installed local or PATH `pyright`, run `pyright --outputjson --project <project-file-or-directory>`, default to project `.`, parse bounded `generalDiagnostics`, and keep the existing explicit-operator/no-install/no-network/shell-disabled/cwd-confined/no-model-tool diagnostics boundary.
 - Add tree-sitter AST preview/outline commands: `orx code tree-sitter [parse|outline] <file>`, `orx code outline <file>`, `orx tree-sitter [parse|outline] <file>`, `orx outline <file>`, `/code tree-sitter [parse|outline] <file>`, `/code outline <file>`, `/tree-sitter [parse|outline] <file>`, and `/outline <file>` run an installed local `tree-sitter parse` with shell disabled, cleaned env, cwd-confined file guards, bounded/redacted output, no network/install behavior, and no mutation; outline mode summarizes definition-like AST nodes and extracts names from source ranges when available; lexical code-map surfaces remain the fallback.
 - Finish v0.1 release packaging and release notes: `RELEASE_NOTES.md` now documents first-run source/global install commands, final release verification, package dry-run inspection, current CLI surfaces, security boundaries, and known optional post-v0.1 work; package metadata now includes repository/bugs/homepage/keywords and packages `dist`, `README.md`, `RELEASE_NOTES.md`, and `LICENSE`; `npm run pack:dry-run` inspects package contents without publishing.
@@ -93,6 +94,7 @@ Completed:
 - Add model-visible native `run_tests` tool that reuses the test adapter with shell disabled, bounded output, timeout coverage, sanitized extra arguments, and compact tool summaries.
 - Add framework-aware test target metadata: infer Node/Vitest/Jest/Playwright/unknown frameworks and simple reporter hints for package-script targets, render framework counts in status, and include framework metadata in `run_tests` summaries.
 - Add compact test report parsing for common Node/Vitest/Jest/Playwright summary lines in `orx tests run`, `/tests run`, and model-visible `run_tests` summaries.
+- Add structured Jest/Vitest/Playwright JSON test report parsing from already-captured bounded stdout/stderr before summary-line fallback.
 - Add dependency-free local code maps: bounded tree scan, language/key-file/entrypoint summaries, JavaScript/TypeScript import/export extraction, `orx code map`, `orx map`, `orx code-map`, `/map`, and `/code map`.
 - Add dependency-free local symbol indexes: exported JavaScript/TypeScript symbol names with file paths and line numbers through `orx code symbols`, `orx symbols`, `/code symbols`, and `/symbols`.
 - Add dependency-free local reference indexes: bounded JavaScript/TypeScript code-reference lookup through `orx code refs <query>`, `orx refs <query>`, `/code refs <query>`, and `/refs <query>`, reusing code-map traversal/redaction and skipping comments, strings, and template literals.
@@ -205,7 +207,7 @@ Next:
 - Extend model-loop MCP controls with clearer prompt-injection boundaries and optional operator grants for any future billable/write model exposure.
 - Extend plugin metadata further only where needed for remote source UX, marketplace/catalog trust, or executable surface policy decisions.
 - Extend tree-sitter-backed code intelligence beyond the initial operator parse/outline previews into richer syntax-aware call/reference/import slices when grammar/runtime constraints are acceptable.
-- Extend structured test report ingestion beyond initial Node JUnit fallback to Vitest/Jest/Playwright when framework-native JSON/report files can be requested safely.
+- Extend structured test report ingestion beyond captured JSON stdout/stderr and direct Node JUnit fallback to actively requested framework-native report files when safe.
 - Extend diagnostics beyond the initial TypeScript compiler profile with LSP/SCIP bridges for diagnostics, references, hover, and go-to-definition.
 - Add docs/retrieval providers: Context7, DeepWiki, OpenAI Docs, Microsoft Learn, AWS docs, Google Developer Knowledge.
 - Add official GitHub MCP read-only integration before write-capable GitHub operations.

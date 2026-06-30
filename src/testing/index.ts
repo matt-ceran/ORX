@@ -63,7 +63,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "node-junit";
+  source: TestFramework | "generic" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -333,6 +333,13 @@ export function parseTestReportSummary(
   }
 
   const text = limitReportText(`${stdout}\n${stderr}`);
+  const jsonReport =
+    parseFrameworkJsonReportSummary(limitReportText(stdout), target.framework) ??
+    parseFrameworkJsonReportSummary(limitReportText(stderr), target.framework);
+  if (jsonReport && hasReportCounts(jsonReport)) {
+    return jsonReport;
+  }
+
   const parsers = orderedReportParsers(target.framework);
   for (const parser of parsers) {
     const report = parser(text, target.framework);
@@ -575,6 +582,120 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
   return framework === "unknown"
     ? [parseJestReportSummary, parseVitestReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseGenericReportSummary]
     : [parsers[framework], parseGenericReportSummary];
+}
+
+function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  const value = parseJsonObjectReport(text);
+  if (!value) {
+    return undefined;
+  }
+
+  if (framework === "jest") {
+    return parseJestLikeJsonReportSummary(value, framework, "jest-json");
+  }
+  if (framework === "vitest") {
+    return parseJestLikeJsonReportSummary(value, framework, "vitest-json");
+  }
+  if (framework === "playwright") {
+    return parsePlaywrightJsonReportSummary(value, framework);
+  }
+  if (framework === "unknown") {
+    return parseJestLikeJsonReportSummary(value, framework, "jest-json") ??
+      parsePlaywrightJsonReportSummary(value, framework);
+  }
+  return undefined;
+}
+
+function parseJsonObjectReport(text: string): Record<string, unknown> | undefined {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+    return undefined;
+  }
+
+  try {
+    const value: unknown = JSON.parse(trimmed);
+    return isPlainObject(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseJestLikeJsonReportSummary(
+  value: Record<string, unknown>,
+  framework: TestFramework,
+  source: "jest-json" | "vitest-json",
+): TestReportSummary | undefined {
+  const report: TestReportSummary = {
+    framework,
+    source,
+  };
+
+  assignNumber(report, "total", jsonCountNumber(value, "numTotalTests"));
+  assignNumber(report, "passed", jsonCountNumber(value, "numPassedTests"));
+  assignNumber(report, "failed", jsonCountNumber(value, "numFailedTests"));
+  assignNumber(report, "skipped", jsonCountNumber(value, "numPendingTests"));
+  assignNumber(report, "todo", jsonCountNumber(value, "numTodoTests"));
+  assignNumber(report, "suites", jsonCountNumber(value, "numTotalTestSuites"));
+  assignNumber(report, "durationMs", parseJestLikeJsonDurationMs(value));
+
+  return hasReportCounts(report) ? report : undefined;
+}
+
+function parseJestLikeJsonDurationMs(value: Record<string, unknown>): number | undefined {
+  const directDuration = jsonDurationNumber(value, "durationMs") ?? jsonDurationNumber(value, "duration");
+  if (directDuration !== undefined) {
+    return directDuration;
+  }
+
+  const perfStats = value.perfStats;
+  if (!isPlainObject(perfStats)) {
+    return undefined;
+  }
+  return jsonDurationNumber(perfStats, "runtime");
+}
+
+function parsePlaywrightJsonReportSummary(
+  value: Record<string, unknown>,
+  framework: TestFramework,
+): TestReportSummary | undefined {
+  const stats = value.stats;
+  if (!isPlainObject(stats)) {
+    return undefined;
+  }
+
+  const passed = jsonCountNumber(stats, "expected");
+  const failed = jsonCountNumber(stats, "unexpected");
+  const skipped = jsonCountNumber(stats, "skipped");
+  const flaky = jsonCountNumber(stats, "flaky");
+  const report: TestReportSummary = {
+    framework,
+    source: "playwright-json",
+  };
+
+  assignNumber(report, "passed", passed);
+  assignNumber(report, "failed", failed);
+  assignNumber(report, "skipped", skipped);
+  assignNumber(report, "flaky", flaky);
+  assignNumber(report, "total", sumDefined(passed, failed, skipped, flaky));
+  assignNumber(report, "durationMs", jsonDurationNumber(stats, "duration"));
+
+  return hasReportCounts(report) ? report : undefined;
+}
+
+function jsonCountNumber(value: Record<string, unknown>, key: string): number | undefined {
+  const raw = value[key];
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0 || !Number.isInteger(raw)) {
+    return undefined;
+  }
+  return raw;
+}
+
+function jsonDurationNumber(value: Record<string, unknown>, key: string): number | undefined {
+  const raw = value[key];
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) {
+    return undefined;
+  }
+  return raw;
 }
 
 function parseNodeReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {

@@ -59,7 +59,7 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin `components.hooks` JSON can contribute hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run manually through `hooks run` / `/hooks run` or automatically on matching lifecycle events with minimal env/cwd and JSONL audit logging.
 - Enabled plugin `components.bins` directories can contribute explicit operator-run bins. Regular cached bin files appear as `plugin:<plugin-id>:bin:<file>` in `orx bins`, `/bins`, and `/status`; trusted bin hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run only through explicit `bins run` / `/bins run` with cached-plugin cwd, manifest-declared env, redacted/truncated output, and JSONL audit logs without raw argument lists.
 - Enabled plugin prompt commands and bins now produce namespaced aliases visible through `/plugin list`, `orx plugins commands`, and `/status`. `/plugin:<plugin-id>:command:<slug>` activates the matching prompt as untrusted context; `/plugin:<plugin-id>:bin:<file> [args...]` runs the matching bin through the same trusted-hash gates as `/bins run`.
-- Native test target commands are implemented through `orx tests list|run`, `/tests list|run`, `/test`, package `test*` script discovery, direct Node test/spec fallback, framework/reporter metadata, compact report summary parsing, bounded shell-disabled execution, and status counts. The same adapter is exposed to the model loop through the native `run_tests` tool.
+- Native test target commands are implemented through `orx tests list|run`, `/tests list|run`, `/test`, package `test*` script discovery, direct Node test/spec fallback, framework/reporter metadata, direct Node JUnit parsing, whole-object Jest/Vitest/Playwright JSON stdout/stderr parsing, compact summary-line parsing, bounded shell-disabled execution, and status counts. The same adapter is exposed to the model loop through the native `run_tests` tool.
 - Dependency-free local code maps, symbol indexes, reference indexes, import graphs, call graphs, optional ast-grep syntax-aware search/codemod previews, and optional tree-sitter parse/outline previews are implemented through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `orx code refs`, `orx refs`, `orx code imports`, `orx imports`, `orx code calls`, `orx calls`, `orx call-graph`, `orx code ast-grep`, `orx ast-grep`, `orx code tree-sitter`, `orx code outline`, `orx tree-sitter`, `orx outline`, `/map`, `/code map`, `/code symbols`, `/symbols`, `/code refs`, `/refs`, `/code imports`, `/imports`, `/code calls`, `/calls`, `/call-graph`, `/code ast-grep`, `/ast-grep`, `/code tree-sitter`, `/code outline`, `/tree-sitter`, and `/outline`; output is local-only/no-key and includes bounded language, key-file, entrypoint, JavaScript/TypeScript import/export, exported-symbol, code-reference, local import-edge summaries, conservative lexical call-edge summaries, shell-disabled ast-grep output when `sg` or `ast-grep` is installed, and shell-disabled tree-sitter raw parse or definition-like outline output when `tree-sitter` plus grammars are installed.
 - Local security scanner profiles are implemented through `orx scanners list`, `orx scanners inspect <profile>`, `orx scanners run semgrep <path> --config <local-config-path> [--json]`, `orx scan semgrep ...`, `/scanners ...`, and `/scan ...`; Semgrep is runnable only as an explicit operator command with an installed local binary plus cwd-confined local config, shell disabled, minimal env, bounded/redacted output, and no model-tool exposure, while Snyk/Socket/OSV-Scanner/CodeQL/Trivy are catalog-only readiness profiles.
 - Local diagnostics profiles are implemented through `orx diagnostics list`, `orx diagnostics inspect <profile>`, `orx diagnostics run <typescript|pyright> [--project <local-project-path>] [--json]`, `orx diag run ...`, `/diagnostics ...`, and `/diag ...`; TypeScript and Pyright are runnable only as explicit operator commands with installed local or PATH binaries, cwd-confined local project targets, shell disabled, minimal env, bounded/redacted output, parsed TypeScript text diagnostics or Pyright `generalDiagnostics`, ORX-owned JSON metadata, and no model-tool exposure, while TypeScript Language Server/rust-analyzer/gopls/clangd/SCIP TypeScript are catalog-only readiness profiles.
@@ -102,6 +102,14 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added structured Jest/Vitest/Playwright JSON report ingestion:
+
+- `parseTestReportSummary` now parses bounded whole-object JSON already emitted to stdout or stderr before summary-line fallback for Jest, Vitest, and Playwright package-script targets.
+- Jest/Vitest-style JSON numeric result objects map to `source=jest-json` or `source=vitest-json`; Playwright `stats` objects map to `source=playwright-json`.
+- The slice does not add reporter flags, report-file writes, installs, network calls, subprocess shape changes, or model-tool exposure changes; malformed/mixed JSON remains on the existing summary-line fallback path.
+- Verification so far: `npm run typecheck`, `npm run build`, and focused `node --test dist/testing/test-adapters.test.js` passed before the full release gate/verifier pass.
+- Next likely work after this slice is another optional completion slice such as actively requested framework-native report files, tree-sitter-backed syntax-aware code intelligence, LSP/SCIP diagnostics/references, or final v0.1 packaging/release polish.
 
 Added runnable Pyright diagnostics profile:
 
@@ -148,7 +156,7 @@ Added initial local diagnostics profiles:
 - The diagnostics surface is explicit-operator-only and not exposed through `src/agent` model tool schemas or the native tool registry.
 - README, guide, command memory, architecture/tooling notes, backlog, and the integration handoff now document the diagnostics boundary and remaining LSP/SCIP expansion path.
 - Verification: `npm run typecheck`, `npm run build && node --test dist/cli.test.js dist/slash/index.test.js` with 147 tests, full `npm test` with 517 tests, `npm run verify:release`, built CLI list/inspect/help/rejected-project/real-tsc/JSON dogfood, chat slash inspect/rejected-project dogfood, and independent verifier review. Verifier-found issues for stale current-context memory and alias-specific inspect usage were fixed and rechecked.
-- Next likely work after this slice is another optional completion slice such as tree-sitter-backed syntax-aware code intelligence, LSP/SCIP diagnostics beyond the initial TypeScript compiler profile, structured framework report ingestion, Sourcegraph/GitHub read-only profiles, or final v0.1 packaging/release notes.
+- Next likely work after this slice is another optional completion slice such as tree-sitter-backed syntax-aware code intelligence, LSP/SCIP diagnostics beyond the initial TypeScript compiler profile, actively requested framework-native report files, Sourcegraph/GitHub read-only profiles, or final v0.1 packaging/release notes.
 
 Added local security scanner profiles:
 
@@ -712,7 +720,7 @@ Implemented compact test report parsing:
 - `orx tests run`, `/tests run`, and rendered run results show compact `report:` fields when counts are available.
 - Model-visible `run_tests` output includes the same report object, and visible tool summaries include compact report counts such as tests, passed, failed, skipped, files, suites, and duration.
 - Verification: `npm run typecheck`, `npm run build`, `git diff --check`, focused source tests for `src/testing/test-adapters.test.ts` plus `src/agent/runtime.test.ts`, build-backed focused runtime/CLI/slash/test-adapter tests, full `npm test` with 381 tests, and independent verifier recheck after parser-conservatism fixes.
-- Next likely programming-power-pack work: tree-sitter-backed code intelligence or structured framework report ingestion when ORX can safely request framework-native report formats.
+- Next likely programming-power-pack work: tree-sitter-backed code intelligence or actively requested framework-native report files when ORX can safely request them.
 
 Implemented line-based multiline prompt continuation:
 

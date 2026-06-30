@@ -237,6 +237,115 @@ test("parses common framework report summaries", () => {
   assert.equal(parseTestReportSummary(createTarget("playwright"), "2 failed network requests (99)"), undefined);
 });
 
+test("parses structured framework JSON reports before stdout fallback", () => {
+  const jestJson = JSON.stringify({
+    numTotalTests: 6,
+    numPassedTests: 4,
+    numFailedTests: 1,
+    numPendingTests: 1,
+    numTodoTests: 0,
+    numTotalTestSuites: 3,
+    perfStats: { runtime: 1234 },
+  });
+  const vitestJson = JSON.stringify({
+    numTotalTests: 7,
+    numPassedTests: 5,
+    numFailedTests: 1,
+    numPendingTests: 1,
+    numTodoTests: 0,
+    numTotalTestSuites: 4,
+    duration: 2500,
+  });
+  const playwrightJson = JSON.stringify({
+    stats: {
+      expected: 3,
+      unexpected: 1,
+      skipped: 2,
+      flaky: 1,
+      duration: 4500,
+    },
+  });
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("jest"), jestJson, "Tests: 99 passed, 99 total"),
+    {
+      framework: "jest",
+      source: "jest-json",
+      total: 6,
+      passed: 4,
+      failed: 1,
+      skipped: 1,
+      todo: 0,
+      suites: 3,
+      durationMs: 1234,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("vitest"), "Tests 99 passed (99)", vitestJson),
+    {
+      framework: "vitest",
+      source: "vitest-json",
+      total: 7,
+      passed: 5,
+      failed: 1,
+      skipped: 1,
+      todo: 0,
+      suites: 4,
+      durationMs: 2500,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("playwright"), playwrightJson),
+    {
+      framework: "playwright",
+      source: "playwright-json",
+      total: 7,
+      passed: 3,
+      failed: 1,
+      skipped: 2,
+      flaky: 1,
+      durationMs: 4500,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), jestJson),
+    {
+      framework: "unknown",
+      source: "jest-json",
+      total: 6,
+      passed: 4,
+      failed: 1,
+      skipped: 1,
+      todo: 0,
+      suites: 3,
+      durationMs: 1234,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("jest"), "{not json", "Tests: 1 passed, 1 total"),
+    {
+      framework: "jest",
+      source: "jest",
+      total: 1,
+      passed: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("jest"), `report follows\n${jestJson}`, "Tests: 2 passed, 2 total"),
+    {
+      framework: "jest",
+      source: "jest",
+      total: 2,
+      passed: 2,
+    },
+  );
+});
+
 test("parses node structured JUnit reports before stdout fallback", () => {
   const target = createTarget("node");
   const report = [
