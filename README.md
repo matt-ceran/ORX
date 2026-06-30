@@ -93,9 +93,10 @@ For local v0.1 release-boundary verification, run:
 
 ```sh
 npm run verify:release
+npm run pack:dry-run
 ```
 
-The release gate is deterministic and no-real-key/no-network by command selection. It clears operator `OPENROUTER_API_KEY` and `BRAVE_SEARCH_API_KEY` values, runs `git diff --check`, typecheck, full `npm test`, the global install verifier, and built CLI smokes for `doctor --json`, `guide`, `code calls`, `plugins review`, and `mcp presets` against isolated temporary ORX state. The nested global-install chat-launch smoke uses a non-secret placeholder key only to start chat and immediately run `/exit`; it does not submit prompts or call OpenRouter. The gate does not call remote MCP endpoints, plugin bins, or plugin hooks.
+The release gate is deterministic and no-real-key/no-network by command selection. It clears operator `OPENROUTER_API_KEY` and `BRAVE_SEARCH_API_KEY` values, runs `git diff --check`, typecheck, full `npm test`, the global install verifier, and built CLI smokes for `doctor --json`, `guide`, `code calls`, `plugins review`, and `mcp presets` against isolated temporary ORX state. The nested global-install chat-launch smoke uses a non-secret placeholder key only to start chat and immediately run `/exit`; it does not submit prompts or call OpenRouter. The gate does not call remote MCP endpoints, plugin bins, or plugin hooks. See `RELEASE_NOTES.md` for the current v0.1 handoff summary and known optional post-v0.1 work.
 
 For unattended implementation passes, use the local overnight harness:
 
@@ -107,7 +108,7 @@ OPENROUTER_API_KEY=... npm run overnight -- --max-slices 1
 
 Run the dashboard in its own terminal. It uses a fixed alternate-screen view and reads `.orx/overnight/latest/state.json` plus `.orx/overnight/latest/events.jsonl`, so progress updates do not scroll the terminal. The runner creates one implementor prompt and one verifier prompt per queued slice, runs implementor -> local checks -> verifier, and pauses unless the verifier log ends with `VERDICT: PASS` on its final non-empty line. `--commit` commits the verified slice's newly changed paths after that verifier pass, leaving pre-existing dirty paths untouched; add `--push` only when the verified slice should be pushed automatically. Use `--require-clean` only when a commit-enabled run should pause before implementation if the worktree starts dirty. State, prompts, logs, and agent session files stay under gitignored `.orx/overnight/latest`.
 
-By default, the harness uses the built ORX CLI (`node dist/cli.js ask <prompt>`) for both roles, so normal ORX credential/config behavior applies. To use another local agent command, set command templates before running:
+By default, the harness uses the built ORX CLI (`node dist/cli.js ask --max-tool-iterations 32 <prompt>`) for both roles, so normal ORX credential/config behavior applies. To use another local agent command, set command templates before running:
 
 ```sh
 ORX_OVERNIGHT_IMPLEMENTOR_CMD='my-agent --prompt-file {promptFile}' \

@@ -1,14 +1,16 @@
 {
   "name": "orx",
   "version": "0.1.0",
-  "description": "OpenRouter-native terminal coding agent.",
+  "description": "OpenRouter-native terminal coding agent with local coding tools, MCP/plugin surfaces, and release checks.",
   "type": "module",
   "bin": {
     "orx": "./dist/cli.js"
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "RELEASE_NOTES.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -17,6 +19,7 @@
     "test": "npm run build && node --test \"dist/**/*.test.js\"",
     "verify:global-install": "node scripts/verify-global-install.mjs",
     "verify:release": "node scripts/verify-release.mjs",
+    "pack:dry-run": "npm pack --dry-run",
     "overnight": "node scripts/overnight-loop.mjs run",
     "overnight:init": "node scripts/overnight-loop.mjs init",
     "overnight:dashboard": "node scripts/overnight-loop.mjs dashboard",
@@ -34,5 +37,22 @@
   "engines": {
     "node": ">=20"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "keywords": [
+    "openrouter",
+    "cli",
+    "terminal",
+    "coding-agent",
+    "agent",
+    "mcp",
+    "tui"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matt-ceran/ORX.git"
+  },
+  "bugs": {
+    "url": "https://github.com/matt-ceran/ORX/issues"
+  },
+  "homepage": "https://github.com/matt-ceran/ORX#readme"
 }

@@ -103,6 +103,15 @@ Current files:
 
 ## Latest Work
 
+Finished v0.1 release-polish slice:
+
+- Added `RELEASE_NOTES.md` with source/global first-run commands, final release gate, package dry-run command, current CLI surface summary, security boundary notes, and known optional post-v0.1 work.
+- Added a root MIT `LICENSE` file and package metadata for repository/bugs/homepage/keywords plus `RELEASE_NOTES.md`, `README.md`, `LICENSE`, and `dist` package contents.
+- Added `npm run pack:dry-run` for local package contents inspection without publishing.
+- README now points release-boundary verification at `npm run verify:release`, `npm run pack:dry-run`, and `RELEASE_NOTES.md`, and documents that the overnight harness default role command uses `orx ask --max-tool-iterations 32`.
+- Next likely work is to let the overnight harness continue optional slices: structured test report ingestion, tree-sitter code intelligence, and read-only provider profile planning.
+- Verification: `npm run verify:release` passed, and `npm run pack:dry-run` passed with `LICENSE`, `README.md`, `RELEASE_NOTES.md`, `dist`, and `package.json` in the package contents.
+
 Improved overnight dashboard failure visibility and tool-call budget:
 
 - The overnight dashboard now renders an 80-column-safe fixed frame by default, with compact queue rows, runner status, current slice details, exit code summary, attention/failure event, and a bounded current log tail. `ORX_DASHBOARD_COLUMNS` and `ORX_DASHBOARD_ROWS` can override the default size.
