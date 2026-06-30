@@ -871,6 +871,123 @@ test("tree-sitter call extraction avoids anonymous nested caller and callee over
   }
 });
 
+test("tree-sitter import extraction renders single-file import-like edges", () => {
+  const cwd = createTempDir();
+  const runner: TreeSitterRunner = (command, args) => {
+    if (args.includes("--version")) {
+      return { status: command === "tree-sitter" ? 0 : 1, signal: null, stdout: "tree-sitter 0.0.0\n", stderr: "" };
+    }
+    return {
+      status: 0,
+      signal: null,
+      stdout: [
+        "(program [0, 0] - [7, 0]",
+        "  (import_statement [0, 0] - [0, 23]",
+        "    source: (string [0, 7] - [0, 22]",
+        "      (string_fragment [0, 8] - [0, 21])))",
+        "  (import_statement [1, 0] - [1, 36]",
+        "    source: (string [1, 24] - [1, 35]",
+        "      (string_fragment [1, 25] - [1, 34])))",
+        "  (export_statement [2, 0] - [2, 34]",
+        "    source: (string [2, 23] - [2, 33]",
+        "      (string_fragment [2, 24] - [2, 32])))",
+        "  (lexical_declaration [3, 0] - [3, 30]",
+        "    (variable_declarator [3, 6] - [3, 29]",
+        "      name: (identifier [3, 6] - [3, 8])",
+        "      value: (call_expression [3, 11] - [3, 29]",
+        "        function: (identifier [3, 11] - [3, 18])",
+        "        arguments: (arguments [3, 18] - [3, 29]",
+        "          (string [3, 19] - [3, 28]",
+        "            (string_fragment [3, 20] - [3, 27]))))))",
+        "  (lexical_declaration [4, 0] - [4, 38]",
+        "    (variable_declarator [4, 6] - [4, 37]",
+        "      name: (identifier [4, 6] - [4, 9])",
+        "      value: (await_expression [4, 12] - [4, 37]",
+        "        (call_expression [4, 18] - [4, 37]",
+        "          function: (import [4, 18] - [4, 24])",
+        "          arguments: (arguments [4, 24] - [4, 37]",
+        "            (string [4, 25] - [4, 36]",
+        "              (string_fragment [4, 26] - [4, 35])))))))",
+        "  (lexical_declaration [5, 0] - [5, 51]",
+        "    (variable_declarator [5, 6] - [5, 50]",
+        "      name: (identifier [5, 6] - [5, 12])",
+        "      value: (call_expression [5, 15] - [5, 50]",
+        "        function: (identifier [5, 15] - [5, 22])",
+        "        arguments: (arguments [5, 22] - [5, 50]",
+        "          (call_expression [5, 23] - [5, 49]",
+        "            function: (identifier [5, 23] - [5, 34])",
+        "            arguments: (arguments [5, 34] - [5, 49]",
+        "              (string [5, 35] - [5, 48]",
+        "                (string_fragment [5, 36] - [5, 47]))))))))",
+        "  (lexical_declaration [6, 0] - [6, 49]",
+        "    (variable_declarator [6, 6] - [6, 48]",
+        "      name: (identifier [6, 6] - [6, 10])",
+        "      value: (await_expression [6, 13] - [6, 48]",
+        "        (call_expression [6, 19] - [6, 48]",
+        "          function: (import [6, 19] - [6, 25])",
+        "          arguments: (arguments [6, 25] - [6, 48]",
+        "            (call_expression [6, 26] - [6, 47]",
+        "              function: (identifier [6, 26] - [6, 33])",
+        "              arguments: (arguments [6, 33] - [6, 47]",
+        "                (string [6, 34] - [6, 46]",
+        "                  (string_fragment [6, 35] - [6, 45])))))))))",
+        "",
+      ].join("\n"),
+      stderr: "",
+    };
+  };
+
+  try {
+    writeFileSync(
+      join(cwd, "example.ts"),
+      [
+        "import \"./side-effect\";",
+        "import { feature } from \"./feature\";",
+        "export { helper } from \"./helper\";",
+        "const fs = require(\"node:fs\");",
+        "const mod = await import(\"./dynamic\");",
+        "const tricky = require(resolveName(\"./not-literal\"));",
+        "const lazy = await import(getName(\"./also-not\"));",
+        "",
+      ].join("\n"),
+    );
+
+    const parsed = parseCodeTreeSitterArgs(["imports", "example.ts"]);
+    if (!parsed.ok) {
+      assert.fail(parsed.message);
+    }
+    const result = runCodeTreeSitter({
+      ...parsed.args,
+      cwd,
+      runner,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.mode, "imports");
+    assert.deepEqual(
+      result.imports?.edges.map((edge) => `${edge.kind}:${edge.source}:${edge.line}:${edge.column}`),
+      [
+        "import:./side-effect:1:1",
+        "import:./feature:2:1",
+        "reexport:./helper:3:1",
+        "require:node:fs:4:12",
+        "dynamic_import:./dynamic:5:19",
+      ],
+    );
+    const rendered = renderCodeTreeSitterResult(result);
+    assert.match(rendered, /Code tree-sitter imports/);
+    assert.match(rendered, /AST-backed local single-file import extraction/);
+    assert.match(rendered, /kind="import" source="\.\/feature" line=2 column=1/);
+    assert.match(rendered, /kind="reexport" source="\.\/helper" line=3 column=1/);
+    assert.match(rendered, /kind="require" source="node:fs" line=4 column=12/);
+    assert.match(rendered, /kind="dynamic_import" source="\.\/dynamic" line=5 column=19/);
+    assert.doesNotMatch(rendered, /not-literal/);
+    assert.doesNotMatch(rendered, /also-not/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 function createTempDir(): string {
   return mkdtempSync(join(tmpdir(), "orx-code-map-"));
 }

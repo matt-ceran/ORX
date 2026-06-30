@@ -43,7 +43,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
-    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses\/outlines\/calls/);
+    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses\/outlines\/imports\/calls/);
     assert.match(help.stdout(), /scanners\s+List, inspect, or run local security scanner profiles/);
     assert.match(help.stdout(), /scan\s+Alias for a local scanner run/);
     assert.match(help.stdout(), /diagnostics\s+List, inspect, or run local diagnostics profiles/);
@@ -1659,6 +1659,12 @@ test("cli code map renders a bounded repository overview without an API key", as
         signal: null,
         stdout: [
           "(program [0, 0] - [4, 0]",
+          "  (import_statement [0, 0] - [0, 26]",
+          "    source: (string [0, 7] - [0, 25]",
+          "      (string_fragment [0, 8] - [0, 24])))",
+          "  (import_statement [1, 0] - [1, 36]",
+          "    source: (string [1, 24] - [1, 35]",
+          "      (string_fragment [1, 25] - [1, 34])))",
           "  (export_statement [2, 0] - [2, 44]",
           "    declaration: (function_declaration [2, 7] - [2, 43]",
           "      name: (identifier [2, 16] - [2, 21])",
@@ -1695,6 +1701,15 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.match(treeSitterAstCalls.stdout(), /Code tree-sitter calls/);
     assert.match(treeSitterAstCalls.stdout(), /caller="start" caller_kind="function_declaration" caller_line=3 callee="feature" line=3 column=34/);
     assert.match(treeSitterAstCalls.stdout(), /caller="boot" caller_kind="function_declaration" caller_line=4 callee="start" line=4 column=26/);
+
+    const treeSitterAstImports = createIo({ cwd, treeSitterRunner });
+    assert.equal(
+      await runCli(["node", "cli", "code", "tree-sitter", "imports", "src/index.ts"], {}, treeSitterAstImports.io),
+      0,
+    );
+    assert.match(treeSitterAstImports.stdout(), /Code tree-sitter imports/);
+    assert.match(treeSitterAstImports.stdout(), /kind="import" source="\.\/side-effect\.js" line=1 column=1/);
+    assert.match(treeSitterAstImports.stdout(), /kind="import" source="\.\/feature" line=2 column=1/);
 
     const outlineAlias = createIo({ cwd, treeSitterRunner });
     assert.equal(await runCli(["node", "cli", "outline", "src/index.ts"], {}, outlineAlias.io), 0);

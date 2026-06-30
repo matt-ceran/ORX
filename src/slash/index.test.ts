@@ -316,8 +316,10 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/code a"), [["ast-grep "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/code o"), [["outline "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/code tree-sitter o"), [["outline "], "o"]);
+  assert.deepEqual(completeSlashCommandLine("/code tree-sitter i"), [["imports "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/code tree-sitter c"), [["calls "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/tree-sitter p"), [["parse "], "p"]);
+  assert.deepEqual(completeSlashCommandLine("/tree-sitter i"), [["imports "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/tree-sitter c"), [["calls "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/scanners r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/scanners inspect s"), [["semgrep ", "snyk ", "socket "], "s"]);
@@ -530,6 +532,12 @@ test("map slash command renders a local code map", () => {
         signal: null,
         stdout: [
           "(program [0, 0] - [4, 0]",
+          "  (import_statement [0, 0] - [0, 31]",
+          "    source: (string [0, 18] - [0, 30]",
+          "      (string_fragment [0, 19] - [0, 29])))",
+          "  (import_statement [1, 0] - [1, 36]",
+          "    source: (string [1, 24] - [1, 35]",
+          "      (string_fragment [1, 25] - [1, 34])))",
           "  (export_statement [2, 0] - [2, 68]",
           "    declaration: (function_declaration [2, 7] - [2, 67]",
           "      name: (identifier [2, 16] - [2, 21])",
@@ -560,6 +568,12 @@ test("map slash command renders a local code map", () => {
     assert.match(treeSitterAstCalls.stdout(), /Code tree-sitter calls/);
     assert.match(treeSitterAstCalls.stdout(), /caller="start" caller_kind="function_declaration" caller_line=3 callee="feature" line=3 column=34/);
     assert.match(treeSitterAstCalls.stdout(), /caller="boot" caller_kind="function_declaration" caller_line=4 callee="start" line=4 column=26/);
+
+    const treeSitterAstImports = createSlashHarness({ cwd, treeSitterRunner });
+    assert.equal(handleSlashCommand("/code tree-sitter imports src/index.ts", treeSitterAstImports.context), "continue");
+    assert.match(treeSitterAstImports.stdout(), /Code tree-sitter imports/);
+    assert.match(treeSitterAstImports.stdout(), /kind="import" source="\.\/value\.js" line=1 column=1/);
+    assert.match(treeSitterAstImports.stdout(), /kind="import" source="\.\/feature" line=2 column=1/);
 
     const outlineAlias = createSlashHarness({ cwd, treeSitterRunner });
     assert.equal(handleSlashCommand("/outline src/index.ts", outlineAlias.context), "continue");

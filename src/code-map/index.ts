@@ -28,6 +28,8 @@ export {
   renderCodeTreeSitterResult,
   runCodeTreeSitter,
   type CodeTreeSitterArgs,
+  type CodeTreeSitterImports,
+  type CodeTreeSitterImportEdge,
   type CodeTreeSitterMode,
   type CodeTreeSitterOutline,
   type CodeTreeSitterOutlineEntry,
