@@ -37,6 +37,8 @@ export {
   type CodeTreeSitterReferences,
   type CodeTreeSitterRepoCallEdge,
   type CodeTreeSitterRepoCalls,
+  type CodeTreeSitterRepoDependencies,
+  type CodeTreeSitterRepoDependencyEdge,
   type CodeTreeSitterRepoImportEdge,
   type CodeTreeSitterRepoImports,
   type CodeTreeSitterRepoReferences,

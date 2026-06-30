@@ -1288,6 +1288,234 @@ test("tree-sitter repo imports reports truncated parse output", () => {
   }
 });
 
+test("tree-sitter repo deps resolves bounded local relative imports without package overclaim", () => {
+  const cwd = createTempDir();
+  const calls: Array<{ command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }> = [];
+  const runner: TreeSitterRunner = (command, args, options) => {
+    calls.push({ command, args, cwd: options.cwd, env: options.env });
+    if (args.includes("--version")) {
+      return { status: command === "tree-sitter" ? 0 : 1, signal: null, stdout: "tree-sitter 0.0.0\n", stderr: "" };
+    }
+    if (args[1] === "src/index.ts") {
+      return {
+        status: 0,
+        signal: null,
+        stdout: [
+          "(program [0, 0] - [5, 0]",
+          "  (import_statement [0, 0] - [0, 34]",
+          "    source: (string [0, 23] - [0, 34]",
+          "      (string_fragment [0, 24] - [0, 33])))",
+          "  (import_statement [1, 0] - [1, 30]",
+          "    source: (string [1, 16] - [1, 30]",
+          "      (string_fragment [1, 17] - [1, 29])))",
+          "  (lexical_declaration [2, 0] - [2, 37]",
+          "    (variable_declarator [2, 6] - [2, 36]",
+          "      value: (call_expression [2, 16] - [2, 36]",
+          "        function: (identifier [2, 16] - [2, 23])",
+          "        arguments: (arguments [2, 23] - [2, 36]",
+          "          (string [2, 24] - [2, 35]",
+          "            (string_fragment [2, 25] - [2, 34])))))",
+          "  (export_statement [3, 0] - [3, 35]",
+          "    source: (string [3, 24] - [3, 35]",
+          "      (string_fragment [3, 25] - [3, 34])))",
+          "",
+        ].join("\n"),
+        stderr: "",
+      };
+    }
+    return {
+      status: 0,
+      signal: null,
+      stdout: "(program [0, 0] - [1, 0]\n",
+      stderr: "",
+    };
+  };
+
+  try {
+    mkdirSync(join(cwd, "src", "feature"), { recursive: true });
+    mkdirSync(join(cwd, "node_modules", "pkg"), { recursive: true });
+    writeFileSync(
+      join(cwd, "src", "index.ts"),
+      [
+        "import { helper } from './util.js';",
+        "import pkg from 'external-pkg';",
+        "const missing = require(\"./missing\");",
+        "export { feature } from './feature';",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(join(cwd, "src", "util.ts"), "export const helper = true;\n");
+    writeFileSync(join(cwd, "src", "feature", "index.ts"), "export const feature = true;\n");
+    writeFileSync(join(cwd, "node_modules", "pkg", "ignored.ts"), "export const ignored = true;\n");
+
+    const parsed = parseCodeTreeSitterArgs(["repo-deps", "src"]);
+    if (!parsed.ok) {
+      assert.fail(parsed.message);
+    }
+    const result = runCodeTreeSitter({
+      ...parsed.args,
+      cwd,
+      env: {
+        PATH: "/usr/bin",
+        OPENROUTER_API_KEY: "sk-or-v1-secret",
+      },
+      runner,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.mode, "repo-deps");
+    assert.equal(result.repoDependencies?.targetPath, "src");
+    assert.equal(result.repoDependencies?.filesScanned, 3);
+    assert.equal(result.repoDependencies?.filesWithDependencies, 1);
+    assert.equal(result.repoDependencies?.totalEdges, 4);
+    assert.equal(result.repoDependencies?.localDependencies, 2);
+    assert.equal(result.repoDependencies?.externalImports, 1);
+    assert.equal(result.repoDependencies?.unresolvedLocalImports, 1);
+    assert.equal(result.repoDependencies?.failedFiles, 0);
+    assert.equal(calls[1]?.env.OPENROUTER_API_KEY, undefined);
+    assert.deepEqual(
+      calls.filter((call) => call.args[0] === "parse").map((call) => call.args[1]),
+      ["src/feature/index.ts", "src/index.ts", "src/util.ts"],
+    );
+    assert.deepEqual(
+      result.repoDependencies?.edges.map((edge) => `${edge.path}:${edge.resolution}:${edge.source}:${edge.to ?? ""}:${edge.line}:${edge.column}`),
+      [
+        "src/index.ts:local:./util.js:src/util.ts:1:1",
+        "src/index.ts:external:external-pkg::2:1",
+        "src/index.ts:unresolved_local:./missing::3:17",
+        "src/index.ts:local:./feature:src/feature/index.ts:4:1",
+      ],
+    );
+
+    const rendered = renderCodeTreeSitterResult(result);
+    assert.match(rendered, /Code tree-sitter repo deps/);
+    assert.match(rendered, /local relative imports only/);
+    assert.match(rendered, /not package or semantic resolution/);
+    assert.match(rendered, /files_scanned: 3/);
+    assert.match(rendered, /files_with_dependencies: 1/);
+    assert.match(rendered, /dependencies: 4/);
+    assert.match(rendered, /local_dependencies: 2/);
+    assert.match(rendered, /external_imports: 1/);
+    assert.match(rendered, /unresolved_local_imports: 1/);
+    assert.match(rendered, /from="src\/index\.ts" to="src\/util\.ts" specifier="\.\/util\.js" resolution=local kind="import" line=1 column=1/);
+    assert.match(rendered, /from="src\/index\.ts" to="external" specifier="external-pkg" resolution=external kind="import" line=2 column=1/);
+    assert.match(rendered, /from="src\/index\.ts" to="unresolved_local" specifier="\.\/missing" resolution=unresolved_local kind="require" line=3 column=17/);
+    assert.match(rendered, /from="src\/index\.ts" to="src\/feature\/index\.ts" specifier="\.\/feature" resolution=local kind="reexport" line=4 column=1/);
+    assert.doesNotMatch(rendered, /node_modules/);
+
+    const defaultTarget = parseCodeTreeSitterArgs(["repo-deps"]);
+    assert.equal(defaultTarget.ok, true);
+    if (defaultTarget.ok) {
+      assert.equal(defaultTarget.args.targetPath, ".");
+      assert.equal(defaultTarget.args.mode, "repo-deps");
+    }
+
+    const aliasTarget = parseCodeTreeSitterArgs(["deps", "src"]);
+    assert.equal(aliasTarget.ok, true);
+    if (aliasTarget.ok) {
+      assert.equal(aliasTarget.args.targetPath, "src");
+      assert.equal(aliasTarget.args.mode, "repo-deps");
+    }
+
+    const invalidTarget = runCodeTreeSitter({
+      cwd,
+      targetPath: "../outside",
+      mode: "repo-deps",
+      runner,
+    });
+    assert.equal(invalidTarget.ok, false);
+    assert.equal(invalidTarget.status, "invalid_arguments");
+    assert.match(renderCodeTreeSitterResult(invalidTarget), /must stay inside/);
+
+    const generatedTarget = runCodeTreeSitter({
+      cwd,
+      targetPath: "node_modules",
+      mode: "repo-deps",
+      runner,
+    });
+    assert.equal(generatedTarget.ok, false);
+    assert.equal(generatedTarget.status, "invalid_arguments");
+    assert.match(renderCodeTreeSitterResult(generatedTarget), /generated or vendor directories/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("tree-sitter repo deps reports file-level parse failures and timeouts", () => {
+  const cwd = createTempDir();
+  const runner: TreeSitterRunner = (command, args) => {
+    if (args.includes("--version")) {
+      return { status: command === "tree-sitter" ? 0 : 1, signal: null, stdout: "tree-sitter 0.0.0\n", stderr: "" };
+    }
+    if (args[1] === "src/bad.ts") {
+      return { status: 1, signal: null, stdout: "", stderr: "parse failed" };
+    }
+    if (args[1] === "src/slow.ts") {
+      return {
+        status: null,
+        signal: null,
+        stdout: "",
+        stderr: "slow parse",
+        error: Object.assign(new Error("timed out"), { code: "ETIMEDOUT" }),
+      };
+    }
+    return {
+      status: 0,
+      signal: null,
+      stdout: [
+        "(program [0, 0] - [1, 0]",
+        "  (import_statement [0, 0] - [0, 19]",
+        "    source: (string [0, 7] - [0, 18]",
+        "      (string_fragment [0, 8] - [0, 17])))",
+        "",
+      ].join("\n"),
+      stderr: "",
+    };
+  };
+
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(join(cwd, "src", "bad.ts"), "import './bad';\n");
+    writeFileSync(join(cwd, "src", "ok.ts"), "import './missing';\n");
+    writeFileSync(join(cwd, "src", "slow.ts"), "import './slow';\n");
+
+    const result = runCodeTreeSitter({
+      cwd,
+      targetPath: "src",
+      mode: "repo-deps",
+      runner,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "ok");
+    assert.equal(result.timedOut, true);
+    assert.equal(result.repoDependencies?.filesScanned, 3);
+    assert.equal(result.repoDependencies?.filesWithDependencies, 1);
+    assert.equal(result.repoDependencies?.totalEdges, 1);
+    assert.equal(result.repoDependencies?.unresolvedLocalImports, 1);
+    assert.equal(result.repoDependencies?.failedFiles, 2);
+    assert.equal(result.repoDependencies?.timedOutFiles, 1);
+    assert.equal(result.repoDependencies?.omittedFiles, 2);
+    assert.ok(result.repoDependencies?.warnings.includes("some files could not be parsed by tree-sitter; omissions list includes file-level failures"));
+    assert.ok(result.repoDependencies?.omissions.some((omission) =>
+      omission.path === "src/bad.ts" &&
+      omission.reason === "tree-sitter parse failed"));
+    assert.ok(result.repoDependencies?.omissions.some((omission) =>
+      omission.path === "src/slow.ts" &&
+      omission.reason === "tree-sitter parse timed out"));
+
+    const rendered = renderCodeTreeSitterResult(result);
+    assert.match(rendered, /Code tree-sitter repo deps/);
+    assert.match(rendered, /omitted_files: 2/);
+    assert.match(rendered, /path="src\/bad\.ts" reason="tree-sitter parse failed"/);
+    assert.match(rendered, /path="src\/slow\.ts" reason="tree-sitter parse timed out"/);
+    assert.match(rendered, /src\/bad\.ts: tree-sitter parse failed: parse failed/);
+    assert.match(rendered, /src\/slow\.ts: tree-sitter parse timed out: slow parse/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("tree-sitter repo calls scans bounded source files without semantic overclaim", () => {
   const cwd = createTempDir();
   const calls: Array<{ command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }> = [];

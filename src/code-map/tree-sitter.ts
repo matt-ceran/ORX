@@ -1,13 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { extname, isAbsolute, join, relative, resolve } from "node:path";
+import { extname, isAbsolute, join, posix, relative, resolve } from "node:path";
 import { redactSecrets } from "../mcp/audit.js";
 import { truncateText } from "../tools/truncation.js";
 import type { TextTruncation } from "../tools/types.js";
 
-export const CODE_TREE_SITTER_USAGE = "Usage: orx code tree-sitter [parse|outline|imports|refs|calls|repo-refs|repo-calls|repo-imports] <file-or-query> [query-or-path]";
+export const CODE_TREE_SITTER_USAGE = "Usage: orx code tree-sitter [parse|outline|imports|refs|calls|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]";
 export const CODE_TREE_SITTER_OUTLINE_USAGE = "Usage: orx code outline <file>";
-export const SLASH_CODE_TREE_SITTER_USAGE = "Usage: /code tree-sitter [parse|outline|imports|refs|calls|repo-refs|repo-calls|repo-imports] <file-or-query> [query-or-path]";
+export const SLASH_CODE_TREE_SITTER_USAGE = "Usage: /code tree-sitter [parse|outline|imports|refs|calls|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]";
 export const SLASH_CODE_TREE_SITTER_OUTLINE_USAGE = "Usage: /code outline <file>";
 
 export interface CodeTreeSitterArgs {
@@ -24,7 +24,8 @@ export type CodeTreeSitterMode =
   | "calls"
   | "repo-refs"
   | "repo-calls"
-  | "repo-imports";
+  | "repo-imports"
+  | "repo-deps";
 
 export type CodeTreeSitterParseResult =
   | { ok: true; args: CodeTreeSitterArgs }
@@ -89,6 +90,7 @@ export interface CodeTreeSitterResult {
   outline?: CodeTreeSitterOutline;
   imports?: CodeTreeSitterImports;
   repoImports?: CodeTreeSitterRepoImports;
+  repoDependencies?: CodeTreeSitterRepoDependencies;
   references?: CodeTreeSitterReferences;
   repoReferences?: CodeTreeSitterRepoReferences;
   calls?: CodeTreeSitterCalls;
@@ -143,6 +145,24 @@ export interface CodeTreeSitterRepoImports {
   omittedEdges: number;
   filesScanned: number;
   filesWithImports: number;
+  omittedFiles: number;
+  failedFiles: number;
+  timedOutFiles: number;
+  truncated: boolean;
+  warnings: string[];
+  omissions: CodeTreeSitterRepoOmission[];
+}
+
+export interface CodeTreeSitterRepoDependencies {
+  targetPath: string;
+  edges: CodeTreeSitterRepoDependencyEdge[];
+  totalEdges: number;
+  omittedEdges: number;
+  filesScanned: number;
+  filesWithDependencies: number;
+  localDependencies: number;
+  externalImports: number;
+  unresolvedLocalImports: number;
   omittedFiles: number;
   failedFiles: number;
   timedOutFiles: number;
@@ -212,6 +232,11 @@ export interface CodeTreeSitterRepoImportEdge extends CodeTreeSitterImportEdge {
   path: string;
 }
 
+export interface CodeTreeSitterRepoDependencyEdge extends CodeTreeSitterRepoImportEdge {
+  to?: string;
+  resolution: "local" | "external" | "unresolved_local";
+}
+
 export interface CodeTreeSitterRepoOmission {
   path?: string;
   reason: string;
@@ -238,6 +263,7 @@ const DEFAULT_TREE_SITTER_REPO_FILES = 80;
 const DEFAULT_TREE_SITTER_REPO_MATCHES = 400;
 const DEFAULT_TREE_SITTER_REPO_CALL_EDGES = 400;
 const DEFAULT_TREE_SITTER_REPO_IMPORT_EDGES = 400;
+const DEFAULT_TREE_SITTER_REPO_DEPENDENCY_EDGES = 400;
 const MAX_TREE_SITTER_REPO_DEPTH = 8;
 const MAX_TREE_SITTER_REPO_SOURCE_BYTES = 512 * 1024;
 const MAX_PATH_LENGTH = 4096;
@@ -301,6 +327,29 @@ const TREE_SITTER_REPO_SOURCE_EXTENSIONS = new Set([
   ".ts",
   ".tsx",
 ]);
+const TREE_SITTER_DEPENDENCY_EXTENSION_RESOLUTION_ORDER = [
+  ".ts",
+  ".tsx",
+  ".mts",
+  ".cts",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".go",
+  ".rs",
+  ".py",
+  ".rb",
+  ".java",
+  ".c",
+  ".cc",
+  ".cpp",
+  ".h",
+  ".hpp",
+  ".cs",
+  ".php",
+  ".swift",
+];
 const TREE_SITTER_REPO_SKIPPED_DIRECTORIES = new Set([
   ".cache",
   ".git",
@@ -354,7 +403,8 @@ export function parseCodeTreeSitterArgs(
   const isRepoRefs = mode === "repo-refs";
   const isRepoCalls = mode === "repo-calls";
   const isRepoImports = mode === "repo-imports";
-  const isRepoNoQuery = isRepoCalls || isRepoImports;
+  const isRepoDeps = mode === "repo-deps";
+  const isRepoNoQuery = isRepoCalls || isRepoImports || isRepoDeps;
   const targetPath = isRepoRefs
     ? hasExplicitMode ? positional[2] ?? "." : positional[1] ?? "."
     : isRepoNoQuery
@@ -451,6 +501,18 @@ export function runCodeTreeSitter(options: RunCodeTreeSitterOptions): CodeTreeSi
 
   if (mode === "repo-imports") {
     return runCodeTreeSitterRepoImports({
+      root,
+      targetPath: options.targetPath,
+      env,
+      runner,
+      maxBytes,
+      timeoutMs,
+      emptyText,
+    });
+  }
+
+  if (mode === "repo-deps") {
+    return runCodeTreeSitterRepoDependencies({
       root,
       targetPath: options.targetPath,
       env,
@@ -881,6 +943,169 @@ function runCodeTreeSitterRepoImports(options: {
   };
 }
 
+function runCodeTreeSitterRepoDependencies(options: {
+  root: string;
+  targetPath: string;
+  env: NodeJS.ProcessEnv;
+  runner: TreeSitterRunner;
+  maxBytes: number;
+  timeoutMs: number;
+  emptyText: { text: string; truncation: TextTruncation };
+}): CodeTreeSitterResult {
+  const target = resolveTreeSitterRepoTarget(options.root, options.targetPath);
+  if (!target.ok) {
+    return {
+      ok: false,
+      status: "invalid_arguments",
+      mode: "repo-deps",
+      root: options.root,
+      targetPath: options.targetPath,
+      args: [],
+      timedOut: false,
+      stdout: "",
+      stderr: "",
+      stdoutTruncation: options.emptyText.truncation,
+      stderrTruncation: options.emptyText.truncation,
+      message: target.message,
+    };
+  }
+
+  const command = resolveTreeSitterCommand(options.root, options.env, options.runner);
+  if (!command.ok) {
+    return {
+      ok: false,
+      status: "tool_missing",
+      mode: "repo-deps",
+      root: options.root,
+      targetPath: target.displayPath,
+      args: [],
+      timedOut: false,
+      stdout: "",
+      stderr: "",
+      stdoutTruncation: options.emptyText.truncation,
+      stderrTruncation: options.emptyText.truncation,
+      message: command.message,
+    };
+  }
+
+  const discovered = discoverTreeSitterRepoFiles(options.root, target.resolvedPath);
+  const sourcePaths = new Set(discovered.files);
+  const startedAt = performance.now();
+  const edges: CodeTreeSitterRepoDependencyEdge[] = [];
+  const warnings: string[] = [];
+  const omissions = [...discovered.omissions];
+  const failureLines: string[] = [];
+  let totalEdges = 0;
+  let filesWithDependencies = 0;
+  let localDependencies = 0;
+  let externalImports = 0;
+  let unresolvedLocalImports = 0;
+  let failedFiles = 0;
+  let timedOutFiles = 0;
+  let dependenciesTruncated = false;
+
+  for (const filePath of discovered.files) {
+    const result = options.runner(TREE_SITTER_COMMAND, ["parse", filePath], {
+      cwd: options.root,
+      env: options.env,
+      shell: false,
+      encoding: "utf8",
+      timeout: options.timeoutMs,
+      maxBuffer: Math.max(options.maxBytes * 2, options.maxBytes + 4096),
+    });
+    const timedOut = result.error?.code === "ETIMEDOUT";
+    const status = classifyTreeSitterRun(result, timedOut);
+    if (status !== "ok") {
+      failedFiles += 1;
+      if (timedOut) {
+        timedOutFiles += 1;
+      }
+      const reason = timedOut ? "tree-sitter parse timed out" : "tree-sitter parse failed";
+      omissions.push({ path: filePath, reason });
+      const stderr = truncateSanitizedOutput(result.stderr ?? result.error?.message ?? "", 512).text.trim();
+      failureLines.push(`${filePath}: ${reason}${stderr ? `: ${stderr}` : ""}`);
+      continue;
+    }
+
+    const stdout = truncateSanitizedOutput(result.stdout ?? "", options.maxBytes);
+    const source = readTreeSitterSource(options.root, filePath);
+    const imports = createTreeSitterImports(stdout.text, source, {
+      maxEdges: DEFAULT_TREE_SITTER_IMPORT_EDGES,
+      parseOutputTruncated: stdout.truncation.truncated,
+    });
+    if (imports.totalEdges > 0) {
+      filesWithDependencies += 1;
+    }
+    totalEdges += imports.totalEdges;
+    for (const edge of imports.edges) {
+      const dependencyEdge = createTreeSitterRepoDependencyEdge(filePath, edge, sourcePaths);
+      if (dependencyEdge.resolution === "local") {
+        localDependencies += 1;
+      } else if (dependencyEdge.resolution === "unresolved_local") {
+        unresolvedLocalImports += 1;
+      } else {
+        externalImports += 1;
+      }
+      if (edges.length >= DEFAULT_TREE_SITTER_REPO_DEPENDENCY_EDGES) {
+        continue;
+      }
+      edges.push(dependencyEdge);
+    }
+    if (imports.truncated) {
+      dependenciesTruncated = true;
+      omissions.push({ path: filePath, reason: "AST dependency edges exceeded per-file bounds" });
+    }
+  }
+
+  if (discovered.files.length === 0) {
+    warnings.push("no source files found for bounded tree-sitter repo dependencies");
+  }
+  if (discovered.truncated) {
+    warnings.push("tree-sitter repo file scan hit bounds; later files were omitted");
+  }
+  if (totalEdges > edges.length) {
+    warnings.push("tree-sitter repo dependency edges hit bounds; later dependencies were omitted");
+  }
+  if (failedFiles > 0) {
+    warnings.push("some files could not be parsed by tree-sitter; omissions list includes file-level failures");
+  }
+
+  const stderr = truncateSanitizedOutput(failureLines.join("\n"), options.maxBytes);
+  return {
+    ok: true,
+    status: "ok",
+    mode: "repo-deps",
+    root: options.root,
+    targetPath: target.displayPath,
+    command: TREE_SITTER_COMMAND,
+    args: ["parse", "<bounded repo source files>"],
+    commandLine: `${JSON.stringify(TREE_SITTER_COMMAND)} "parse" "<bounded repo source files>"`,
+    timedOut: timedOutFiles > 0,
+    durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+    stdout: "",
+    stderr: stderr.text,
+    stdoutTruncation: options.emptyText.truncation,
+    stderrTruncation: stderr.truncation,
+    repoDependencies: {
+      targetPath: target.displayPath,
+      edges,
+      totalEdges,
+      omittedEdges: Math.max(0, totalEdges - edges.length),
+      filesScanned: discovered.files.length,
+      filesWithDependencies,
+      localDependencies,
+      externalImports,
+      unresolvedLocalImports,
+      omittedFiles: discovered.omittedFiles + failedFiles,
+      failedFiles,
+      timedOutFiles,
+      truncated: discovered.truncated || totalEdges > edges.length || dependenciesTruncated,
+      warnings,
+      omissions,
+    },
+  };
+}
+
 function runCodeTreeSitterRepoCalls(options: {
   root: string;
   targetPath: string;
@@ -1041,6 +1266,9 @@ export function renderCodeTreeSitterResult(
   }
   if (result.mode === "repo-imports") {
     return renderCodeTreeSitterRepoImportsResult(result, usage);
+  }
+  if (result.mode === "repo-deps") {
+    return renderCodeTreeSitterRepoDependenciesResult(result, usage);
   }
   if (result.mode === "refs") {
     return renderCodeTreeSitterReferencesResult(result, usage);
@@ -1309,6 +1537,83 @@ function renderCodeTreeSitterRepoImportsResult(
 
   lines.push("  raw_parse: use tree-sitter parse mode for a single-file raw AST");
   lines.push("  fallback: lexical code-map, symbols, refs, imports, and calls remain available without tree-sitter");
+  lines.push(`  usage: ${usage.replace(/^Usage:\s*/, "")}`);
+  return lines.join("\n");
+}
+
+function renderCodeTreeSitterRepoDependenciesResult(
+  result: CodeTreeSitterResult,
+  usage: string,
+): string {
+  const lines = [
+    "Code tree-sitter repo deps",
+    `  status: ${result.status}`,
+    `  root: ${sanitizeInline(result.root)}`,
+    `  path: ${sanitizeInline(result.targetPath)}`,
+    "  mode: AST-backed bounded repo dependency previews via optional tree-sitter CLI (local relative imports only; not package or semantic resolution)",
+    "  mutation: none",
+  ];
+  if (result.commandLine) {
+    lines.push(`  command: ${result.commandLine}`);
+  }
+  if (result.durationMs !== undefined) {
+    lines.push(`  duration_ms: ${result.durationMs}`);
+  }
+  if (result.status === "tool_missing") {
+    lines.push(`  setup: ${treeSitterMissingMessage()}`);
+  }
+  if (result.message && result.status !== "tool_missing") {
+    lines.push(`  message: ${sanitizeInline(result.message)}`);
+  }
+
+  const repoDependencies = result.repoDependencies;
+  lines.push(`  files_scanned: ${repoDependencies?.filesScanned ?? 0}`);
+  lines.push(`  files_with_dependencies: ${repoDependencies?.filesWithDependencies ?? 0}`);
+  lines.push(`  dependencies: ${repoDependencies?.totalEdges ?? 0}${repoDependencies?.truncated ? " (truncated)" : ""}`);
+  lines.push(`  local_dependencies: ${repoDependencies?.localDependencies ?? 0}`);
+  lines.push(`  external_imports: ${repoDependencies?.externalImports ?? 0}`);
+  lines.push(`  unresolved_local_imports: ${repoDependencies?.unresolvedLocalImports ?? 0}`);
+  if (repoDependencies && repoDependencies.omittedFiles > 0) {
+    lines.push(`  omitted_files: ${repoDependencies.omittedFiles}`);
+  }
+
+  lines.push("  dependency_edges:");
+  if (!repoDependencies || repoDependencies.edges.length === 0) {
+    lines.push("    - none");
+  } else {
+    for (const edge of repoDependencies.edges) {
+      lines.push(formatRepoDependencyEdge(edge));
+    }
+    if (repoDependencies.omittedEdges > 0) {
+      lines.push(`    - ${repoDependencies.omittedEdges} more AST dependency edges omitted`);
+    }
+  }
+
+  if (repoDependencies && repoDependencies.omissions.length > 0) {
+    lines.push("  omissions:");
+    for (const omission of repoDependencies.omissions.slice(0, 12)) {
+      lines.push(formatRepoOmission(omission));
+    }
+    if (repoDependencies.omissions.length > 12) {
+      lines.push(`    - ${repoDependencies.omissions.length - 12} more omissions omitted`);
+    }
+  }
+
+  if (repoDependencies && repoDependencies.warnings.length > 0) {
+    lines.push("  warnings:");
+    for (const warning of repoDependencies.warnings) {
+      lines.push(`    - ${sanitizeInline(warning)}`);
+    }
+  }
+
+  lines.push("  stderr:");
+  lines.push(...indentOutput(result.stderr));
+  if (result.stderrTruncation.truncated) {
+    lines.push(`    - stderr truncated: ${result.stderrTruncation.omittedBytes}B omitted`);
+  }
+
+  lines.push("  raw_parse: use tree-sitter parse mode for a single-file raw AST");
+  lines.push("  fallback: lexical code-map imports remain available without tree-sitter");
   lines.push(`  usage: ${usage.replace(/^Usage:\s*/, "")}`);
   return lines.join("\n");
 }
@@ -1828,6 +2133,81 @@ function pathHasSkippedRepoComponent(path: string): boolean {
   return path.split("/").some((component) => TREE_SITTER_REPO_SKIPPED_DIRECTORIES.has(component));
 }
 
+function createTreeSitterRepoDependencyEdge(
+  path: string,
+  edge: CodeTreeSitterImportEdge,
+  sourcePaths: Set<string>,
+): CodeTreeSitterRepoDependencyEdge {
+  const to = edge.source ? resolveTreeSitterLocalDependency(path, edge.source, sourcePaths) : undefined;
+  const resolution = to
+    ? "local"
+    : edge.source && isTreeSitterRelativeImport(edge.source)
+      ? "unresolved_local"
+      : "external";
+  return {
+    ...edge,
+    path,
+    to,
+    resolution,
+  };
+}
+
+function resolveTreeSitterLocalDependency(
+  fromPath: string,
+  specifier: string,
+  sourcePaths: Set<string>,
+): string | undefined {
+  if (!isTreeSitterRelativeImport(specifier)) {
+    return undefined;
+  }
+  const basePath = posix.normalize(posix.join(posix.dirname(fromPath), specifier));
+  if (basePath === "." || basePath.startsWith("../") || basePath.includes("/../")) {
+    return undefined;
+  }
+  for (const candidate of buildTreeSitterDependencyCandidates(basePath)) {
+    if (sourcePaths.has(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function buildTreeSitterDependencyCandidates(basePath: string): string[] {
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const addCandidate = (candidate: string): void => {
+    const normalized = posix.normalize(candidate);
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      candidates.push(normalized);
+    }
+  };
+  const extension = extname(basePath);
+
+  if (extension) {
+    addCandidate(basePath);
+    const withoutExtension = basePath.slice(0, -extension.length);
+    for (const sourceExtension of TREE_SITTER_DEPENDENCY_EXTENSION_RESOLUTION_ORDER) {
+      addCandidate(`${withoutExtension}${sourceExtension}`);
+    }
+  } else {
+    addCandidate(basePath);
+    for (const sourceExtension of TREE_SITTER_DEPENDENCY_EXTENSION_RESOLUTION_ORDER) {
+      addCandidate(`${basePath}${sourceExtension}`);
+    }
+  }
+
+  for (const sourceExtension of TREE_SITTER_DEPENDENCY_EXTENSION_RESOLUTION_ORDER) {
+    addCandidate(posix.join(basePath, `index${sourceExtension}`));
+  }
+
+  return candidates;
+}
+
+function isTreeSitterRelativeImport(specifier: string): boolean {
+  return specifier === "." || specifier === ".." || specifier.startsWith("./") || specifier.startsWith("../");
+}
+
 function splitTreeSitterArgText(text: string): string[] | string {
   const tokens: string[] = [];
   let current = "";
@@ -1939,7 +2319,8 @@ function normalizeTreeSitterMode(value: string | undefined): CodeTreeSitterMode 
     value === "calls" ||
     value === "repo-refs" ||
     value === "repo-calls" ||
-    value === "repo-imports"
+    value === "repo-imports" ||
+    value === "repo-deps"
   ) {
     return value;
   }
@@ -1952,8 +2333,11 @@ function normalizeTreeSitterMode(value: string | undefined): CodeTreeSitterMode 
   if (value === "repo-call" || value === "repo-call-graph" || value === "calls-all" || value === "call-graph-all") {
     return "repo-calls";
   }
-  if (value === "repo-import" || value === "imports-all" || value === "dependencies" || value === "deps") {
+  if (value === "repo-import" || value === "imports-all") {
     return "repo-imports";
+  }
+  if (value === "repo-dep" || value === "repo-dependencies" || value === "dependencies" || value === "deps") {
+    return "repo-deps";
   }
   return undefined;
 }
@@ -2666,6 +3050,20 @@ function formatRepoImportEdge(edge: CodeTreeSitterRepoImportEdge): string {
     `    - path=${JSON.stringify(sanitizeInline(edge.path))}`,
     `kind=${JSON.stringify(sanitizeInline(edge.kind))}`,
     edge.source ? `source=${JSON.stringify(sanitizeInline(edge.source))}` : undefined,
+    edge.line !== undefined ? `line=${edge.line}` : undefined,
+    edge.column !== undefined ? `column=${edge.column}` : undefined,
+    `depth=${edge.depth}`,
+  ];
+  return parts.filter((part): part is string => typeof part === "string").join(" ");
+}
+
+function formatRepoDependencyEdge(edge: CodeTreeSitterRepoDependencyEdge): string {
+  const parts = [
+    `    - from=${JSON.stringify(sanitizeInline(edge.path))}`,
+    `to=${JSON.stringify(sanitizeInline(edge.to ?? edge.resolution))}`,
+    `specifier=${JSON.stringify(sanitizeInline(edge.source ?? ""))}`,
+    `resolution=${edge.resolution}`,
+    `kind=${JSON.stringify(sanitizeInline(edge.kind))}`,
     edge.line !== undefined ? `line=${edge.line}` : undefined,
     edge.column !== undefined ? `column=${edge.column}` : undefined,
     `depth=${edge.depth}`,

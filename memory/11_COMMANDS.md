@@ -106,6 +106,7 @@ npm run dev -- code tree-sitter calls src/cli.ts
 npm run dev -- code tree-sitter repo-refs renderCodeTreeSitterResult src
 npm run dev -- code tree-sitter repo-calls src
 npm run dev -- code tree-sitter repo-imports src
+npm run dev -- code tree-sitter repo-deps src
 npm run dev -- tree-sitter outline src/cli.ts
 npm run dev -- tree-sitter src/cli.ts
 npm run dev -- scanners list
