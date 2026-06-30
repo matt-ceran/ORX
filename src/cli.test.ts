@@ -345,6 +345,9 @@ test("MCP and plugin onboarding subcommand flag help exits successfully without 
       { args: ["plugins", "validate", "--help"], usage: /Usage: orx plugins validate/ },
       { args: ["plugins", "install", "--help"], usage: /Usage: orx plugins install/ },
       { args: ["plugins", "register", "-h"], usage: /Usage: orx plugins register/ },
+      { args: ["plugins", "review", "--help"], usage: /Usage: orx plugins review\|doctor\|audit/ },
+      { args: ["plugins", "doctor", "--help"], usage: /Usage: orx plugins review\|doctor\|audit/ },
+      { args: ["plugins", "audit", "-h"], usage: /Usage: orx plugins review\|doctor\|audit/ },
       { args: ["plugins", "catalog", "--help"], usage: /Usage: orx plugins catalog/ },
     ];
 
@@ -377,6 +380,14 @@ test("MCP and plugin onboarding subcommand flag help exits successfully without 
     );
     assert.equal(unsupportedCatalogHelp.stdout(), "");
     assert.match(unsupportedCatalogHelp.stderr(), /Usage: orx plugins catalog/);
+
+    const unsupportedPluginReviewHelp = createIo({ cwd, fetch });
+    assert.equal(
+      await runCli(["node", "cli", "plugins", "doctor", "bogus", "--help"], {}, unsupportedPluginReviewHelp.io),
+      1,
+    );
+    assert.equal(unsupportedPluginReviewHelp.stdout(), "");
+    assert.match(unsupportedPluginReviewHelp.stderr(), /Usage: orx plugins review\|doctor\|audit/);
 
     const unsupportedPresetHelp = createIo({ cwd, fetch });
     assert.equal(

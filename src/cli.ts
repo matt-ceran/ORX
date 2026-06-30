@@ -242,7 +242,7 @@ const CLI_NAMESPACE_USAGES = {
   profile: "Usage: orx profile [list|save <id> [options]|use <id>|inspect <id>|delete <id>]",
   history: "Usage: orx history [search <query>|clear]",
   mcp: "Usage: orx mcp [list|plan [preset-or-profile]|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
-  plugins: "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
+  plugins: "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|doctor|audit|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
   bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
   tests: "Usage: orx tests [list|run [target-id] [-- args...]]",
@@ -274,6 +274,7 @@ const CLI_PLUGIN_SUBCOMMAND_USAGES = {
   validate: "Usage: orx plugins validate <manifest-path-or-directory>",
   install: "Usage: orx plugins install <manifest-path-or-directory-or-catalog-id>",
   register: "Usage: orx plugins register <manifest-path-or-directory-or-catalog-id>",
+  review: "Usage: orx plugins review|doctor|audit",
   catalog:
     "Usage: orx plugins catalog [list|inspect <id>|updates [id]|update <id>|add-local <manifest-path-or-directory>|add-git <id> <repository> <resolved-commit>|remove <id>]",
 } as const;
@@ -395,6 +396,12 @@ function getPluginSubcommandHelpUsage(args: string[]): string | undefined {
     case "register":
       return args.length === 2 && isHelpFlagToken(args[1])
         ? CLI_PLUGIN_SUBCOMMAND_USAGES.register
+        : undefined;
+    case "review":
+    case "doctor":
+    case "audit":
+      return args.length === 2 && isHelpFlagToken(args[1])
+        ? CLI_PLUGIN_SUBCOMMAND_USAGES.review
         : undefined;
     case "catalog":
       return args.length === 2 && isHelpFlagToken(args[1])
@@ -1830,6 +1837,10 @@ async function runPluginsCommand(
   }
 
   if (subcommand === "review" || subcommand === "doctor" || subcommand === "audit") {
+    if (args.length !== 1) {
+      writeLine(io.stderr, CLI_PLUGIN_SUBCOMMAND_USAGES.review);
+      return 1;
+    }
     writeLine(
       io.stdout,
       renderPluginReview(
