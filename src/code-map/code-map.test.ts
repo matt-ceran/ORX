@@ -5,10 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createCodeMap,
+  createCodeCallGraph,
   createCodeImportGraph,
   createCodeReferenceIndex,
   createCodeSymbolIndex,
   renderCodeMap,
+  renderCodeCallGraph,
   renderCodeImportGraph,
   renderCodeReferences,
   renderCodeSymbols,
@@ -251,6 +253,176 @@ test("import graph includes re-export and dynamic import edges with bounded omis
     const rendered = renderCodeImportGraph(graph);
     assert.match(rendered, /imports: \d+ \(truncated\)/);
     assert.match(rendered, /source imports exceeded per-file code-map bounds/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("call graph discovers local definitions and conservative call edges", () => {
+  const cwd = createTempDir();
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(
+      join(cwd, "src", "index.ts"),
+      [
+        "import { helper } from './util.js';",
+        "export function start() {",
+        "  return helper(localValue());",
+        "}",
+        "function localValue() {",
+        "  return helper('ok');",
+        "}",
+        "const arrowValue = () => localValue();",
+        "const fake = 'helper()';",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(cwd, "src", "util.ts"),
+      [
+        "export function helper(value?: unknown) {",
+        "  return value;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const graph = createCodeCallGraph({ cwd });
+    assert.equal(graph.totalDefinitions, 4);
+    assert.equal(graph.totalEdges, 4);
+    assert.equal(graph.totalCallSites, 4);
+    assert.equal(graph.ambiguousEdges, 0);
+    assert.ok(graph.definitions.some((definition) =>
+      definition.name === "arrowValue" &&
+      definition.kind === "arrow" &&
+      definition.path === "src/index.ts" &&
+      definition.line === 8));
+    assert.ok(graph.edges.some((edge) =>
+      edge.kind === "local" &&
+      edge.fromName === "start" &&
+      edge.toName === "helper" &&
+      edge.toPath === "src/util.ts" &&
+      edge.lines.includes(3)));
+    assert.ok(graph.edges.some((edge) =>
+      edge.kind === "local" &&
+      edge.fromName === "start" &&
+      edge.toName === "localValue" &&
+      edge.toPath === "src/index.ts" &&
+      edge.lines.includes(3)));
+    assert.ok(graph.edges.some((edge) =>
+      edge.kind === "local" &&
+      edge.fromName === "arrowValue" &&
+      edge.toName === "localValue" &&
+      edge.lines.includes(8)));
+    assert.equal(graph.edges.some((edge) => edge.lines.includes(9)), false);
+
+    const filtered = createCodeCallGraph({ cwd, query: "helper" });
+    assert.equal(filtered.totalDefinitions, 1);
+    assert.equal(filtered.totalEdges, 2);
+    assert.equal(filtered.totalCallSites, 2);
+
+    const limited = createCodeCallGraph({ cwd, maxEdges: 1 });
+    assert.equal(limited.omittedEdges, 3);
+    const exactlyLimitedCallSites = createCodeCallGraph({ cwd, maxCallSites: 4 });
+    assert.equal(exactlyLimitedCallSites.truncated, false);
+    assert.equal(exactlyLimitedCallSites.omissions.some((omission) =>
+      omission.reason === "call sites reached global call-graph bounds"), false);
+    const truncatedCallSites = createCodeCallGraph({ cwd, maxCallSites: 3 });
+    assert.equal(truncatedCallSites.truncated, true);
+    assert.ok(truncatedCallSites.omissions.some((omission) =>
+      omission.reason === "call sites reached global call-graph bounds"));
+
+    const rendered = renderCodeCallGraph(graph);
+    assert.match(rendered, /Code Call Graph/);
+    assert.match(rendered, /not AST-backed/);
+    assert.match(rendered, /definitions: 4/);
+    assert.match(rendered, /call_sites: 4/);
+    assert.match(rendered, /from="start" from_path="src\/index\.ts" from_line=2 to="helper" to_path="src\/util\.ts"/);
+    assert.match(rendered, /calls=1 lines="3"/);
+    assert.match(rendered, /usage: orx code calls \[query\]/);
+
+    const renderedLimited = renderCodeCallGraph(limited);
+    assert.match(renderedLimited, /3 more call edges omitted/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("call graph marks duplicate callee names as ambiguous", () => {
+  const cwd = createTempDir();
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(
+      join(cwd, "src", "index.ts"),
+      [
+        "export function run() {",
+        "  return shared();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(join(cwd, "src", "a.ts"), "export function shared() { return 'a'; }\n");
+    writeFileSync(join(cwd, "src", "b.ts"), "export function shared() { return 'b'; }\n");
+
+    const graph = createCodeCallGraph({ cwd });
+    assert.equal(graph.ambiguousEdges, 1);
+    assert.ok(graph.edges.some((edge) =>
+      edge.kind === "ambiguous" &&
+      edge.fromName === "run" &&
+      edge.toName === "shared" &&
+      edge.candidateCount === 2));
+
+    const rendered = renderCodeCallGraph(graph);
+    assert.match(rendered, /to="shared" kind=ambiguous candidates=2/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("call graph avoids declaration false positives and keeps caller ranges conservative", () => {
+  const cwd = createTempDir();
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(
+      join(cwd, "src", "index.ts"),
+      [
+        "export function helper() { return 1; }",
+        "interface Api { helper(): number; }",
+        "class Example { helper() {} #helper() {} run() { return this.helper(); } }",
+        "const object = { helper() {} };",
+        "export function run(obj: { helper: () => number }) {",
+        "  return helper();",
+        "}",
+        "export const arrowRun = () =>",
+        "  helper();",
+        "",
+      ].join("\n"),
+    );
+
+    const graph = createCodeCallGraph({ cwd, query: "helper" });
+    assert.equal(graph.totalDefinitions, 1);
+    assert.equal(graph.totalEdges, 2);
+    assert.equal(graph.totalCallSites, 2);
+    assert.ok(graph.edges.some((edge) =>
+      edge.fromName === "run" &&
+      edge.fromLine === 5 &&
+      edge.toName === "helper" &&
+      edge.lines.includes(6)));
+    assert.ok(graph.edges.some((edge) =>
+      edge.fromName === "arrowRun" &&
+      edge.fromLine === 8 &&
+      edge.toName === "helper" &&
+      edge.lines.includes(9)));
+    for (const edge of graph.edges) {
+      assert.equal(edge.lines.some((line) => [2, 3, 4, 5, 8].includes(line)), false);
+    }
+
+    const rendered = renderCodeCallGraph(graph);
+    assert.match(rendered, /from="run" from_path="src\/index\.ts" from_line=5 to="helper"/);
+    assert.match(rendered, /from="arrowRun" from_path="src\/index\.ts" from_line=8 to="helper"/);
+    assert.doesNotMatch(rendered, /lines="2/);
+    assert.doesNotMatch(rendered, /lines="3/);
+    assert.doesNotMatch(rendered, /lines="4/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

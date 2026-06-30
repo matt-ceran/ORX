@@ -122,10 +122,11 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/delegate \[help\|status\|plan\|add\|remove\|clear\|team\|policy\]/);
   assert.match(output, /\/delegates \[list\|status\|plan\|policy\|teams\|save\|use\|inspect\|delete\]/);
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
-  assert.match(output, /\/code \[map\|symbols\|refs\|imports\]/);
+  assert.match(output, /\/code \[map\|symbols\|refs\|imports\|calls\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/refs <query>/);
   assert.match(output, /\/imports \[query\]/);
+  assert.match(output, /\/calls \[query\]/);
   assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\]\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
@@ -301,6 +302,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/tests r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/code m"), [["map "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/code s"), [["symbols "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/code c"), [["calls "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/prompts a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/rules a"), [["activate "], "a"]);
@@ -332,11 +334,11 @@ test("map slash command renders a local code map", () => {
     );
     writeFileSync(
       join(cwd, "src", "index.ts"),
-      "import value from './value.js';\nimport { feature } from './feature';\nexport const start = feature || value;\n",
+      "import value from './value.js';\nimport { feature } from './feature';\nexport function start() { return feature() || value(); }\nfunction boot() { return start(); }\n",
     );
-    writeFileSync(join(cwd, "src", "value.ts"), "export default true;\n");
+    writeFileSync(join(cwd, "src", "value.ts"), "export default function value() { return true; }\n");
     mkdirSync(join(cwd, "src", "feature"), { recursive: true });
-    writeFileSync(join(cwd, "src", "feature", "index.ts"), "export const feature = true;\n");
+    writeFileSync(join(cwd, "src", "feature", "index.ts"), "export function feature() { return true; }\n");
 
     const harness = createSlashHarness({ cwd });
     assert.equal(handleSlashCommand("/map", harness.context), "continue");
@@ -393,6 +395,24 @@ test("map slash command renders a local code map", () => {
     assert.match(importsAlias.stdout(), /Code Import Graph/);
     assert.match(importsAlias.stdout(), /query: "feature"/);
     assert.match(importsAlias.stdout(), /imports: 1/);
+
+    const calls = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/code calls start", calls.context), "continue");
+    assert.match(calls.stdout(), /Code Call Graph/);
+    assert.match(calls.stdout(), /query: "start"/);
+    assert.match(calls.stdout(), /not AST-backed/);
+    assert.match(calls.stdout(), /from="boot" from_path="src\/index\.ts" from_line=4 to="start" to_path="src\/index\.ts"/);
+    assert.match(calls.stdout(), /from="start" from_path="src\/index\.ts" from_line=3 to="feature" to_path="src\/feature\/index\.ts"/);
+
+    const callsAlias = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/calls feature", callsAlias.context), "continue");
+    assert.match(callsAlias.stdout(), /Code Call Graph/);
+    assert.match(callsAlias.stdout(), /query: "feature"/);
+    assert.match(callsAlias.stdout(), /to="feature"/);
+
+    const callGraphAlias = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/call-graph", callGraphAlias.context), "continue");
+    assert.match(callGraphAlias.stdout(), /Code Call Graph/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -59,7 +59,7 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin `components.bins` directories can contribute explicit operator-run bins. Regular cached bin files appear as `plugin:<plugin-id>:bin:<file>` in `orx bins`, `/bins`, and `/status`; trusted bin hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run only through explicit `bins run` / `/bins run` with cached-plugin cwd, manifest-declared env, redacted/truncated output, and JSONL audit logs without raw argument lists.
 - Enabled plugin prompt commands and bins now produce namespaced aliases visible through `/plugin list`, `orx plugins commands`, and `/status`. `/plugin:<plugin-id>:command:<slug>` activates the matching prompt as untrusted context; `/plugin:<plugin-id>:bin:<file> [args...]` runs the matching bin through the same trusted-hash gates as `/bins run`.
 - Native test target commands are implemented through `orx tests list|run`, `/tests list|run`, `/test`, package `test*` script discovery, direct Node test/spec fallback, framework/reporter metadata, compact report summary parsing, bounded shell-disabled execution, and status counts. The same adapter is exposed to the model loop through the native `run_tests` tool.
-- Dependency-free local code maps, symbol indexes, reference indexes, and import graphs are implemented through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `orx code refs`, `orx refs`, `orx code imports`, `orx imports`, `/map`, `/code map`, `/code symbols`, `/symbols`, `/code refs`, `/refs`, `/code imports`, and `/imports`; output is local-only/no-key and includes bounded language, key-file, entrypoint, JavaScript/TypeScript import/export, exported-symbol, code-reference, and local import-edge summaries.
+- Dependency-free local code maps, symbol indexes, reference indexes, import graphs, and call graphs are implemented through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `orx code refs`, `orx refs`, `orx code imports`, `orx imports`, `orx code calls`, `orx calls`, `orx call-graph`, `/map`, `/code map`, `/code symbols`, `/symbols`, `/code refs`, `/refs`, `/code imports`, `/imports`, `/code calls`, `/calls`, and `/call-graph`; output is local-only/no-key and includes bounded language, key-file, entrypoint, JavaScript/TypeScript import/export, exported-symbol, code-reference, local import-edge summaries, and conservative lexical call-edge summaries.
 - Delegation readiness rendering is implemented through noninteractive `orx orchestrator`, `orx delegate`, `orx delegates`, and read-only slash `plan/status` variants. CLI status/readiness is session-less and no-key; mutating CLI forms validate arguments then refuse, while slash mutations remain session-local only. OpenRouter delegate execution now exists behind explicit policy enablement and interactive chat delegate state; subprocess/external-agent delegation remains unavailable.
 - Saved disabled delegation teams are implemented through private local `~/.orx/delegation/teams.json` storage with `ORX_DELEGATION_TEAMS_PATH`, plus `orx delegates teams|save|inspect|use|delete`, `/delegates teams|save|inspect|use|delete`, and `/delegate team ...`. Saved records contain only normalized disabled controller/delegates plus metadata; CLI `use` is read-only because there is no active chat session, while slash `use` loads disabled metadata into the current session.
 - Delegation execution policy storage is implemented through private local `~/.orx/delegation/policy.json` storage with `ORX_DELEGATION_POLICY_PATH`, plus `orx delegate policy`, `orx delegates policy`, `/delegate policy`, and `/delegates policy`. Policy can tune max task cost, timeout, result byte cap, max concurrent delegates, explicit `--execution enabled|disabled`, and `--result-merge manual_summary|metadata_only`; credential forwarding/result persistence remain fixed to `none`/`none`.
@@ -99,6 +99,15 @@ Current files:
 
 ## Latest Work
 
+Added dependency-free local call graphs:
+
+- Added `orx code calls [query]`, `orx calls [query]`, and `orx call-graph [query]` plus matching `/code calls [query]`, `/calls [query]`, and `/call-graph [query]` slash commands for local JavaScript/TypeScript call graph summaries without an OpenRouter API key.
+- The graph reuses existing bounded code-map traversal, generated/vendor skips, source-byte limits, omissions/truncation reporting, and redacted rendering. It conservatively infers function declarations, function-valued variables, arrow-function variables, and class names from a lexical scan; it emits direct local call edges only when a call token matches a scanned local definition name.
+- The renderer explicitly labels the result as a conservative lexical JavaScript/TypeScript scan, not AST-backed. Duplicate callee definitions are rendered as ambiguous with candidate counts instead of claiming exact resolution.
+- The operator guide now includes `orx calls <query>` in the local code checklist, and README/command memory document the new aliases and precision boundary.
+- Verification: `npm run typecheck`, `npm run build`, focused build-backed code-map/CLI/slash tests with 149 tests, full `npm test` with 511 tests, `npm run verify:global-install`, built CLI no-key dogfood for `code calls`, `calls`, and `call-graph`, isolated chat slash dogfood for `/code calls`, `/calls`, and `/call-graph`, and `git diff --check`.
+- Next likely work after this slice is richer syntax-aware code intelligence: tree-sitter/ast-grep syntax-aware search and call graphs, codemod previews, or LSP/SCIP diagnostics/references.
+
 Added dependency-free local import graphs:
 
 - Added `orx code imports [query]` and `orx imports [query]` plus matching `/code imports [query]` and `/imports [query]` slash commands for local JavaScript/TypeScript import graph summaries without an OpenRouter API key.
@@ -106,7 +115,7 @@ Added dependency-free local import graphs:
 - Per-file import extraction remains bounded; files exceeding the cap now produce visible omitted-entry output and mark the graph as truncated instead of silently underreporting.
 - The operator guide now includes `orx imports <query>` in the local code checklist.
 - Verification: `npm run typecheck`, focused build-backed code-map/CLI/slash tests with 146 tests, full `npm test` with 508 tests, `npm run verify:global-install`, built CLI no-key and chat slash dogfood for `code imports` / `imports`, `git diff --check`, and independent verifier review/recheck with no remaining findings after import-cap, re-export/dynamic import, and architecture-memory fixes.
-- Next likely work after this slice is richer syntax-aware code intelligence: tree-sitter/ast-grep search, call graphs, codemod previews, or LSP/SCIP diagnostics/references.
+- Next likely work after this slice is richer syntax-aware code intelligence: tree-sitter/ast-grep search, syntax-aware call graphs, codemod previews, or LSP/SCIP diagnostics/references.
 
 Added no-network operator guide:
 
@@ -114,7 +123,7 @@ Added no-network operator guide:
 - The guide renders readiness, current model/mode/theme/permission/profile/MCP/plugin/test counts, doctor next steps, daily flow, customization/profile commands, local test/code intelligence commands, MCP preset setup, plugin scaffold/install/review flow, delegation setup, and explicit boundaries.
 - The command does not call OpenRouter, remote MCP endpoints, plugin bins, plugin hooks, or write config/trust/grant/catalog/plugin/delegation/data content; like other readiness reads, it may tighten existing loose local state file permissions.
 - Verification: `npm run typecheck`, build-backed `node --test dist/cli.test.js`, full `npm test` with 507 tests, `npm run verify:global-install`, built CLI dogfood for `guide`, `quickstart`, and help usage, `git diff --check`, and independent verifier recheck with no findings after the permission-tightening boundary wording was corrected.
-- Next likely work after this slice is more first-run dogfooding or richer code intelligence: tree-sitter/ast-grep syntax-aware search, call graphs, codemod previews, or LSP/SCIP diagnostics/references.
+- Next likely work after this slice is more first-run dogfooding or richer code intelligence: tree-sitter/ast-grep syntax-aware search, syntax-aware call graphs, codemod previews, or LSP/SCIP diagnostics/references.
 
 Added dependency-free local code references:
 
@@ -122,7 +131,7 @@ Added dependency-free local code references:
 - The reference index reuses the existing bounded code-map traversal, generated/vendor skips, symlink skipping, source-byte limits, omissions/truncation reporting, and redacted rendering. Identifier queries preserve identifier boundaries; matching skips comments, string literals, and template literals.
 - Missing CLI queries fail with `Usage: orx code refs <query>`; missing slash queries print usage to stderr and continue the chat session.
 - Verification: `npm run typecheck`, `npm run build`, `git diff --check`, focused build-backed code-map/CLI/slash tests with 145 tests, built CLI/chat dogfood for `code refs`, `refs`, missing-query usage, `/code refs`, and `/refs`, multiline quoted-string repro dogfood, full `npm test` with 507 tests, `npm run verify:global-install`, and independent verifier recheck with no findings.
-- Next likely work after this slice is deeper code intelligence: tree-sitter/ast-grep syntax-aware search, call graphs, codemod previews, or LSP/SCIP diagnostics/references.
+- Next likely work after this slice is deeper code intelligence: tree-sitter/ast-grep syntax-aware search, syntax-aware call graphs, codemod previews, or LSP/SCIP diagnostics/references.
 
 Added plugin review alias flag help:
 

@@ -89,9 +89,10 @@ Implemented under `src/code-map/`:
 - exported-symbol indexes with file paths and line numbers
 - bounded JavaScript/TypeScript code-reference indexes that skip comments, strings, and template literals
 - local JavaScript/TypeScript import-edge graphs with static import, re-export, require, dynamic import, relative resolution, and visible per-file cap omissions where possible
-- explicit operator commands `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `orx code refs`, `orx refs`, `orx code imports`, `orx imports`, `/map`, `/code map`, `/code symbols`, `/symbols`, `/code refs`, `/refs`, `/code imports`, and `/imports`
+- conservative lexical JavaScript/TypeScript call graphs that infer local callable definitions and direct local call edges without AST precision, marking duplicate callee names ambiguous
+- explicit operator commands `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `orx code refs`, `orx refs`, `orx code imports`, `orx imports`, `orx code calls`, `orx calls`, `orx call-graph`, `/map`, `/code map`, `/code symbols`, `/symbols`, `/code refs`, `/refs`, `/code imports`, `/imports`, `/code calls`, `/calls`, and `/call-graph`
 
-The code-map adapter is local-only, no-key, and not model-autonomous. It reads bounded local file metadata/content, redacts secret-like rendered paths and symbols, skips symlinks, and reports omissions/truncation instead of following unbounded trees.
+The code-map adapter is local-only, no-key, and not model-autonomous. It reads bounded local file metadata/content, redacts secret-like rendered paths, symbols, references, and call graph fields, skips symlinks, and reports omissions/truncation instead of following unbounded trees.
 
 ## MCP And Third-Party Tool Policy
 

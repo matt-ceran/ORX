@@ -13,10 +13,12 @@ import { BIN_NAME } from "./constants.js";
 import { formatToolCallStart, formatToolResult, runAgentTurn } from "./agent/index.js";
 import {
   createCodeMap,
+  createCodeCallGraph,
   createCodeImportGraph,
   createCodeReferenceIndex,
   createCodeSymbolIndex,
   renderCodeMap,
+  renderCodeCallGraph,
   renderCodeImportGraph,
   renderCodeReferences,
   renderCodeSymbols,
@@ -256,7 +258,7 @@ const CLI_NAMESPACE_USAGES = {
   bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
   tests: "Usage: orx tests [list|run [target-id] [-- args...]]",
-  code: "Usage: orx code [map|symbols|refs|imports] [query-or-path]",
+  code: "Usage: orx code [map|symbols|refs|imports|calls] [query-or-path]",
   orchestrator: "Usage: orx orchestrator [status|plan|openrouter <model>|clear]",
   delegate: "Usage: orx delegate [status|plan [saved-team-id]|add <name> openrouter <model>|remove <name>|clear|team|policy]",
   delegates:
@@ -712,6 +714,10 @@ export async function runCli(
     return runCodeImportGraphCommand(args.slice(1), io);
   }
 
+  if (first === "calls" || first === "call-graph") {
+    return runCodeCallGraphCommand(args.slice(1), io);
+  }
+
   if (first === "orchestrator") {
     return runOrchestratorCommand(args.slice(1), io, delegationPolicyPath);
   }
@@ -808,7 +814,7 @@ function helpText(): string {
     "  bins          List, inspect, trust, untrust, or run plugin bins",
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  tests         Discover or run native test targets",
-    "  code          Render local code maps, symbol indexes, references, or import graphs",
+    "  code          Render local code maps, symbol indexes, references, imports, or call graphs",
     "  orchestrator  Show delegation readiness or refuse session-less changes",
     "  delegate      Show/refuse session delegate changes, policy, or saved teams",
     "  delegates     Show delegate readiness, execution policy, or saved teams",
@@ -991,6 +997,9 @@ function runCodeCommand(args: string[], io: CliIo): number {
   if (subcommand === "imports" || subcommand === "import-graph" || subcommand === "graph") {
     return runCodeImportGraphCommand(args.slice(1), io);
   }
+  if (subcommand === "calls" || subcommand === "call-graph" || subcommand === "callgraph") {
+    return runCodeCallGraphCommand(args.slice(1), io);
+  }
 
   writeLine(io.stderr, CLI_NAMESPACE_USAGES.code);
   return 1;
@@ -1021,6 +1030,12 @@ function runCodeReferencesCommand(args: string[], io: CliIo): number {
 function runCodeImportGraphCommand(args: string[], io: CliIo): number {
   const query = args.join(" ").trim() || undefined;
   writeLine(io.stdout, renderCodeImportGraph(createCodeImportGraph({ cwd: io.cwd, query })));
+  return 0;
+}
+
+function runCodeCallGraphCommand(args: string[], io: CliIo): number {
+  const query = args.join(" ").trim() || undefined;
+  writeLine(io.stdout, renderCodeCallGraph(createCodeCallGraph({ cwd: io.cwd, query })));
   return 0;
 }
 

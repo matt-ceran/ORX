@@ -38,7 +38,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
-    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, or import graphs/);
+    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, or call graphs/);
     assert.match(help.stdout(), /orchestrator\s+Show delegation readiness or refuse session-less changes/);
     assert.match(help.stdout(), /delegate\s+Show\/refuse session delegate changes, policy, or saved teams/);
     assert.match(help.stdout(), /delegates\s+Show delegate readiness, execution policy, or saved teams/);
@@ -165,6 +165,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(guide.stdout(), /orx profile save daily --model openrouter\/fusion --mode fusion/);
     assert.match(guide.stdout(), /local_code:/);
     assert.match(guide.stdout(), /orx refs <query>/);
+    assert.match(guide.stdout(), /orx calls <query>/);
     assert.match(guide.stdout(), /mcp_setup:/);
     assert.match(guide.stdout(), /orx mcp plan context7/);
     assert.match(guide.stdout(), /plugins_setup:/);
@@ -1454,11 +1455,11 @@ test("cli code map renders a bounded repository overview without an API key", as
     );
     writeFileSync(
       join(cwd, "src", "index.ts"),
-      "import './side-effect.js';\nimport { feature } from './feature';\nexport function start() { return feature; }\n",
+      "import './side-effect.js';\nimport { feature } from './feature';\nexport function start() { return feature(); }\nfunction boot() { return start(); }\n",
     );
     writeFileSync(join(cwd, "src", "side-effect.ts"), "export const sideEffect = true;\n");
     mkdirSync(join(cwd, "src", "feature"), { recursive: true });
-    writeFileSync(join(cwd, "src", "feature", "index.ts"), "export const feature = 'ok';\n");
+    writeFileSync(join(cwd, "src", "feature", "index.ts"), "export function feature() { return 'ok'; }\n");
 
     const mapped = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "code", "map"], {}, mapped.io), 0);
@@ -1518,6 +1519,25 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.match(importAlias.stdout(), /query: "feature"/);
     assert.match(importAlias.stdout(), /imports: 1/);
     assert.match(importAlias.stdout(), /to="src\/feature\/index\.ts"/);
+
+    const calls = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "code", "calls", "start"], {}, calls.io), 0);
+    assert.match(calls.stdout(), /Code Call Graph/);
+    assert.match(calls.stdout(), /query: "start"/);
+    assert.match(calls.stdout(), /not AST-backed/);
+    assert.match(calls.stdout(), /from="boot" from_path="src\/index\.ts" from_line=4 to="start" to_path="src\/index\.ts"/);
+    assert.match(calls.stdout(), /from="start" from_path="src\/index\.ts" from_line=3 to="feature" to_path="src\/feature\/index\.ts"/);
+    assert.equal(calls.stderr(), "");
+
+    const callsAlias = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "calls", "feature"], {}, callsAlias.io), 0);
+    assert.match(callsAlias.stdout(), /Code Call Graph/);
+    assert.match(callsAlias.stdout(), /query: "feature"/);
+    assert.match(callsAlias.stdout(), /to="feature"/);
+
+    const callGraphAlias = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "call-graph"], {}, callGraphAlias.io), 0);
+    assert.match(callGraphAlias.stdout(), /Code Call Graph/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

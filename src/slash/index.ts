@@ -16,10 +16,12 @@ import {
 } from "../auth/openrouter.js";
 import {
   createCodeMap,
+  createCodeCallGraph,
   createCodeImportGraph,
   createCodeReferenceIndex,
   createCodeSymbolIndex,
   renderCodeMap,
+  renderCodeCallGraph,
   renderCodeImportGraph,
   renderCodeReferences,
   renderCodeSymbols,
@@ -513,7 +515,7 @@ const PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS = ["list", "status"] as const;
 const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
-const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports"] as const;
+const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const RULE_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -766,7 +768,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/code": {
-    usage: "/code [map|symbols|refs|imports]",
+    usage: "/code [map|symbols|refs|imports|calls]",
     description: "Run local code intelligence commands",
     group: "Workspace",
     tier: "advanced",
@@ -817,7 +819,17 @@ const COMMANDS: Record<string, SlashDefinition> = {
         );
         return "continue";
       }
-      writeLine(context.io.stderr, "Usage: /code [map|symbols|refs|imports] [query-or-path]");
+      if (subcommand === "calls" || subcommand === "call-graph" || subcommand === "callgraph") {
+        writeLine(
+          context.io.stdout,
+          renderCodeCallGraph(createCodeCallGraph({
+            cwd: context.io.cwd,
+            query: command.args.slice(1).join(" ").trim() || undefined,
+          })),
+        );
+        return "continue";
+      }
+      writeLine(context.io.stderr, "Usage: /code [map|symbols|refs|imports|calls] [query-or-path]");
       return "continue";
     },
   },
@@ -869,6 +881,23 @@ const COMMANDS: Record<string, SlashDefinition> = {
       writeLine(
         context.io.stdout,
         renderCodeImportGraph(createCodeImportGraph({
+          cwd: context.io.cwd,
+          query: command.argText || undefined,
+        })),
+      );
+      return "continue";
+    },
+  },
+  "/calls": {
+    usage: "/calls [query]",
+    description: "Render local call graph edges",
+    group: "Workspace",
+    tier: "advanced",
+    aliases: ["/call-graph"],
+    handler: (command, context): SlashResult => {
+      writeLine(
+        context.io.stdout,
+        renderCodeCallGraph(createCodeCallGraph({
           cwd: context.io.cwd,
           query: command.argText || undefined,
         })),

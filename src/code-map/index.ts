@@ -127,9 +127,74 @@ export interface CodeImportEdge {
   language: string;
 }
 
+export interface CodeCallGraphOptions extends CodeMapOptions {
+  query?: string;
+  maxDefinitions?: number;
+  maxEdges?: number;
+  maxCallSites?: number;
+}
+
+export interface CodeCallGraph {
+  root: string;
+  query?: string;
+  definitions: CodeCallableDefinition[];
+  totalDefinitions: number;
+  omittedDefinitions: number;
+  edges: CodeCallEdge[];
+  totalEdges: number;
+  omittedEdges: number;
+  totalCallSites: number;
+  filesWithCallEdges: number;
+  ambiguousEdges: number;
+  omissions: CodeMapOmission[];
+  truncated: boolean;
+}
+
+export interface CodeCallableDefinition {
+  name: string;
+  kind: "function" | "arrow" | "class";
+  path: string;
+  language: string;
+  line: number;
+}
+
+export interface CodeCallEdge {
+  fromName: string;
+  fromPath: string;
+  fromLine: number;
+  toName: string;
+  toPath?: string;
+  toLine?: number;
+  candidateCount: number;
+  kind: "local" | "ambiguous";
+  language: string;
+  callCount: number;
+  lines: number[];
+}
+
 interface ExtractedExportSymbol {
   name: string;
   line: number;
+}
+
+interface InternalCallableDefinition extends CodeCallableDefinition {
+  column: number;
+  endLine: number;
+}
+
+interface InternalCallSite {
+  name: string;
+  path: string;
+  language: string;
+  line: number;
+  column: number;
+}
+
+interface ExtractedCallGraphFacts {
+  definitions: InternalCallableDefinition[];
+  callSites: InternalCallSite[];
+  definitionsTruncated: boolean;
+  callSitesTruncated: boolean;
 }
 
 interface KeywordStatement {
@@ -151,8 +216,13 @@ const DEFAULT_MAX_SOURCE_BYTES = 512 * 1024;
 const DEFAULT_MAX_SYMBOL_INDEX_RESULTS = 120;
 const DEFAULT_MAX_REFERENCE_INDEX_RESULTS = 120;
 const DEFAULT_MAX_IMPORT_GRAPH_EDGES = 160;
+const DEFAULT_MAX_CALL_GRAPH_DEFINITIONS = 120;
+const DEFAULT_MAX_CALL_GRAPH_EDGES = 160;
+const DEFAULT_MAX_CALL_GRAPH_CALL_SITES = 2000;
 const MAX_SYMBOLS_PER_FILE = 24;
 const MAX_IMPORTS_PER_FILE = 24;
+const MAX_CALLABLE_DEFINITIONS_PER_FILE = 120;
+const MAX_CALL_SITES_PER_FILE = 500;
 const MAX_RENDERED_SOURCE_FILES = 24;
 const MAX_RENDERED_IMPORTS = 8;
 const MAX_RENDERED_SYMBOLS = 10;
@@ -160,6 +230,9 @@ const MAX_RENDERED_OMISSIONS = 12;
 const MAX_RENDERED_CODE_SYMBOLS = 80;
 const MAX_RENDERED_CODE_REFERENCES = 80;
 const MAX_RENDERED_IMPORT_GRAPH_EDGES = 100;
+const MAX_RENDERED_CALL_GRAPH_DEFINITIONS = 80;
+const MAX_RENDERED_CALL_GRAPH_EDGES = 100;
+const MAX_RENDERED_CALL_LINES = 8;
 const MAX_REFERENCE_EXCERPT_CHARS = 160;
 const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/g;
@@ -173,6 +246,30 @@ const DYNAMIC_IMPORT_PATTERN = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
 const REQUIRE_PATTERN = /\brequire\(\s*["']([^"']+)["']\s*\)/g;
 const SINGLE_LINE_EXPORT_START_PATTERN =
   /^export\s+(?:declare\s+)?(?:async\s+)?(?:function|class|interface|type|const|let|var|enum|default)\b/;
+const FUNCTION_DECLARATION_PATTERN =
+  /\b(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/;
+const CLASS_DECLARATION_PATTERN = /\b(?:export\s+)?(?:default\s+)?class\s+([A-Za-z_$][\w$]*)\b/;
+const FUNCTION_ASSIGNMENT_PATTERN =
+  /\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)(?:\s*:\s*[^=]{1,300})?\s*=\s*(?:async\s*)?function\b/;
+const ARROW_ASSIGNMENT_PATTERN =
+  /\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)(?:\s*:\s*[^=]{1,300})?\s*=\s*(?:async\s*)?(?:\([^)]{0,500}\)|[A-Za-z_$][\w$]*)\s*=>/;
+const CALL_NAME_PATTERN = /\b([A-Za-z_$][\w$]*)\s*\(/g;
+const IGNORED_CALL_NAMES = new Set([
+  "catch",
+  "class",
+  "do",
+  "for",
+  "function",
+  "if",
+  "import",
+  "new",
+  "return",
+  "super",
+  "switch",
+  "typeof",
+  "void",
+  "while",
+]);
 
 const SKIPPED_DIRECTORIES = new Set([
   ".git",
@@ -719,6 +816,210 @@ export function renderCodeImportGraph(graph: CodeImportGraph): string {
   return lines.join("\n");
 }
 
+export function createCodeCallGraph(options: CodeCallGraphOptions = {}): CodeCallGraph {
+  const map = createCodeMap(options);
+  const query = options.query?.trim();
+  const normalizedQuery = query?.toLowerCase();
+  const maxDefinitions = Math.max(0, options.maxDefinitions ?? DEFAULT_MAX_CALL_GRAPH_DEFINITIONS);
+  const maxEdges = Math.max(0, options.maxEdges ?? DEFAULT_MAX_CALL_GRAPH_EDGES);
+  const maxCallSites = Math.max(0, options.maxCallSites ?? DEFAULT_MAX_CALL_GRAPH_CALL_SITES);
+  const omissions: CodeMapOmission[] = [...map.omissions];
+  const definitions: InternalCallableDefinition[] = [];
+  const callSites: InternalCallSite[] = [];
+  let truncated = map.truncated;
+  let globalCallSitesTruncated = false;
+
+  for (const file of map.sourceFiles.sort((left, right) => left.path.localeCompare(right.path))) {
+    let text;
+    try {
+      text = readFileSync(join(map.root, file.path), "utf8");
+    } catch {
+      omissions.push({ path: file.path, reason: "source file could not be read for call graph" });
+      continue;
+    }
+
+    const facts = extractCallGraphFacts(text, file);
+    definitions.push(...facts.definitions);
+    if (facts.definitionsTruncated) {
+      omissions.push({ path: file.path, reason: "callable definitions exceeded per-file call-graph bounds" });
+      truncated = true;
+    }
+    if (facts.callSitesTruncated) {
+      omissions.push({ path: file.path, reason: "call sites exceeded per-file call-graph bounds" });
+      truncated = true;
+    }
+    for (const callSite of facts.callSites) {
+      if (callSites.length >= maxCallSites) {
+        truncated = true;
+        globalCallSitesTruncated = true;
+        continue;
+      }
+      callSites.push(callSite);
+    }
+  }
+
+  if (globalCallSitesTruncated) {
+    omissions.push({ reason: "call sites reached global call-graph bounds" });
+  }
+
+  const sortedDefinitions = definitions.sort(sortCallableDefinitions);
+  const definitionsByName = groupDefinitionsByName(sortedDefinitions);
+  const edgeMap = new Map<string, CodeCallEdge>();
+
+  for (const callSite of callSites) {
+    const candidates = definitionsByName.get(callSite.name);
+    if (!candidates || candidates.length === 0) {
+      continue;
+    }
+    const caller = findInnermostCaller(callSite, sortedDefinitions);
+    const resolvedCandidates = resolveCallCandidates(candidates, callSite.path);
+    const resolved = resolvedCandidates.length === 1 ? resolvedCandidates[0] : undefined;
+    const edge: CodeCallEdge = {
+      fromName: caller?.name ?? "(module)",
+      fromPath: caller?.path ?? callSite.path,
+      fromLine: caller?.line ?? 0,
+      toName: callSite.name,
+      toPath: resolved?.path,
+      toLine: resolved?.line,
+      candidateCount: resolvedCandidates.length,
+      kind: resolved ? "local" : "ambiguous",
+      language: callSite.language,
+      callCount: 0,
+      lines: [],
+    };
+    const key = [
+      edge.fromPath,
+      edge.fromName,
+      String(edge.fromLine),
+      edge.toName,
+      edge.toPath ?? "",
+      String(edge.toLine ?? ""),
+      edge.kind,
+    ].join("\0");
+    const existing = edgeMap.get(key) ?? edge;
+    existing.callCount += 1;
+    if (!existing.lines.includes(callSite.line)) {
+      existing.lines.push(callSite.line);
+    }
+    edgeMap.set(key, existing);
+  }
+
+  const edges = Array.from(edgeMap.values()).sort(sortCallEdges);
+  const filteredDefinitions = normalizedQuery
+    ? sortedDefinitions.filter((definition) => matchesCallableDefinition(definition, normalizedQuery))
+    : sortedDefinitions;
+  const filteredEdges = normalizedQuery
+    ? edges.filter((edge) => matchesCallEdge(edge, normalizedQuery))
+    : edges;
+  const renderedDefinitions = filteredDefinitions.slice(0, maxDefinitions);
+  const renderedEdges = filteredEdges.slice(0, maxEdges);
+
+  return {
+    root: map.root,
+    query: query || undefined,
+    definitions: renderedDefinitions.map(publicCallableDefinition),
+    totalDefinitions: filteredDefinitions.length,
+    omittedDefinitions: Math.max(0, filteredDefinitions.length - renderedDefinitions.length),
+    edges: renderedEdges,
+    totalEdges: filteredEdges.length,
+    omittedEdges: Math.max(0, filteredEdges.length - renderedEdges.length),
+    totalCallSites: filteredEdges.reduce((total, edge) => total + edge.callCount, 0),
+    filesWithCallEdges: new Set(filteredEdges.map((edge) => edge.fromPath)).size,
+    ambiguousEdges: filteredEdges.filter((edge) => edge.kind === "ambiguous").length,
+    omissions,
+    truncated,
+  };
+}
+
+export function renderCodeCallGraph(graph: CodeCallGraph): string {
+  const lines = [
+    "Code Call Graph",
+    `  root: ${sanitizeInline(graph.root)}`,
+    `  mode: conservative lexical JavaScript/TypeScript scan (not AST-backed)`,
+    `  call_edges: ${graph.totalEdges}${graph.truncated ? " (truncated)" : ""}`,
+  ];
+  if (graph.query) {
+    lines.push(`  query: ${JSON.stringify(sanitizeInline(graph.query))}`);
+  }
+
+  lines.push("  summary:");
+  lines.push(`    definitions: ${graph.totalDefinitions}`);
+  lines.push(`    call_sites: ${graph.totalCallSites}`);
+  lines.push(`    files_with_call_edges: ${graph.filesWithCallEdges}`);
+  lines.push(`    ambiguous_edges: ${graph.ambiguousEdges}`);
+
+  lines.push("  definitions:");
+  if (graph.definitions.length === 0) {
+    lines.push("    - none");
+  } else {
+    for (const definition of graph.definitions.slice(0, MAX_RENDERED_CALL_GRAPH_DEFINITIONS)) {
+      lines.push(
+        [
+          `    - name=${JSON.stringify(sanitizeInline(definition.name))}`,
+          `kind=${definition.kind}`,
+          `path=${JSON.stringify(sanitizeInline(definition.path))}`,
+          `line=${definition.line}`,
+          `language=${JSON.stringify(sanitizeInline(definition.language))}`,
+        ].join(" "),
+      );
+    }
+    const renderedCount = Math.min(graph.definitions.length, MAX_RENDERED_CALL_GRAPH_DEFINITIONS);
+    const omitted = Math.max(0, graph.totalDefinitions - renderedCount);
+    if (omitted > 0) {
+      lines.push(`    - ${omitted} more definitions omitted`);
+    }
+  }
+
+  lines.push("  edges:");
+  if (graph.edges.length === 0) {
+    lines.push("    - none");
+  } else {
+    for (const edge of graph.edges.slice(0, MAX_RENDERED_CALL_GRAPH_EDGES)) {
+      lines.push(
+        [
+          `    - from=${JSON.stringify(sanitizeInline(edge.fromName))}`,
+          `from_path=${JSON.stringify(sanitizeInline(edge.fromPath))}`,
+          `from_line=${edge.fromLine > 0 ? edge.fromLine : "module"}`,
+          `to=${JSON.stringify(sanitizeInline(edge.toName))}`,
+          edge.toPath ? `to_path=${JSON.stringify(sanitizeInline(edge.toPath))}` : undefined,
+          edge.toLine ? `to_line=${edge.toLine}` : undefined,
+          `kind=${edge.kind}`,
+          edge.kind === "ambiguous" ? `candidates=${edge.candidateCount}` : undefined,
+          `calls=${edge.callCount}`,
+          `lines=${formatLineList(edge.lines, MAX_RENDERED_CALL_LINES)}`,
+        ]
+          .filter((part): part is string => typeof part === "string")
+          .join(" "),
+      );
+    }
+    const renderedCount = Math.min(graph.edges.length, MAX_RENDERED_CALL_GRAPH_EDGES);
+    const omitted = Math.max(0, graph.totalEdges - renderedCount);
+    if (omitted > 0) {
+      lines.push(`    - ${omitted} more call edges omitted`);
+    }
+  }
+
+  if (graph.omissions.length > 0) {
+    lines.push("  omitted:");
+    for (const omission of graph.omissions.slice(0, MAX_RENDERED_OMISSIONS)) {
+      lines.push(
+        [
+          `    - reason=${JSON.stringify(sanitizeInline(omission.reason))}`,
+          omission.path ? `path=${JSON.stringify(sanitizeInline(omission.path))}` : undefined,
+        ]
+          .filter((part): part is string => typeof part === "string")
+          .join(" "),
+      );
+    }
+    if (graph.omissions.length > MAX_RENDERED_OMISSIONS) {
+      lines.push(`    - ${graph.omissions.length - MAX_RENDERED_OMISSIONS} more omissions omitted`);
+    }
+  }
+
+  lines.push("  usage: orx code calls [query]");
+  return lines.join("\n");
+}
+
 function recordFile(
   path: string,
   size: number,
@@ -987,6 +1288,323 @@ function extractCodeReferences(text: string, query: string, file: CodeMapSourceF
     }
   }
   return references;
+}
+
+function extractCallGraphFacts(text: string, file: CodeMapSourceFile): ExtractedCallGraphFacts {
+  const codeLines = extractStrippedCodeLines(text);
+  const definitions = extractCallableDefinitions(codeLines, file);
+  const callSites = extractCallSites(codeLines, file, definitions.definitions);
+  return {
+    definitions: definitions.definitions,
+    callSites: callSites.callSites,
+    definitionsTruncated: definitions.truncated,
+    callSitesTruncated: callSites.truncated,
+  };
+}
+
+function extractStrippedCodeLines(text: string): string[] {
+  const codeLines: string[] = [];
+  let lexicalState: LexicalState = "code";
+  for (const line of text.split(/\r?\n/)) {
+    const stripped = stripNonCodeSegments(line, lexicalState);
+    lexicalState = stripped.nextState;
+    codeLines.push(stripped.code);
+  }
+  return codeLines;
+}
+
+function extractCallableDefinitions(
+  codeLines: string[],
+  file: CodeMapSourceFile,
+): { definitions: InternalCallableDefinition[]; truncated: boolean } {
+  const definitions: InternalCallableDefinition[] = [];
+  let truncated = false;
+  for (let index = 0; index < codeLines.length; index += 1) {
+    const match = matchCallableDefinition(codeLines[index] ?? "");
+    if (!match) {
+      continue;
+    }
+    if (definitions.length >= MAX_CALLABLE_DEFINITIONS_PER_FILE) {
+      truncated = true;
+      break;
+    }
+    definitions.push({
+      name: match.name,
+      kind: match.kind,
+      path: file.path,
+      language: file.language,
+      line: index + 1,
+      column: match.column,
+      endLine: findCallableEndLine(codeLines, index, match.kind),
+    });
+  }
+  return { definitions, truncated };
+}
+
+function matchCallableDefinition(
+  line: string,
+): { name: string; kind: InternalCallableDefinition["kind"]; column: number } | undefined {
+  for (const [pattern, kind] of [
+    [FUNCTION_DECLARATION_PATTERN, "function"],
+    [FUNCTION_ASSIGNMENT_PATTERN, "function"],
+    [ARROW_ASSIGNMENT_PATTERN, "arrow"],
+    [CLASS_DECLARATION_PATTERN, "class"],
+  ] as const) {
+    pattern.lastIndex = 0;
+    const match = pattern.exec(line);
+    const name = String(match?.[1] ?? "").trim();
+    if (match && /^[A-Za-z_$][\w$]*$/.test(name)) {
+      return {
+        name,
+        kind,
+        column: (match.index ?? 0) + match[0].indexOf(name) + 1,
+      };
+    }
+  }
+  return undefined;
+}
+
+function findCallableEndLine(
+  codeLines: string[],
+  startIndex: number,
+  kind: InternalCallableDefinition["kind"],
+): number {
+  if (kind === "class") {
+    return startIndex + 1;
+  }
+
+  let foundBrace = false;
+  let depth = 0;
+  for (let index = startIndex; index < codeLines.length; index += 1) {
+    const line = codeLines[index] ?? "";
+    const scanStart = index === startIndex ? callableBodyScanStart(line, kind) : 0;
+    for (let charIndex = scanStart; charIndex < line.length; charIndex += 1) {
+      const char = line[charIndex];
+      if (char === "{") {
+        foundBrace = true;
+        depth += 1;
+      } else if (char === "}" && foundBrace) {
+        depth -= 1;
+        if (depth <= 0) {
+          return index + 1;
+        }
+      }
+    }
+    if (!foundBrace && line.slice(scanStart).includes(";")) {
+      return index + 1;
+    }
+    if (!foundBrace && index - startIndex > 20) {
+      return startIndex + 1;
+    }
+  }
+  return codeLines.length;
+}
+
+function extractCallSites(
+  codeLines: string[],
+  file: CodeMapSourceFile,
+  definitions: InternalCallableDefinition[],
+): { callSites: InternalCallSite[]; truncated: boolean } {
+  const callSites: InternalCallSite[] = [];
+  let truncated = false;
+  for (let index = 0; index < codeLines.length; index += 1) {
+    const line = codeLines[index] ?? "";
+    CALL_NAME_PATTERN.lastIndex = 0;
+    for (const match of line.matchAll(CALL_NAME_PATTERN)) {
+      const name = String(match[1] ?? "");
+      const matchIndex = match.index ?? -1;
+      if (
+        !name ||
+        matchIndex < 0 ||
+        IGNORED_CALL_NAMES.has(name) ||
+        isMemberCall(line, matchIndex) ||
+        isLikelyCallableDeclaration(line, matchIndex) ||
+        isDefinitionNameOccurrence(definitions, name, index + 1, matchIndex + 1)
+      ) {
+        continue;
+      }
+      if (callSites.length >= MAX_CALL_SITES_PER_FILE) {
+        truncated = true;
+        break;
+      }
+      callSites.push({
+        name,
+        path: file.path,
+        language: file.language,
+        line: index + 1,
+        column: matchIndex + 1,
+      });
+    }
+    if (truncated) {
+      break;
+    }
+  }
+  return { callSites, truncated };
+}
+
+function callableBodyScanStart(line: string, kind: InternalCallableDefinition["kind"]): number {
+  if (kind === "arrow") {
+    const arrowIndex = line.indexOf("=>");
+    return arrowIndex >= 0 ? arrowIndex + 2 : 0;
+  }
+  const firstParen = line.indexOf("(");
+  if (firstParen < 0) {
+    return 0;
+  }
+  const closeParen = findMatchingParen(line, firstParen);
+  return closeParen >= 0 ? closeParen + 1 : firstParen + 1;
+}
+
+function findMatchingParen(line: string, openIndex: number): number {
+  let depth = 0;
+  for (let index = openIndex; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === "(") {
+      depth += 1;
+    } else if (char === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+  return -1;
+}
+
+function isMemberCall(line: string, matchIndex: number): boolean {
+  let index = matchIndex - 1;
+  while (index >= 0 && /\s/.test(line[index] ?? "")) {
+    index -= 1;
+  }
+  return line[index] === ".";
+}
+
+function isLikelyCallableDeclaration(line: string, matchIndex: number): boolean {
+  const nameMatch = /^[A-Za-z_$][\w$]*/.exec(line.slice(matchIndex));
+  const afterName = line.slice(matchIndex + (nameMatch?.[0].length ?? 0)).trimStart();
+  const prefix = line.slice(0, matchIndex).trimEnd();
+  if (/(?:^|[\s{;,])(?:async\s+)?function\s*$/.test(prefix)) {
+    return true;
+  }
+  if (/(?:^|[\s{;,])class\s*$/.test(prefix)) {
+    return true;
+  }
+
+  const before = prefix.trimEnd().at(-1);
+  if (before === "." || before === "?") {
+    return false;
+  }
+  if (!/^(?:\([^)]*\)|\([^)]*)\s*(?::[^=;{]*)?(?:=>|\{|;)/.test(afterName)) {
+    return false;
+  }
+  return /[{},;]\s*(?:(?:public|private|protected|static|readonly|abstract|async|declare|export|default|get|set|override)\s+|#)*$/.test(prefix) ||
+    /(?:^|\s)(?:public|private|protected|static|readonly|abstract|async|declare|export|default|get|set|override)\s*$/.test(prefix) ||
+    prefix.endsWith("#");
+}
+
+function isDefinitionNameOccurrence(
+  definitions: InternalCallableDefinition[],
+  name: string,
+  line: number,
+  column: number,
+): boolean {
+  return definitions.some((definition) =>
+    definition.name === name &&
+    definition.line === line &&
+    definition.column === column);
+}
+
+function groupDefinitionsByName(
+  definitions: InternalCallableDefinition[],
+): Map<string, InternalCallableDefinition[]> {
+  const grouped = new Map<string, InternalCallableDefinition[]>();
+  for (const definition of definitions) {
+    const existing = grouped.get(definition.name) ?? [];
+    existing.push(definition);
+    grouped.set(definition.name, existing);
+  }
+  return grouped;
+}
+
+function findInnermostCaller(
+  callSite: InternalCallSite,
+  definitions: InternalCallableDefinition[],
+): InternalCallableDefinition | undefined {
+  return definitions
+    .filter((definition) =>
+      definition.path === callSite.path &&
+      definition.line <= callSite.line &&
+      definition.endLine >= callSite.line)
+    .sort((left, right) =>
+      (left.endLine - left.line) - (right.endLine - right.line) ||
+      right.line - left.line ||
+      left.name.localeCompare(right.name))[0];
+}
+
+function resolveCallCandidates(
+  candidates: InternalCallableDefinition[],
+  callPath: string,
+): InternalCallableDefinition[] {
+  if (candidates.length <= 1) {
+    return candidates;
+  }
+  const sameFileCandidates = candidates.filter((candidate) => candidate.path === callPath);
+  return sameFileCandidates.length === 1 ? sameFileCandidates : candidates;
+}
+
+function sortCallableDefinitions(
+  left: InternalCallableDefinition,
+  right: InternalCallableDefinition,
+): number {
+  return left.path.localeCompare(right.path) || left.line - right.line || left.name.localeCompare(right.name);
+}
+
+function sortCallEdges(left: CodeCallEdge, right: CodeCallEdge): number {
+  return left.fromPath.localeCompare(right.fromPath) ||
+    left.fromLine - right.fromLine ||
+    left.fromName.localeCompare(right.fromName) ||
+    left.toName.localeCompare(right.toName) ||
+    (left.toPath ?? "").localeCompare(right.toPath ?? "") ||
+    (left.toLine ?? 0) - (right.toLine ?? 0);
+}
+
+function matchesCallableDefinition(definition: CodeCallableDefinition, normalizedQuery: string): boolean {
+  return definition.name.toLowerCase().includes(normalizedQuery) ||
+    definition.kind.toLowerCase().includes(normalizedQuery) ||
+    definition.path.toLowerCase().includes(normalizedQuery) ||
+    definition.language.toLowerCase().includes(normalizedQuery);
+}
+
+function matchesCallEdge(edge: CodeCallEdge, normalizedQuery: string): boolean {
+  return edge.fromName.toLowerCase().includes(normalizedQuery) ||
+    edge.fromPath.toLowerCase().includes(normalizedQuery) ||
+    edge.toName.toLowerCase().includes(normalizedQuery) ||
+    (edge.toPath ?? "").toLowerCase().includes(normalizedQuery) ||
+    edge.kind.toLowerCase().includes(normalizedQuery) ||
+    edge.language.toLowerCase().includes(normalizedQuery);
+}
+
+function publicCallableDefinition(definition: InternalCallableDefinition): CodeCallableDefinition {
+  return {
+    name: definition.name,
+    kind: definition.kind,
+    path: definition.path,
+    language: definition.language,
+    line: definition.line,
+  };
+}
+
+function formatLineList(lines: number[], limit: number): string {
+  if (lines.length === 0) {
+    return "none";
+  }
+  const rendered = lines
+    .slice()
+    .sort((left, right) => left - right)
+    .slice(0, limit)
+    .join(",");
+  const suffix = lines.length > limit ? `,+${lines.length - limit}` : "";
+  return JSON.stringify(`${rendered}${suffix}`);
 }
 
 function createReferenceMatcher(query: string): (line: string) => number[] {
