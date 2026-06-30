@@ -1,6 +1,6 @@
 # Tooling And Permissions
 
-Last updated: 2026-06-29
+Last updated: 2026-06-30
 
 ## Default Permission Policy
 
@@ -94,6 +94,14 @@ Implemented under `src/code-map/`:
 - explicit operator commands `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `orx code refs`, `orx refs`, `orx code imports`, `orx imports`, `orx code calls`, `orx calls`, `orx call-graph`, `orx code ast-grep`, `orx ast-grep`, `/map`, `/code map`, `/code symbols`, `/symbols`, `/code refs`, `/refs`, `/code imports`, `/imports`, `/code calls`, `/calls`, `/call-graph`, `/code ast-grep`, and `/ast-grep`
 
 The code-map adapter is local-only, no-key, and not model-autonomous. It reads bounded local file metadata/content, redacts secret-like rendered paths, symbols, references, and call graph fields, skips symlinks, and reports omissions/truncation instead of following unbounded trees. The ast-grep adapter is also explicit/operator-only: ORX never installs ast-grep, never calls network, never exposes ast-grep as a model tool, and never mutates files; missing local `sg`/`ast-grep` returns setup guidance and a nonzero CLI exit.
+
+Implemented under `src/security/`:
+
+- scanner profile catalog for Semgrep, Snyk, Socket, OSV-Scanner, CodeQL, and Trivy
+- explicit operator commands `orx scanners list`, `orx scanners inspect <profile>`, `orx scanners run semgrep <path> --config <local-config-path> [--json]`, `orx scan semgrep ...`, `/scanners ...`, and `/scan ...`
+- runnable Semgrep adapter only when a local `semgrep` binary is already installed and an explicit local config file under cwd is provided
+
+The scanner adapter is local-only, no-key, and not model-autonomous. ORX never installs Semgrep, never uses Semgrep registry/URL configs, never forwards ORX/OpenRouter/Brave/API token-like env values, and never exposes scanners as model tools. Semgrep runs use shell-disabled process execution, `--metrics off`, cwd-confined target/config path guards with symlink realpath checks, dash-prefixed operand rejection, secret/control-character argument rejection, and bounded/redacted stdout/stderr. Snyk, Socket, OSV-Scanner, CodeQL, and Trivy remain catalog/readiness-only until a no-network/no-auth local command shape is proven.
 
 ## MCP And Third-Party Tool Policy
 

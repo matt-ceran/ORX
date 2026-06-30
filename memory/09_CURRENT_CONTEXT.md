@@ -18,13 +18,13 @@ Urgent UX recovery additions from user testing:
 - The first bottom-oriented TTY composer/status notch pass is implemented.
 - TTY-only assistant/tool activity animation is implemented in the bottom status composer; continue polishing richer command discovery and input ergonomics.
 - TTY command discovery now has `/commands [query]` / `/palette [query]`, a compact TTY palette, and Tab completion for slash command names and aliases.
-- Tab completion now also covers deterministic slash subcommands/arguments for `/mode`, `/fusion`, `/web`, `/mcp`, `/plugins`, `/plugin`, `/bins`, `/hooks`, `/skills`, `/orchestrator`, `/delegate`, `/resume`, `/help`, and `/commands`.
+- Tab completion now also covers deterministic slash subcommands/arguments for `/mode`, `/fusion`, `/web`, `/mcp`, `/plugins`, `/plugin`, `/bins`, `/hooks`, `/skills`, `/scanners`, `/scan`, `/orchestrator`, `/delegate`, `/resume`, `/help`, and `/commands`.
 - Line-based multiline prompt continuation is implemented: a trailing unescaped `\` keeps collecting input, TTY mode shows an `orx …` continuation composer, non-TTY mode shows `...>`, and the collected lines are submitted as one user message.
 - The TTY bottom status notch now uses compact route badges for OpenRouter routing shortcuts, rendering `openrouter/auto` as `route auto` and `openrouter/fusion` as `route fusion`. Wide TTY layouts split exact `provider/model` ids into separate provider/model badges, while narrow TTY layouts keep a single compact model badge; full model ids remain unchanged in config, request construction, plain status, and non-TTY output.
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
 - Durable TTY prompt history is implemented through private `~/.orx/history.json`, `ORX_CHAT_HISTORY_PATH`, readline preload, `orx history [search|clear]`, and `/history [search|clear]`; it stores sanitized user prompts only and skips slash commands/secret-like input.
 - Saved local profile controls are implemented through `~/.orx/profiles.json`, `ORX_PROFILE_CONFIG_PATH`, `orx profile ...`, global `orx --profile <id>`, and `/profile [list|save <id> [options]|use|inspect|delete]`. `profile save` captures the current config by default and can save inline non-secret overrides for model, mode, Fusion preset, theme, approval policy, and sandbox mode without mutating active config or storing API keys.
-- CLI namespace help is implemented for `auth`, `config`, `profile`/`profiles`, `history`, `mcp`, `plugins`/`plugin`, `bins`/`bin`, `hooks`/`hook`, `tests`/`test`, `code`, `orchestrator`, `delegate`, and `delegates`. `orx <namespace> help|--help|-h` exits 0, prints usage on stdout, leaves stderr empty, and runs before config loading so malformed configs cannot block help.
+- CLI namespace help is implemented for `auth`, `config`, `profile`/`profiles`, `history`, `mcp`, `plugins`/`plugin`, `bins`/`bin`, `hooks`/`hook`, `tests`/`test`, `code`, `scanners`/`scanner`, `scan`, `orchestrator`, `delegate`, and `delegates`. `orx <namespace> help|--help|-h` exits 0, prints usage on stdout, leaves stderr empty, and runs before config loading so malformed configs cannot block help.
 - API-key command flag help is implemented for `ask`, `chat`, `models`, `credits`, and `generation`. `orx <api-command> --help|-h` exits 0 before config/profile loading, while bare prompt/filter values such as `orx ask help` remain normal command input.
 - MCP/plugin onboarding subcommand flag help is implemented for exact supported shapes such as `orx mcp plan --help`, `orx mcp add-preset --help`, `orx mcp presets --help`, `orx mcp presets inspect --help`, `orx plugins scaffold --help`, `orx plugins validate --help`, `orx plugins install --help`, `orx plugins register --help`, `orx plugins review --help`, `orx plugins doctor --help`, `orx plugins audit --help`, and `orx plugins catalog --help`. Unsupported nested shapes such as `orx plugins catalog bogus --help` and `orx plugins doctor bogus --help` still fail instead of being promoted to success.
 - First-run config initialization is implemented through `orx init`, `orx setup`, and `orx config init`. It creates private no-secret starter config files for user or local scope, leaves existing regular config files unchanged, refuses symlink config paths, and tells users to provide credentials through `OPENROUTER_API_KEY` or deliberate manual editing.
@@ -60,6 +60,7 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin prompt commands and bins now produce namespaced aliases visible through `/plugin list`, `orx plugins commands`, and `/status`. `/plugin:<plugin-id>:command:<slug>` activates the matching prompt as untrusted context; `/plugin:<plugin-id>:bin:<file> [args...]` runs the matching bin through the same trusted-hash gates as `/bins run`.
 - Native test target commands are implemented through `orx tests list|run`, `/tests list|run`, `/test`, package `test*` script discovery, direct Node test/spec fallback, framework/reporter metadata, compact report summary parsing, bounded shell-disabled execution, and status counts. The same adapter is exposed to the model loop through the native `run_tests` tool.
 - Dependency-free local code maps, symbol indexes, reference indexes, import graphs, call graphs, and optional ast-grep syntax-aware search/codemod previews are implemented through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `orx code refs`, `orx refs`, `orx code imports`, `orx imports`, `orx code calls`, `orx calls`, `orx call-graph`, `orx code ast-grep`, `orx ast-grep`, `/map`, `/code map`, `/code symbols`, `/symbols`, `/code refs`, `/refs`, `/code imports`, `/imports`, `/code calls`, `/calls`, `/call-graph`, `/code ast-grep`, and `/ast-grep`; output is local-only/no-key and includes bounded language, key-file, entrypoint, JavaScript/TypeScript import/export, exported-symbol, code-reference, local import-edge summaries, conservative lexical call-edge summaries, and shell-disabled ast-grep output when `sg` or `ast-grep` is installed.
+- Local security scanner profiles are implemented through `orx scanners list`, `orx scanners inspect <profile>`, `orx scanners run semgrep <path> --config <local-config-path> [--json]`, `orx scan semgrep ...`, `/scanners ...`, and `/scan ...`; Semgrep is runnable only as an explicit operator command with an installed local binary plus cwd-confined local config, shell disabled, minimal env, bounded/redacted output, and no model-tool exposure, while Snyk/Socket/OSV-Scanner/CodeQL/Trivy are catalog-only readiness profiles.
 - `npm run verify:release` is implemented as the v0.1 release-boundary gate. It clears real operator API/search keys, runs whitespace/typecheck/test/global-install checks, then runs isolated built CLI no-network smokes for doctor JSON, guide, code calls, plugin review, and MCP presets without OpenRouter, remote MCP, plugin bin, or plugin hook calls. The nested global-install chat-launch smoke uses only a non-secret placeholder key to start chat and immediately run `/exit`.
 - Delegation readiness rendering is implemented through noninteractive `orx orchestrator`, `orx delegate`, `orx delegates`, and read-only slash `plan/status` variants. CLI status/readiness is session-less and no-key; mutating CLI forms validate arguments then refuse, while slash mutations remain session-local only. OpenRouter delegate execution now exists behind explicit policy enablement and interactive chat delegate state; subprocess/external-agent delegation remains unavailable.
 - Saved disabled delegation teams are implemented through private local `~/.orx/delegation/teams.json` storage with `ORX_DELEGATION_TEAMS_PATH`, plus `orx delegates teams|save|inspect|use|delete`, `/delegates teams|save|inspect|use|delete`, and `/delegate team ...`. Saved records contain only normalized disabled controller/delegates plus metadata; CLI `use` is read-only because there is no active chat session, while slash `use` loads disabled metadata into the current session.
@@ -99,6 +100,17 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added local security scanner profiles:
+
+- Added `src/security/` with a scanner catalog and a Semgrep runner, plus `orx scanners list`, `orx scanners inspect <profile>`, `orx scanners run semgrep <path> --config <local-config-path> [--json]`, and `orx scan semgrep ...`; matching chat slash surfaces are `/scanners ...` and `/scan ...`.
+- Semgrep is the only runnable profile in this slice. Snyk, Socket, OSV-Scanner, CodeQL, and Trivy are catalog/readiness-only until a no-network/no-auth local command shape is proven.
+- The runner requires an already-installed local `semgrep` binary and an explicit local config file under cwd. It rejects registry configs such as `auto`, `p/...`, `r/...`, URLs, dash-prefixed operands, symlink escapes outside cwd, control characters, and secret-like arguments before spawning.
+- Execution uses the shared process runner with `shell: false`, `inheritEnv: false`, `--metrics off`, bounded stdout/stderr, JSON-aware redaction for `--json`, and a minimal env that drops ORX/OpenRouter/Brave/API keys plus token-like values even from normally allowlisted keys such as `HOME` and `TMPDIR`.
+- The scanner surface is explicit-operator-only and not exposed through `src/agent` model tool schemas or the native tool registry.
+- README, command memory, architecture/tooling notes, backlog, and the integration handoff now document the scanner boundary and remaining expansion path.
+- Verification: `npm run typecheck`, `npm run build && node --test dist/cli.test.js dist/slash/index.test.js` with 145 tests, full `npm test` with 515 tests, `npm run verify:release`, built CLI list/inspect/help/rejected-config dogfood, chat slash inspect/rejected-config dogfood, fake Semgrep env-capture probe for token-like `HOME`, and independent verifier recheck with no remaining findings after fixing env-value filtering, slash `[--json]` help, and runnable-only completion.
+- Next likely work after this slice is another optional completion slice such as LSP/SCIP diagnostics/references, tree-sitter-backed code-intelligence depth, or final v0.1 packaging/release notes. Scanner expansion should wait until a deterministic no-network/no-auth command shape is proven for the next scanner.
 
 Added ast-grep syntax-aware search and codemod preview surface:
 
@@ -1355,15 +1367,12 @@ Recorded MCP/tooling research conclusions:
 
 ## Next Likely Task
 
-Continue Phase 10 research work:
+Continue optional completion work:
 
-- Run an independent verifier on Slice 2, then have the main agent commit and push after review.
-- Next implementation slice should likely add explicit web search or browser/research tooling on top of the evidence ledger.
-- Keep research acquisition operator-controlled until a policy for model-autonomous research tools is designed.
-- Preserve the trust boundary: fetched/search/browser/provider content and citation metadata are untrusted and cannot authorize tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, or instruction priority changes.
+- Choose the next bounded slice from remaining higher-value optional surfaces: LSP/SCIP diagnostics/references, tree-sitter-backed code-intelligence depth, Sourcegraph/GitHub read-only profiles, richer release packaging/release notes, or scanner expansion only after a deterministic no-network/no-auth local command shape is proven.
+- Keep new integrations explicit-operator-only unless a separate model-tool policy is designed and documented.
+- Preserve the existing trust boundaries for MCP, plugins, scanners, fetched/search/browser/provider content, and delegation results.
 - Keep OpenRouter API as the normal inference path.
-
-Do not implement orchestration before MCP policy basics and session metadata for delegates exist.
 
 ## Active Constraints
 

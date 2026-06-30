@@ -8,6 +8,8 @@ import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { runCli } from "./cli.js";
 import type { AstGrepRunner } from "./code-map/index.js";
+import type { ScannerProcessRunner } from "./security/index.js";
+import type { RunProcessOptions, RunProcessResult } from "./tools/process.js";
 import {
   allowMcpModelToolGrant,
   setMcpProfilePersistentState,
@@ -40,6 +42,8 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
     assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, or ast-grep searches/);
+    assert.match(help.stdout(), /scanners\s+List, inspect, or run local security scanner profiles/);
+    assert.match(help.stdout(), /scan\s+Alias for a local scanner run/);
     assert.match(help.stdout(), /orchestrator\s+Show delegation readiness or refuse session-less changes/);
     assert.match(help.stdout(), /delegate\s+Show\/refuse session delegate changes, policy, or saved teams/);
     assert.match(help.stdout(), /delegates\s+Show delegate readiness, execution policy, or saved teams/);
@@ -323,6 +327,9 @@ test("namespace help exits successfully without loading config", async () => {
       { args: ["tests"], usage: /Usage: orx tests/ },
       { args: ["test"], usage: /Usage: orx tests/ },
       { args: ["code"], usage: /Usage: orx code/ },
+      { args: ["scanners"], usage: /Usage: orx scanners/ },
+      { args: ["scanner"], usage: /Usage: orx scanners/ },
+      { args: ["scan"], usage: /Usage: orx scan/ },
       { args: ["orchestrator"], usage: /Usage: orx orchestrator/ },
       { args: ["delegate"], usage: /Usage: orx delegate/ },
       { args: ["delegates"], usage: /Usage: orx delegates/ },
@@ -1632,6 +1639,143 @@ test("cli code map renders a bounded repository overview without an API key", as
       astGrepCalls.some((call) => call.args.includes("--update-all")),
       false,
     );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli scanner commands list, inspect, and run semgrep with a mocked local binary", async () => {
+  const cwd = createTempDir();
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(join(cwd, "src", "app.ts"), "const value = 1;\n");
+    writeFileSync(join(cwd, "semgrep.yml"), "rules: []\n");
+
+    const list = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "scanners", "list"], {}, list.io), 0);
+    assert.match(list.stdout(), /Security scanner profiles/);
+    assert.match(list.stdout(), /id=semgrep state=runnable/);
+    assert.match(list.stdout(), /id=snyk state=catalog_only/);
+
+    const inspect = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "scanners", "inspect", "semgrep"], {}, inspect.io), 0);
+    assert.match(inspect.stdout(), /Security scanner profile: semgrep/);
+    assert.match(inspect.stdout(), /config_required: local file under cwd via --config/);
+
+    const inspectCatalogOnly = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "scanners", "inspect", "trivy"], {}, inspectCatalogOnly.io), 0);
+    assert.match(inspectCatalogOnly.stdout(), /state: catalog_only/);
+
+    const semgrepCalls: Array<Parameters<ScannerProcessRunner>[0]> = [];
+    const scannerRunner: ScannerProcessRunner = async (options) => {
+      semgrepCalls.push(options);
+      if (options.args?.includes("--version")) {
+        return mockProcessResult(options, { exitCode: 0, stdout: "semgrep 1.0.0\n" });
+      }
+      return mockProcessResult(options, {
+        exitCode: 0,
+        stdout: "src/app.ts: access_token=abcd1234\n",
+        stderr: "Authorization: Bearer should-redact\n",
+      });
+    };
+    const run = createIo({ cwd, scannerRunner });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "scanners", "run", "semgrep", "src", "--config", "semgrep.yml"],
+        {
+          OPENROUTER_API_KEY: "sk-or-v1-secret",
+          BRAVE_SEARCH_API_KEY: "brave-secret",
+          ORX_PLUGIN_REGISTRY_PATH: "should-not-forward",
+          HOME: join(cwd, "sk-or-v1-home-secret"),
+          PATH: "/usr/bin",
+          LANG: "C",
+        },
+        run.io,
+      ),
+      0,
+    );
+    assert.match(run.stdout(), /Security scanner run/);
+    assert.match(run.stdout(), /status: ok/);
+    assert.match(run.stdout(), /network: none_by_command_selection/);
+    assert.match(run.stdout(), /access_token=\[redacted\]/);
+    assert.match(run.stdout(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(run.stdout(), /abcd1234|should-redact|sk-or-v1-secret|brave-secret/);
+    assert.equal(run.stderr(), "");
+    assert.deepEqual(semgrepCalls.at(-1)?.args, [
+      "scan",
+      "--config",
+      "semgrep.yml",
+      "--metrics",
+      "off",
+      "--error",
+      "--no-suppress-errors",
+      "src",
+    ]);
+    assert.equal(semgrepCalls.at(-1)?.shell, false);
+    assert.equal(semgrepCalls.at(-1)?.inheritEnv, false);
+    assert.equal(semgrepCalls.at(-1)?.env?.PATH, "/usr/bin");
+    assert.equal(semgrepCalls.at(-1)?.env?.LANG, "C");
+    assert.equal(semgrepCalls.at(-1)?.env?.OPENROUTER_API_KEY, undefined);
+    assert.equal(semgrepCalls.at(-1)?.env?.BRAVE_SEARCH_API_KEY, undefined);
+    assert.equal(semgrepCalls.at(-1)?.env?.ORX_PLUGIN_REGISTRY_PATH, undefined);
+    assert.equal(semgrepCalls.at(-1)?.env?.HOME, undefined);
+    assert.equal(semgrepCalls.at(-1)?.env?.SEMGREP_SEND_METRICS, "off");
+    assert.equal(
+      semgrepCalls.every((call) => call.env?.HOME === undefined),
+      true,
+    );
+
+    const json = createIo({
+      cwd,
+      scannerRunner: async (options) => options.args?.includes("--version")
+        ? mockProcessResult(options, { exitCode: 0, stdout: "semgrep 1.0.0\n" })
+        : mockProcessResult(options, {
+            exitCode: 0,
+            stdout: "{\"results\":[{\"extra\":{\"api_key\":\"scanner-secret\",\"message\":\"ok\"}}]}\n",
+          }),
+    });
+    assert.equal(
+      await runCli(["node", "cli", "scan", "semgrep", "src", "--config", "semgrep.yml", "--json"], {}, json.io),
+      0,
+    );
+    assert.equal(json.stdout(), "{\"results\":[{\"extra\":{\"api_key\":\"[redacted]\",\"message\":\"ok\"}}]}\n");
+
+    const missing = createIo({
+      cwd,
+      scannerRunner: async (options) => mockProcessResult(options, {
+        exitCode: null,
+        error: { code: "ENOENT", message: "spawn semgrep ENOENT" },
+      }),
+    });
+    assert.equal(
+      await runCli(["node", "cli", "scanners", "run", "semgrep", "src", "--config", "semgrep.yml"], {}, missing.io),
+      1,
+    );
+    assert.match(missing.stderr(), /Semgrep is not installed or not on PATH/);
+
+    const beforeUnsafeCalls = semgrepCalls.length;
+    const unsafeRegistryConfig = createIo({ cwd, scannerRunner });
+    assert.equal(
+      await runCli(["node", "cli", "scanners", "run", "semgrep", "src", "--config", "p/default"], {}, unsafeRegistryConfig.io),
+      1,
+    );
+    assert.match(unsafeRegistryConfig.stderr(), /not a Semgrep registry config/);
+    assert.equal(semgrepCalls.length, beforeUnsafeCalls);
+
+    const outside = createTempDir();
+    writeFileSync(join(outside, "outside.yml"), "rules: []\n");
+    symlinkSync(join(outside, "outside.yml"), join(cwd, "outside-link.yml"));
+    const unsafeSymlink = createIo({ cwd, scannerRunner });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "scanners", "run", "semgrep", "src", "--config", "outside-link.yml"],
+        {},
+        unsafeSymlink.io,
+      ),
+      1,
+    );
+    assert.match(unsafeSymlink.stderr(), /config resolves outside the current working directory/);
+    rmSync(outside, { recursive: true, force: true });
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -4865,6 +5009,7 @@ function createIo(
     mcpKeychainRunner?: McpMacosKeychainCommandRunner;
     mcpKeychainPlatform?: NodeJS.Platform;
     astGrepRunner?: AstGrepRunner;
+    scannerRunner?: ScannerProcessRunner;
     stdin?: NodeJS.ReadableStream;
     cwd?: string;
     tty?: boolean;
@@ -4900,6 +5045,7 @@ function createIo(
       mcpKeychainRunner: options.mcpKeychainRunner,
       mcpKeychainPlatform: options.mcpKeychainPlatform,
       astGrepRunner: options.astGrepRunner,
+      scannerRunner: options.scannerRunner,
     },
     stdout() {
       return stdoutText;
@@ -4978,6 +5124,45 @@ function streamFrom(chunks: string[]): ReadableStream<Uint8Array> {
       controller.close();
     },
   });
+}
+
+function mockProcessResult(
+  options: RunProcessOptions,
+  overrides: Partial<RunProcessResult> = {},
+): RunProcessResult {
+  return {
+    command: options.command,
+    args: options.args ?? [],
+    cwd: options.cwd ?? "/tmp/orx-test",
+    exitCode: overrides.exitCode ?? 0,
+    signal: overrides.signal ?? null,
+    stdout: overrides.stdout ?? "",
+    stderr: overrides.stderr ?? "",
+    stdoutTruncation: overrides.stdoutTruncation ?? emptyTextTruncation(overrides.stdout ?? ""),
+    stderrTruncation: overrides.stderrTruncation ?? emptyTextTruncation(overrides.stderr ?? ""),
+    durationMs: overrides.durationMs ?? 1,
+    timedOut: overrides.timedOut ?? false,
+    error: overrides.error,
+  };
+}
+
+function emptyTextTruncation(text: string) {
+  const normalized = text.replace(/\r\n|\r/g, "\n");
+  const lineCount = normalized.length === 0
+    ? 0
+    : normalized.endsWith("\n")
+      ? normalized.slice(0, -1).split("\n").filter(Boolean).length
+      : normalized.split("\n").length;
+  const bytes = Buffer.byteLength(text, "utf8");
+  return {
+    truncated: false,
+    originalBytes: bytes,
+    returnedBytes: bytes,
+    originalLines: lineCount,
+    returnedLines: lineCount,
+    omittedBytes: 0,
+    omittedLines: 0,
+  };
 }
 
 function assertNativeTools(tools: unknown) {

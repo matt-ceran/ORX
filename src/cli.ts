@@ -205,6 +205,18 @@ import {
 } from "./profiles/index.js";
 import type { BrowserSnapshotDriver } from "./research/index.js";
 import { resolveSessionDirectory } from "./sessions/index.js";
+import {
+  SCAN_USAGE,
+  SCANNERS_USAGE,
+  findScannerProfile,
+  parseScannerRunArgs,
+  renderMissingScannerProfile,
+  renderScannerProfileInspect,
+  renderScannerProfiles,
+  renderScannerRunResult,
+  runSemgrepScanner,
+  type ScannerProcessRunner,
+} from "./security/index.js";
 import { createDoctorReport } from "./doctor.js";
 import { GUIDE_USAGE, renderOperatorGuide } from "./guide.js";
 import { formatStatus } from "./status.js";
@@ -240,6 +252,7 @@ interface CliIo {
   mcpKeychainPlatform?: NodeJS.Platform;
   browserSnapshot?: BrowserSnapshotDriver;
   astGrepRunner?: AstGrepRunner;
+  scannerRunner?: ScannerProcessRunner;
 }
 
 interface AskCommand {
@@ -265,6 +278,8 @@ const CLI_NAMESPACE_USAGES = {
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
   tests: "Usage: orx tests [list|run [target-id] [-- args...]]",
   code: "Usage: orx code [map|symbols|refs|imports|calls|ast-grep] [query-or-path]",
+  scanners: SCANNERS_USAGE,
+  scan: SCAN_USAGE,
   orchestrator: "Usage: orx orchestrator [status|plan|openrouter <model>|clear]",
   delegate: "Usage: orx delegate [status|plan [saved-team-id]|add <name> openrouter <model>|remove <name>|clear|team|policy]",
   delegates:
@@ -342,6 +357,11 @@ function getNamespaceHelpUsage(args: string[]): string | undefined {
       return CLI_NAMESPACE_USAGES.tests;
     case "code":
       return CLI_NAMESPACE_USAGES.code;
+    case "scanner":
+    case "scanners":
+      return CLI_NAMESPACE_USAGES.scanners;
+    case "scan":
+      return CLI_NAMESPACE_USAGES.scan;
     case "orchestrator":
       return CLI_NAMESPACE_USAGES.orchestrator;
     case "delegate":
@@ -728,6 +748,14 @@ export async function runCli(
     return runCodeAstGrepCommand(args.slice(1), io);
   }
 
+  if (first === "scanners" || first === "scanner") {
+    return runScannersCommand(args.slice(1), io, env);
+  }
+
+  if (first === "scan") {
+    return runScanAliasCommand(args.slice(1), io, env);
+  }
+
   if (first === "orchestrator") {
     return runOrchestratorCommand(args.slice(1), io, delegationPolicyPath);
   }
@@ -825,6 +853,8 @@ function helpText(): string {
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  tests         Discover or run native test targets",
     "  code          Render local code maps, symbol indexes, references, imports, calls, or ast-grep searches",
+    "  scanners      List, inspect, or run local security scanner profiles",
+    "  scan          Alias for a local scanner run",
     "  orchestrator  Show delegation readiness or refuse session-less changes",
     "  delegate      Show/refuse session delegate changes, policy, or saved teams",
     "  delegates     Show delegate readiness, execution policy, or saved teams",
@@ -1075,6 +1105,76 @@ function runCodeAstGrepCommand(args: string[], io: CliIo): number {
     result.ok ? io.stdout : io.stderr,
     renderCodeAstGrepResult(result, CODE_AST_GREP_USAGE),
   );
+  return result.ok ? 0 : 1;
+}
+
+async function runScannersCommand(args: string[], io: CliIo, env: NodeJS.ProcessEnv): Promise<number> {
+  const subcommand = args[0]?.toLowerCase() ?? "list";
+
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, SCANNERS_USAGE);
+    return 0;
+  }
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(io.stdout, renderScannerProfiles());
+    return 0;
+  }
+
+  if (subcommand === "inspect" || subcommand === "show") {
+    const profileId = args[1];
+    if (!profileId || args.length !== 2) {
+      writeLine(io.stderr, "Usage: orx scanners inspect <profile>");
+      return 1;
+    }
+    const profile = findScannerProfile(profileId);
+    if (!profile) {
+      writeLine(io.stderr, renderMissingScannerProfile(profileId));
+      return 1;
+    }
+    writeLine(io.stdout, renderScannerProfileInspect(profile));
+    return 0;
+  }
+
+  if (subcommand === "run") {
+    return runScannerRunCommand(args.slice(1), io, env, SCANNERS_USAGE);
+  }
+
+  writeLine(io.stderr, SCANNERS_USAGE);
+  return 1;
+}
+
+async function runScanAliasCommand(args: string[], io: CliIo, env: NodeJS.ProcessEnv): Promise<number> {
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, SCAN_USAGE);
+    return 0;
+  }
+  return runScannerRunCommand(args, io, env, SCAN_USAGE);
+}
+
+async function runScannerRunCommand(
+  args: string[],
+  io: CliIo,
+  env: NodeJS.ProcessEnv,
+  usage: string,
+): Promise<number> {
+  const parsed = parseScannerRunArgs(args, usage);
+  if (!parsed.ok) {
+    writeLine(io.stderr, parsed.message);
+    return 1;
+  }
+
+  const result = await runSemgrepScanner({
+    ...parsed.args,
+    cwd: io.cwd,
+    env,
+    runner: io.scannerRunner,
+  });
+  if (parsed.args.json && result.ok) {
+    writeLine(io.stdout, result.stdout.trimEnd());
+    return 0;
+  }
+  writeLine(result.ok ? io.stdout : io.stderr, renderScannerRunResult(result, usage));
   return result.ok ? 0 : 1;
 }
 

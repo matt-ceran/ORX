@@ -188,6 +188,7 @@ Next:
   - Add local plugin authoring scaffold: `orx plugins scaffold <directory>` and `/plugins scaffold <directory>` create valid local `orx-plugin.json` authoring bundles without registry writes, default to inert skills/prompt-commands/rules markdown, support `--minimal`, and add opt-in empty placeholders for hooks, bins, MCP, command schemas, assets, and docs behind existing review gates.
   - Add no-side-effect plugin manifest validation: `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>` parse sanitized manifests, render manifest/component hashes, permission counts, and missing component warnings, and leave registry/cache/trust/runtime state unchanged.
   - Add initial local code intelligence: `src/code-map/` dependency-free bounded repository maps, exported-symbol indexes, reference indexes, import graphs, call graphs, and optional ast-grep searches exposed through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `orx code refs`, `orx refs`, `orx code imports`, `orx imports`, `orx code calls`, `orx calls`, `orx call-graph`, `orx code ast-grep`, `orx ast-grep`, `/map`, `/code map`, `/code symbols`, `/symbols`, `/code refs`, `/refs`, `/code imports`, `/imports`, `/code calls`, `/calls`, `/call-graph`, `/code ast-grep`, and `/ast-grep`, with language/key-file/entrypoint, JavaScript/TypeScript import/export, exported-symbol, code-reference, bounded import-edge, conservative lexical call-edge summaries, and local shell-disabled ast-grep output when installed.
+  - Add initial local security scanner profiles: `orx scanners list`, `orx scanners inspect <profile>`, `orx scanners run semgrep <path> --config <local-config-path> [--json]`, `orx scan semgrep ...`, `/scanners ...`, and `/scan ...`, with Semgrep runnable only through an already-installed local binary plus explicit local cwd-confined config, shell-disabled/minimal-env execution, bounded/redacted output, and Snyk/Socket/OSV-Scanner/CodeQL/Trivy catalog-only readiness profiles.
 
 - Extend browser automation beyond static DNS-bound document snapshots when a safe browser-network/proxy design can preserve SSRF protections.
 - Extend prompt-injection safeguards beyond direct fetched content to search/crawl/browser/provider outputs.
@@ -204,7 +205,7 @@ Next:
 - Add docs/retrieval providers: Context7, DeepWiki, OpenAI Docs, Microsoft Learn, AWS docs, Google Developer Knowledge.
 - Add official GitHub MCP read-only integration before write-capable GitHub operations.
 - Add GitLab read-only profile, then CI-write only as explicit opt-in.
-- Add security scanner profiles: Semgrep, Snyk, Socket, OSV-Scanner, CodeQL, and Trivy.
+- Extend security scanner profiles beyond the initial local Semgrep adapter only after no-network/no-auth command shapes are proven for Snyk, Socket, OSV-Scanner, CodeQL, or Trivy.
 - Add optional Chrome DevTools MCP profile for frontend debugging and performance traces.
 - Add database profiles with read-only defaults, row limits, query logging, and explicit connection names.
 - Add cloud/devops profiles only as explicit opt-ins with account/project/region visible in `/status`.

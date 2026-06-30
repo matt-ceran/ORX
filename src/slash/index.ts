@@ -261,6 +261,18 @@ import {
   renderChatHistory,
   type ChatHistoryEntry,
 } from "../tui/history.js";
+import {
+  SLASH_SCAN_USAGE,
+  SLASH_SCANNERS_USAGE,
+  findScannerProfile,
+  parseScannerRunArgText,
+  renderMissingScannerProfile,
+  renderScannerProfileInspect,
+  renderScannerProfiles,
+  renderScannerRunResult,
+  runSemgrepScanner,
+  type ScannerProcessRunner,
+} from "../security/index.js";
 import { gitDiffTool } from "../tools/index.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
@@ -333,6 +345,7 @@ export interface SlashCommandContext {
   browserResolveHost?: ResolveBrowserHost;
   braveSearchApiKey?: string;
   astGrepRunner?: AstGrepRunner;
+  scannerRunner?: ScannerProcessRunner;
   getConfig: () => OrxConfig;
   setConfig: (config: OrxConfig) => void;
   getMessages: () => OpenRouterMessage[];
@@ -522,6 +535,10 @@ const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untru
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
 const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls", "ast-grep"] as const;
+const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "inspect", "run"] as const;
+const SCANNER_PROFILE_COMPLETIONS = ["semgrep", "snyk", "socket", "osv-scanner", "codeql", "trivy"] as const;
+const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep"] as const;
+const SCANNER_RUN_OPTION_COMPLETIONS = ["--config", "--json"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const RULE_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -850,6 +867,27 @@ const COMMANDS: Record<string, SlashDefinition> = {
     tier: "advanced",
     handler: (command, context): SlashResult => {
       handleAstGrepCommandText(command.argText, context, SLASH_CODE_AST_GREP_USAGE.replace("/code ast-grep", "/ast-grep"));
+      return "continue";
+    },
+  },
+  "/scanners": {
+    usage: SLASH_SCANNERS_USAGE.replace(/^Usage:\s*/, ""),
+    description: "List, inspect, or run local security scanner profiles",
+    group: "Workspace",
+    tier: "advanced",
+    aliases: ["/scanner"],
+    handler: async (command, context): Promise<SlashResult> => {
+      await handleScannersCommand(command, context);
+      return "continue";
+    },
+  },
+  "/scan": {
+    usage: SLASH_SCAN_USAGE.replace(/^Usage:\s*/, ""),
+    description: "Run an explicit local security scanner",
+    group: "Workspace",
+    tier: "advanced",
+    handler: async (command, context): Promise<SlashResult> => {
+      await handleScanAliasCommand(command, context);
       return "continue";
     },
   },
@@ -1819,6 +1857,28 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       return argIndex === 0 ? [...TEST_SUBCOMMAND_COMPLETIONS] : [];
     case "/code":
       return argIndex === 0 ? [...CODE_SUBCOMMAND_COMPLETIONS] : [];
+    case "/scanners":
+      if (argIndex === 0) {
+        return [...SCANNER_SUBCOMMAND_COMPLETIONS];
+      }
+      if (firstArg === "inspect" && argIndex === 1) {
+        return [...SCANNER_PROFILE_COMPLETIONS];
+      }
+      if (firstArg === "run" && argIndex === 1) {
+        return [...RUNNABLE_SCANNER_PROFILE_COMPLETIONS];
+      }
+      if (firstArg === "run" && argIndex >= 3) {
+        return [...SCANNER_RUN_OPTION_COMPLETIONS];
+      }
+      return [];
+    case "/scan":
+      if (argIndex === 0) {
+        return [...RUNNABLE_SCANNER_PROFILE_COMPLETIONS];
+      }
+      if (argIndex >= 2) {
+        return [...SCANNER_RUN_OPTION_COMPLETIONS];
+      }
+      return [];
     case "/skills":
       return argIndex === 0 ? [...SKILL_SUBCOMMAND_COMPLETIONS] : [];
     case "/prompts":
@@ -2311,6 +2371,68 @@ function handleAstGrepCommandText(argText: string, context: SlashCommandContext,
   writeLine(
     result.ok ? context.io.stdout : context.io.stderr,
     renderCodeAstGrepResult(result, usage),
+  );
+}
+
+async function handleScannersCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
+  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+
+  if (subcommand === "list" || subcommand === "status") {
+    writeLine(context.io.stdout, renderScannerProfiles());
+    return;
+  }
+
+  if (subcommand === "inspect" || subcommand === "show") {
+    const profileId = command.args[1];
+    if (!profileId || command.args.length !== 2) {
+      writeLine(context.io.stderr, "Usage: /scanners inspect <profile>");
+      return;
+    }
+    const profile = findScannerProfile(profileId);
+    if (!profile) {
+      writeLine(context.io.stderr, renderMissingScannerProfile(profileId));
+      return;
+    }
+    writeLine(context.io.stdout, renderScannerProfileInspect(profile));
+    return;
+  }
+
+  if (subcommand === "run") {
+    await handleScannerRunText(stripFirstSlashArg(command.argText), context, SLASH_SCANNERS_USAGE);
+    return;
+  }
+
+  writeLine(context.io.stderr, SLASH_SCANNERS_USAGE);
+}
+
+async function handleScanAliasCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
+  await handleScannerRunText(command.argText, context, SLASH_SCAN_USAGE);
+}
+
+async function handleScannerRunText(
+  argText: string,
+  context: SlashCommandContext,
+  usage: string,
+): Promise<void> {
+  const parsed = parseScannerRunArgText(argText, usage);
+  if (!parsed.ok) {
+    writeLine(context.io.stderr, parsed.message);
+    return;
+  }
+
+  const result = await runSemgrepScanner({
+    ...parsed.args,
+    cwd: context.io.cwd,
+    env: context.env,
+    runner: context.scannerRunner,
+  });
+  if (parsed.args.json && result.ok) {
+    writeLine(context.io.stdout, result.stdout.trimEnd());
+    return;
+  }
+  writeLine(
+    result.ok ? context.io.stdout : context.io.stderr,
+    renderScannerRunResult(result, usage),
   );
 }
 
