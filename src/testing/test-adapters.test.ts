@@ -447,6 +447,52 @@ test("parses common framework report summaries", () => {
       passed: 1,
     },
   );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Finished in 0.123 seconds (files took 0.456 seconds to load)",
+        "3 examples, 1 failure, 1 pending",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "rspec",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+      durationMs: 123,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "1 example, 0 failures"),
+    {
+      framework: "unknown",
+      source: "rspec",
+      total: 1,
+      passed: 1,
+      failed: 0,
+    },
+  );
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "3 examples, 1 failure after cleanup"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "3 examples, 4 failures"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "3 examples, 2 failures, 2 pending"), undefined);
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "Finished in 0.123 seconds after cleanup\n3 examples, 0 failures",
+    ),
+    {
+      framework: "unknown",
+      source: "rspec",
+      total: 3,
+      passed: 3,
+      failed: 0,
+    },
+  );
 });
 
 test("parses structured framework JSON reports before stdout fallback", () => {

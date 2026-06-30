@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "go" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "go" | "rspec" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -703,8 +703,8 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     return [parseTapReportSummary, parseNodeReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseGenericReportSummary]
-    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseGenericReportSummary];
+    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseGenericReportSummary]
+    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -1108,6 +1108,45 @@ function parseGoTestReportSummary(text: string, framework: TestFramework): TestR
   return hasReportCounts(report) ? report : undefined;
 }
 
+function parseRspecReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  let counts:
+    | {
+        total: number;
+        passed: number;
+        failed: number;
+        skipped?: number;
+      }
+    | undefined;
+  let durationMs: number | undefined;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const durationMatch = /^Finished in\s+(\d+(?:\.\d+)?)\s+seconds?(?:\s+\(files took\s+\d+(?:\.\d+)?\s+seconds?\s+to load\))?$/.exec(line);
+    if (durationMatch) {
+      durationMs = parseSecondsDurationMs(durationMatch[1] ?? "");
+      continue;
+    }
+
+    const candidate = parseRspecStatusLine(line);
+    if (candidate) {
+      counts = candidate;
+    }
+  }
+  if (!counts) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "rspec",
+  };
+  assignNumber(report, "total", counts.total);
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
+  assignNumber(report, "durationMs", durationMs);
+  return hasReportCounts(report) ? report : undefined;
+}
+
 function parseGenericReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
   const line = matchFirstNamedLine(text, ["Tests", "Test Results", "Test Summary", "Summary", "Results"]);
   if (!line) {
@@ -1258,6 +1297,34 @@ function parseSecondsDurationMs(seconds: string): number | undefined {
     return undefined;
   }
   return Math.round(value * 1000 * 1000) / 1000;
+}
+
+function parseRspecStatusLine(line: string): {
+  total: number;
+  passed: number;
+  failed: number;
+  skipped?: number;
+} | undefined {
+  const match = /^(\d+)\s+examples?,\s+(\d+)\s+failures?(?:,\s+(\d+)\s+pending)?$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const total = Number.parseInt(match[1] ?? "", 10);
+  const failed = Number.parseInt(match[2] ?? "", 10);
+  const skipped = match[3] === undefined ? undefined : Number.parseInt(match[3], 10);
+  if (!Number.isInteger(total) || !Number.isInteger(failed) || (skipped !== undefined && !Number.isInteger(skipped))) {
+    return undefined;
+  }
+  const passed = total - failed - (skipped ?? 0);
+  if (passed < 0) {
+    return undefined;
+  }
+  return {
+    total,
+    passed,
+    failed,
+    skipped,
+  };
 }
 
 function matchTapPlanTotal(text: string): number | undefined {
