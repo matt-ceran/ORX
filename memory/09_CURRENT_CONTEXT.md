@@ -60,6 +60,7 @@ Urgent UX recovery additions from user testing:
 - Enabled plugin prompt commands and bins now produce namespaced aliases visible through `/plugin list`, `orx plugins commands`, and `/status`. `/plugin:<plugin-id>:command:<slug>` activates the matching prompt as untrusted context; `/plugin:<plugin-id>:bin:<file> [args...]` runs the matching bin through the same trusted-hash gates as `/bins run`.
 - Native test target commands are implemented through `orx tests list|run`, `/tests list|run`, `/test`, package `test*` script discovery, direct Node test/spec fallback, framework/reporter metadata, compact report summary parsing, bounded shell-disabled execution, and status counts. The same adapter is exposed to the model loop through the native `run_tests` tool.
 - Dependency-free local code maps, symbol indexes, reference indexes, import graphs, and call graphs are implemented through `orx code map`, `orx map`, `orx code-map`, `orx code symbols`, `orx symbols`, `orx code refs`, `orx refs`, `orx code imports`, `orx imports`, `orx code calls`, `orx calls`, `orx call-graph`, `/map`, `/code map`, `/code symbols`, `/symbols`, `/code refs`, `/refs`, `/code imports`, `/imports`, `/code calls`, `/calls`, and `/call-graph`; output is local-only/no-key and includes bounded language, key-file, entrypoint, JavaScript/TypeScript import/export, exported-symbol, code-reference, local import-edge summaries, and conservative lexical call-edge summaries.
+- `npm run verify:release` is implemented as the v0.1 release-boundary gate. It clears real operator API/search keys, runs whitespace/typecheck/test/global-install checks, then runs isolated built CLI no-network smokes for doctor JSON, guide, code calls, plugin review, and MCP presets without OpenRouter, remote MCP, plugin bin, or plugin hook calls. The nested global-install chat-launch smoke uses only a non-secret placeholder key to start chat and immediately run `/exit`.
 - Delegation readiness rendering is implemented through noninteractive `orx orchestrator`, `orx delegate`, `orx delegates`, and read-only slash `plan/status` variants. CLI status/readiness is session-less and no-key; mutating CLI forms validate arguments then refuse, while slash mutations remain session-local only. OpenRouter delegate execution now exists behind explicit policy enablement and interactive chat delegate state; subprocess/external-agent delegation remains unavailable.
 - Saved disabled delegation teams are implemented through private local `~/.orx/delegation/teams.json` storage with `ORX_DELEGATION_TEAMS_PATH`, plus `orx delegates teams|save|inspect|use|delete`, `/delegates teams|save|inspect|use|delete`, and `/delegate team ...`. Saved records contain only normalized disabled controller/delegates plus metadata; CLI `use` is read-only because there is no active chat session, while slash `use` loads disabled metadata into the current session.
 - Delegation execution policy storage is implemented through private local `~/.orx/delegation/policy.json` storage with `ORX_DELEGATION_POLICY_PATH`, plus `orx delegate policy`, `orx delegates policy`, `/delegate policy`, and `/delegates policy`. Policy can tune max task cost, timeout, result byte cap, max concurrent delegates, explicit `--execution enabled|disabled`, and `--result-merge manual_summary|metadata_only`; credential forwarding/result persistence remain fixed to `none`/`none`.
@@ -98,6 +99,16 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Added v0.1 release-boundary verification:
+
+- Added `scripts/verify-release.mjs` and package script `verify:release`.
+- The gate runs `git diff --check`, `npm run typecheck`, full `npm test`, `npm run verify:global-install`, and built CLI smokes for `doctor --json`, `guide`, `code calls`, `plugins review`, and `mcp presets`.
+- Smoke commands run with temporary isolated ORX state paths and cleared real `OPENROUTER_API_KEY`/`BRAVE_SEARCH_API_KEY` values; the nested global-install chat-launch smoke uses only a non-secret placeholder key to start chat and immediately run `/exit`. The gate does not call OpenRouter, remote MCP endpoints, plugin bins, or plugin hooks.
+- Hardened `scripts/verify-global-install.mjs` to strip inherited `ORX_*`, `OPENROUTER_API_KEY`, and `BRAVE_SEARCH_API_KEY` values and pin its ORX state paths under temporary verification state.
+- README and command memory now document `npm run verify:release` as the local v0.1 finalization gate.
+- Verification: `node --check scripts/verify-global-install.mjs`, `node --check scripts/verify-release.mjs`, `git diff --check`, `npm run verify:global-install`, `npm run verify:release`, and independent verifier recheck all pass.
+- Next likely work after this slice is final v0.1 packaging/release notes or the next bounded CLI polish slice found by release dogfooding.
 
 Added dependency-free local call graphs:
 

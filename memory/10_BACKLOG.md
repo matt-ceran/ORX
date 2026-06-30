@@ -10,6 +10,7 @@ Urgent UX recovery:
 
 Completed:
 
+- Add v0.1 release-boundary verifier: `npm run verify:release` runs `git diff --check`, typecheck, full `npm test`, global install verification, and isolated built CLI no-network smokes for doctor JSON, guide, local code calls, plugin review, and MCP presets without OpenRouter, remote MCP, plugin bin, or plugin hook calls. It clears real operator API/search keys; the nested global-install chat-launch smoke uses only a non-secret placeholder key to start chat and immediately run `/exit`.
 - Add no-network operator guide: `orx guide` and `orx quickstart` render a first-run/daily-use path over doctor readiness data, covering chat launch, config/profile/theme customization, local tests/code intelligence, MCP setup, plugin setup, delegation setup, explicit no-network/no-execution/no-content-write boundaries, and the existing local permission-tightening read behavior.
 - Add plugin review alias flag help: exact `orx plugins review|doctor|audit --help|-h` now prints usage before config/profile loading, and malformed trailing operands such as `orx plugins doctor bogus --help` fail with usage instead of silently running review.
 - Polish no-auth MCP auth readiness wording: `orx mcp auth <no-auth-profile>` and matching slash/setup output now render `credential_mode`, `effective_bearer`, and Keychain status as `not_required` instead of showing missing bearer state for profiles that do not need credentials.

@@ -16,6 +16,7 @@
     "dev": "tsx src/cli.ts",
     "test": "npm run build && node --test \"dist/**/*.test.js\"",
     "verify:global-install": "node scripts/verify-global-install.mjs",
+    "verify:release": "node scripts/verify-release.mjs",
     "prepare": "npm run build"
   },
   "dependencies": {
