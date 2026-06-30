@@ -103,6 +103,14 @@ Current files:
 
 ## Latest Work
 
+Improved overnight dashboard failure visibility and tool-call budget:
+
+- The overnight dashboard now renders an 80-column-safe fixed frame by default, with compact queue rows, runner status, current slice details, exit code summary, attention/failure event, and a bounded current log tail. `ORX_DASHBOARD_COLUMNS` and `ORX_DASHBOARD_ROWS` can override the default size.
+- Dashboard output is now useful for failed slices: the failed `release-polish` run showed `implementor=1` and the log tail exposed `Tool-call loop exceeded 8 iterations`.
+- Added `orx ask --max-tool-iterations <n>` so controlled automation can raise the native tool-call loop cap for longer implementation requests. The overnight harness default ORX role command now uses `--max-tool-iterations 32`.
+- The failed overnight release-polish implementor left unverified local edits in `package.json` and `RELEASE_NOTES.md`; these were not verified, committed, or pushed. Treat them as partial failed-slice work until a verifier pass accepts or discards them.
+- Verification: dashboard `--once` at 72 and 80 columns, `node --check scripts/overnight-loop.mjs`, `npm run build`, `npm run typecheck`, `node dist/cli.js ask --help`, invalid `--max-tool-iterations` CLI smoke, and focused CLI tests.
+
 Added overnight implementor/verifier dashboard harness:
 
 - Added `scripts/overnight-loop.mjs` and npm scripts `overnight:init`, `overnight`, and `overnight:dashboard`.

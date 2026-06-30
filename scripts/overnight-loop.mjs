@@ -508,7 +508,7 @@ function buildAgentCommand({ role, promptFile, promptText, runDir, sliceId, temp
   if (!template) {
     return {
       command: nodeBin,
-      args: [cliPath, "ask", promptText],
+      args: [cliPath, "ask", "--max-tool-iterations", "32", promptText],
     };
   }
   const parts = splitCommandTemplate(template).map((part) => part
@@ -749,67 +749,198 @@ async function ensureBuiltCli(runDir) {
 
 function renderDashboardFrame(runDir, size = terminalSize()) {
   const state = existsSync(statePath(runDir)) ? loadState(runDir) : undefined;
-  const events = readEvents(runDir).slice(-8);
   const width = size.columns;
+  const frameSize = { columns: width, rows: size.rows };
+  const events = readEvents(runDir);
   const lines = [];
-  const title = "ORX Overnight Agent Loop";
-  lines.push(styleLine(title, width, "="));
+
+  lines.push(pairLine("ORX Overnight Agent Loop", state ? state.status.toUpperCase() : "NO STATE", width));
+  lines.push(rule(width));
   if (!state) {
-    lines.push("No state file yet.");
-    lines.push(`run_dir: ${runDir}`);
-    return boundFrame(lines, size);
+    lines.push(labelLine("Run dir", runDir, width));
+    lines.push("No state file yet. Start with: npm run overnight:init");
+    return boundFrame(lines, frameSize);
   }
 
   const doneCount = state.slices.filter((slice) => ["verified", "skipped"].includes(slice.status)).length;
-  lines.push(`status: ${state.status}  run: ${state.run_id}  updated: ${state.updated_at}`);
-  lines.push(`repo: ${state.repo_root}`);
-  lines.push(`current: ${state.current_slice ?? "none"} / ${state.current_phase ?? "idle"}`);
-  lines.push(`progress: ${progressBar(doneCount, state.slices.length, Math.min(32, Math.max(10, width - 24)))} ${doneCount}/${state.slices.length}`);
-  lines.push("");
-  lines.push("Slices");
-  lines.push("------");
-  for (const slice of state.slices) {
-    const active = slice.id === state.current_slice ? ">" : " ";
-    const phaseText = Object.entries(slice.phases)
-      .map(([name, value]) => `${name}:${value}`)
-      .join(" ");
-    lines.push(truncate(`${active} ${slice.order}. ${slice.id} [${slice.status}] ${phaseText}`, width));
-  }
-  lines.push("");
   const current = state.slices.find((slice) => slice.id === state.current_slice) ?? state.slices[0];
+  lines.push(pairLine(`Run ${state.run_id}`, `Updated ${formatClock(state.updated_at)}`, width));
+  lines.push(pairLine(`Repo ${compactPath(state.repo_root, Math.max(20, width - 20))}`, `Runner ${readRunnerStatus(runDir)}`, width));
+  lines.push(pairLine(`Active ${state.current_slice ?? "none"}`, `Phase ${state.current_phase ?? "idle"}`, width));
+  lines.push(`Progress ${progressBar(doneCount, state.slices.length, Math.min(24, Math.max(10, width - 18)))} ${doneCount}/${state.slices.length}`);
+  lines.push("");
+
+  lines.push(sectionLine("Queue", width));
+  for (const slice of state.slices) {
+    lines.push(sliceRow(slice, slice.id === state.current_slice, width));
+  }
+
   if (current) {
-    lines.push("Current Slice");
-    lines.push("-------------");
-    lines.push(truncate(`${current.title}`, width));
-    lines.push(truncate(`goal: ${current.goal}`, width));
-    lines.push(`prompts: ${relativePath(current.prompts.implementor)} | ${relativePath(current.prompts.verifier)}`);
-    const logParts = Object.entries(current.logs).map(([name, path]) => `${name}=${relativePath(path)}`);
-    lines.push(truncate(`logs: ${logParts.length > 0 ? logParts.join(" ") : "none yet"}`, width));
-    if (current.verdict) {
-      lines.push(`verdict: ${current.verdict}`);
-    }
+    lines.push("");
+    lines.push(sectionLine("Current", width));
+    lines.push(labelLine("Slice", `${current.order}. ${current.id} (${current.status})`, width));
+    lines.push(labelLine("Title", current.title, width));
+    lines.push(labelLine("Goal", current.goal, width));
+    lines.push(labelLine("Started", current.started_at ? formatClock(current.started_at) : "not started", width));
+    lines.push(labelLine("Exit", exitSummary(current), width));
+    lines.push(labelLine("Verdict", current.verdict ?? "pending", width));
     if (current.commit) {
-      lines.push(`commit: ${current.commit}`);
+      lines.push(labelLine("Commit", current.commit, width));
+    }
+
+    const logPath = currentLogPath(runDir, current, state.current_phase);
+    lines.push(labelLine("Log", logPath ? relativePath(logPath) : "not created yet", width));
+    const attention = latestAttention(events);
+    if (attention || ["failed", "needs_review", "paused"].includes(state.status)) {
+      lines.push("");
+      lines.push(sectionLine("Attention", width));
+      lines.push(truncate(attention ? `${formatClock(attention.at)} ${attention.kind}: ${attention.message}` : state.status, width));
+    }
+    const tail = readLogTail(logPath, availableLogTailRows(size.rows, lines.length));
+    if (tail.length > 0) {
+      lines.push("");
+      lines.push(sectionLine("Log Tail", width));
+      for (const line of tail) {
+        lines.push(truncate(`  ${line}`, width));
+      }
     }
   }
+
   lines.push("");
-  lines.push("Events");
-  lines.push("------");
+  lines.push(sectionLine("Recent Events", width));
   if (events.length === 0) {
     lines.push("no events yet");
   } else {
-    for (const event of events) {
-      lines.push(truncate(`${event.at} ${event.kind}: ${event.message}`, width));
+    for (const event of events.slice(-5)) {
+      lines.push(truncate(`${formatClock(event.at)} ${padRight(event.kind, 15)} ${event.message}`, width));
     }
   }
   lines.push("");
-  lines.push("Controls: q quits dashboard. Runner keeps state in .orx/overnight/latest.");
-  return boundFrame(lines, size);
+  lines.push("q quits dashboard | state: .orx/overnight/latest");
+  return boundFrame(lines, frameSize);
 }
 
-function styleLine(text, width, fill) {
-  const filler = fill.repeat(Math.max(0, width - text.length - 2));
-  return `${text} ${filler}`.slice(0, width);
+function pairLine(left, right, width) {
+  const safeLeft = singleLine(left);
+  const safeRight = singleLine(right);
+  const gap = width - safeLeft.length - safeRight.length;
+  if (gap < 2) {
+    return truncate(`${safeLeft} ${safeRight}`, width);
+  }
+  return `${safeLeft}${" ".repeat(gap)}${safeRight}`;
+}
+
+function sectionLine(text, width) {
+  const label = ` ${singleLine(text)} `;
+  const fill = "-".repeat(Math.max(0, width - label.length));
+  return `${label}${fill}`.slice(0, width);
+}
+
+function rule(width) {
+  return "-".repeat(Math.max(0, width));
+}
+
+function labelLine(label, value, width) {
+  const prefix = `${padRight(label, 8)} `;
+  return `${prefix}${truncate(value, Math.max(10, width - prefix.length))}`;
+}
+
+function sliceRow(slice, active, width) {
+  const marker = active ? ">" : " ";
+  const nameWidth = Math.max(12, width - 42);
+  return truncate(
+    `${marker} ${String(slice.order).padStart(2)} ${padRight(slice.id, nameWidth)} ${padRight(slice.status, 12)} ${phaseSummary(slice)}`,
+    width,
+  );
+}
+
+function phaseSummary(slice) {
+  return [
+    ["I", slice.phases.implementor],
+    ["C", slice.phases.local_checks],
+    ["V", slice.phases.verifier],
+    ["G", slice.phases.commit],
+  ].map(([label, status]) => `${label}:${phaseMark(status)}`).join(" ");
+}
+
+function phaseMark(status) {
+  if (status === "complete") return "ok";
+  if (status === "running") return "run";
+  if (status === "failed") return "fail";
+  if (status === "needs_review") return "wait";
+  return "--";
+}
+
+function exitSummary(slice) {
+  const entries = Object.entries(slice.exit_codes ?? {});
+  if (entries.length === 0) {
+    return "none";
+  }
+  return entries.map(([phase, code]) => `${phase}=${code}`).join(" ");
+}
+
+function currentLogPath(runDir, slice, phase) {
+  const logs = slice.logs ?? {};
+  if (phase && logs[phase]) {
+    return logs[phase];
+  }
+  for (const key of ["commit", "verifier", "local_checks", "implementor"]) {
+    if (logs[key]) {
+      return logs[key];
+    }
+  }
+  if (!phase || phase === "idle") {
+    return null;
+  }
+  const filenamePhase = phase === "local_checks" ? "local-checks" : phase;
+  const candidate = join(runDir, "logs", `${slice.order}-${slice.id}-${filenamePhase}.log`);
+  return existsSync(candidate) ? candidate : null;
+}
+
+function readLogTail(logPath, maxLines) {
+  if (!logPath || maxLines <= 0 || !existsSync(logPath)) {
+    return [];
+  }
+  const text = readFileSync(logPath, "utf8").slice(-12000);
+  return text
+    .split(/\r?\n/)
+    .map((line) => singleLine(line).trimEnd())
+    .filter(Boolean)
+    .slice(-maxLines);
+}
+
+function availableLogTailRows(totalRows, usedRows) {
+  const remaining = Math.max(0, totalRows - usedRows - 9);
+  return Math.min(8, Math.max(0, remaining));
+}
+
+function latestAttention(events) {
+  return [...events].reverse().find((event) => ["failed", "needs_review", "paused"].includes(event.kind));
+}
+
+function readRunnerStatus(runDir) {
+  const exitPath = join(runDir, "runner.exit");
+  if (existsSync(exitPath)) {
+    return `exit ${truncate(readFileSync(exitPath, "utf8").trim(), 8)}`;
+  }
+  const pidPath = join(runDir, "runner.pid");
+  if (!existsSync(pidPath)) {
+    return "not tracked";
+  }
+  const pid = Number.parseInt(readFileSync(pidPath, "utf8").trim(), 10);
+  if (!Number.isFinite(pid) || pid <= 0) {
+    return "bad pid";
+  }
+  try {
+    process.kill(pid, 0);
+    return `pid ${pid}`;
+  } catch {
+    return `stopped ${pid}`;
+  }
+}
+
+function padRight(value, width) {
+  return singleLine(value).padEnd(width).slice(0, width);
 }
 
 function boundFrame(lines, size) {
@@ -1033,10 +1164,19 @@ function parsePositiveInteger(value, fallback) {
 }
 
 function terminalSize() {
+  const requestedColumns = Number.parseInt(process.env.ORX_DASHBOARD_COLUMNS ?? "", 10);
+  const requestedRows = Number.parseInt(process.env.ORX_DASHBOARD_ROWS ?? "", 10);
   return {
-    columns: process.stdout.columns || 100,
-    rows: process.stdout.rows || 32,
+    columns: clampNumber(requestedColumns, 60, 120, Math.min(process.stdout.columns || 80, 80)),
+    rows: clampNumber(requestedRows, 18, 80, process.stdout.rows || 32),
   };
+}
+
+function clampNumber(value, min, max, fallback) {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, value));
 }
 
 function truncate(value, width) {
@@ -1063,6 +1203,26 @@ function isSafeRepoPath(value) {
 
 function quoteLogPath(path) {
   return JSON.stringify(path);
+}
+
+function formatClock(value) {
+  if (!value) {
+    return "n/a";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return truncate(value, 19);
+  }
+  return date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
+}
+
+function compactPath(value, width) {
+  const text = singleLine(value);
+  if (text.length <= width) {
+    return text;
+  }
+  const tailWidth = Math.max(10, width - 3);
+  return `...${text.slice(-tailWidth)}`;
 }
 
 function formatCommand(command, args) {

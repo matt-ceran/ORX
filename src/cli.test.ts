@@ -396,6 +396,7 @@ test("API command flag help exits successfully without loading config", async ()
       0,
     );
     assert.match(profiledHelp.stdout(), /Usage: orx ask/);
+    assert.match(profiledHelp.stdout(), /--max-tool-iterations <n>/);
     assert.doesNotMatch(profiledHelp.stdout(), /missing|sk-or-secret|Unable to load config/);
     assert.equal(profiledHelp.stderr(), "");
 
@@ -3968,6 +3969,26 @@ test("no-arg cli starts chat in the current working directory", async () => {
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("ask validates max tool iteration override before request", async () => {
+  for (const value of ["many", "8abc"]) {
+    const capture = createIo({
+      fetch: async () => {
+        throw new Error("invalid ask options must not call fetch");
+      },
+    });
+
+    const exitCode = await runCli(
+      ["node", "cli", "ask", "--max-tool-iterations", value, "Say hello"],
+      { OPENROUTER_API_KEY: "test-key" },
+      capture.io,
+    );
+
+    assert.equal(exitCode, 1);
+    assert.equal(capture.stdout(), "");
+    assert.match(capture.stderr(), /Invalid --max-tool-iterations value/);
   }
 });
 

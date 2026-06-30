@@ -274,6 +274,7 @@ interface AskCommand {
   prompt: string;
   overrides: AskRequestOverrides;
   mcpTools: boolean;
+  maxToolIterations?: number;
 }
 
 interface GlobalCliOptions {
@@ -304,7 +305,7 @@ const CLI_NAMESPACE_USAGES = {
 } as const;
 
 const CLI_API_COMMAND_USAGES = {
-  ask: 'Usage: orx ask [--model <slug>] [--mode <auto|fusion|exact>] [--fusion <preset>] [--mcp-tools] "prompt"',
+  ask: 'Usage: orx ask [--model <slug>] [--mode <auto|fusion|exact>] [--fusion <preset>] [--mcp-tools] [--max-tool-iterations <n>] "prompt"',
   chat: "Usage: orx chat",
   models: "Usage: orx models [filter]",
   credits: "Usage: orx credits",
@@ -3899,6 +3900,7 @@ async function runAskCommand(
               pluginRegistryPath: options.pluginRegistryPath,
             }
           : undefined,
+        maxToolIterations: parsed.maxToolIterations,
         ephemeralSystemMessages: compactPluginContextMessages(options.pluginRegistryPath),
         callbacks: {
           onText(text) {
@@ -4073,6 +4075,7 @@ function parseAskArgs(args: string[]): AskCommand | string {
   const promptParts: string[] = [];
   const overrides: AskRequestOverrides = {};
   let mcpTools = false;
+  let maxToolIterations: number | undefined;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -4115,6 +4118,20 @@ function parseAskArgs(args: string[]): AskCommand | string {
       continue;
     }
 
+    if (arg === "--max-tool-iterations") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        return "Missing value for --max-tool-iterations.";
+      }
+      const parsed = /^\d+$/.test(value) ? Number.parseInt(value, 10) : Number.NaN;
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 64) {
+        return "Invalid --max-tool-iterations value: expected an integer from 0 to 64.";
+      }
+      maxToolIterations = parsed;
+      index += 1;
+      continue;
+    }
+
     if (arg.startsWith("--")) {
       return `Unknown ask option: ${arg}`;
     }
@@ -4139,6 +4156,7 @@ function parseAskArgs(args: string[]): AskCommand | string {
     prompt,
     overrides,
     mcpTools,
+    maxToolIterations,
   };
 }
 
