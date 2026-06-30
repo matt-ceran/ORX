@@ -13,20 +13,25 @@ import { BIN_NAME } from "./constants.js";
 import { formatToolCallStart, formatToolResult, runAgentTurn } from "./agent/index.js";
 import {
   CODE_AST_GREP_USAGE,
+  CODE_TREE_SITTER_USAGE,
   createCodeMap,
   createCodeCallGraph,
   createCodeImportGraph,
   createCodeReferenceIndex,
   createCodeSymbolIndex,
   parseCodeAstGrepArgs,
+  parseCodeTreeSitterArgs,
   renderCodeMap,
   renderCodeAstGrepResult,
   renderCodeCallGraph,
   renderCodeImportGraph,
   renderCodeReferences,
   renderCodeSymbols,
+  renderCodeTreeSitterResult,
   runCodeAstGrep,
+  runCodeTreeSitter,
   type AstGrepRunner,
+  type TreeSitterRunner,
 } from "./code-map/index.js";
 import {
   initializeConfig,
@@ -266,6 +271,7 @@ interface CliIo {
   mcpKeychainPlatform?: NodeJS.Platform;
   browserSnapshot?: BrowserSnapshotDriver;
   astGrepRunner?: AstGrepRunner;
+  treeSitterRunner?: TreeSitterRunner;
   scannerRunner?: ScannerProcessRunner;
   diagnosticsRunner?: DiagnosticsProcessRunner;
 }
@@ -293,7 +299,7 @@ const CLI_NAMESPACE_USAGES = {
   bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
   tests: "Usage: orx tests [list|run [target-id] [-- args...]]",
-  code: "Usage: orx code [map|symbols|refs|imports|calls|ast-grep] [query-or-path]",
+  code: "Usage: orx code [map|symbols|refs|imports|calls|ast-grep|tree-sitter] [query-or-path]",
   scanners: SCANNERS_USAGE,
   scan: SCAN_USAGE,
   diagnostics: DIAGNOSTICS_USAGE,
@@ -770,6 +776,10 @@ export async function runCli(
     return runCodeAstGrepCommand(args.slice(1), io);
   }
 
+  if (first === "tree-sitter") {
+    return runCodeTreeSitterCommand(args.slice(1), io);
+  }
+
   if (first === "scanners" || first === "scanner") {
     return runScannersCommand(args.slice(1), io, env);
   }
@@ -882,7 +892,7 @@ function helpText(): string {
     "  bins          List, inspect, trust, untrust, or run plugin bins",
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  tests         Discover or run native test targets",
-    "  code          Render local code maps, symbol indexes, references, imports, calls, or ast-grep searches",
+    "  code          Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses",
     "  scanners      List, inspect, or run local security scanner profiles",
     "  scan          Alias for a local scanner run",
     "  diagnostics  List, inspect, or run local diagnostics profiles",
@@ -1075,6 +1085,9 @@ function runCodeCommand(args: string[], io: CliIo): number {
   if (subcommand === "ast-grep" || subcommand === "astgrep" || subcommand === "sg") {
     return runCodeAstGrepCommand(args.slice(1), io);
   }
+  if (subcommand === "tree-sitter" || subcommand === "treesitter" || subcommand === "ts-ast") {
+    return runCodeTreeSitterCommand(args.slice(1), io);
+  }
 
   writeLine(io.stderr, CLI_NAMESPACE_USAGES.code);
   return 1;
@@ -1136,6 +1149,28 @@ function runCodeAstGrepCommand(args: string[], io: CliIo): number {
   writeLine(
     result.ok ? io.stdout : io.stderr,
     renderCodeAstGrepResult(result, CODE_AST_GREP_USAGE),
+  );
+  return result.ok ? 0 : 1;
+}
+
+function runCodeTreeSitterCommand(args: string[], io: CliIo): number {
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, CODE_TREE_SITTER_USAGE);
+    return 0;
+  }
+  const parsed = parseCodeTreeSitterArgs(args, CODE_TREE_SITTER_USAGE);
+  if (!parsed.ok) {
+    writeLine(io.stderr, parsed.message);
+    return 1;
+  }
+  const result = runCodeTreeSitter({
+    ...parsed.args,
+    cwd: io.cwd,
+    runner: io.treeSitterRunner,
+  });
+  writeLine(
+    result.ok ? io.stdout : io.stderr,
+    renderCodeTreeSitterResult(result, CODE_TREE_SITTER_USAGE),
   );
   return result.ok ? 0 : 1;
 }

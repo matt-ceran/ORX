@@ -126,7 +126,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/delegate \[help\|status\|plan\|add\|remove\|clear\|team\|policy\]/);
   assert.match(output, /\/delegates \[list\|status\|plan\|policy\|teams\|save\|use\|inspect\|delete\]/);
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
-  assert.match(output, /\/code \[map\|symbols\|refs\|imports\|calls\|ast-grep\]/);
+  assert.match(output, /\/code \[map\|symbols\|refs\|imports\|calls\|ast-grep\|tree-sitter\]/);
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
   assert.match(output, /\/scanners \[list\|inspect <profile>\|run semgrep <path> --config <local-config-path> \[--json\]\]/);
   assert.match(output, /\/scan semgrep <path> --config <local-config-path> \[--json\]/);
@@ -258,11 +258,13 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mcp m"), [["model "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp p"), [["plan ", "presets "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan c"), [["cloudflare-api ", "cloudflare-docs ", "context7 "], "c"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp plan source"), [["sourcegraph-github-readonly "], "source"]);
   assert.deepEqual(completeSlashCommandLine("/mcp model e"), [["enable "], "e"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets i"), [["inspect ", "info "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect g"), [["github-readonly "], "g"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets show m"), [["microsoft-learn "], "m"]);
-  assert.deepEqual(completeSlashCommandLine("/mcp presets inspect s"), [["sentry-readonly "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets inspect s"), [["sentry-readonly ", "sourcegraph-github-readonly "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets inspect source"), [["sourcegraph-github-readonly "], "source"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets b"), [["browser "], "b"]);
   assert.deepEqual(completeSlashCommandLine("/mcp allow-m"), [["allow-model-tool "], "allow-m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp auth o"), [["openrouter "], "o"]);
@@ -3499,6 +3501,7 @@ test("mcp slash commands install provider presets", async () => {
     assert.match(harness.stdout(), /id=browser/);
     assert.match(harness.stdout(), /id=figma/);
     assert.match(harness.stdout(), /id=sentry-readonly/);
+    assert.match(harness.stdout(), /id=sourcegraph-github-readonly/);
 
     assert.equal(await handleSlashCommand("/mcp presets inspect github-readonly", harness.context), "continue");
     assert.match(harness.stdout(), /MCP Provider Preset: github-readonly/);
@@ -3514,6 +3517,13 @@ test("mcp slash commands install provider presets", async () => {
     assert.match(harness.stdout(), /risk_level: high/);
     assert.match(harness.stdout(), /write_capable: yes/);
     assert.match(harness.stdout(), /execute risk=destructive auth=yes billable=no/);
+
+    assert.equal(await handleSlashCommand("/mcp presets sourcegraph-github-readonly", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP Provider Preset: sourcegraph-github-readonly/);
+    assert.match(harness.stdout(), /auth_required: yes/);
+    assert.match(harness.stdout(), /write_capable: no/);
+    assert.match(harness.stdout(), /static_tools: 0/);
+    assert.match(harness.stdout(), /remote_tool_review:/);
 
     assert.equal(await handleSlashCommand("/mcp plan microsoft-learn", harness.context), "continue");
     assert.match(harness.stdout(), /MCP setup plan: microsoft-learn/);

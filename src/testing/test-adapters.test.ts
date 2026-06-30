@@ -7,6 +7,7 @@ import {
   discoverTestTargets,
   getTestAdapterSummary,
   parseTestReportSummary,
+  parseStructuredTestReportSummary,
   renderTestRunResult,
   renderTestTargets,
   runTestTarget,
@@ -91,6 +92,10 @@ test("falls back to direct node:test files when no package test script exists", 
     assert.equal(result.ok, true);
     assert.equal(result.status, "ok");
     assert.equal(result.target?.id, "node:test");
+    assert.equal(result.report?.source, "node-junit");
+    assert.equal(result.report?.total, 1);
+    assert.equal(result.report?.passed, 1);
+    assert.match(result.args.join(" "), /--test-reporter=junit/);
 
     const summary = getTestAdapterSummary(cwd);
     assert.equal(summary.targetCount, 1);
@@ -230,6 +235,65 @@ test("parses common framework report summaries", () => {
 
   assert.equal(parseTestReportSummary(createTarget("unknown"), "2 failed network requests (99)"), undefined);
   assert.equal(parseTestReportSummary(createTarget("playwright"), "2 failed network requests (99)"), undefined);
+});
+
+test("parses node structured JUnit reports before stdout fallback", () => {
+  const target = createTarget("node");
+  const report = [
+    '<?xml version="1.0" encoding="utf-8"?>',
+    "<testsuites>",
+    '  <testcase name="a" time="0.001" classname="test"/>',
+    '  <testcase name="b" time="0.001" classname="test">',
+    '    <skipped type="skipped" message="true"/>',
+    "  </testcase>",
+    "  <!-- tests 2 -->",
+    "  <!-- suites 0 -->",
+    "  <!-- pass 1 -->",
+    "  <!-- fail 0 -->",
+    "  <!-- skipped 1 -->",
+    "  <!-- todo 0 -->",
+    "  <!-- duration_ms 12.5 -->",
+    "</testsuites>",
+  ].join("\n");
+
+  assert.deepEqual(parseStructuredTestReportSummary(target, report), {
+    framework: "node",
+    source: "node-junit",
+    total: 2,
+    passed: 1,
+    failed: 0,
+    skipped: 1,
+    todo: 0,
+    suites: 0,
+    durationMs: 12.5,
+  });
+
+  assert.deepEqual(parseTestReportSummary(target, "ℹ tests 99\nℹ pass 99", "", report), {
+    framework: "node",
+    source: "node-junit",
+    total: 2,
+    passed: 1,
+    failed: 0,
+    skipped: 1,
+    todo: 0,
+    suites: 0,
+    durationMs: 12.5,
+  });
+});
+
+test("ignores malformed structured reports and falls back to stdout summary", () => {
+  assert.equal(parseStructuredTestReportSummary(createTarget("node"), "{ not junit"), undefined);
+  assert.equal(parseStructuredTestReportSummary(createTarget("jest"), "<testsuites></testsuites>"), undefined);
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "ℹ tests 1\nℹ pass 1", "", "{ not junit"),
+    {
+      framework: "node",
+      source: "node",
+      total: 1,
+      passed: 1,
+    },
+  );
 });
 
 test("infers package-script frameworks and report metadata", () => {

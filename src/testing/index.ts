@@ -1,9 +1,12 @@
 import {
   existsSync,
   lstatSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
+  rmSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { redactSecrets } from "../mcp/audit.js";
 import { runProcess, type RunProcessResult } from "../tools/process.js";
@@ -60,7 +63,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic";
+  source: TestFramework | "generic" | "node-junit";
   total?: number;
   passed?: number;
   failed?: number;
@@ -100,6 +103,7 @@ const MAX_EXTRA_ARG_LENGTH = 512;
 const DEFAULT_TEST_TIMEOUT_MS = 120_000;
 const DEFAULT_TEST_OUTPUT_BYTES = 64 * 1024;
 const MAX_REPORT_PARSE_BYTES = 32 * 1024;
+const MAX_STRUCTURED_REPORT_BYTES = 256 * 1024;
 const SCRIPT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:._@+/-]{0,119}$/;
 const TEST_FILE_PATTERN = /\.(?:test|spec)\.(?:js|mjs|cjs)$/;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
@@ -205,18 +209,32 @@ export async function runTestTarget(options: RunTestOptions = {}): Promise<TestR
     };
   }
 
-  const args = [...target.args, ...formatExtraArgsForTarget(target, extraArgs)];
-  const result = await runProcess({
-    command: target.command,
-    args,
-    cwd: target.cwd,
-    timeoutMs: options.timeoutMs ?? DEFAULT_TEST_TIMEOUT_MS,
-    maxBytes: options.maxBytes ?? DEFAULT_TEST_OUTPUT_BYTES,
-    shell: false,
-    signal: options.signal,
-  });
+  const reportRequest = createStructuredReportRequest(target);
+  const args = [
+    ...formatTargetArgsWithStructuredReport(target, reportRequest?.path),
+    ...formatExtraArgsForTarget(target, extraArgs),
+  ];
 
-  return formatTestProcessResult(target, args, result);
+  try {
+    const result = await runProcess({
+      command: target.command,
+      args,
+      cwd: target.cwd,
+      env: createTestProcessEnv(),
+      inheritEnv: false,
+      timeoutMs: options.timeoutMs ?? DEFAULT_TEST_TIMEOUT_MS,
+      maxBytes: options.maxBytes ?? DEFAULT_TEST_OUTPUT_BYTES,
+      shell: false,
+      signal: options.signal,
+    });
+
+    const structuredReportText = reportRequest ? readStructuredReportFile(reportRequest.path) : undefined;
+    return formatTestProcessResult(target, args, result, structuredReportText);
+  } finally {
+    if (reportRequest) {
+      rmSync(reportRequest.directory, { recursive: true, force: true });
+    }
+  }
 }
 
 export function renderTestTargets(discovery: TestDiscovery): string {
@@ -307,7 +325,13 @@ export function parseTestReportSummary(
   target: TestTarget,
   stdout: string,
   stderr = "",
+  structuredReportText?: string,
 ): TestReportSummary | undefined {
+  const structuredReport = parseStructuredTestReportSummary(target, structuredReportText);
+  if (structuredReport && hasReportCounts(structuredReport)) {
+    return structuredReport;
+  }
+
   const text = limitReportText(`${stdout}\n${stderr}`);
   const parsers = orderedReportParsers(target.framework);
   for (const parser of parsers) {
@@ -317,6 +341,16 @@ export function parseTestReportSummary(
     }
   }
   return undefined;
+}
+
+export function parseStructuredTestReportSummary(
+  target: TestTarget,
+  reportText: string | undefined,
+): TestReportSummary | undefined {
+  if (!reportText || target.framework !== "node") {
+    return undefined;
+  }
+  return parseNodeJunitReportSummary(limitReportText(reportText), target.framework);
 }
 
 function sanitizePackageScripts(
@@ -558,6 +592,40 @@ function parseNodeReportSummary(text: string, framework: TestFramework): TestRep
   return report;
 }
 
+function parseNodeJunitReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  if (!/^\s*<\?xml\b/i.test(text) || !/<testsuites\b/i.test(text)) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "node-junit",
+  };
+
+  assignNumber(report, "total", matchXmlCommentNumber(text, "tests") ?? matchXmlAttributeNumber(text, "tests"));
+  assignNumber(report, "suites", matchXmlCommentNumber(text, "suites"));
+  assignNumber(report, "passed", matchXmlCommentNumber(text, "pass"));
+  assignNumber(report, "failed", matchXmlCommentNumber(text, "fail") ?? matchXmlAttributeNumber(text, "failures"));
+  assignNumber(report, "skipped", matchXmlCommentNumber(text, "skipped") ?? matchXmlAttributeNumber(text, "skipped"));
+  assignNumber(report, "todo", matchXmlCommentNumber(text, "todo"));
+  assignNumber(report, "durationMs", matchXmlCommentNumber(text, "duration_ms"));
+
+  if (report.total === undefined) {
+    assignNumber(report, "total", countXmlTags(text, "testcase"));
+  }
+  if (report.failed === undefined) {
+    assignNumber(report, "failed", countXmlTags(text, "failure"));
+  }
+  if (report.skipped === undefined) {
+    assignNumber(report, "skipped", countXmlTags(text, "skipped"));
+  }
+  if (report.passed === undefined && report.total !== undefined) {
+    assignNumber(report, "passed", Math.max(0, report.total - (report.failed ?? 0) - (report.skipped ?? 0)));
+  }
+
+  return hasReportCounts(report) ? report : undefined;
+}
+
 function parseVitestReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
   const filesLine = matchVitestNamedLine(text, "Test Files");
   const testsLine = matchVitestNamedLine(text, "Tests");
@@ -715,6 +783,24 @@ function matchLineNumber(text: string, label: string): number | undefined {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = text.match(new RegExp(`^\\s*(?:[#\\u2139]\\s*)?${escaped}\\s+(\\d+(?:\\.\\d+)?)\\s*$`, "im"));
   return match ? Number.parseFloat(match[1]) : undefined;
+}
+
+function matchXmlCommentNumber(text: string, label: string): number | undefined {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = text.match(new RegExp(`<!--\\s*${escaped}\\s+(\\d+(?:\\.\\d+)?)\\s*-->`, "i"));
+  return match ? Number.parseFloat(match[1]) : undefined;
+}
+
+function matchXmlAttributeNumber(text: string, attribute: string): number | undefined {
+  const escaped = attribute.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = text.match(new RegExp(`\\b${escaped}=["'](\\d+(?:\\.\\d+)?)["']`, "i"));
+  return match ? Number.parseFloat(match[1]) : undefined;
+}
+
+function countXmlTags(text: string, tag: string): number | undefined {
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const count = Array.from(text.matchAll(new RegExp(`<${escaped}\\b`, "gi"))).length;
+  return count > 0 ? count : undefined;
 }
 
 function matchNamedLine(text: string, label: string): string | undefined {
@@ -1017,10 +1103,53 @@ function formatExtraArgsForTarget(target: TestTarget, extraArgs: string[]): stri
     : extraArgs;
 }
 
+function createStructuredReportRequest(target: TestTarget): { directory: string; path: string } | undefined {
+  if (target.kind !== "node-test" || target.framework !== "node") {
+    return undefined;
+  }
+  const directory = mkdtempSync(join(tmpdir(), "orx-test-report-"));
+  return { directory, path: join(directory, "node-junit.xml") };
+}
+
+function formatTargetArgsWithStructuredReport(target: TestTarget, reportPath: string | undefined): string[] {
+  if (!reportPath || target.kind !== "node-test" || target.framework !== "node") {
+    return [...target.args];
+  }
+  return [
+    target.args[0] ?? "--test",
+    "--test-reporter=junit",
+    `--test-reporter-destination=${reportPath}`,
+    ...target.args.slice(1),
+  ];
+}
+
+function readStructuredReportFile(path: string): string | undefined {
+  try {
+    const stat = lstatSync(path);
+    if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_STRUCTURED_REPORT_BYTES) {
+      return undefined;
+    }
+    return readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+function createTestProcessEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("NODE_TEST_")) {
+      delete env[key];
+    }
+  }
+  return env;
+}
+
 function formatTestProcessResult(
   target: TestTarget,
   args: string[],
   result: RunProcessResult,
+  structuredReportText?: string,
 ): TestRunResult {
   const status: TestRunStatus = result.error
     ? "process_error"
@@ -1037,7 +1166,7 @@ function formatTestProcessResult(
     ok,
     status,
     target,
-    report: parseTestReportSummary(target, stdout, stderr),
+    report: parseTestReportSummary(target, stdout, stderr, structuredReportText),
     message: ok
       ? `Test target ${target.id} passed.`
       : `Test target ${target.id} ${status === "failed" ? `exited with code ${result.exitCode}` : status}.`,

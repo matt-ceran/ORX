@@ -16,20 +16,25 @@ import {
 } from "../auth/openrouter.js";
 import {
   SLASH_CODE_AST_GREP_USAGE,
+  SLASH_CODE_TREE_SITTER_USAGE,
   createCodeMap,
   createCodeCallGraph,
   createCodeImportGraph,
   createCodeReferenceIndex,
   createCodeSymbolIndex,
   parseCodeAstGrepArgText,
+  parseCodeTreeSitterArgText,
   renderCodeMap,
   renderCodeAstGrepResult,
   renderCodeCallGraph,
   renderCodeImportGraph,
   renderCodeReferences,
   renderCodeSymbols,
+  renderCodeTreeSitterResult,
   runCodeAstGrep,
+  runCodeTreeSitter,
   type AstGrepRunner,
+  type TreeSitterRunner,
 } from "../code-map/index.js";
 import type { LoadedConfig, OrxConfig, OrxTheme } from "../config/types.js";
 import {
@@ -360,6 +365,7 @@ export interface SlashCommandContext {
   browserResolveHost?: ResolveBrowserHost;
   braveSearchApiKey?: string;
   astGrepRunner?: AstGrepRunner;
+  treeSitterRunner?: TreeSitterRunner;
   scannerRunner?: ScannerProcessRunner;
   diagnosticsRunner?: DiagnosticsProcessRunner;
   getConfig: () => OrxConfig;
@@ -507,6 +513,7 @@ const MCP_PROVIDER_PRESET_COMPLETIONS = [
   "github-readonly",
   "microsoft-learn",
   "sentry-readonly",
+  "sourcegraph-github-readonly",
 ] as const;
 const MCP_PROVIDER_PRESET_ACTION_COMPLETIONS = [
   "inspect",
@@ -550,7 +557,7 @@ const PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS = ["list", "status"] as const;
 const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
-const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls", "ast-grep"] as const;
+const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls", "ast-grep", "tree-sitter"] as const;
 const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "inspect", "run"] as const;
 const SCANNER_PROFILE_COMPLETIONS = ["semgrep", "snyk", "socket", "osv-scanner", "codeql", "trivy"] as const;
 const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep"] as const;
@@ -819,7 +826,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/code": {
-    usage: "/code [map|symbols|refs|imports|calls|ast-grep]",
+    usage: "/code [map|symbols|refs|imports|calls|ast-grep|tree-sitter]",
     description: "Run local code intelligence commands",
     group: "Workspace",
     tier: "advanced",
@@ -884,7 +891,11 @@ const COMMANDS: Record<string, SlashDefinition> = {
         handleAstGrepCommandText(stripFirstSlashArg(command.argText), context, SLASH_CODE_AST_GREP_USAGE);
         return "continue";
       }
-      writeLine(context.io.stderr, "Usage: /code [map|symbols|refs|imports|calls|ast-grep] [query-or-path]");
+      if (subcommand === "tree-sitter" || subcommand === "treesitter" || subcommand === "ts-ast") {
+        handleTreeSitterCommandText(stripFirstSlashArg(command.argText), context, SLASH_CODE_TREE_SITTER_USAGE);
+        return "continue";
+      }
+      writeLine(context.io.stderr, "Usage: /code [map|symbols|refs|imports|calls|ast-grep|tree-sitter] [query-or-path]");
       return "continue";
     },
   },
@@ -895,6 +906,17 @@ const COMMANDS: Record<string, SlashDefinition> = {
     tier: "advanced",
     handler: (command, context): SlashResult => {
       handleAstGrepCommandText(command.argText, context, SLASH_CODE_AST_GREP_USAGE.replace("/code ast-grep", "/ast-grep"));
+      return "continue";
+    },
+  },
+  "/tree-sitter": {
+    usage: "/tree-sitter <file>",
+    description: "Run an optional local tree-sitter AST parse",
+    group: "Workspace",
+    tier: "advanced",
+    aliases: ["/treesitter"],
+    handler: (command, context): SlashResult => {
+      handleTreeSitterCommandText(command.argText, context, SLASH_CODE_TREE_SITTER_USAGE.replace("/code tree-sitter", "/tree-sitter"));
       return "continue";
     },
   },
@@ -2424,6 +2446,24 @@ function handleAstGrepCommandText(argText: string, context: SlashCommandContext,
   writeLine(
     result.ok ? context.io.stdout : context.io.stderr,
     renderCodeAstGrepResult(result, usage),
+  );
+}
+
+function handleTreeSitterCommandText(argText: string, context: SlashCommandContext, usage: string): void {
+  const parsed = parseCodeTreeSitterArgText(argText, usage);
+  if (!parsed.ok) {
+    writeLine(context.io.stderr, parsed.message);
+    return;
+  }
+
+  const result = runCodeTreeSitter({
+    ...parsed.args,
+    cwd: context.io.cwd,
+    runner: context.treeSitterRunner,
+  });
+  writeLine(
+    result.ok ? context.io.stdout : context.io.stderr,
+    renderCodeTreeSitterResult(result, usage),
   );
 }
 

@@ -252,6 +252,19 @@ function getMcpProviderAuthGuidance(profile: McpProfile): McpProviderAuthGuidanc
     };
   }
 
+  if (isMcpProviderEndpoint(endpoint, "sourcegraph.com", "/mcp")) {
+    return {
+      provider: "sourcegraph",
+      credentialSource:
+        "Sourcegraph hosted MCP uses provider-issued bearer/OAuth material for code search over connected repositories.",
+      credentialLifetime: "provider/token policy dependent",
+      scopeHint: "grant Sourcegraph/GitHub read-only repository access only; do not approve write scopes for read-only ORX profiles",
+      setupUrl: "https://sourcegraph.com/mcp",
+      orxSupport:
+        "complete provider auth externally; ORX stores only bearer-compatible credentials in profile env vars or opted-in macOS Keychain",
+    };
+  }
+
   if (
     isMcpProviderEndpoint(endpoint, "mcp.cloudflare.com", "/mcp") ||
     isMcpProviderEndpoint(endpoint, "docs.mcp.cloudflare.com", "/mcp") ||

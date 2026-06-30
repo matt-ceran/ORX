@@ -18,6 +18,18 @@ export {
   type CodeAstGrepParseResult,
   type CodeAstGrepResult,
 } from "./ast-grep.js";
+export {
+  CODE_TREE_SITTER_USAGE,
+  SLASH_CODE_TREE_SITTER_USAGE,
+  parseCodeTreeSitterArgs,
+  parseCodeTreeSitterArgText,
+  renderCodeTreeSitterResult,
+  runCodeTreeSitter,
+  type CodeTreeSitterArgs,
+  type CodeTreeSitterParseResult,
+  type CodeTreeSitterResult,
+  type TreeSitterRunner,
+} from "./tree-sitter.js";
 
 export interface CodeMapOptions {
   cwd?: string;

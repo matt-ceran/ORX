@@ -187,6 +187,18 @@ export const MCP_PROVIDER_PRESETS: McpProviderPreset[] = [
       "Sentry hosted MCP for debugging context. Review remote tool metadata and declare only read-only tools unless you intentionally add stricter risk flags.",
     tags: ["observability", "sentry", "read-only", "auth"],
   },
+  {
+    id: "sourcegraph-github-readonly",
+    name: "Sourcegraph GitHub read-only",
+    profileId: "sourcegraph-github-readonly",
+    url: "https://sourcegraph.com/mcp",
+    authRequired: true,
+    riskLevel: "medium",
+    tools: [],
+    notes:
+      "Sourcegraph hosted MCP for multi-repo GitHub code search, navigation, and history. Auth is required; approve only read-only Sourcegraph/GitHub repository scopes, then use remote-tools after enable/trust to inspect current provider tool metadata before declaring tools.",
+    tags: ["sourcegraph", "github", "repo", "code-search", "multi-repo", "read-only", "auth"],
+  },
 ];
 
 export function listMcpProviderPresets(): McpProviderPreset[] {

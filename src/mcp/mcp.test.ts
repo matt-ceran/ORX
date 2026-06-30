@@ -345,6 +345,7 @@ test("MCP provider presets install local user catalog profiles", () => {
     assert.match(rendered, /id=github-readonly/);
     assert.match(rendered, /id=microsoft-learn/);
     assert.match(rendered, /id=sentry-readonly/);
+    assert.match(rendered, /id=sourcegraph-github-readonly/);
 
     const inspected = renderMcpProviderPresetInspect(listMcpProviderPresets()[0]!);
     assert.match(inspected, /MCP Provider Preset:/);
@@ -407,6 +408,24 @@ test("MCP provider presets install local user catalog profiles", () => {
     assert.equal(figmaProfile.riskLevel, "high");
     assert.equal(figmaProfile.writeCapable, true);
     assert.equal(figmaProfile.tools.length, 0);
+
+    const sourcegraphResult = installMcpProviderPreset("sourcegraph-github-readonly", {
+      profileCatalogPath,
+    });
+    assert.equal(sourcegraphResult.ok, true);
+    assert.equal(sourcegraphResult.profileId, "user:sourcegraph-github-readonly");
+    assert.equal(sourcegraphResult.toolCount, 0);
+
+    const loadedWithSourcegraph = loadUserMcpProfileCatalog({ profileCatalogPath });
+    const sourcegraphProfile = loadedWithSourcegraph.profiles.find(
+      (profile) => profile.id === "user:sourcegraph-github-readonly",
+    );
+    assert.ok(sourcegraphProfile);
+    assert.equal(sourcegraphProfile.transport.url, "https://sourcegraph.com/mcp");
+    assert.equal(sourcegraphProfile.authRequired, true);
+    assert.equal(sourcegraphProfile.riskLevel, "medium");
+    assert.equal(sourcegraphProfile.writeCapable, false);
+    assert.equal(sourcegraphProfile.tools.length, 0);
 
     const unknown = installMcpProviderPreset("missing", { profileCatalogPath });
     assert.equal(unknown.ok, false);
@@ -2583,6 +2602,21 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
     assert.match(githubSetup, /provider_auth: github/);
     assert.match(githubSetup, /setup_url: https:\/\/docs\.github\.com\/en\/copilot\/how-tos\/provide-context\/use-mcp-in-your-ide\/extend-copilot-chat-with-mcp/);
     assert.match(githubSetup, /scope_hint: approve only read-only repository scopes/);
+
+    assert.equal(installMcpProviderPreset("sourcegraph-github-readonly", { profileCatalogPath }).ok, true);
+    const sourcegraphReport = getMcpProfileAuthReport("user:sourcegraph-github-readonly", {
+      cwd,
+      env,
+      profileCatalogPath,
+    });
+    assert.ok(sourcegraphReport);
+    const sourcegraphSetup = renderMcpProfileAuthSetup(sourcegraphReport);
+
+    assert.match(sourcegraphSetup, /provider_auth: sourcegraph/);
+    assert.match(sourcegraphSetup, /setup_url: https:\/\/sourcegraph\.com\/mcp/);
+    assert.match(sourcegraphSetup, /scope_hint: grant Sourcegraph\/GitHub read-only repository access only/);
+    assert.match(sourcegraphSetup, /network_calls: none/);
+    assert.doesNotMatch(sourcegraphSetup, /mcp-secret-token/);
 
     assert.equal(installMcpProviderPreset("figma", { profileCatalogPath }).ok, true);
     const figmaReport = getMcpProfileAuthReport("user:figma", {

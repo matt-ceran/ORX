@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   createCodeMap,
   parseCodeAstGrepArgs,
+  parseCodeTreeSitterArgs,
   createCodeCallGraph,
   createCodeImportGraph,
   createCodeReferenceIndex,
@@ -16,8 +17,11 @@ import {
   renderCodeImportGraph,
   renderCodeReferences,
   renderCodeSymbols,
+  renderCodeTreeSitterResult,
   runCodeAstGrep,
+  runCodeTreeSitter,
   type AstGrepRunner,
+  type TreeSitterRunner,
 } from "./index.js";
 
 test("code map discovers languages entrypoints exports and imports", () => {
@@ -613,6 +617,83 @@ test("ast-grep adapter reports missing tools and guards paths", () => {
     assert.equal(guarded.ok, false);
     assert.equal(guarded.status, "invalid_arguments");
     assert.match(renderCodeAstGrepResult(guarded), /must stay inside the current working directory/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("tree-sitter adapter runs bounded optional AST parse and keeps lexical fallback", () => {
+  const cwd = createTempDir();
+  const calls: Array<{ command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }> = [];
+  const runner: TreeSitterRunner = (command, args, options) => {
+    calls.push({ command, args, cwd: options.cwd, env: options.env });
+    if (args.includes("--version")) {
+      return { status: command === "tree-sitter" ? 0 : 1, signal: null, stdout: "tree-sitter 0.0.0\n", stderr: "" };
+    }
+    return {
+      status: 0,
+      signal: null,
+      stdout: "(program (export_statement (function_declaration name: (identifier))))\n",
+      stderr: "",
+    };
+  };
+
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(join(cwd, "src", "index.ts"), "export function start() { return 1; }\n");
+
+    const parsed = parseCodeTreeSitterArgs(["src/index.ts"]);
+    if (!parsed.ok) {
+      assert.fail(parsed.message);
+    }
+    const result = runCodeTreeSitter({
+      ...parsed.args,
+      cwd,
+      env: {
+        PATH: "/usr/bin",
+        OPENROUTER_API_KEY: "sk-or-v1-secret",
+      },
+      runner,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "ok");
+    assert.deepEqual(calls[1]?.args, ["parse", "src/index.ts"]);
+    assert.equal(calls[1]?.cwd, cwd);
+    assert.equal(calls[1]?.env.OPENROUTER_API_KEY, undefined);
+    assert.equal(calls[1]?.env.PATH, "/usr/bin");
+
+    const rendered = renderCodeTreeSitterResult(result);
+    assert.match(rendered, /Code tree-sitter/);
+    assert.match(rendered, /AST-backed local parse/);
+    assert.match(rendered, /mutation: none/);
+    assert.match(rendered, /fallback: lexical code-map/);
+    assert.match(rendered, /\(program/);
+
+    const missingRunner: TreeSitterRunner = () => ({
+      status: null,
+      signal: null,
+      stdout: "",
+      stderr: "",
+      error: Object.assign(new Error("not found"), { code: "ENOENT" }),
+    });
+    const missing = runCodeTreeSitter({
+      cwd,
+      targetPath: "src/index.ts",
+      runner: missingRunner,
+    });
+    assert.equal(missing.ok, false);
+    assert.equal(missing.status, "tool_missing");
+    assert.match(renderCodeTreeSitterResult(missing), /lexical code-map commands still work/);
+
+    const guarded = runCodeTreeSitter({
+      cwd,
+      targetPath: "../outside.ts",
+      runner,
+    });
+    assert.equal(guarded.ok, false);
+    assert.equal(guarded.status, "invalid_arguments");
+    assert.match(renderCodeTreeSitterResult(guarded), /must stay inside/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

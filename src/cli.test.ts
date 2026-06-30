@@ -43,7 +43,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
-    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, or ast-grep searches/);
+    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses/);
     assert.match(help.stdout(), /scanners\s+List, inspect, or run local security scanner profiles/);
     assert.match(help.stdout(), /scan\s+Alias for a local scanner run/);
     assert.match(help.stdout(), /diagnostics\s+List, inspect, or run local diagnostics profiles/);
@@ -2613,6 +2613,7 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(listed.stdout(), /id=figma/);
     assert.match(listed.stdout(), /id=microsoft-learn/);
     assert.match(listed.stdout(), /id=sentry-readonly/);
+    assert.match(listed.stdout(), /id=sourcegraph-github-readonly/);
 
     const presetInspect = createIo({ cwd });
     assert.equal(
@@ -2631,6 +2632,18 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(shorthandInspect.stdout(), /tools: none/);
     assert.match(shorthandInspect.stdout(), /remote_tool_review:/);
 
+    const sourcegraphInspect = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "presets", "inspect", "sourcegraph-github-readonly"], env, sourcegraphInspect.io),
+      0,
+    );
+    assert.match(sourcegraphInspect.stdout(), /MCP Provider Preset: sourcegraph-github-readonly/);
+    assert.match(sourcegraphInspect.stdout(), /auth_required: yes/);
+    assert.match(sourcegraphInspect.stdout(), /write_capable: no/);
+    assert.match(sourcegraphInspect.stdout(), /static_tools: 0/);
+    assert.match(sourcegraphInspect.stdout(), /remote_tool_review:/);
+    assert.match(sourcegraphInspect.stdout(), /inspect_side_effects: none/);
+
     const cloudflareInspect = createIo({ cwd });
     assert.equal(
       await runCli(["node", "cli", "mcp", "presets", "inspect", "cloudflare-api"], env, cloudflareInspect.io),
@@ -2648,6 +2661,16 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(presetPlan.stdout(), /orx mcp add-preset context7/);
     assert.match(presetPlan.stdout(), /data_state_writes: none/);
     assert.match(presetPlan.stdout(), /plan_side_effects: no install, enable, trust, grant, fetch, call, audit, or model exposure/);
+
+    const sourcegraphPlan = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "plan", "sourcegraph-github-readonly"], env, sourcegraphPlan.io), 0);
+    assert.match(sourcegraphPlan.stdout(), /MCP setup plan: sourcegraph-github-readonly/);
+    assert.match(sourcegraphPlan.stdout(), /status: preset_available/);
+    assert.match(sourcegraphPlan.stdout(), /profile: user:sourcegraph-github-readonly/);
+    assert.match(sourcegraphPlan.stdout(), /auth_required: yes/);
+    assert.match(sourcegraphPlan.stdout(), /network_calls: none/);
+    assert.match(sourcegraphPlan.stdout(), /data_state_writes: none/);
+    assert.match(sourcegraphPlan.stdout(), /orx mcp add-preset sourcegraph-github-readonly/);
 
     const pluginList = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "catalog"], env, pluginList.io), 0);
