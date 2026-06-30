@@ -81,7 +81,7 @@ orx delegates plan review
 OPENROUTER_API_KEY=... orx
 ```
 
-The npm `prepare` lifecycle builds `dist/cli.js` for local source installs. `orx` with no command starts interactive chat from the current directory; use `orx help` or `orx --help` for help output. API-key commands such as `orx ask --help`, `orx chat --help`, `orx models --help`, `orx credits --help`, and `orx generation --help` render usage before config loading, so malformed config files or missing profiles do not block first-run help. `orx ask --max-tool-iterations <n>` can raise the bounded native tool-call loop for longer local implementation requests; overnight automation uses this to avoid failing normal implementor slices at the default interactive cap. Common MCP/plugin onboarding subcommands such as `orx mcp plan --help`, `orx mcp add-preset --help`, and `orx plugins scaffold --help` do the same for their exact supported help shapes.
+The npm `prepare` lifecycle builds `dist/cli.js` for local source installs. `orx` with no command starts interactive chat from the current directory; use `orx help` or `orx --help` for help output. API-key commands such as `orx ask --help`, `orx chat --help`, `orx models --help`, `orx credits --help`, and `orx generation --help` render usage before config loading, so malformed config files or missing profiles do not block first-run help. `orx ask --max-tool-iterations <n>` can raise the bounded native tool-call loop for longer local implementation requests. Common MCP/plugin onboarding subcommands such as `orx mcp plan --help`, `orx mcp add-preset --help`, and `orx plugins scaffold --help` do the same for their exact supported help shapes.
 
 For first-run setup, `orx init` creates a private starter config at `~/.orx/config.toml` or `ORX_CONFIG_PATH`; use `orx init --local` for a repo-local `.orx/config.toml`. The generated file contains default model, mode, theme, and unrestricted local permission posture, but it never writes an API key. `orx auth`, `orx auth setup`, `orx auth init`, and matching `/auth status|setup|env|init|env-file` chat commands give the core OpenRouter credential path the same no-secret ergonomics: status/readiness rendering, a copyable placeholder `OPENROUTER_API_KEY` export, and a private commented env template at `~/.orx/auth/openrouter.env` or `ORX_AUTH_ENV_DIR`. ORX does not load that env file automatically; edit and source it from your shell, then run `orx doctor --strict` before launching `orx`.
 
@@ -97,26 +97,6 @@ npm run pack:dry-run
 ```
 
 The release gate is deterministic and no-real-key/no-network by command selection. It clears operator `OPENROUTER_API_KEY` and `BRAVE_SEARCH_API_KEY` values, runs `git diff --check`, typecheck, full `npm test`, the global install verifier, and built CLI smokes for `doctor --json`, `guide`, `code calls`, `plugins review`, and `mcp presets` against isolated temporary ORX state. The nested global-install chat-launch smoke uses a non-secret placeholder key only to start chat and immediately run `/exit`; it does not submit prompts or call OpenRouter. The gate does not call remote MCP endpoints, plugin bins, or plugin hooks. See `RELEASE_NOTES.md` for the current v0.1 handoff summary and known optional post-v0.1 work.
-
-For unattended implementation passes, use the local overnight harness:
-
-```sh
-npm run overnight:init -- --reset
-npm run overnight:dashboard
-OPENROUTER_API_KEY=... npm run overnight -- --max-slices 1
-```
-
-Run the dashboard in its own terminal. It uses a fixed alternate-screen view and reads `.orx/overnight/latest/state.json` plus `.orx/overnight/latest/events.jsonl`, so progress updates do not scroll the terminal. The runner creates one implementor prompt and one verifier prompt per queued slice, runs implementor -> local checks -> verifier, and pauses unless the verifier log ends with `VERDICT: PASS` on its final non-empty line. `--commit` commits the verified slice's newly changed paths after that verifier pass, leaving pre-existing dirty paths untouched; add `--push` only when the verified slice should be pushed automatically. Use `--require-clean` only when a commit-enabled run should pause before implementation if the worktree starts dirty. State, prompts, logs, and agent session files stay under gitignored `.orx/overnight/latest`.
-
-By default, the harness uses the built ORX CLI (`node dist/cli.js ask --max-tool-iterations 32 <prompt>`) for both roles, so normal ORX credential/config behavior applies. To use another local agent command, set command templates before running:
-
-```sh
-ORX_OVERNIGHT_IMPLEMENTOR_CMD='my-agent --prompt-file {promptFile}' \
-ORX_OVERNIGHT_VERIFIER_CMD='my-verifier --prompt-file {promptFile}' \
-npm run overnight -- --max-slices 1
-```
-
-Templates can use `{promptFile}`, `{runDir}`, `{sliceId}`, and `{role}`. If a template omits `{promptFile}`, the harness sends the prompt on stdin. The harness itself does not fetch remote MCP tools, run plugin hooks/bins, or expose new model tools; any network or model behavior comes from the explicit agent command selected by the operator.
 
 Interactive TTY chat stores sanitized user prompts, but not slash commands or secret-like input, in a private local prompt history file at `~/.orx/history.json`; set `ORX_CHAT_HISTORY_PATH` to isolate it. Readline preloads that history for up-arrow recall. Use `orx history`, `orx history search <query>`, `orx history clear`, `/history`, `/history search <query>`, and `/history clear` to inspect or clear it without network calls.
 

@@ -64,7 +64,6 @@ Urgent UX recovery additions from user testing:
 - Local security scanner profiles are implemented through `orx scanners list`, `orx scanners inspect <profile>`, `orx scanners run semgrep <path> --config <local-config-path> [--json]`, `orx scan semgrep ...`, `/scanners ...`, and `/scan ...`; Semgrep is runnable only as an explicit operator command with an installed local binary plus cwd-confined local config, shell disabled, minimal env, bounded/redacted output, and no model-tool exposure, while Snyk/Socket/OSV-Scanner/CodeQL/Trivy are catalog-only readiness profiles.
 - Local diagnostics profiles are implemented through `orx diagnostics list`, `orx diagnostics inspect <profile>`, `orx diagnostics run typescript [--project <local-tsconfig-path>] [--json]`, `orx diag run typescript ...`, `/diagnostics ...`, and `/diag ...`; TypeScript is runnable only as an explicit operator command with an installed local or PATH `tsc`, cwd-confined local project file, shell disabled, minimal env, bounded/redacted output, parsed TypeScript summaries, ORX-owned JSON metadata, and no model-tool exposure, while TypeScript Language Server/Pyright/rust-analyzer/gopls/clangd/SCIP TypeScript are catalog-only readiness profiles.
 - `npm run verify:release` is implemented as the v0.1 release-boundary gate. It clears real operator API/search keys, runs whitespace/typecheck/test/global-install checks, then runs isolated built CLI no-network smokes for doctor JSON, guide, code calls, plugin review, and MCP presets without OpenRouter, remote MCP, plugin bin, or plugin hook calls. The nested global-install chat-launch smoke uses only a non-secret placeholder key to start chat and immediately run `/exit`.
-- `scripts/overnight-loop.mjs` is implemented as a local unattended implementor/verifier harness with `npm run overnight:init`, `npm run overnight`, and `npm run overnight:dashboard`. It writes gitignored `.orx/overnight/latest` state, prompts, logs, and isolated agent session paths; the dashboard renders a fixed alternate-screen view that does not scroll; the runner executes implementor -> local checks -> verifier and requires the verifier log's final non-empty line to be exactly `VERDICT: PASS` before optional `--commit`/`--push`. Commit mode commits only paths newly changed during the verified slice, while `--require-clean` is available only as an opt-in preflight guard.
 - Delegation readiness rendering is implemented through noninteractive `orx orchestrator`, `orx delegate`, `orx delegates`, and read-only slash `plan/status` variants. CLI status/readiness is session-less and no-key; mutating CLI forms validate arguments then refuse, while slash mutations remain session-local only. OpenRouter delegate execution now exists behind explicit policy enablement and interactive chat delegate state; subprocess/external-agent delegation remains unavailable.
 - Saved disabled delegation teams are implemented through private local `~/.orx/delegation/teams.json` storage with `ORX_DELEGATION_TEAMS_PATH`, plus `orx delegates teams|save|inspect|use|delete`, `/delegates teams|save|inspect|use|delete`, and `/delegate team ...`. Saved records contain only normalized disabled controller/delegates plus metadata; CLI `use` is read-only because there is no active chat session, while slash `use` loads disabled metadata into the current session.
 - Delegation execution policy storage is implemented through private local `~/.orx/delegation/policy.json` storage with `ORX_DELEGATION_POLICY_PATH`, plus `orx delegate policy`, `orx delegates policy`, `/delegate policy`, and `/delegates policy`. Policy can tune max task cost, timeout, result byte cap, max concurrent delegates, explicit `--execution enabled|disabled`, and `--result-merge manual_summary|metadata_only`; credential forwarding/result persistence remain fixed to `none`/`none`.
@@ -104,7 +103,13 @@ Current files:
 
 ## Latest Work
 
-Recovered and verified overnight optional slices:
+Removed unattended queue automation:
+
+- Removed the legacy unattended queue harness, its npm scripts, the README operator section, and command/tooling/release-note references to that harness.
+- Future ORX continuation should use normal bounded implementor/verifier sessions: choose one small remaining slice, implement narrowly, run focused checks, run an independent verifier pass, fix findings, then commit/push the verified slice.
+- The next fresh-session goal should not mention or launch unattended queue automation.
+
+Recovered and verified optional completion slices:
 
 - Structured test reports: direct Node test fallback now requests Node's native JUnit reporter into a private temporary report file, parses bounded counts first, deletes the report directory, and falls back to existing stdout/stderr summary parsing when the structured report is missing or malformed. Child test runs strip inherited `NODE_TEST_*` variables so ORX's own `node --test` suite does not poison nested test execution.
 - Tree-sitter code intelligence: added `orx code tree-sitter <file>`, `orx tree-sitter <file>`, `/code tree-sitter <file>`, and `/tree-sitter <file>` as operator-invoked optional local `tree-sitter parse` previews with shell disabled, cleaned env, cwd-confined file guards, bounded/redacted output, no network/install behavior, no file mutation, and lexical code-map fallback guidance.
@@ -116,29 +121,9 @@ Finished v0.1 release-polish slice:
 - Added `RELEASE_NOTES.md` with source/global first-run commands, final release gate, package dry-run command, current CLI surface summary, security boundary notes, and known optional post-v0.1 work.
 - Added a root MIT `LICENSE` file and package metadata for repository/bugs/homepage/keywords plus `RELEASE_NOTES.md`, `README.md`, `LICENSE`, and `dist` package contents.
 - Added `npm run pack:dry-run` for local package contents inspection without publishing.
-- README now points release-boundary verification at `npm run verify:release`, `npm run pack:dry-run`, and `RELEASE_NOTES.md`, and documents that the overnight harness default role command uses `orx ask --max-tool-iterations 32`.
-- Next likely work is to let the overnight harness continue optional slices: structured test report ingestion, tree-sitter code intelligence, and read-only provider profile planning.
+- README now points release-boundary verification at `npm run verify:release`, `npm run pack:dry-run`, and `RELEASE_NOTES.md`.
+- Next likely work is to continue optional completion slices in fresh bounded sessions, not unattended queue automation.
 - Verification: `npm run verify:release` passed, and `npm run pack:dry-run` passed with `LICENSE`, `README.md`, `RELEASE_NOTES.md`, `dist`, and `package.json` in the package contents.
-
-Improved overnight dashboard failure visibility and tool-call budget:
-
-- The overnight dashboard now renders an 80-column-safe fixed frame by default, with compact queue rows, runner status, current slice details, exit code summary, attention/failure event, and a bounded current log tail. `ORX_DASHBOARD_COLUMNS` and `ORX_DASHBOARD_ROWS` can override the default size.
-- Dashboard output is now useful for failed slices: the failed `release-polish` run showed `implementor=1` and the log tail exposed `Tool-call loop exceeded 8 iterations`.
-- Added `orx ask --max-tool-iterations <n>` so controlled automation can raise the native tool-call loop cap for longer implementation requests. The overnight harness default ORX role command now uses `--max-tool-iterations 32`.
-- The failed overnight release-polish implementor left unverified local edits in `package.json` and `RELEASE_NOTES.md`; these were not verified, committed, or pushed. Treat them as partial failed-slice work until a verifier pass accepts or discards them.
-- Verification: dashboard `--once` at 72 and 80 columns, `node --check scripts/overnight-loop.mjs`, `npm run build`, `npm run typecheck`, `node dist/cli.js ask --help`, invalid `--max-tool-iterations` CLI smoke, and focused CLI tests.
-
-Added overnight implementor/verifier dashboard harness:
-
-- Added `scripts/overnight-loop.mjs` and npm scripts `overnight:init`, `overnight`, and `overnight:dashboard`.
-- The harness initializes `.orx/overnight/latest` with JSON state, JSONL events, generated implementor/verifier prompts, logs, and isolated ORX session/history paths. `.orx/` remains gitignored.
-- The dashboard is a fixed alternate-screen terminal view for TTYs and a bounded one-frame renderer for `--once`/non-TTY use; event/control characters are sanitized to one rendered line so long unattended runs can be monitored without scroll spam.
-- The runner processes queued slices as implementor -> local checks (`npm run typecheck`, `git diff --check`) -> verifier, pauses unless the verifier log's final non-empty line is exactly `VERDICT: PASS`, and only then performs optional `--commit` and optional `--push`.
-- `--commit` commits only paths newly changed during the verified slice, leaving pre-existing dirty paths untouched while still allowing overnight work on a dirty tree. `--require-clean` is an opt-in guard for operators who want commit-enabled runs to pause when the worktree starts dirty.
-- Default role execution uses built ORX (`node dist/cli.js ask <prompt>`), while `ORX_OVERNIGHT_IMPLEMENTOR_CMD` and `ORX_OVERNIGHT_VERIFIER_CMD` or command flags can point to any explicit local agent command template. The harness itself does not fetch remote MCP tools, run plugin hooks/bins, or expose new model tools.
-- README and command/tooling memory document the operator flow, PASS requirement, state location, custom command templates, and trust boundary.
-- Verification: `node --check scripts/overnight-loop.mjs`, ASCII scan for touched files, `npm run overnight:init -- --reset --slice release-polish`, one-frame dashboard render with newline-heavy events, prompt-echo verifier false-pass regression, fake local implementor/verifier smoke loop with final-line `VERDICT: PASS`, unmarked reset refusal, marked custom reset, `npm run typecheck`, `git diff --check`, and `npm run verify:release` passed. Independent verifier-found blockers around whole-log PASS parsing, newline event frame expansion, unsafe reset deletion, broad `git add .`, and fast-command stdin `EPIPE` were fixed and rechecked.
-- Next likely work after this slice is to use the harness for final v0.1 release polish, then continue optional completion slices such as structured framework report ingestion, tree-sitter-backed code intelligence, Sourcegraph/GitHub read-only profiles, or LSP/SCIP diagnostics.
 
 Added local diagnostics profiles:
 

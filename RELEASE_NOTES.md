@@ -55,7 +55,7 @@ npm run pack:dry-run
 - Config/local UX: `orx config show|path|set`, profiles, themes, prompt history, TTY status/composer polish, multiline input, command discovery, and slash-command completion.
 - Local coding tools: file/search/shell/diff/patch model tools, native `run_tests`, `orx tests`, code maps, symbols, refs, imports, lexical call graphs, and optional local ast-grep previews.
 - Explicit operator integrations: TypeScript diagnostics, Semgrep scanner profile, MCP preset/profile management, guarded MCP calls/model grants, plugin scaffold/validate/install/review, trusted plugin bins/hooks, skills/prompts/rules, and policy-gated delegation.
-- Automation: `npm run verify:release`, `npm run verify:global-install`, `npm run pack:dry-run`, and the optional overnight implementor/verifier harness.
+- Automation: `npm run verify:release`, `npm run verify:global-install`, and `npm run pack:dry-run`.
 
 ## Security and boundary notes
 
