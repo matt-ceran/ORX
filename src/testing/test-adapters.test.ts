@@ -286,10 +286,31 @@ test("parses common framework report summaries", () => {
     },
   );
 
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "  2 passing (35ms)",
+        "  1 pending",
+        "  1 failing",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "mocha",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+      durationMs: 35,
+    },
+  );
+
   assert.equal(parseTestReportSummary(createTarget("unknown"), "2 failed network requests (99)"), undefined);
   assert.equal(parseTestReportSummary(createTarget("playwright"), "2 failed network requests (99)"), undefined);
   assert.equal(parseTestReportSummary(createTarget("unknown"), "ok 1 - only a log line"), undefined);
   assert.equal(parseTestReportSummary(createTarget("unknown"), "1..4"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "1 pending migration"), undefined);
 });
 
 test("parses structured framework JSON reports before stdout fallback", () => {

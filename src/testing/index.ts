@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -703,8 +703,8 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     return [parseTapReportSummary, parseNodeReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseGenericReportSummary]
-    : [parsers[framework], parseTapReportSummary, parseGenericReportSummary];
+    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parseGenericReportSummary]
+    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -968,6 +968,42 @@ function parsePlaywrightReportSummary(text: string, framework: TestFramework): T
   assignNumber(report, "total", sumDefined(counts.passed, counts.failed, counts.skipped, counts.flaky));
   assignNumber(report, "durationMs", durationMs);
   return report;
+}
+
+function parseMochaReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  const counts: Partial<Record<"passed" | "failed" | "skipped", number>> = {};
+  let durationMs: number | undefined;
+  for (const match of text.matchAll(/^\s*(\d+)\s+(passing|failing|pending)\b(?:\s+\(([^)]+)\))?\s*$/gim)) {
+    const count = Number.parseInt(match[1] ?? "", 10);
+    if (!Number.isInteger(count) || count < 0) {
+      continue;
+    }
+    const label = (match[2] ?? "").toLowerCase();
+    if (label === "passing") {
+      counts.passed = (counts.passed ?? 0) + count;
+      durationMs ??= parseDurationMs(match[3] ?? "");
+      continue;
+    }
+    if (label === "failing") {
+      counts.failed = (counts.failed ?? 0) + count;
+      continue;
+    }
+    counts.skipped = (counts.skipped ?? 0) + count;
+  }
+  if (counts.passed === undefined && counts.failed === undefined) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "mocha",
+  };
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
+  assignNumber(report, "total", sumDefined(counts.passed, counts.failed, counts.skipped));
+  assignNumber(report, "durationMs", durationMs);
+  return hasReportCounts(report) ? report : undefined;
 }
 
 function parseGenericReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
