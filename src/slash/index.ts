@@ -559,7 +559,7 @@ const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untru
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
 const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls", "ast-grep", "tree-sitter", "outline"] as const;
-const TREE_SITTER_MODE_COMPLETIONS = ["parse", "outline", "imports", "calls"] as const;
+const TREE_SITTER_MODE_COMPLETIONS = ["parse", "outline", "imports", "refs", "calls"] as const;
 const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "inspect", "run"] as const;
 const SCANNER_PROFILE_COMPLETIONS = ["semgrep", "snyk", "socket", "osv-scanner", "codeql", "trivy"] as const;
 const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep"] as const;
@@ -918,8 +918,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/tree-sitter": {
-    usage: "/tree-sitter [parse|outline|imports|calls] <file>",
-    description: "Run an optional local tree-sitter AST parse, outline, import extraction, or call extraction",
+    usage: "/tree-sitter [parse|outline|imports|refs|calls] <file> [query]",
+    description: "Run an optional local tree-sitter AST parse, outline, import, refs, or call extraction",
     group: "Workspace",
     tier: "advanced",
     aliases: ["/treesitter"],
@@ -2481,7 +2481,7 @@ function handleTreeSitterCommandText(
   argText: string,
   context: SlashCommandContext,
   usage: string,
-  options: { defaultMode?: "parse" | "outline" | "imports" | "calls" } = {},
+  options: { defaultMode?: "parse" | "outline" | "imports" | "refs" | "calls" } = {},
 ): void {
   const parsed = parseCodeTreeSitterArgText(argText, usage, { defaultMode: options.defaultMode });
   if (!parsed.ok) {

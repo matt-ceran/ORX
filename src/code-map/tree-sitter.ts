@@ -5,17 +5,18 @@ import { redactSecrets } from "../mcp/audit.js";
 import { truncateText } from "../tools/truncation.js";
 import type { TextTruncation } from "../tools/types.js";
 
-export const CODE_TREE_SITTER_USAGE = "Usage: orx code tree-sitter [parse|outline|imports|calls] <file>";
+export const CODE_TREE_SITTER_USAGE = "Usage: orx code tree-sitter [parse|outline|imports|refs|calls] <file> [query]";
 export const CODE_TREE_SITTER_OUTLINE_USAGE = "Usage: orx code outline <file>";
-export const SLASH_CODE_TREE_SITTER_USAGE = "Usage: /code tree-sitter [parse|outline|imports|calls] <file>";
+export const SLASH_CODE_TREE_SITTER_USAGE = "Usage: /code tree-sitter [parse|outline|imports|refs|calls] <file> [query]";
 export const SLASH_CODE_TREE_SITTER_OUTLINE_USAGE = "Usage: /code outline <file>";
 
 export interface CodeTreeSitterArgs {
   targetPath: string;
   mode?: CodeTreeSitterMode;
+  query?: string;
 }
 
-export type CodeTreeSitterMode = "parse" | "outline" | "imports" | "calls";
+export type CodeTreeSitterMode = "parse" | "outline" | "imports" | "refs" | "calls";
 
 export type CodeTreeSitterParseResult =
   | { ok: true; args: CodeTreeSitterArgs }
@@ -63,6 +64,7 @@ export interface CodeTreeSitterResult {
   ok: boolean;
   status: CodeTreeSitterStatus;
   mode: CodeTreeSitterMode;
+  query?: string;
   root: string;
   targetPath: string;
   command?: string;
@@ -78,6 +80,7 @@ export interface CodeTreeSitterResult {
   stderrTruncation: TextTruncation;
   outline?: CodeTreeSitterOutline;
   imports?: CodeTreeSitterImports;
+  references?: CodeTreeSitterReferences;
   calls?: CodeTreeSitterCalls;
   message?: string;
 }
@@ -122,6 +125,24 @@ export interface CodeTreeSitterCalls {
   warnings: string[];
 }
 
+export interface CodeTreeSitterReferences {
+  query: string;
+  matches: CodeTreeSitterReferenceMatch[];
+  totalMatches: number;
+  omittedMatches: number;
+  truncated: boolean;
+  warnings: string[];
+}
+
+export interface CodeTreeSitterReferenceMatch {
+  name: string;
+  kind: string;
+  role: string;
+  line?: number;
+  column?: number;
+  depth: number;
+}
+
 export interface CodeTreeSitterCallEdge {
   caller?: CodeTreeSitterOutlineEntry;
   callee?: string;
@@ -137,6 +158,7 @@ const TREE_SITTER_DISCOVERY_TIMEOUT_MS = 5_000;
 const TREE_SITTER_DISCOVERY_BYTES = 8 * 1024;
 const DEFAULT_TREE_SITTER_OUTLINE_ENTRIES = 120;
 const DEFAULT_TREE_SITTER_IMPORT_EDGES = 160;
+const DEFAULT_TREE_SITTER_REFERENCE_MATCHES = 200;
 const DEFAULT_TREE_SITTER_CALL_EDGES = 160;
 const MAX_PATH_LENGTH = 4096;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
@@ -167,6 +189,15 @@ const TREE_SITTER_OUTLINE_NODE_KINDS = new Set([
   "type_declaration",
   "variable_declarator",
 ]);
+const TREE_SITTER_REFERENCE_NODE_KINDS = new Set([
+  "identifier",
+  "field_identifier",
+  "private_property_identifier",
+  "property_identifier",
+  "shorthand_property_identifier",
+  "type_identifier",
+]);
+const TREE_SITTER_REFERENCE_QUERY_PATTERN = /^[A-Za-z_$][\w$]*$/;
 
 const EMPTY_TRUNCATION: TextTruncation = {
   truncated: false,
@@ -197,11 +228,16 @@ export function parseCodeTreeSitterArgs(
   }
 
   const first = positional[0]?.toLowerCase();
-  const hasExplicitMode = first === "parse" || first === "outline" || first === "imports" || first === "calls";
-  const mode = hasExplicitMode ? first : options.defaultMode ?? "parse";
+  const explicitMode = normalizeTreeSitterMode(first);
+  const hasExplicitMode = explicitMode !== undefined;
+  const mode = hasExplicitMode ? explicitMode : options.defaultMode ?? "parse";
   const targetPath = hasExplicitMode ? positional[1] ?? "" : positional[0] ?? "";
+  const query = hasExplicitMode ? positional[2] ?? "" : positional[1] ?? "";
+  const expectedLength = mode === "refs"
+    ? hasExplicitMode ? 3 : 2
+    : hasExplicitMode ? 2 : 1;
 
-  if ((hasExplicitMode ? positional.length !== 2 : positional.length !== 1) || !targetPath.trim()) {
+  if (positional.length !== expectedLength || !targetPath.trim()) {
     return { ok: false, message: usage };
   }
   if (isFlagLikeValue(targetPath)) {
@@ -211,7 +247,13 @@ export function parseCodeTreeSitterArgs(
   if (pathMessage) {
     return { ok: false, message: `${usage}\n${pathMessage}` };
   }
-  return { ok: true, args: { targetPath, mode } };
+  if (mode === "refs") {
+    const queryMessage = validateTreeSitterReferenceQuery(query);
+    if (queryMessage) {
+      return { ok: false, message: `${usage}\n${queryMessage}` };
+    }
+  }
+  return { ok: true, args: { targetPath, mode, ...(mode === "refs" ? { query: query.trim() } : {}) } };
 }
 
 export function parseCodeTreeSitterArgText(
@@ -234,6 +276,25 @@ export function runCodeTreeSitter(options: RunCodeTreeSitterOptions): CodeTreeSi
   const runner = options.runner ?? defaultTreeSitterRunner;
   const env = createTreeSitterEnv(options.env ?? process.env);
   const emptyText = emptyTruncatedText();
+  const query = mode === "refs" ? options.query?.trim() ?? "" : undefined;
+  const queryMessage = mode === "refs" ? validateTreeSitterReferenceQuery(query ?? "") : undefined;
+  if (queryMessage) {
+    return {
+      ok: false,
+      status: "invalid_arguments",
+      mode,
+      query,
+      root,
+      targetPath: options.targetPath,
+      args: [],
+      timedOut: false,
+      stdout: "",
+      stderr: "",
+      stdoutTruncation: emptyText.truncation,
+      stderrTruncation: emptyText.truncation,
+      message: queryMessage,
+    };
+  }
 
   const target = resolveTreeSitterTarget(root, options.targetPath);
   if (!target.ok) {
@@ -241,6 +302,7 @@ export function runCodeTreeSitter(options: RunCodeTreeSitterOptions): CodeTreeSi
       ok: false,
       status: "invalid_arguments",
       mode,
+      query,
       root,
       targetPath: options.targetPath,
       args: [],
@@ -259,6 +321,7 @@ export function runCodeTreeSitter(options: RunCodeTreeSitterOptions): CodeTreeSi
       ok: false,
       status: "tool_missing",
       mode,
+      query,
       root,
       targetPath: target.displayPath,
       args: [],
@@ -286,7 +349,7 @@ export function runCodeTreeSitter(options: RunCodeTreeSitterOptions): CodeTreeSi
   const stderr = truncateSanitizedOutput(result.stderr ?? "", maxBytes);
   const timedOut = result.error?.code === "ETIMEDOUT";
   const status = classifyTreeSitterRun(result, timedOut);
-  const source = mode === "outline" || mode === "imports" || mode === "calls"
+  const source = mode === "outline" || mode === "imports" || mode === "refs" || mode === "calls"
     ? readTreeSitterSource(root, target.displayPath)
     : undefined;
   const outline = status === "ok" && mode === "outline"
@@ -301,6 +364,12 @@ export function runCodeTreeSitter(options: RunCodeTreeSitterOptions): CodeTreeSi
         parseOutputTruncated: stdout.truncation.truncated,
       })
     : undefined;
+  const references = status === "ok" && mode === "refs"
+    ? createTreeSitterReferences(stdout.text, source, query ?? "", {
+        maxMatches: DEFAULT_TREE_SITTER_REFERENCE_MATCHES,
+        parseOutputTruncated: stdout.truncation.truncated,
+      })
+    : undefined;
   const calls = status === "ok" && mode === "calls"
     ? createTreeSitterCalls(stdout.text, source, {
         maxEdges: DEFAULT_TREE_SITTER_CALL_EDGES,
@@ -312,6 +381,7 @@ export function runCodeTreeSitter(options: RunCodeTreeSitterOptions): CodeTreeSi
     ok: status === "ok",
     status,
     mode,
+    query,
     root,
     targetPath: target.displayPath,
     command: TREE_SITTER_COMMAND,
@@ -327,6 +397,7 @@ export function runCodeTreeSitter(options: RunCodeTreeSitterOptions): CodeTreeSi
     stderrTruncation: stderr.truncation,
     outline,
     imports,
+    references,
     calls,
     message: result.error && !timedOut ? sanitizeInline(result.error.message) : undefined,
   };
@@ -341,6 +412,9 @@ export function renderCodeTreeSitterResult(
   }
   if (result.mode === "imports") {
     return renderCodeTreeSitterImportsResult(result, usage);
+  }
+  if (result.mode === "refs") {
+    return renderCodeTreeSitterReferencesResult(result, usage);
   }
   if (result.mode === "calls") {
     return renderCodeTreeSitterCallsResult(result, usage);
@@ -506,6 +580,77 @@ function renderCodeTreeSitterImportsResult(
   if (result.imports && result.imports.warnings.length > 0) {
     lines.push("  warnings:");
     for (const warning of result.imports.warnings) {
+      lines.push(`    - ${sanitizeInline(warning)}`);
+    }
+  }
+
+  if (result.status !== "ok") {
+    lines.push("  stdout:");
+    lines.push(...indentOutput(result.stdout));
+    if (result.stdoutTruncation.truncated) {
+      lines.push(`    - stdout truncated: ${result.stdoutTruncation.omittedBytes}B omitted`);
+    }
+  }
+
+  lines.push("  stderr:");
+  lines.push(...indentOutput(result.stderr));
+  if (result.stderrTruncation.truncated) {
+    lines.push(`    - stderr truncated: ${result.stderrTruncation.omittedBytes}B omitted`);
+  }
+
+  lines.push("  raw_parse: use tree-sitter parse mode for the full AST");
+  lines.push("  fallback: lexical code-map, symbols, refs, imports, and calls remain available without tree-sitter");
+  lines.push(`  usage: ${usage.replace(/^Usage:\s*/, "")}`);
+  return lines.join("\n");
+}
+
+function renderCodeTreeSitterReferencesResult(
+  result: CodeTreeSitterResult,
+  usage: string,
+): string {
+  const lines = [
+    "Code tree-sitter refs",
+    `  status: ${result.status}`,
+    `  root: ${sanitizeInline(result.root)}`,
+    `  file: ${sanitizeInline(result.targetPath)}`,
+    `  query: ${JSON.stringify(sanitizeInline(result.references?.query ?? result.query ?? ""))}`,
+    "  mode: AST-backed local single-file identifier matches via optional tree-sitter CLI (not semantic resolution)",
+    "  mutation: none",
+  ];
+  if (result.commandLine) {
+    lines.push(`  command: ${result.commandLine}`);
+  }
+  if (result.exitCode !== undefined) {
+    lines.push(`  exit_code: ${result.exitCode ?? "none"}`);
+  }
+  if (result.signal) {
+    lines.push(`  signal: ${sanitizeInline(result.signal)}`);
+  }
+  if (result.durationMs !== undefined) {
+    lines.push(`  duration_ms: ${result.durationMs}`);
+  }
+  if (result.status === "tool_missing") {
+    lines.push(`  setup: ${treeSitterMissingMessage()}`);
+  }
+  if (result.message && result.status !== "tool_missing") {
+    lines.push(`  message: ${sanitizeInline(result.message)}`);
+  }
+
+  lines.push("  refs:");
+  if (!result.references || result.references.matches.length === 0) {
+    lines.push("    - none");
+  } else {
+    for (const match of result.references.matches) {
+      lines.push(formatReferenceMatch(match));
+    }
+    if (result.references.omittedMatches > 0) {
+      lines.push(`    - ${result.references.omittedMatches} more AST identifier matches omitted`);
+    }
+  }
+
+  if (result.references && result.references.warnings.length > 0) {
+    lines.push("  warnings:");
+    for (const warning of result.references.warnings) {
       lines.push(`    - ${sanitizeInline(warning)}`);
     }
   }
@@ -760,6 +905,22 @@ function defaultTreeSitterRunner(
   return spawnSync(command, args, options);
 }
 
+function normalizeTreeSitterMode(value: string | undefined): CodeTreeSitterMode | undefined {
+  if (
+    value === "parse" ||
+    value === "outline" ||
+    value === "imports" ||
+    value === "refs" ||
+    value === "calls"
+  ) {
+    return value;
+  }
+  if (value === "reference" || value === "references") {
+    return "refs";
+  }
+  return undefined;
+}
+
 function validateTreeSitterPath(value: string): string | undefined {
   if (!value.trim()) {
     return "file must not be empty.";
@@ -769,6 +930,26 @@ function validateTreeSitterPath(value: string): string | undefined {
   }
   if (CONTROL_CHAR_PATTERN.test(value)) {
     return "file path contains unsupported control characters.";
+  }
+  return undefined;
+}
+
+function validateTreeSitterReferenceQuery(value: string): string | undefined {
+  const query = value.trim();
+  if (!query) {
+    return "query must not be empty.";
+  }
+  if (query.length > 256) {
+    return "query is too long.";
+  }
+  if (isFlagLikeValue(query)) {
+    return "query must not start with a dash.";
+  }
+  if (CONTROL_CHAR_PATTERN.test(query)) {
+    return "query contains unsupported control characters.";
+  }
+  if (!TREE_SITTER_REFERENCE_QUERY_PATTERN.test(query)) {
+    return "query must be an identifier-like name.";
   }
   return undefined;
 }
@@ -951,6 +1132,62 @@ function createTreeSitterImports(
   };
 }
 
+function createTreeSitterReferences(
+  stdout: string,
+  source: string | undefined,
+  query: string,
+  options: { maxMatches: number; parseOutputTruncated: boolean },
+): CodeTreeSitterReferences {
+  const sourceLines = source?.split(/\r\n|\r|\n/g);
+  const parsedLines = stdout
+    .replace(/\r\n|\r/g, "\n")
+    .split("\n")
+    .map(parseTreeSitterAstLine);
+  const matches: CodeTreeSitterReferenceMatch[] = [];
+  const warnings: string[] = [];
+  let totalMatches = 0;
+
+  for (const line of parsedLines) {
+    if (!line || !line.range || !TREE_SITTER_REFERENCE_NODE_KINDS.has(line.kind) || !sourceLines) {
+      continue;
+    }
+    const name = extractSourceRange(sourceLines, line.range);
+    if (name !== query) {
+      continue;
+    }
+    totalMatches += 1;
+    if (matches.length < options.maxMatches) {
+      matches.push({
+        name,
+        kind: line.kind,
+        role: findTreeSitterFieldRole(line.raw),
+        line: line.range.startLine + 1,
+        column: line.range.startColumn + 1,
+        depth: Math.max(0, Math.floor(line.indent / 2)),
+      });
+    }
+  }
+
+  if (totalMatches === 0 && stdout.trim() && sourceLines !== undefined) {
+    warnings.push("no identifier AST matches found for query; this is single-file AST matching, not semantic resolution");
+  }
+  if (options.parseOutputTruncated) {
+    warnings.push("tree-sitter parse output was truncated before reference extraction; later AST identifier matches may be omitted");
+  }
+  if (sourceLines === undefined) {
+    warnings.push("source file could not be read for AST reference extraction");
+  }
+
+  return {
+    query,
+    matches,
+    totalMatches,
+    omittedMatches: Math.max(0, totalMatches - matches.length),
+    truncated: totalMatches > matches.length || options.parseOutputTruncated,
+    warnings,
+  };
+}
+
 function createTreeSitterCalls(
   stdout: string,
   source: string | undefined,
@@ -1067,6 +1304,11 @@ function parseTreeSitterAstLine(raw: string): ParsedTreeSitterAstLine | undefine
 function parseNamedRangeFromText(text: string): TreeSitterRange | undefined {
   const match = TREE_SITTER_NAME_RANGE_PATTERN.exec(text);
   return match?.[1] ? parseRangeFromText(match[1]) : undefined;
+}
+
+function findTreeSitterFieldRole(raw: string): string {
+  const match = /^\s*([A-Za-z_][\w-]*):\s*\(/.exec(raw);
+  return match?.[1] ? sanitizeInline(match[1]) : "identifier";
 }
 
 function findChildNameRange(
@@ -1378,6 +1620,18 @@ function formatImportEdge(edge: CodeTreeSitterImportEdge): string {
     edge.line !== undefined ? `line=${edge.line}` : undefined,
     edge.column !== undefined ? `column=${edge.column}` : undefined,
     `depth=${edge.depth}`,
+  ];
+  return parts.filter((part): part is string => typeof part === "string").join(" ");
+}
+
+function formatReferenceMatch(match: CodeTreeSitterReferenceMatch): string {
+  const parts = [
+    `    - role=${JSON.stringify(sanitizeInline(match.role))}`,
+    `kind=${JSON.stringify(sanitizeInline(match.kind))}`,
+    `name=${JSON.stringify(sanitizeInline(match.name))}`,
+    match.line !== undefined ? `line=${match.line}` : undefined,
+    match.column !== undefined ? `column=${match.column}` : undefined,
+    `depth=${match.depth}`,
   ];
   return parts.filter((part): part is string => typeof part === "string").join(" ");
 }

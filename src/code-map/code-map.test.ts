@@ -752,6 +752,32 @@ test("tree-sitter adapter runs bounded optional AST parse and keeps lexical fall
     assert.match(renderedCalls, /caller="value" caller_kind="variable_declarator" caller_line=2 callee="start" line=2 column=21/);
     assert.match(renderedCalls, /caller="run" caller_kind="method_definition" caller_line=3 callee="value" line=3 column=32/);
 
+    const refsParsed = parseCodeTreeSitterArgs(["refs", "src/index.ts", "value"]);
+    if (!refsParsed.ok) {
+      assert.fail(refsParsed.message);
+    }
+    const refsResult = runCodeTreeSitter({
+      ...refsParsed.args,
+      cwd,
+      runner,
+    });
+    assert.equal(refsResult.ok, true);
+    assert.equal(refsResult.mode, "refs");
+    assert.equal(refsResult.references?.query, "value");
+    assert.deepEqual(
+      refsResult.references?.matches.map((match) => `${match.role}:${match.kind}:${match.name}:${match.line}:${match.column}`),
+      [
+        "name:identifier:value:2:7",
+        "function:identifier:value:3:32",
+      ],
+    );
+    const renderedRefs = renderCodeTreeSitterResult(refsResult);
+    assert.match(renderedRefs, /Code tree-sitter refs/);
+    assert.match(renderedRefs, /AST-backed local single-file identifier matches/);
+    assert.match(renderedRefs, /not semantic resolution/);
+    assert.match(renderedRefs, /role="name" kind="identifier" name="value" line=2 column=7/);
+    assert.match(renderedRefs, /role="function" kind="identifier" name="value" line=3 column=32/);
+
     const truncatedOutline = runCodeTreeSitter({
       ...outlineParsed.args,
       cwd,
@@ -770,6 +796,35 @@ test("tree-sitter adapter runs bounded optional AST parse and keeps lexical fall
       assert.fail(defaultOutlineParsed.message);
     }
     assert.equal(defaultOutlineParsed.args.mode, "outline");
+
+    const missingQueryParsed = parseCodeTreeSitterArgs(["refs", "src/index.ts"]);
+    assert.equal(missingQueryParsed.ok, false);
+    if (!missingQueryParsed.ok) {
+      assert.match(missingQueryParsed.message, /Usage: orx code tree-sitter/);
+    }
+
+    const invalidQueryParsed = parseCodeTreeSitterArgs(["refs", "src/index.ts", "value-name"]);
+    assert.equal(invalidQueryParsed.ok, false);
+    if (!invalidQueryParsed.ok) {
+      assert.match(invalidQueryParsed.message, /identifier-like name/);
+    }
+
+    const controlQueryParsed = parseCodeTreeSitterArgs(["refs", "src/index.ts", "value\nname"]);
+    assert.equal(controlQueryParsed.ok, false);
+    if (!controlQueryParsed.ok) {
+      assert.match(controlQueryParsed.message, /control characters/);
+    }
+
+    const invalidDirectRefs = runCodeTreeSitter({
+      cwd,
+      targetPath: "src/index.ts",
+      mode: "refs",
+      query: "--value",
+      runner,
+    });
+    assert.equal(invalidDirectRefs.ok, false);
+    assert.equal(invalidDirectRefs.status, "invalid_arguments");
+    assert.match(renderCodeTreeSitterResult(invalidDirectRefs), /query must not start with a dash/);
 
     const missingRunner: TreeSitterRunner = () => ({
       status: null,

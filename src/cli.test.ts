@@ -43,7 +43,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
-    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses\/outlines\/imports\/calls/);
+    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses\/outlines\/imports\/refs\/calls/);
     assert.match(help.stdout(), /scanners\s+List, inspect, or run local security scanner profiles/);
     assert.match(help.stdout(), /scan\s+Alias for a local scanner run/);
     assert.match(help.stdout(), /diagnostics\s+List, inspect, or run local diagnostics profiles/);
@@ -1710,6 +1710,23 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.match(treeSitterAstImports.stdout(), /Code tree-sitter imports/);
     assert.match(treeSitterAstImports.stdout(), /kind="import" source="\.\/side-effect\.js" line=1 column=1/);
     assert.match(treeSitterAstImports.stdout(), /kind="import" source="\.\/feature" line=2 column=1/);
+
+    const treeSitterAstRefs = createIo({ cwd, treeSitterRunner });
+    assert.equal(
+      await runCli(["node", "cli", "code", "tree-sitter", "refs", "src/index.ts", "feature"], {}, treeSitterAstRefs.io),
+      0,
+    );
+    assert.match(treeSitterAstRefs.stdout(), /Code tree-sitter refs/);
+    assert.match(treeSitterAstRefs.stdout(), /query: "feature"/);
+    assert.match(treeSitterAstRefs.stdout(), /role="function" kind="identifier" name="feature" line=3 column=34/);
+
+    const treeSitterRefsAlias = createIo({ cwd, treeSitterRunner });
+    assert.equal(
+      await runCli(["node", "cli", "tree-sitter", "refs", "src/index.ts", "feature"], {}, treeSitterRefsAlias.io),
+      0,
+    );
+    assert.match(treeSitterRefsAlias.stdout(), /Code tree-sitter refs/);
+    assert.match(treeSitterRefsAlias.stdout(), /role="function" kind="identifier" name="feature" line=3 column=34/);
 
     const outlineAlias = createIo({ cwd, treeSitterRunner });
     assert.equal(await runCli(["node", "cli", "outline", "src/index.ts"], {}, outlineAlias.io), 0);

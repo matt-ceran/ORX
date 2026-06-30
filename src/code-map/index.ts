@@ -34,6 +34,8 @@ export {
   type CodeTreeSitterOutline,
   type CodeTreeSitterOutlineEntry,
   type CodeTreeSitterParseResult,
+  type CodeTreeSitterReferences,
+  type CodeTreeSitterReferenceMatch,
   type CodeTreeSitterResult,
   type TreeSitterRunner,
 } from "./tree-sitter.js";
