@@ -374,6 +374,50 @@ test("parses common framework report summaries", () => {
     },
   );
 
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "=== RUN   TestAlpha",
+        "--- PASS: TestAlpha (0.01s)",
+        "=== RUN   TestBeta",
+        "--- FAIL: TestBeta (0.02s)",
+        "=== RUN   TestSkip",
+        "--- SKIP: TestSkip (0.00s)",
+        "FAIL",
+        "FAIL\texample.com/project/pkg\t0.12s",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "go",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+      durationMs: 120,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "--- PASS: TestOne (0.01s)",
+        "ok  \texample.com/project/a\t0.10s",
+        "--- PASS: TestTwo (0.01s)",
+        "ok  \texample.com/project/b\t0.20s",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "go",
+      total: 2,
+      passed: 2,
+      durationMs: 300,
+    },
+  );
+
   assert.equal(parseTestReportSummary(createTarget("unknown"), "2 failed network requests (99)"), undefined);
   assert.equal(parseTestReportSummary(createTarget("playwright"), "2 failed network requests (99)"), undefined);
   assert.equal(parseTestReportSummary(createTarget("unknown"), "ok 1 - only a log line"), undefined);
@@ -389,6 +433,19 @@ test("parses common framework report summaries", () => {
       "test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s after cleanup",
     ),
     undefined,
+  );
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "PASS: TestAlpha (0.01s)"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "--- PASS: migration completed (0.01s)"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "--- PASS: TestAlpha (0.01s) after cleanup"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "--- pass: TestAlpha (0.01s)"), undefined);
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "--- PASS: TestAlpha (0.01s)\nfail example.com/project/pkg 0.12s"),
+    {
+      framework: "unknown",
+      source: "go",
+      total: 1,
+      passed: 1,
+    },
   );
 });
 
