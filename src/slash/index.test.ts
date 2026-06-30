@@ -1901,7 +1901,9 @@ test("mcp auth reports no-auth profiles as ready in audit", async () => {
     assert.match(harness.stdout(), /MCP auth: user:docs/);
     assert.match(harness.stdout(), /auth_required: no/);
     assert.match(harness.stdout(), /auth_status: not_required/);
-    assert.match(harness.stdout(), /effective_bearer: missing/);
+    assert.match(harness.stdout(), /credential_mode: not_required/);
+    assert.match(harness.stdout(), /effective_bearer: not_required/);
+    assert.match(harness.stdout(), /macos_keychain: supported=(yes|no) opt_in=disabled status=not_required/);
     assert.match(harness.stdout(), /provider_auth: context7/);
     assert.match(harness.stdout(), /setup_url: https:\/\/context7\.com\/docs/);
     assert.match(harness.stdout(), /next_step: no bearer token required by current local declarations/);
@@ -1910,6 +1912,7 @@ test("mcp auth reports no-auth profiles as ready in audit", async () => {
     assert.match(harness.stdout(), /MCP auth setup: user:docs/);
     assert.match(harness.stdout(), /auth_required: no/);
     assert.match(harness.stdout(), /auth_status: not_required/);
+    assert.match(harness.stdout(), /credential_mode: not_required/);
     assert.match(harness.stdout(), /token_value: not needed by current local declarations/);
     assert.match(harness.stdout(), /shell_exports: not required/);
     assert.match(harness.stdout(), /provider_auth: context7/);

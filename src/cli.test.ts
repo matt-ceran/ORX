@@ -2180,7 +2180,9 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     const noAuth = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "auth", "user:docs"], env, noAuth.io), 0);
     assert.match(noAuth.stdout(), /auth_status: not_required/);
-    assert.match(noAuth.stdout(), /effective_bearer: missing/);
+    assert.match(noAuth.stdout(), /credential_mode: not_required/);
+    assert.match(noAuth.stdout(), /effective_bearer: not_required/);
+    assert.match(noAuth.stdout(), /macos_keychain: supported=(yes|no) opt_in=disabled status=not_required/);
     assert.match(noAuth.stdout(), /provider_auth: context7/);
     assert.match(noAuth.stdout(), /setup_url: https:\/\/context7\.com\/docs/);
     assert.match(noAuth.stdout(), /next_step: no bearer token required by current local declarations/);
@@ -2190,6 +2192,7 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(noAuthSetup.stdout(), /MCP auth setup: user:docs/);
     assert.match(noAuthSetup.stdout(), /auth_required: no/);
     assert.match(noAuthSetup.stdout(), /auth_status: not_required/);
+    assert.match(noAuthSetup.stdout(), /credential_mode: not_required/);
     assert.match(noAuthSetup.stdout(), /token_value: not needed by current local declarations/);
     assert.match(noAuthSetup.stdout(), /shell_exports: not required/);
     assert.match(noAuthSetup.stdout(), /provider_auth: context7/);

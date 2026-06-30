@@ -10,6 +10,7 @@ Urgent UX recovery:
 
 Completed:
 
+- Polish no-auth MCP auth readiness wording: `orx mcp auth <no-auth-profile>` and matching slash/setup output now render `credential_mode`, `effective_bearer`, and Keychain status as `not_required` instead of showing missing bearer state for profiles that do not need credentials.
 - Add nested MCP/plugin onboarding flag help: exact supported forms such as `orx mcp plan --help`, `orx mcp add-preset --help`, `orx mcp presets inspect --help`, `orx plugins scaffold --help`, `orx plugins install --help`, and `orx plugins catalog --help` now print usage before config/profile loading; unsupported nested shapes still fail instead of being promoted to generic help success.
 - Add API-key command flag help preflight: `orx ask|chat|models|credits|generation --help|-h` now prints usage before config/profile loading so malformed configs and missing saved profiles do not block first-run help, while bare `help` values such as `orx ask help` remain normal command input.
 - Refine MCP planner model-grant guidance: `orx mcp plan <profile>` and `/mcp plan <profile>` now distinguish `ready_for_model_grants` from `ready_for_model_use`, show `orx ask --mcp-tools` and `/mcp model enable` only after an active allowed read-only model grant exists, and reject poisoned/legacy active-hash model grants for billable/write tools from model-use readiness.

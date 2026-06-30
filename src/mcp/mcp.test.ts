@@ -2606,6 +2606,9 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
     const context7Status = renderMcpProfileAuthReport(context7Report);
 
     assert.match(context7Status, /auth_status: not_required/);
+    assert.match(context7Status, /credential_mode: not_required/);
+    assert.match(context7Status, /effective_bearer: not_required/);
+    assert.match(context7Status, /macos_keychain: supported=(yes|no) opt_in=disabled status=not_required/);
     assert.match(context7Status, /provider_auth: context7/);
     assert.match(context7Status, /setup_url: https:\/\/context7\.com\/docs/);
     assert.match(context7Status, /next_step: no bearer token required by current local declarations/);
