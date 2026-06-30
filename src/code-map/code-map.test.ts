@@ -855,6 +855,159 @@ test("tree-sitter adapter runs bounded optional AST parse and keeps lexical fall
   }
 });
 
+test("tree-sitter repo refs scans bounded source files without semantic overclaim", () => {
+  const cwd = createTempDir();
+  const calls: Array<{ command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }> = [];
+  const runner: TreeSitterRunner = (command, args, options) => {
+    calls.push({ command, args, cwd: options.cwd, env: options.env });
+    if (args.includes("--version")) {
+      return { status: command === "tree-sitter" ? 0 : 1, signal: null, stdout: "tree-sitter 0.0.0\n", stderr: "" };
+    }
+    if (args[1] === "src/index.ts") {
+      return {
+        status: 0,
+        signal: null,
+        stdout: [
+          "(program [0, 0] - [3, 0]",
+          "  (import_statement [0, 0] - [0, 31]",
+          "    (import_clause [0, 7] - [0, 17]",
+          "      (named_imports [0, 7] - [0, 17]",
+          "        name: (identifier [0, 9] - [0, 15]))))",
+          "  (export_statement [1, 0] - [1, 48]",
+          "    declaration: (function_declaration [1, 7] - [1, 48]",
+          "      name: (identifier [1, 16] - [1, 21])",
+          "      body: (statement_block [1, 24] - [1, 48]",
+          "        (return_statement [1, 27] - [1, 46]",
+          "          (call_expression [1, 33] - [1, 47]",
+          "            function: (identifier [1, 33] - [1, 39]))))))",
+          "",
+        ].join("\n"),
+        stderr: "",
+      };
+    }
+    if (args[1] === "src/util.ts") {
+      return {
+        status: 0,
+        signal: null,
+        stdout: [
+          "(program [0, 0] - [2, 0]",
+          "  (export_statement [0, 0] - [0, 29]",
+          "    declaration: (lexical_declaration [0, 7] - [0, 29]",
+          "      (variable_declarator [0, 13] - [0, 28]",
+          "        name: (identifier [0, 13] - [0, 19]))))",
+          "",
+        ].join("\n"),
+        stderr: "",
+      };
+    }
+    return { status: 1, signal: null, stdout: "", stderr: `unexpected file ${args[1]}` };
+  };
+
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    mkdirSync(join(cwd, "node_modules", "pkg"), { recursive: true });
+    writeFileSync(
+      join(cwd, "src", "index.ts"),
+      [
+        "import { helper } from './util';",
+        "export function start() { return helper(value); }",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(join(cwd, "src", "util.ts"), "export const helper = () => 1;\n");
+    writeFileSync(join(cwd, "src", "notes.md"), "helper\n");
+    writeFileSync(join(cwd, "node_modules", "pkg", "ignored.ts"), "helper();\n");
+
+    const parsed = parseCodeTreeSitterArgs(["repo-refs", "helper", "src"]);
+    if (!parsed.ok) {
+      assert.fail(parsed.message);
+    }
+    const result = runCodeTreeSitter({
+      ...parsed.args,
+      cwd,
+      env: {
+        PATH: "/usr/bin",
+        OPENROUTER_API_KEY: "sk-or-v1-secret",
+      },
+      runner,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.mode, "repo-refs");
+    assert.equal(result.repoReferences?.query, "helper");
+    assert.equal(result.repoReferences?.targetPath, "src");
+    assert.equal(result.repoReferences?.filesScanned, 2);
+    assert.equal(result.repoReferences?.filesWithMatches, 2);
+    assert.equal(result.repoReferences?.totalMatches, 3);
+    assert.equal(result.repoReferences?.failedFiles, 0);
+    assert.equal(calls[1]?.env.OPENROUTER_API_KEY, undefined);
+    assert.deepEqual(
+      calls.filter((call) => call.args[0] === "parse").map((call) => call.args[1]),
+      ["src/index.ts", "src/util.ts"],
+    );
+    assert.deepEqual(
+      result.repoReferences?.matches.map((match) => `${match.path}:${match.role}:${match.line}:${match.column}`),
+      [
+        "src/index.ts:name:1:10",
+        "src/index.ts:function:2:34",
+        "src/util.ts:name:1:14",
+      ],
+    );
+
+    const rendered = renderCodeTreeSitterResult(result);
+    assert.match(rendered, /Code tree-sitter repo refs/);
+    assert.match(rendered, /not semantic resolution/);
+    assert.match(rendered, /files_scanned: 2/);
+    assert.match(rendered, /files_with_matches: 2/);
+    assert.match(rendered, /matches: 3/);
+    assert.match(rendered, /path="src\/index\.ts" role="function" kind="identifier" name="helper" line=2 column=34/);
+    assert.doesNotMatch(rendered, /node_modules/);
+
+    const missingQuery = parseCodeTreeSitterArgs(["repo-refs"]);
+    assert.equal(missingQuery.ok, false);
+    if (!missingQuery.ok) {
+      assert.match(missingQuery.message, /Usage: orx code tree-sitter/);
+    }
+
+    const invalidTarget = runCodeTreeSitter({
+      cwd,
+      targetPath: "../outside",
+      mode: "repo-refs",
+      query: "helper",
+      runner,
+    });
+    assert.equal(invalidTarget.ok, false);
+    assert.equal(invalidTarget.status, "invalid_arguments");
+    assert.match(renderCodeTreeSitterResult(invalidTarget), /must stay inside/);
+
+    const generatedTarget = runCodeTreeSitter({
+      cwd,
+      targetPath: "node_modules",
+      mode: "repo-refs",
+      query: "helper",
+      runner,
+    });
+    assert.equal(generatedTarget.ok, false);
+    assert.equal(generatedTarget.status, "invalid_arguments");
+    assert.match(renderCodeTreeSitterResult(generatedTarget), /generated or vendor directories/);
+
+    const unsupportedFile = runCodeTreeSitter({
+      cwd,
+      targetPath: "src/notes.md",
+      mode: "repo-refs",
+      query: "helper",
+      runner,
+    });
+    assert.equal(unsupportedFile.ok, true);
+    assert.equal(unsupportedFile.repoReferences?.filesScanned, 0);
+    assert.ok(unsupportedFile.repoReferences?.omissions.some((omission) =>
+      omission.path === "src/notes.md" &&
+      omission.reason === "source file extension is not supported for tree-sitter repo refs"));
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("tree-sitter call extraction avoids anonymous nested caller and callee overclaims", () => {
   const cwd = createTempDir();
   const runner: TreeSitterRunner = (command, args) => {

@@ -317,11 +317,11 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/code o"), [["outline "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/code tree-sitter o"), [["outline "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/code tree-sitter i"), [["imports "], "i"]);
-  assert.deepEqual(completeSlashCommandLine("/code tree-sitter r"), [["refs "], "r"]);
+  assert.deepEqual(completeSlashCommandLine("/code tree-sitter r"), [["refs ", "repo-refs "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/code tree-sitter c"), [["calls "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/tree-sitter p"), [["parse "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/tree-sitter i"), [["imports "], "i"]);
-  assert.deepEqual(completeSlashCommandLine("/tree-sitter r"), [["refs "], "r"]);
+  assert.deepEqual(completeSlashCommandLine("/tree-sitter r"), [["refs ", "repo-refs "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/tree-sitter c"), [["calls "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/scanners r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/scanners inspect s"), [["semgrep ", "snyk ", "socket "], "s"]);
@@ -587,6 +587,13 @@ test("map slash command renders a local code map", () => {
     assert.equal(handleSlashCommand("/tree-sitter refs src/index.ts feature", treeSitterRefsAlias.context), "continue");
     assert.match(treeSitterRefsAlias.stdout(), /Code tree-sitter refs/);
     assert.match(treeSitterRefsAlias.stdout(), /role="function" kind="identifier" name="feature" line=3 column=34/);
+
+    const treeSitterRepoRefs = createSlashHarness({ cwd, treeSitterRunner });
+    assert.equal(handleSlashCommand("/code tree-sitter repo-refs feature src/index.ts", treeSitterRepoRefs.context), "continue");
+    assert.match(treeSitterRepoRefs.stdout(), /Code tree-sitter repo refs/);
+    assert.match(treeSitterRepoRefs.stdout(), /not semantic resolution/);
+    assert.match(treeSitterRepoRefs.stdout(), /files_scanned: 1/);
+    assert.match(treeSitterRepoRefs.stdout(), /path="src\/index\.ts" role="function" kind="identifier" name="feature" line=3 column=34/);
 
     const outlineAlias = createSlashHarness({ cwd, treeSitterRunner });
     assert.equal(handleSlashCommand("/outline src/index.ts", outlineAlias.context), "continue");
