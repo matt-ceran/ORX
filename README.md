@@ -66,6 +66,7 @@ orx code map
 orx map src
 orx code symbols
 orx code calls
+orx code outline src/cli.ts
 orx scanners list
 orx scanners inspect semgrep
 orx diagnostics list
@@ -141,6 +142,8 @@ orx calls renderCode
 orx code ast-grep 'console.log($A)' src --lang ts
 orx ast-grep 'console.log($A)' src --lang ts --rewrite 'logger($A)' --preview
 orx code tree-sitter src/cli.ts
+orx code outline src/cli.ts
+orx tree-sitter outline src/cli.ts
 orx tree-sitter src/cli.ts
 orx diagnostics list
 orx diagnostics inspect typescript
@@ -155,7 +158,7 @@ orx scan semgrep src --config semgrep.yml --json
 The code map scans a bounded local tree, skips generated/vendor directories such as `node_modules`, `.git`, `.orx`, `dist`, `build`, and `coverage`, summarizes languages, key files, package/config/source entrypoints, and top JavaScript/TypeScript source imports/exports, and redacts secret-like rendered paths or symbols. The symbol index reuses the same bounded scan to list exported JavaScript/TypeScript symbols with file paths and line numbers. The reference index reuses the same bounded scan to find JavaScript/TypeScript code references for a query while skipping comments, string literals, and template literals. The import graph reuses the same bounded scan to render JavaScript/TypeScript import edges, including static imports, re-export-from edges, CommonJS `require(...)`, and string-literal dynamic `import(...)`, resolve local relative imports to source files where possible, and count external or unresolved local imports.
 The call graph reuses the same local bounds and redaction to infer JavaScript/TypeScript callable definitions and direct local call edges from a conservative lexical scan. It is not AST-backed; duplicate callee names are marked ambiguous instead of pretending to know the exact target.
 The ast-grep command runs an operator-invoked local `sg` or `ast-grep` binary with shell disabled, a cleaned environment, bounded/redacted output, and a path guard that keeps searches inside the current working directory. ORX does not install ast-grep and does not modify files; `--rewrite <template> --preview` passes ast-grep rewrite preview arguments without `--update-all` or other mutation flags. If neither `sg` nor `ast-grep` is on `PATH`, ORX exits nonzero and prints local setup guidance.
-The tree-sitter command runs an operator-invoked local `tree-sitter parse <file>` with shell disabled, a cleaned environment, bounded/redacted output, and a path guard that keeps the target file inside the current working directory. ORX does not install tree-sitter, grammars, or parser packages, never mutates files, and keeps the lexical code-map, symbols, refs, imports, and calls commands available as the dependency-free fallback.
+The tree-sitter command runs an operator-invoked local `tree-sitter parse <file>` with shell disabled, a cleaned environment, bounded/redacted output, and a path guard that keeps the target file inside the current working directory. `orx code outline <file>`, `orx outline <file>`, and `orx tree-sitter outline <file>` reuse that same guarded parse and render a bounded AST outline of definition-like nodes, extracting names from tree-sitter ranges when the source file can be read. ORX does not install tree-sitter, grammars, or parser packages, never mutates files, and keeps the lexical code-map, symbols, refs, imports, and calls commands available as the dependency-free fallback.
 
 Local diagnostics profiles are explicit operator commands, not model tools:
 
@@ -423,12 +426,14 @@ The chat UI keeps in-session message history for the current process, streams as
 /history [search <query>|clear]
 /tests [list|run]
 /map [path]
-/code [map|symbols|refs|imports|calls|ast-grep]
+/code [map|symbols|refs|imports|calls|ast-grep|tree-sitter|outline]
 /symbols [query]
 /refs <query>
 /imports [query]
 /calls [query]
 /ast-grep <pattern> [path] [--lang <lang>]
+/tree-sitter [parse|outline] <file>
+/outline <file>
 /scanners [list|inspect <profile>|run semgrep <path> --config <local-config-path> [--json]]
 /scan semgrep <path> --config <local-config-path> [--json]
 /diagnostics [list|inspect <profile>|run typescript [--project <local-tsconfig-path>] [--json]]

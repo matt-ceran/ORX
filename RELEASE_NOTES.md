@@ -70,7 +70,7 @@ OpenRouter remains the normal inference path. Credentials are detected from envi
 
 ## Known optional post-v0.1 work
 
-- LSP/SCIP and tree-sitter-backed code intelligence beyond the current dependency-free indexes.
+- LSP/SCIP and deeper tree-sitter-backed call/reference/import intelligence beyond the current outline and dependency-free indexes.
 - Sourcegraph/GitHub/GitLab read-only profiles with the same explicit operator boundaries as existing MCP/plugin surfaces.
 - Managed OAuth/device/browser credential flows for MCP providers beyond bearer env vars and opt-in macOS Keychain support.
 - Additional scanner/diagnostics profiles only after deterministic no-network/no-auth command shapes are proven.

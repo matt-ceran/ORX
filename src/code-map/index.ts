@@ -20,12 +20,17 @@ export {
 } from "./ast-grep.js";
 export {
   CODE_TREE_SITTER_USAGE,
+  CODE_TREE_SITTER_OUTLINE_USAGE,
   SLASH_CODE_TREE_SITTER_USAGE,
+  SLASH_CODE_TREE_SITTER_OUTLINE_USAGE,
   parseCodeTreeSitterArgs,
   parseCodeTreeSitterArgText,
   renderCodeTreeSitterResult,
   runCodeTreeSitter,
   type CodeTreeSitterArgs,
+  type CodeTreeSitterMode,
+  type CodeTreeSitterOutline,
+  type CodeTreeSitterOutlineEntry,
   type CodeTreeSitterParseResult,
   type CodeTreeSitterResult,
   type TreeSitterRunner,

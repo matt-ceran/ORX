@@ -8,7 +8,7 @@ import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { runCli } from "./cli.js";
 import { getNativeToolDefinitions } from "./agent/index.js";
-import type { AstGrepRunner } from "./code-map/index.js";
+import type { AstGrepRunner, TreeSitterRunner } from "./code-map/index.js";
 import type { DiagnosticsProcessRunner } from "./diagnostics/index.js";
 import type { ScannerProcessRunner } from "./security/index.js";
 import type { RunProcessOptions, RunProcessResult } from "./tools/process.js";
@@ -43,7 +43,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
-    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses/);
+    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses\/outlines/);
     assert.match(help.stdout(), /scanners\s+List, inspect, or run local security scanner profiles/);
     assert.match(help.stdout(), /scan\s+Alias for a local scanner run/);
     assert.match(help.stdout(), /diagnostics\s+List, inspect, or run local diagnostics profiles/);
@@ -1647,6 +1647,42 @@ test("cli code map renders a bounded repository overview without an API key", as
       astGrepCalls.some((call) => call.args.includes("--update-all")),
       false,
     );
+
+    const treeSitterCalls: Array<{ command: string; args: string[] }> = [];
+    const treeSitterRunner: TreeSitterRunner = (command, args) => {
+      treeSitterCalls.push({ command, args });
+      if (args.includes("--version")) {
+        return { status: command === "tree-sitter" ? 0 : 1, signal: null, stdout: "tree-sitter 0.0.0\n", stderr: "" };
+      }
+      return {
+        status: 0,
+        signal: null,
+        stdout: [
+          "(program [0, 0] - [4, 0]",
+          "  (export_statement [2, 0] - [2, 44]",
+          "    declaration: (function_declaration [2, 7] - [2, 43]",
+          "      name: (identifier [2, 16] - [2, 21])))",
+          "  (function_declaration [3, 0] - [3, 35]",
+          "    name: (identifier [3, 9] - [3, 13]))",
+          "",
+        ].join("\n"),
+        stderr: "",
+      };
+    };
+    const treeSitterOutline = createIo({ cwd, treeSitterRunner });
+    assert.equal(
+      await runCli(["node", "cli", "code", "tree-sitter", "outline", "src/index.ts"], {}, treeSitterOutline.io),
+      0,
+    );
+    assert.match(treeSitterOutline.stdout(), /Code tree-sitter outline/);
+    assert.match(treeSitterOutline.stdout(), /kind="function_declaration" name="start" line=3 column=8/);
+    assert.match(treeSitterOutline.stdout(), /kind="function_declaration" name="boot" line=4 column=1/);
+    assert.deepEqual(treeSitterCalls.at(-1)?.args, ["parse", "src/index.ts"]);
+
+    const outlineAlias = createIo({ cwd, treeSitterRunner });
+    assert.equal(await runCli(["node", "cli", "outline", "src/index.ts"], {}, outlineAlias.io), 0);
+    assert.match(outlineAlias.stdout(), /Code tree-sitter outline/);
+    assert.match(outlineAlias.stdout(), /raw_parse: use tree-sitter parse mode/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -5212,6 +5248,7 @@ function createIo(
     mcpKeychainRunner?: McpMacosKeychainCommandRunner;
     mcpKeychainPlatform?: NodeJS.Platform;
     astGrepRunner?: AstGrepRunner;
+    treeSitterRunner?: TreeSitterRunner;
     scannerRunner?: ScannerProcessRunner;
     diagnosticsRunner?: DiagnosticsProcessRunner;
     stdin?: NodeJS.ReadableStream;
@@ -5249,6 +5286,7 @@ function createIo(
       mcpKeychainRunner: options.mcpKeychainRunner,
       mcpKeychainPlatform: options.mcpKeychainPlatform,
       astGrepRunner: options.astGrepRunner,
+      treeSitterRunner: options.treeSitterRunner,
       scannerRunner: options.scannerRunner,
       diagnosticsRunner: options.diagnosticsRunner,
     },

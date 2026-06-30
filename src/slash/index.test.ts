@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { LoadedConfig, OrxConfig } from "../config/types.js";
-import type { AstGrepRunner } from "../code-map/index.js";
+import type { AstGrepRunner, TreeSitterRunner } from "../code-map/index.js";
 import type { DiagnosticsProcessRunner } from "../diagnostics/index.js";
 import type { DelegationState } from "../delegation/index.js";
 import type { OpenRouterCreditsInfo, OpenRouterModelInfo } from "../openrouter/live.js";
@@ -126,7 +126,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/delegate \[help\|status\|plan\|add\|remove\|clear\|team\|policy\]/);
   assert.match(output, /\/delegates \[list\|status\|plan\|policy\|teams\|save\|use\|inspect\|delete\]/);
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
-  assert.match(output, /\/code \[map\|symbols\|refs\|imports\|calls\|ast-grep\|tree-sitter\]/);
+  assert.match(output, /\/code \[map\|symbols\|refs\|imports\|calls\|ast-grep\|tree-sitter\|outline\]/);
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
   assert.match(output, /\/scanners \[list\|inspect <profile>\|run semgrep <path> --config <local-config-path> \[--json\]\]/);
   assert.match(output, /\/scan semgrep <path> --config <local-config-path> \[--json\]/);
@@ -314,6 +314,9 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/code s"), [["symbols "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/code c"), [["calls "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/code a"), [["ast-grep "], "a"]);
+  assert.deepEqual(completeSlashCommandLine("/code o"), [["outline "], "o"]);
+  assert.deepEqual(completeSlashCommandLine("/code tree-sitter o"), [["outline "], "o"]);
+  assert.deepEqual(completeSlashCommandLine("/tree-sitter p"), [["parse "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/scanners r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/scanners inspect s"), [["semgrep ", "snyk ", "socket "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/scanners run s"), [["semgrep "], "s"]);
@@ -512,6 +515,39 @@ test("map slash command renders a local code map", () => {
       astGrepCalls.some((call) => call.args.includes("--update-all")),
       false,
     );
+
+    const treeSitterCalls: Array<{ command: string; args: string[] }> = [];
+    const treeSitterRunner: TreeSitterRunner = (command, args) => {
+      treeSitterCalls.push({ command, args });
+      if (args.includes("--version")) {
+        return { status: command === "tree-sitter" ? 0 : 1, signal: null, stdout: "tree-sitter 0.0.0\n", stderr: "" };
+      }
+      return {
+        status: 0,
+        signal: null,
+        stdout: [
+          "(program [0, 0] - [4, 0]",
+          "  (export_statement [2, 0] - [2, 68]",
+          "    declaration: (function_declaration [2, 7] - [2, 67]",
+          "      name: (identifier [2, 16] - [2, 21])))",
+          "  (function_declaration [3, 0] - [3, 35]",
+          "    name: (identifier [3, 9] - [3, 13]))",
+          "",
+        ].join("\n"),
+        stderr: "",
+      };
+    };
+    const treeSitterOutline = createSlashHarness({ cwd, treeSitterRunner });
+    assert.equal(handleSlashCommand("/code tree-sitter outline src/index.ts", treeSitterOutline.context), "continue");
+    assert.match(treeSitterOutline.stdout(), /Code tree-sitter outline/);
+    assert.match(treeSitterOutline.stdout(), /kind="function_declaration" name="start" line=3 column=8/);
+    assert.match(treeSitterOutline.stdout(), /kind="function_declaration" name="boot" line=4 column=1/);
+    assert.deepEqual(treeSitterCalls.at(-1)?.args, ["parse", "src/index.ts"]);
+
+    const outlineAlias = createSlashHarness({ cwd, treeSitterRunner });
+    assert.equal(handleSlashCommand("/outline src/index.ts", outlineAlias.context), "continue");
+    assert.match(outlineAlias.stdout(), /Code tree-sitter outline/);
+    assert.match(outlineAlias.stdout(), /raw_parse: use tree-sitter parse mode/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -4863,6 +4899,7 @@ function createSlashHarness(
     browserSnapshot?: SlashCommandContext["browserSnapshot"];
     browserResolveHost?: SlashCommandContext["browserResolveHost"];
     astGrepRunner?: AstGrepRunner;
+    treeSitterRunner?: TreeSitterRunner;
     scannerRunner?: ScannerProcessRunner;
     diagnosticsRunner?: DiagnosticsProcessRunner;
     braveSearchApiKey?: string;
@@ -4926,6 +4963,7 @@ function createSlashHarness(
       browserSnapshot: options.browserSnapshot,
       browserResolveHost: options.browserResolveHost,
       astGrepRunner: options.astGrepRunner,
+      treeSitterRunner: options.treeSitterRunner,
       scannerRunner: options.scannerRunner,
       diagnosticsRunner: options.diagnosticsRunner,
       braveSearchApiKey: options.braveSearchApiKey,

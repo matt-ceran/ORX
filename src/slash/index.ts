@@ -16,6 +16,7 @@ import {
 } from "../auth/openrouter.js";
 import {
   SLASH_CODE_AST_GREP_USAGE,
+  SLASH_CODE_TREE_SITTER_OUTLINE_USAGE,
   SLASH_CODE_TREE_SITTER_USAGE,
   createCodeMap,
   createCodeCallGraph,
@@ -557,7 +558,8 @@ const PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS = ["list", "status"] as const;
 const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
-const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls", "ast-grep", "tree-sitter"] as const;
+const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls", "ast-grep", "tree-sitter", "outline"] as const;
+const TREE_SITTER_MODE_COMPLETIONS = ["parse", "outline"] as const;
 const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "inspect", "run"] as const;
 const SCANNER_PROFILE_COMPLETIONS = ["semgrep", "snyk", "socket", "osv-scanner", "codeql", "trivy"] as const;
 const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep"] as const;
@@ -826,7 +828,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/code": {
-    usage: "/code [map|symbols|refs|imports|calls|ast-grep|tree-sitter]",
+    usage: "/code [map|symbols|refs|imports|calls|ast-grep|tree-sitter|outline]",
     description: "Run local code intelligence commands",
     group: "Workspace",
     tier: "advanced",
@@ -895,7 +897,13 @@ const COMMANDS: Record<string, SlashDefinition> = {
         handleTreeSitterCommandText(stripFirstSlashArg(command.argText), context, SLASH_CODE_TREE_SITTER_USAGE);
         return "continue";
       }
-      writeLine(context.io.stderr, "Usage: /code [map|symbols|refs|imports|calls|ast-grep|tree-sitter] [query-or-path]");
+      if (subcommand === "outline" || subcommand === "ast-outline") {
+        handleTreeSitterCommandText(stripFirstSlashArg(command.argText), context, SLASH_CODE_TREE_SITTER_OUTLINE_USAGE, {
+          defaultMode: "outline",
+        });
+        return "continue";
+      }
+      writeLine(context.io.stderr, "Usage: /code [map|symbols|refs|imports|calls|ast-grep|tree-sitter|outline] [query-or-path]");
       return "continue";
     },
   },
@@ -910,13 +918,25 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/tree-sitter": {
-    usage: "/tree-sitter <file>",
-    description: "Run an optional local tree-sitter AST parse",
+    usage: "/tree-sitter [parse|outline] <file>",
+    description: "Run an optional local tree-sitter AST parse or outline",
     group: "Workspace",
     tier: "advanced",
     aliases: ["/treesitter"],
     handler: (command, context): SlashResult => {
       handleTreeSitterCommandText(command.argText, context, SLASH_CODE_TREE_SITTER_USAGE.replace("/code tree-sitter", "/tree-sitter"));
+      return "continue";
+    },
+  },
+  "/outline": {
+    usage: "/outline <file>",
+    description: "Run an optional local tree-sitter AST outline",
+    group: "Workspace",
+    tier: "advanced",
+    handler: (command, context): SlashResult => {
+      handleTreeSitterCommandText(command.argText, context, SLASH_CODE_TREE_SITTER_OUTLINE_USAGE.replace("/code outline", "/outline"), {
+        defaultMode: "outline",
+      });
       return "continue";
     },
   },
@@ -1917,7 +1937,15 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
     case "/tests":
       return argIndex === 0 ? [...TEST_SUBCOMMAND_COMPLETIONS] : [];
     case "/code":
-      return argIndex === 0 ? [...CODE_SUBCOMMAND_COMPLETIONS] : [];
+      if (argIndex === 0) {
+        return [...CODE_SUBCOMMAND_COMPLETIONS];
+      }
+      return (firstArg === "tree-sitter" || firstArg === "treesitter" || firstArg === "ts-ast") && argIndex === 1
+        ? [...TREE_SITTER_MODE_COMPLETIONS]
+        : [];
+    case "/tree-sitter":
+    case "/treesitter":
+      return argIndex === 0 ? [...TREE_SITTER_MODE_COMPLETIONS] : [];
     case "/scanners":
       if (argIndex === 0) {
         return [...SCANNER_SUBCOMMAND_COMPLETIONS];
@@ -2449,8 +2477,13 @@ function handleAstGrepCommandText(argText: string, context: SlashCommandContext,
   );
 }
 
-function handleTreeSitterCommandText(argText: string, context: SlashCommandContext, usage: string): void {
-  const parsed = parseCodeTreeSitterArgText(argText, usage);
+function handleTreeSitterCommandText(
+  argText: string,
+  context: SlashCommandContext,
+  usage: string,
+  options: { defaultMode?: "parse" | "outline" } = {},
+): void {
+  const parsed = parseCodeTreeSitterArgText(argText, usage, { defaultMode: options.defaultMode });
   if (!parsed.ok) {
     writeLine(context.io.stderr, parsed.message);
     return;

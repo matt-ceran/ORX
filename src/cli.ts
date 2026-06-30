@@ -13,6 +13,7 @@ import { BIN_NAME } from "./constants.js";
 import { formatToolCallStart, formatToolResult, runAgentTurn } from "./agent/index.js";
 import {
   CODE_AST_GREP_USAGE,
+  CODE_TREE_SITTER_OUTLINE_USAGE,
   CODE_TREE_SITTER_USAGE,
   createCodeMap,
   createCodeCallGraph,
@@ -299,7 +300,7 @@ const CLI_NAMESPACE_USAGES = {
   bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
   tests: "Usage: orx tests [list|run [target-id] [-- args...]]",
-  code: "Usage: orx code [map|symbols|refs|imports|calls|ast-grep|tree-sitter] [query-or-path]",
+  code: "Usage: orx code [map|symbols|refs|imports|calls|ast-grep|tree-sitter|outline] [query-or-path]",
   scanners: SCANNERS_USAGE,
   scan: SCAN_USAGE,
   diagnostics: DIAGNOSTICS_USAGE,
@@ -780,6 +781,13 @@ export async function runCli(
     return runCodeTreeSitterCommand(args.slice(1), io);
   }
 
+  if (first === "outline") {
+    return runCodeTreeSitterCommand(args.slice(1), io, {
+      defaultMode: "outline",
+      usage: CODE_TREE_SITTER_OUTLINE_USAGE,
+    });
+  }
+
   if (first === "scanners" || first === "scanner") {
     return runScannersCommand(args.slice(1), io, env);
   }
@@ -892,7 +900,7 @@ function helpText(): string {
     "  bins          List, inspect, trust, untrust, or run plugin bins",
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  tests         Discover or run native test targets",
-    "  code          Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses",
+    "  code          Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses/outlines",
     "  scanners      List, inspect, or run local security scanner profiles",
     "  scan          Alias for a local scanner run",
     "  diagnostics  List, inspect, or run local diagnostics profiles",
@@ -1088,6 +1096,12 @@ function runCodeCommand(args: string[], io: CliIo): number {
   if (subcommand === "tree-sitter" || subcommand === "treesitter" || subcommand === "ts-ast") {
     return runCodeTreeSitterCommand(args.slice(1), io);
   }
+  if (subcommand === "outline" || subcommand === "ast-outline") {
+    return runCodeTreeSitterCommand(args.slice(1), io, {
+      defaultMode: "outline",
+      usage: CODE_TREE_SITTER_OUTLINE_USAGE,
+    });
+  }
 
   writeLine(io.stderr, CLI_NAMESPACE_USAGES.code);
   return 1;
@@ -1153,12 +1167,17 @@ function runCodeAstGrepCommand(args: string[], io: CliIo): number {
   return result.ok ? 0 : 1;
 }
 
-function runCodeTreeSitterCommand(args: string[], io: CliIo): number {
+function runCodeTreeSitterCommand(
+  args: string[],
+  io: CliIo,
+  options: { defaultMode?: "parse" | "outline"; usage?: string } = {},
+): number {
+  const usage = options.usage ?? CODE_TREE_SITTER_USAGE;
   if (isNamespaceHelp(args)) {
-    writeLine(io.stdout, CODE_TREE_SITTER_USAGE);
+    writeLine(io.stdout, usage);
     return 0;
   }
-  const parsed = parseCodeTreeSitterArgs(args, CODE_TREE_SITTER_USAGE);
+  const parsed = parseCodeTreeSitterArgs(args, usage, { defaultMode: options.defaultMode });
   if (!parsed.ok) {
     writeLine(io.stderr, parsed.message);
     return 1;
@@ -1170,7 +1189,7 @@ function runCodeTreeSitterCommand(args: string[], io: CliIo): number {
   });
   writeLine(
     result.ok ? io.stdout : io.stderr,
-    renderCodeTreeSitterResult(result, CODE_TREE_SITTER_USAGE),
+    renderCodeTreeSitterResult(result, usage),
   );
   return result.ok ? 0 : 1;
 }

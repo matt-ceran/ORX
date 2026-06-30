@@ -633,14 +633,36 @@ test("tree-sitter adapter runs bounded optional AST parse and keeps lexical fall
     return {
       status: 0,
       signal: null,
-      stdout: "(program (export_statement (function_declaration name: (identifier))))\n",
+      stdout: [
+        "(program [0, 0] - [3, 0]",
+        "  (export_statement [0, 0] - [0, 37]",
+        "    declaration: (function_declaration [0, 7] - [0, 36]",
+        "      name: (identifier [0, 16] - [0, 21])))",
+        "  (lexical_declaration [1, 0] - [1, 29]",
+        "    (variable_declarator [1, 6] - [1, 27]",
+        "      name: (identifier [1, 6] - [1, 11])))",
+        "  (class_declaration [2, 0] - [2, 48]",
+        "    name: (type_identifier [2, 6] - [2, 13])",
+        "    body: (class_body [2, 14] - [2, 48]",
+        "      (method_definition [2, 16] - [2, 45]",
+        "        name: (property_identifier [2, 16] - [2, 19])))))",
+        "",
+      ].join("\n"),
       stderr: "",
     };
   };
 
   try {
     mkdirSync(join(cwd, "src"), { recursive: true });
-    writeFileSync(join(cwd, "src", "index.ts"), "export function start() { return 1; }\n");
+    writeFileSync(
+      join(cwd, "src", "index.ts"),
+      [
+        "export function start() { return 1; }",
+        "const value = () => start();",
+        "class Example { run() { return value(); } }",
+        "",
+      ].join("\n"),
+    );
 
     const parsed = parseCodeTreeSitterArgs(["src/index.ts"]);
     if (!parsed.ok) {
@@ -669,6 +691,53 @@ test("tree-sitter adapter runs bounded optional AST parse and keeps lexical fall
     assert.match(rendered, /mutation: none/);
     assert.match(rendered, /fallback: lexical code-map/);
     assert.match(rendered, /\(program/);
+
+    const outlineParsed = parseCodeTreeSitterArgs(["outline", "src/index.ts"]);
+    if (!outlineParsed.ok) {
+      assert.fail(outlineParsed.message);
+    }
+    const outline = runCodeTreeSitter({
+      ...outlineParsed.args,
+      cwd,
+      runner,
+    });
+    assert.equal(outline.ok, true);
+    assert.equal(outline.mode, "outline");
+    assert.deepEqual(calls.at(-1)?.args, ["parse", "src/index.ts"]);
+    assert.deepEqual(
+      outline.outline?.entries.map((entry) => `${entry.kind}:${entry.name}:${entry.line}:${entry.column}`),
+      [
+        "function_declaration:start:1:8",
+        "variable_declarator:value:2:7",
+        "class_declaration:Example:3:1",
+        "method_definition:run:3:17",
+      ],
+    );
+    const renderedOutline = renderCodeTreeSitterResult(outline);
+    assert.match(renderedOutline, /Code tree-sitter outline/);
+    assert.match(renderedOutline, /kind="function_declaration" name="start" line=1 column=8/);
+    assert.match(renderedOutline, /kind="variable_declarator" name="value" line=2 column=7/);
+    assert.match(renderedOutline, /kind="class_declaration" name="Example" line=3 column=1/);
+    assert.match(renderedOutline, /raw_parse: use tree-sitter parse mode for the full AST/);
+
+    const truncatedOutline = runCodeTreeSitter({
+      ...outlineParsed.args,
+      cwd,
+      maxBytes: 80,
+      runner,
+    });
+    assert.equal(truncatedOutline.ok, true);
+    assert.equal(truncatedOutline.outline?.truncated, true);
+    assert.match(
+      renderCodeTreeSitterResult(truncatedOutline),
+      /tree-sitter parse output was truncated before outline extraction/,
+    );
+
+    const defaultOutlineParsed = parseCodeTreeSitterArgs(["src/index.ts"], "Usage: outline", { defaultMode: "outline" });
+    if (!defaultOutlineParsed.ok) {
+      assert.fail(defaultOutlineParsed.message);
+    }
+    assert.equal(defaultOutlineParsed.args.mode, "outline");
 
     const missingRunner: TreeSitterRunner = () => ({
       status: null,
