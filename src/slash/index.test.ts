@@ -316,7 +316,9 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/code a"), [["ast-grep "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/code o"), [["outline "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/code tree-sitter o"), [["outline "], "o"]);
+  assert.deepEqual(completeSlashCommandLine("/code tree-sitter c"), [["calls "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/tree-sitter p"), [["parse "], "p"]);
+  assert.deepEqual(completeSlashCommandLine("/tree-sitter c"), [["calls "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/scanners r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/scanners inspect s"), [["semgrep ", "snyk ", "socket "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/scanners run s"), [["semgrep "], "s"]);
@@ -530,9 +532,17 @@ test("map slash command renders a local code map", () => {
           "(program [0, 0] - [4, 0]",
           "  (export_statement [2, 0] - [2, 68]",
           "    declaration: (function_declaration [2, 7] - [2, 67]",
-          "      name: (identifier [2, 16] - [2, 21])))",
+          "      name: (identifier [2, 16] - [2, 21])",
+          "      body: (statement_block [2, 24] - [2, 67]",
+          "        (return_statement [2, 26] - [2, 65]",
+          "          (call_expression [2, 33] - [2, 42]",
+          "            function: (identifier [2, 33] - [2, 40])))))",
           "  (function_declaration [3, 0] - [3, 35]",
-          "    name: (identifier [3, 9] - [3, 13]))",
+          "    name: (identifier [3, 9] - [3, 13])",
+          "    body: (statement_block [3, 16] - [3, 35]",
+          "      (return_statement [3, 18] - [3, 32]",
+          "        (call_expression [3, 25] - [3, 32]",
+          "          function: (identifier [3, 25] - [3, 30]))))",
           "",
         ].join("\n"),
         stderr: "",
@@ -544,6 +554,12 @@ test("map slash command renders a local code map", () => {
     assert.match(treeSitterOutline.stdout(), /kind="function_declaration" name="start" line=3 column=8/);
     assert.match(treeSitterOutline.stdout(), /kind="function_declaration" name="boot" line=4 column=1/);
     assert.deepEqual(treeSitterCalls.at(-1)?.args, ["parse", "src/index.ts"]);
+
+    const treeSitterAstCalls = createSlashHarness({ cwd, treeSitterRunner });
+    assert.equal(handleSlashCommand("/code tree-sitter calls src/index.ts", treeSitterAstCalls.context), "continue");
+    assert.match(treeSitterAstCalls.stdout(), /Code tree-sitter calls/);
+    assert.match(treeSitterAstCalls.stdout(), /caller="start" caller_kind="function_declaration" caller_line=3 callee="feature" line=3 column=34/);
+    assert.match(treeSitterAstCalls.stdout(), /caller="boot" caller_kind="function_declaration" caller_line=4 callee="start" line=4 column=26/);
 
     const outlineAlias = createSlashHarness({ cwd, treeSitterRunner });
     assert.equal(handleSlashCommand("/outline src/index.ts", outlineAlias.context), "continue");

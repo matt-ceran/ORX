@@ -43,7 +43,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /bins\s+List, inspect, trust, untrust, or run plugin bins/);
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
-    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses\/outlines/);
+    assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses\/outlines\/calls/);
     assert.match(help.stdout(), /scanners\s+List, inspect, or run local security scanner profiles/);
     assert.match(help.stdout(), /scan\s+Alias for a local scanner run/);
     assert.match(help.stdout(), /diagnostics\s+List, inspect, or run local diagnostics profiles/);
@@ -1661,9 +1661,17 @@ test("cli code map renders a bounded repository overview without an API key", as
           "(program [0, 0] - [4, 0]",
           "  (export_statement [2, 0] - [2, 44]",
           "    declaration: (function_declaration [2, 7] - [2, 43]",
-          "      name: (identifier [2, 16] - [2, 21])))",
+          "      name: (identifier [2, 16] - [2, 21])",
+          "      body: (statement_block [2, 24] - [2, 43]",
+          "        (return_statement [2, 26] - [2, 41]",
+          "          (call_expression [2, 33] - [2, 42]",
+          "            function: (identifier [2, 33] - [2, 40])))))",
           "  (function_declaration [3, 0] - [3, 35]",
-          "    name: (identifier [3, 9] - [3, 13]))",
+          "    name: (identifier [3, 9] - [3, 13])",
+          "    body: (statement_block [3, 16] - [3, 35]",
+          "      (return_statement [3, 18] - [3, 32]",
+          "        (call_expression [3, 25] - [3, 32]",
+          "          function: (identifier [3, 25] - [3, 30]))))",
           "",
         ].join("\n"),
         stderr: "",
@@ -1678,6 +1686,15 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.match(treeSitterOutline.stdout(), /kind="function_declaration" name="start" line=3 column=8/);
     assert.match(treeSitterOutline.stdout(), /kind="function_declaration" name="boot" line=4 column=1/);
     assert.deepEqual(treeSitterCalls.at(-1)?.args, ["parse", "src/index.ts"]);
+
+    const treeSitterAstCalls = createIo({ cwd, treeSitterRunner });
+    assert.equal(
+      await runCli(["node", "cli", "code", "tree-sitter", "calls", "src/index.ts"], {}, treeSitterAstCalls.io),
+      0,
+    );
+    assert.match(treeSitterAstCalls.stdout(), /Code tree-sitter calls/);
+    assert.match(treeSitterAstCalls.stdout(), /caller="start" caller_kind="function_declaration" caller_line=3 callee="feature" line=3 column=34/);
+    assert.match(treeSitterAstCalls.stdout(), /caller="boot" caller_kind="function_declaration" caller_line=4 callee="start" line=4 column=26/);
 
     const outlineAlias = createIo({ cwd, treeSitterRunner });
     assert.equal(await runCli(["node", "cli", "outline", "src/index.ts"], {}, outlineAlias.io), 0);

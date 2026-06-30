@@ -640,12 +640,19 @@ test("tree-sitter adapter runs bounded optional AST parse and keeps lexical fall
         "      name: (identifier [0, 16] - [0, 21])))",
         "  (lexical_declaration [1, 0] - [1, 29]",
         "    (variable_declarator [1, 6] - [1, 27]",
-        "      name: (identifier [1, 6] - [1, 11])))",
+        "      name: (identifier [1, 6] - [1, 11])",
+        "      value: (arrow_function [1, 14] - [1, 27]",
+        "        body: (call_expression [1, 20] - [1, 27]",
+        "          function: (identifier [1, 20] - [1, 25]))))",
         "  (class_declaration [2, 0] - [2, 48]",
         "    name: (type_identifier [2, 6] - [2, 13])",
         "    body: (class_body [2, 14] - [2, 48]",
         "      (method_definition [2, 16] - [2, 45]",
-        "        name: (property_identifier [2, 16] - [2, 19])))))",
+        "        name: (property_identifier [2, 16] - [2, 19])",
+        "        body: (statement_block [2, 22] - [2, 45]",
+        "          (return_statement [2, 24] - [2, 42]",
+        "            (call_expression [2, 31] - [2, 38]",
+        "              function: (identifier [2, 31] - [2, 36]))))))",
         "",
       ].join("\n"),
       stderr: "",
@@ -709,6 +716,7 @@ test("tree-sitter adapter runs bounded optional AST parse and keeps lexical fall
       [
         "function_declaration:start:1:8",
         "variable_declarator:value:2:7",
+        "arrow_function:undefined:2:15",
         "class_declaration:Example:3:1",
         "method_definition:run:3:17",
       ],
@@ -719,6 +727,30 @@ test("tree-sitter adapter runs bounded optional AST parse and keeps lexical fall
     assert.match(renderedOutline, /kind="variable_declarator" name="value" line=2 column=7/);
     assert.match(renderedOutline, /kind="class_declaration" name="Example" line=3 column=1/);
     assert.match(renderedOutline, /raw_parse: use tree-sitter parse mode for the full AST/);
+
+    const callsParsed = parseCodeTreeSitterArgs(["calls", "src/index.ts"]);
+    if (!callsParsed.ok) {
+      assert.fail(callsParsed.message);
+    }
+    const callsResult = runCodeTreeSitter({
+      ...callsParsed.args,
+      cwd,
+      runner,
+    });
+    assert.equal(callsResult.ok, true);
+    assert.equal(callsResult.mode, "calls");
+    assert.deepEqual(
+      callsResult.calls?.edges.map((edge) => `${edge.caller?.name}:${edge.callee}:${edge.line}:${edge.column}`),
+      [
+        "value:start:2:21",
+        "run:value:3:32",
+      ],
+    );
+    const renderedCalls = renderCodeTreeSitterResult(callsResult);
+    assert.match(renderedCalls, /Code tree-sitter calls/);
+    assert.match(renderedCalls, /AST-backed local single-file call extraction/);
+    assert.match(renderedCalls, /caller="value" caller_kind="variable_declarator" caller_line=2 callee="start" line=2 column=21/);
+    assert.match(renderedCalls, /caller="run" caller_kind="method_definition" caller_line=3 callee="value" line=3 column=32/);
 
     const truncatedOutline = runCodeTreeSitter({
       ...outlineParsed.args,
@@ -763,6 +795,77 @@ test("tree-sitter adapter runs bounded optional AST parse and keeps lexical fall
     assert.equal(guarded.ok, false);
     assert.equal(guarded.status, "invalid_arguments");
     assert.match(renderCodeTreeSitterResult(guarded), /must stay inside/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("tree-sitter call extraction avoids anonymous nested caller and callee overclaims", () => {
+  const cwd = createTempDir();
+  const runner: TreeSitterRunner = (command, args) => {
+    if (args.includes("--version")) {
+      return { status: command === "tree-sitter" ? 0 : 1, signal: null, stdout: "tree-sitter 0.0.0\n", stderr: "" };
+    }
+    return {
+      status: 0,
+      signal: null,
+      stdout: [
+        "(program [0, 0] - [2, 0]",
+        "  (lexical_declaration [0, 0] - [0, 58]",
+        "    (variable_declarator [0, 6] - [0, 55]",
+        "      name: (identifier [0, 6] - [0, 11])",
+        "      value: (arrow_function [0, 14] - [0, 55]",
+        "        body: (statement_block [0, 20] - [0, 55]",
+        "          (function_declaration [0, 22] - [0, 39]",
+        "            name: (identifier [0, 31] - [0, 36]))",
+        "          (return_statement [0, 42] - [0, 54]",
+        "            (call_expression [0, 49] - [0, 54]",
+        "              function: (identifier [0, 49] - [0, 52]))))))",
+        "  (expression_statement [1, 0] - [1, 16]",
+        "    (call_expression [1, 0] - [1, 14]",
+        "      function: (parenthesized_expression [1, 0] - [1, 12]",
+        "        (arrow_function [1, 1] - [1, 11]",
+        "          body: (call_expression [1, 7] - [1, 12]",
+        "            function: (identifier [1, 7] - [1, 10]))))))",
+        "",
+      ].join("\n"),
+      stderr: "",
+    };
+  };
+
+  try {
+    writeFileSync(
+      join(cwd, "example.ts"),
+      [
+        "const outer = () => { function inner() {} return foo(); };",
+        "(() => foo())();",
+        "",
+      ].join("\n"),
+    );
+
+    const parsed = parseCodeTreeSitterArgs(["calls", "example.ts"]);
+    if (!parsed.ok) {
+      assert.fail(parsed.message);
+    }
+    const result = runCodeTreeSitter({
+      ...parsed.args,
+      cwd,
+      runner,
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(
+      result.calls?.edges.map((edge) => `${edge.caller?.name ?? "[top-level]"}:${edge.callee ?? "[unknown]"}:${edge.line}:${edge.column}`),
+      [
+        "outer:foo:1:50",
+        "[top-level]:[unknown]:2:1",
+        "[top-level]:foo:2:8",
+      ],
+    );
+    const rendered = renderCodeTreeSitterResult(result);
+    assert.match(rendered, /caller="outer" caller_kind="variable_declarator" caller_line=1 callee="foo" line=1 column=50/);
+    assert.doesNotMatch(rendered, /caller="inner"/);
+    assert.doesNotMatch(rendered, /caller="\[top-level\]".*callee="foo" line=2 column=1/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
