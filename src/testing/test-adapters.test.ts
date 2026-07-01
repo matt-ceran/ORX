@@ -3486,6 +3486,98 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "Executed 2 out of 3 tests: 1 test passes, 1 fails locally, and 1 was skipped.",
+    ),
+    {
+      framework: "unknown",
+      source: "bazel",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "Executed 0 out of 5 tests: 3 tests pass and 2 were skipped."),
+    {
+      framework: "unknown",
+      source: "bazel",
+      total: 5,
+      passed: 3,
+      failed: 0,
+      skipped: 2,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      "Executed 4 out of 4 tests: 1 test passes, 1 fails to build, 1 fails remotely, and 1 fails locally.",
+    ),
+    {
+      framework: "node",
+      source: "bazel",
+      total: 4,
+      passed: 1,
+      failed: 3,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Executed 1 out of 1 test: 1 test passes.",
+        "Executed 2 out of 2 tests: 2 tests pass.",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "bazel",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Executed 2 out of 3 tests: 2 tests pass.",
+        "Test Summary: 2 passed, 2 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "Executed 3 out of 2 tests: 2 tests pass."), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "Executed 1 out of 1 tests: 1 test passes."), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "Executed 1 out of 1 test: 1 tests pass."), undefined);
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "Executed 2 out of 2 tests: 1 test passes and 1 test passes.",
+        "ℹ tests 2",
+        "ℹ pass 2",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "Executed 1 out of 1 test: 1 test failed.\nTest Summary: 1 failed, 1 total",
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
     parseTestReportSummary(createTarget("unknown"), "Executed 3 tests, with 1 failure (1 unexpected) in 0.123 (0.124) seconds"),
     {
       framework: "unknown",
