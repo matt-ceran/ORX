@@ -76,10 +76,13 @@ import {
   DIAG_USAGE,
   DIAGNOSTICS_USAGE,
   findDiagnosticProfile,
+  parseDiagnosticReadinessJsonFlag,
   parseDiagnosticRunArgs,
   renderDiagnosticInspectUsage,
   renderDiagnosticProfileInspect,
+  renderDiagnosticProfileInspectJson,
   renderDiagnosticProfiles,
+  renderDiagnosticProfilesJson,
   renderLocalDiagnosticsJson,
   renderLocalDiagnosticsResult,
   renderMissingDiagnosticProfile,
@@ -1244,7 +1247,8 @@ async function runDiagnosticsCommand(
   env: NodeJS.ProcessEnv,
   usage: string,
 ): Promise<number> {
-  const subcommand = args[0]?.toLowerCase() ?? "list";
+  const firstArg = args[0]?.toLowerCase();
+  const subcommand = firstArg === "--json" ? "list" : firstArg ?? "list";
 
   if (isNamespaceHelp(args)) {
     writeLine(io.stdout, usage);
@@ -1252,13 +1256,22 @@ async function runDiagnosticsCommand(
   }
 
   if (subcommand === "list" || subcommand === "status") {
-    writeLine(io.stdout, renderDiagnosticProfiles());
+    const jsonFlag = parseDiagnosticReadinessJsonFlag(
+      firstArg === "list" || firstArg === "status" ? args.slice(1) : args,
+      usage,
+    );
+    if (!jsonFlag.ok) {
+      writeLine(io.stderr, jsonFlag.message);
+      return 1;
+    }
+    writeLine(io.stdout, jsonFlag.json ? renderDiagnosticProfilesJson() : renderDiagnosticProfiles());
     return 0;
   }
 
   if (subcommand === "inspect" || subcommand === "show") {
     const profileId = args[1];
-    if (!profileId || args.length !== 2) {
+    const jsonFlag = parseDiagnosticReadinessJsonFlag(args.slice(2), usage);
+    if (!profileId || !jsonFlag.ok) {
       writeLine(io.stderr, renderDiagnosticInspectUsage(usage));
       return 1;
     }
@@ -1267,7 +1280,10 @@ async function runDiagnosticsCommand(
       writeLine(io.stderr, renderMissingDiagnosticProfile(profileId));
       return 1;
     }
-    writeLine(io.stdout, renderDiagnosticProfileInspect(profile));
+    writeLine(
+      io.stdout,
+      jsonFlag.json ? renderDiagnosticProfileInspectJson(profile) : renderDiagnosticProfileInspect(profile),
+    );
     return 0;
   }
 

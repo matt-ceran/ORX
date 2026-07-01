@@ -53,10 +53,13 @@ import {
   SLASH_DIAG_USAGE,
   SLASH_DIAGNOSTICS_USAGE,
   findDiagnosticProfile,
+  parseDiagnosticReadinessJsonFlag,
   parseDiagnosticRunArgText,
   renderDiagnosticInspectUsage,
   renderDiagnosticProfileInspect,
+  renderDiagnosticProfileInspectJson,
   renderDiagnosticProfiles,
+  renderDiagnosticProfilesJson,
   renderLocalDiagnosticsJson,
   renderLocalDiagnosticsResult,
   renderMissingDiagnosticProfile,
@@ -564,7 +567,7 @@ const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "inspect", "run"] as const;
 const SCANNER_PROFILE_COMPLETIONS = ["semgrep", "snyk", "socket", "osv-scanner", "codeql", "trivy"] as const;
 const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep"] as const;
 const SCANNER_RUN_OPTION_COMPLETIONS = ["--config", "--json"] as const;
-const DIAGNOSTICS_SUBCOMMAND_COMPLETIONS = ["list", "inspect", "run"] as const;
+const DIAGNOSTICS_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "run"] as const;
 const DIAGNOSTIC_PROFILE_COMPLETIONS = [
   "typescript",
   "typescript-language-server",
@@ -575,6 +578,7 @@ const DIAGNOSTIC_PROFILE_COMPLETIONS = [
   "scip-typescript",
 ] as const;
 const RUNNABLE_DIAGNOSTIC_PROFILE_COMPLETIONS = ["typescript", "pyright", "gopls", "clangd"] as const;
+const DIAGNOSTIC_READINESS_OPTION_COMPLETIONS = ["--json"] as const;
 const DIAGNOSTIC_RUN_OPTION_COMPLETIONS = ["--project", "--json"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
@@ -1970,10 +1974,16 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       return [];
     case "/diagnostics":
       if (argIndex === 0) {
-        return [...DIAGNOSTICS_SUBCOMMAND_COMPLETIONS];
+        return [...DIAGNOSTICS_SUBCOMMAND_COMPLETIONS, ...DIAGNOSTIC_READINESS_OPTION_COMPLETIONS];
       }
-      if (firstArg === "inspect" && argIndex === 1) {
+      if ((firstArg === "list" || firstArg === "status") && argIndex === 1) {
+        return [...DIAGNOSTIC_READINESS_OPTION_COMPLETIONS];
+      }
+      if ((firstArg === "inspect" || firstArg === "show") && argIndex === 1) {
         return [...DIAGNOSTIC_PROFILE_COMPLETIONS];
+      }
+      if ((firstArg === "inspect" || firstArg === "show") && argIndex === 2) {
+        return [...DIAGNOSTIC_READINESS_OPTION_COMPLETIONS];
       }
       if (firstArg === "run" && argIndex === 1) {
         return [...RUNNABLE_DIAGNOSTIC_PROFILE_COMPLETIONS];
@@ -2540,16 +2550,26 @@ async function handleDiagnosticsCommand(
   context: SlashCommandContext,
   usage: string,
 ): Promise<void> {
-  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+  const firstArg = command.args[0]?.toLowerCase();
+  const subcommand = firstArg === "--json" ? "list" : firstArg ?? "list";
 
   if (subcommand === "list" || subcommand === "status") {
-    writeLine(context.io.stdout, renderDiagnosticProfiles());
+    const jsonFlag = parseDiagnosticReadinessJsonFlag(
+      firstArg === "list" || firstArg === "status" ? command.args.slice(1) : command.args,
+      usage,
+    );
+    if (!jsonFlag.ok) {
+      writeLine(context.io.stderr, jsonFlag.message);
+      return;
+    }
+    writeLine(context.io.stdout, jsonFlag.json ? renderDiagnosticProfilesJson() : renderDiagnosticProfiles());
     return;
   }
 
   if (subcommand === "inspect" || subcommand === "show") {
     const profileId = command.args[1];
-    if (!profileId || command.args.length !== 2) {
+    const jsonFlag = parseDiagnosticReadinessJsonFlag(command.args.slice(2), usage);
+    if (!profileId || !jsonFlag.ok) {
       const inspectUsage = command.originalName === "/diag"
         ? renderDiagnosticInspectUsage(SLASH_DIAG_USAGE)
         : renderDiagnosticInspectUsage(usage);
@@ -2561,7 +2581,10 @@ async function handleDiagnosticsCommand(
       writeLine(context.io.stderr, renderMissingDiagnosticProfile(profileId));
       return;
     }
-    writeLine(context.io.stdout, renderDiagnosticProfileInspect(profile));
+    writeLine(
+      context.io.stdout,
+      jsonFlag.json ? renderDiagnosticProfileInspectJson(profile) : renderDiagnosticProfileInspect(profile),
+    );
     return;
   }
 

@@ -130,7 +130,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
   assert.match(output, /\/scanners \[list\|inspect <profile>\|run semgrep <path> --config <local-config-path> \[--json\]\]/);
   assert.match(output, /\/scan semgrep <path> --config <local-config-path> \[--json\]/);
-  assert.match(output, /\/diagnostics \[list\|inspect <profile>\|run <typescript\|pyright\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
+  assert.match(output, /\/diagnostics \[list \[--json\]\|inspect <profile> \[--json\]\|run <typescript\|pyright\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/refs <query>/);
   assert.match(output, /\/imports \[query\]/);
@@ -329,8 +329,14 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/scanners run semgrep src --c"), [["--config "], "--c"]);
   assert.deepEqual(completeSlashCommandLine("/scan s"), [["semgrep "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/scan semgrep src --j"), [["--json "], "--j"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics s"), [["status ", "show "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics r"), [["run "], "r"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics list --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics status --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics inspect t"), [["typescript ", "typescript-language-server "], "t"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics inspect pyright --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics show pyright --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run t"), [["typescript "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run p"), [["pyright "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run g"), [["gopls "], "g"]);
@@ -797,6 +803,17 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.match(list.stdout(), /id=gopls state=runnable/);
     assert.match(list.stdout(), /id=clangd state=runnable/);
 
+    const listJson = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics --json", listJson.context), "continue");
+    const profileReport = JSON.parse(listJson.stdout());
+    assert.equal(profileReport.surface, "orx.local_diagnostics_profiles");
+    assert.equal(profileReport.model_tool, "not_exposed");
+    assert.equal(profileReport.network, "none_for_list_or_inspect");
+    const profileEntries = profileReport.profiles as Array<{ id: string; state: string }>;
+    assert.equal(profileEntries.find((profile) => profile.id === "typescript")?.state, "runnable");
+    assert.equal(profileEntries.find((profile) => profile.id === "rust-analyzer")?.state, "catalog_only");
+    assert.equal(listJson.stderr(), "");
+
     const inspect = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics inspect typescript", inspect.context), "continue");
     assert.match(inspect.stdout(), /Local diagnostics profile: typescript/);
@@ -806,6 +823,14 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.equal(await handleSlashCommand("/diagnostics inspect pyright", inspectPyright.context), "continue");
     assert.match(inspectPyright.stdout(), /Local diagnostics profile: pyright/);
     assert.match(inspectPyright.stdout(), /command_shape: pyright --outputjson --project <project-file-or-directory>/);
+
+    const inspectJson = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics inspect pyright --json", inspectJson.context), "continue");
+    const inspectReport = JSON.parse(inspectJson.stdout());
+    assert.equal(inspectReport.surface, "orx.local_diagnostics_profile");
+    assert.equal(inspectReport.profile.id, "pyright");
+    assert.equal(inspectReport.profile.details.command_shape, "pyright --outputjson --project <project-file-or-directory>");
+    assert.equal(inspectJson.stderr(), "");
 
     const inspectGopls = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics inspect gopls", inspectGopls.context), "continue");
@@ -822,6 +847,10 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     const inspectUsage = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diag inspect", inspectUsage.context), "continue");
     assert.match(inspectUsage.stderr(), /^Usage: \/diag inspect <profile>/);
+
+    const listExtra = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics list extra", listExtra.context), "continue");
+    assert.match(listExtra.stderr(), /^Usage: \/diagnostics/);
 
     const tscCalls: RunProcessOptions[] = [];
     const diagnosticsRunner: DiagnosticsProcessRunner = async (options) => {

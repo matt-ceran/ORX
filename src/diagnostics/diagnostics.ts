@@ -6,13 +6,13 @@ import { runProcess, type RunProcessOptions, type RunProcessResult } from "../to
 import type { TextTruncation } from "../tools/types.js";
 
 export const DIAGNOSTICS_USAGE =
-  "Usage: orx diagnostics [list|inspect <profile>|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: orx diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const DIAG_USAGE =
-  "Usage: orx diag [list|inspect <profile>|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: orx diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAGNOSTICS_USAGE =
-  "Usage: /diagnostics [list|inspect <profile>|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: /diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAG_USAGE =
-  "Usage: /diag [list|inspect <profile>|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: /diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
 
 export type DiagnosticProfileId =
   | "typescript"
@@ -255,6 +255,83 @@ export function renderDiagnosticProfiles(profiles = listDiagnosticProfiles()): s
   return lines.join("\n");
 }
 
+export function renderDiagnosticProfilesJson(profiles = listDiagnosticProfiles()): string {
+  return JSON.stringify({
+    schema_version: 1,
+    surface: "orx.local_diagnostics_profiles",
+    operator_only: true,
+    model_tool: "not_exposed",
+    execution: "explicit_operator_only",
+    network: "none_for_list_or_inspect",
+    profiles: profiles.map(diagnosticProfileJson),
+  }, null, 2);
+}
+
+function diagnosticProfileJson(profile: DiagnosticProfile): Record<string, unknown> {
+  return {
+    id: profile.id,
+    label: profile.label,
+    state: profile.state,
+    binary: profile.binary,
+    summary: profile.summary,
+    run_support: profile.runSupport,
+    install_behavior: "not_managed_by_orx",
+    network_boundary: profile.networkBoundary,
+    execution: "explicit_operator_only",
+    model_tool: "not_exposed",
+    details: diagnosticProfileJsonDetails(profile),
+  };
+}
+
+function diagnosticProfileJsonDetails(profile: DiagnosticProfile): Record<string, string> | undefined {
+  if (profile.id === "typescript") {
+    return {
+      default_project: "tsconfig.json under cwd",
+      command_shape: "tsc --noEmit --pretty false --project <tsconfig>",
+      binary_preference: "cwd/node_modules/.bin/tsc before PATH tsc",
+      project_guard: "local regular file under cwd; symlink realpath must remain under cwd",
+      rejected_projects: "URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
+      output: "bounded and redacted; --json emits ORX-owned structured JSON",
+      run: "orx diagnostics run typescript [--project <local-tsconfig-path>] [--json]",
+    };
+  }
+  if (profile.id === "pyright") {
+    return {
+      default_project: ". under cwd",
+      command_shape: "pyright --outputjson --project <project-file-or-directory>",
+      binary_preference: "cwd/node_modules/.bin/pyright before PATH pyright",
+      project_guard: "local regular file or directory under cwd; symlink realpath must remain under cwd",
+      rejected_projects: "URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
+      output: "bounded and redacted; --json emits ORX-owned structured JSON with parsed generalDiagnostics",
+      run: "orx diagnostics run pyright [--project <local-project-file-or-directory>] [--json]",
+    };
+  }
+  if (profile.id === "gopls") {
+    return {
+      default_project: "none; --project <local-go-file> is required",
+      command_shape: "gopls check <go-file>",
+      binary_preference: "cwd/node_modules/.bin/gopls before PATH gopls",
+      project_guard: "local regular .go file under cwd; symlink realpath must remain under cwd",
+      rejected_projects: "URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
+      output: "bounded and redacted; --json emits ORX-owned structured JSON with parsed text diagnostics",
+      go_network_guard: "GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local",
+      run: "orx diagnostics run gopls --project <local-go-file> [--json]",
+    };
+  }
+  if (profile.id === "clangd") {
+    return {
+      default_project: "none; --project <local-c-cpp-source-or-header-file> is required",
+      command_shape: "clangd --log=error --check=<file>",
+      binary_preference: "cwd/node_modules/.bin/clangd before PATH clangd",
+      project_guard: "local regular C/C++/Objective-C source or header file under cwd; symlink realpath must remain under cwd",
+      rejected_projects: "URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
+      output: "bounded and redacted; --json emits ORX-owned structured JSON with parsed clangd --check diagnostics",
+      run: "orx diagnostics run clangd --project <local-c-cpp-source-or-header-file> [--json]",
+    };
+  }
+  return undefined;
+}
+
 export function renderDiagnosticProfileInspect(profile: DiagnosticProfile): string {
   const lines = [
     `Local diagnostics profile: ${profile.id}`,
@@ -318,12 +395,40 @@ export function renderDiagnosticProfileInspect(profile: DiagnosticProfile): stri
   return lines.join("\n");
 }
 
+export function renderDiagnosticProfileInspectJson(profile: DiagnosticProfile): string {
+  return JSON.stringify({
+    schema_version: 1,
+    surface: "orx.local_diagnostics_profile",
+    profile: diagnosticProfileJson(profile),
+  }, null, 2);
+}
+
 export function renderMissingDiagnosticProfile(profileId: string): string {
   return `Unknown diagnostics profile: ${sanitizeInline(profileId)}. Available profiles: ${DIAGNOSTIC_PROFILES.map((profile) => profile.id).join(", ")}.`;
 }
 
 export function renderDiagnosticInspectUsage(usage: string): string {
-  return usage.replace(/\[list\|inspect <profile>\|run .+$/, "inspect <profile>");
+  return usage.replace(
+    /\[list(?: \[--json\])?\|inspect <profile>(?: \[--json\])?\|run .+$/,
+    "inspect <profile> [--json]",
+  );
+}
+
+export function parseDiagnosticReadinessJsonFlag(
+  args: string[],
+  usage: string,
+): { ok: true; json: boolean } | { ok: false; message: string } {
+  if (args.length === 0) {
+    return { ok: true, json: false };
+  }
+  if (args.length === 1 && args[0] === "--json") {
+    return { ok: true, json: true };
+  }
+  const option = args.find((arg) => arg.startsWith("-"));
+  if (option) {
+    return { ok: false, message: `${usage}\nUnknown diagnostics option: ${sanitizeInline(option)}` };
+  }
+  return { ok: false, message: usage };
 }
 
 export function parseDiagnosticRunArgs(

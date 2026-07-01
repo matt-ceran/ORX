@@ -70,7 +70,9 @@ orx code outline src/cli.ts
 orx scanners list
 orx scanners inspect semgrep
 orx diagnostics list
+orx diagnostics list --json
 orx diagnostics inspect typescript
+orx diagnostics inspect typescript --json
 orx diagnostics run typescript
 orx diagnostics inspect pyright
 orx diagnostics run pyright

@@ -1957,6 +1957,17 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.match(list.stdout(), /id=gopls state=runnable/);
     assert.match(list.stdout(), /id=clangd state=runnable/);
 
+    const listJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "--json"], {}, listJson.io), 0);
+    const profileReport = JSON.parse(listJson.stdout());
+    assert.equal(profileReport.surface, "orx.local_diagnostics_profiles");
+    assert.equal(profileReport.model_tool, "not_exposed");
+    assert.equal(profileReport.network, "none_for_list_or_inspect");
+    const profileEntries = profileReport.profiles as Array<{ id: string; state: string }>;
+    assert.equal(profileEntries.find((profile) => profile.id === "typescript")?.state, "runnable");
+    assert.equal(profileEntries.find((profile) => profile.id === "rust-analyzer")?.state, "catalog_only");
+    assert.equal(listJson.stderr(), "");
+
     const inspect = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diag", "inspect", "typescript"], {}, inspect.io), 0);
     assert.match(inspect.stdout(), /Local diagnostics profile: typescript/);
@@ -1966,6 +1977,14 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.equal(await runCli(["node", "cli", "diag", "inspect", "pyright"], {}, inspectPyright.io), 0);
     assert.match(inspectPyright.stdout(), /Local diagnostics profile: pyright/);
     assert.match(inspectPyright.stdout(), /command_shape: pyright --outputjson --project <project-file-or-directory>/);
+
+    const inspectJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "pyright", "--json"], {}, inspectJson.io), 0);
+    const inspectReport = JSON.parse(inspectJson.stdout());
+    assert.equal(inspectReport.surface, "orx.local_diagnostics_profile");
+    assert.equal(inspectReport.profile.id, "pyright");
+    assert.equal(inspectReport.profile.details.command_shape, "pyright --outputjson --project <project-file-or-directory>");
+    assert.equal(inspectJson.stderr(), "");
 
     const inspectGopls = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diag", "inspect", "gopls"], {}, inspectGopls.io), 0);
@@ -1983,6 +2002,10 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     const inspectUsage = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diag", "inspect"], {}, inspectUsage.io), 1);
     assert.match(inspectUsage.stderr(), /^Usage: orx diag inspect <profile>/);
+
+    const listExtra = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "list", "extra"], {}, listExtra.io), 1);
+    assert.match(listExtra.stderr(), /^Usage: orx diagnostics/);
 
     const tscCalls: Array<Parameters<DiagnosticsProcessRunner>[0]> = [];
     const diagnosticsRunner: DiagnosticsProcessRunner = async (options) => {
