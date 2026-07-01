@@ -2546,6 +2546,101 @@ test("parses common framework report summaries", () => {
     undefined,
   );
 
+  assert.deepEqual(parseTestReportSummary(createTarget("unknown"), "All 3 tests passed"), {
+    framework: "unknown",
+    source: "tasty",
+    total: 3,
+    passed: 3,
+    failed: 0,
+  });
+
+  assert.deepEqual(parseTestReportSummary(createTarget("node"), "All 2 tests passed (0.12s)"), {
+    framework: "node",
+    source: "tasty",
+    total: 2,
+    passed: 2,
+    failed: 0,
+    durationMs: 120,
+  });
+
+  assert.deepEqual(parseTestReportSummary(createTarget("unknown"), "1 out of 3 tests failed (1.23s)"), {
+    framework: "unknown",
+    source: "tasty",
+    total: 3,
+    passed: 2,
+    failed: 1,
+    durationMs: 1230,
+  });
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "All 1 tests passed",
+        "2 out of 4 tests failed",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "tasty",
+      total: 4,
+      passed: 2,
+      failed: 2,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "All 0 tests passed"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "All 03 tests passed"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "All 1 test passed"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "All 3 tests passed (0.1s)"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "All 3 tests passed (1s)"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "All 9007199254740993 tests passed"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "0 out of 3 tests failed"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "01 out of 3 tests failed"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "4 out of 3 tests failed"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "1 out of 9007199254740993 tests failed"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "1 out of 3 tests failed (0.1s)"), undefined);
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 out of 3 test failed",
+        "Test Summary: 1 failed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "All 3 tests passed (0.1s)",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "All 9007199254740993 tests passed",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "All 1 tests passed",
+        "cleanup done",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
   assert.deepEqual(parseTestReportSummary(createTarget("unknown"), "All 3 tests passed."), {
     framework: "unknown",
     source: "zig",
