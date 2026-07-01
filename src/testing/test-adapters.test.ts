@@ -936,6 +936,103 @@ test("parses common framework report summaries", () => {
     ),
     undefined,
   );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "Executed 3 tests, with 1 failure (1 unexpected) in 0.123 (0.124) seconds"),
+    {
+      framework: "unknown",
+      source: "xctest",
+      total: 3,
+      passed: 2,
+      failed: 1,
+      durationMs: 123,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "Executed 1 test, with 0 failures (0 unexpected) in 0.000 (0.001) seconds"),
+    {
+      framework: "unknown",
+      source: "xctest",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      durationMs: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "Executed 2 tests, with 0 failures (0 unexpected) in 0.010 (0.011) seconds"),
+    {
+      framework: "node",
+      source: "xctest",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      durationMs: 10,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("vitest"), "Executed 2 tests, with 0 failures (0 unexpected) in 0.010 (0.011) seconds"),
+    {
+      framework: "vitest",
+      source: "xctest",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      durationMs: 10,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Executed 1 test, with 0 failures (0 unexpected) in 0.001 (0.001) seconds",
+        "Executed 2 tests, with 1 failure (1 unexpected) in 0.002 (0.003) seconds",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "xctest",
+      total: 2,
+      passed: 1,
+      failed: 1,
+      durationMs: 2,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "Executed 1 test, with 2 failures (1 unexpected) in 0.001 (0.001) seconds"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "Executed 2 tests, with 1 failure (2 unexpected) in 0.001 (0.001) seconds"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "Executed 1 test, with 0 failures (0 unexpected) in 0.001 (0.001) seconds after cleanup"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "Executed 1 test, with 0 failures (0 unexpected) in 0.001 (0.001) seconds\ncleanup done",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "Executed 1 test, with 0 failures (0 unexpected) in 0.001 (0.001) seconds\nSummary: 1 passed",
+    ),
+    undefined,
+  );
 });
 
 test("parses structured framework JSON reports before stdout fallback", () => {

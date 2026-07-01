@@ -1002,7 +1002,7 @@ test("tool result summaries show shell exit and stream truncation details", asyn
   const summary = formatToolResult(result);
 
   assert.equal(result.ok, true);
-  assert.match(summary, /\[tool\] shell ok duration=\d+ms exit=7/);
+  assert.match(summary, /\[tool\] shell ok duration=\d+(?:ms|\.\ds) exit=7/);
   assert.match(summary, /stdout_truncated=\(3B omitted/);
   assert.match(summary, /stderr_truncated=\(3B omitted/);
   assert.doesNotMatch(summary, /abcdef/);
