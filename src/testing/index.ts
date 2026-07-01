@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "teamcity" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -717,12 +717,36 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     ava: parseAvaReportSummary,
     unknown: parseGenericReportSummary,
   };
+  const crossFrameworkParsers: ReportParser[] = [
+    parseTeamCityReportSummary,
+    parseExunitReportSummary,
+    parseGradleReportSummary,
+    parseJunitPlatformReportSummary,
+    parseScalaTestReportSummary,
+    parseNextestReportSummary,
+    parseTestngReportSummary,
+    parseNunitReportSummary,
+    parseRobotReportSummary,
+    parseJasmineReportSummary,
+    parsePestReportSummary,
+    parseDotnetReportSummary,
+    parseBehatReportSummary,
+    parseBehaveReportSummary,
+    parseCucumberReportSummary,
+    parseMesonReportSummary,
+    parseUnityReportSummary,
+    parseLitReportSummary,
+    parseBazelReportSummary,
+    parseTestthatReportSummary,
+    parseGtestReportSummary,
+    parseCatch2ReportSummary,
+  ];
   if (framework === "node") {
-    return [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseScalaTestReportSummary, parseNextestReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseBehaveReportSummary, parseCucumberReportSummary, parseMesonReportSummary, parseUnityReportSummary, parseLitReportSummary, parseBazelReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseCypressReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseTastyReportSummary, parseZigReportSummary, parseDartReportSummary, parseDenoReportSummary, parseGenericReportSummary];
+    return [...crossFrameworkParsers, parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseCypressReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseTastyReportSummary, parseZigReportSummary, parseDartReportSummary, parseDenoReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseScalaTestReportSummary, parseNextestReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseBehaveReportSummary, parseCucumberReportSummary, parseMesonReportSummary, parseUnityReportSummary, parseLitReportSummary, parseBazelReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseCypressReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDartReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoJsonReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseTastyReportSummary, parseZigReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary]
-    : [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseScalaTestReportSummary, parseNextestReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseBehaveReportSummary, parseCucumberReportSummary, parseMesonReportSummary, parseUnityReportSummary, parseLitReportSummary, parseBazelReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parsers[framework], parseTapReportSummary, parseCypressReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDartReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoJsonReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseTastyReportSummary, parseZigReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
+    ? [...crossFrameworkParsers, parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseCypressReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDartReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoJsonReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseTastyReportSummary, parseZigReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary]
+    : [...crossFrameworkParsers, parsers[framework], parseTapReportSummary, parseCypressReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDartReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoJsonReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseTastyReportSummary, parseZigReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -948,6 +972,300 @@ function parseCapturedJunitXmlReportSummary(
   assignNumber(report, "suites", counts.suites);
   assignNumber(report, "durationMs", counts.durationMs);
   return hasReportCounts(report) ? report : undefined;
+}
+
+interface TeamCityTestState {
+  failed: boolean;
+  skipped: boolean;
+  finished: boolean;
+  durationMs?: number;
+}
+
+interface TeamCityServiceMessage {
+  event: string;
+  attributes: Map<string, string>;
+}
+
+function parseTeamCityReportSummary(text: string, framework: TestFramework): TestReportSummary | InvalidTestReport | undefined {
+  const tests = new Map<string, TeamCityTestState>();
+  const activeTestKeys = new Map<string, string>();
+  const suites = new Set<string>();
+  const suiteStacks = new Map<string, string[]>();
+  let testSequence = 0;
+  let durationMs = 0;
+  let hasDuration = false;
+  let sawTestEvent = false;
+
+  const ensureTerminalState = (baseKey: string): TeamCityTestState => {
+    let testKey = activeTestKeys.get(baseKey);
+    if (!testKey) {
+      testKey = `${baseKey}\u0000${testSequence}`;
+      testSequence += 1;
+      activeTestKeys.set(baseKey, testKey);
+    }
+    let state = tests.get(testKey);
+    if (!state) {
+      state = { failed: false, skipped: false, finished: false };
+      tests.set(testKey, state);
+    }
+    return state;
+  };
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = stripTerminalControls(rawLine).trim();
+    if (!line.startsWith("##teamcity[")) {
+      continue;
+    }
+
+    const message = parseTeamCityServiceMessage(line);
+    if (message === INVALID_TEST_REPORT) {
+      return INVALID_TEST_REPORT;
+    }
+    if (!message) {
+      continue;
+    }
+
+    const name = message.attributes.get("name");
+    if (!name) {
+      return INVALID_TEST_REPORT;
+    }
+
+    const flowId = message.attributes.get("flowId") ?? "";
+    const suiteStack = teamCitySuiteStackForFlow(suiteStacks, flowId);
+    if (message.event === "testSuiteStarted") {
+      suites.add(name);
+      suiteStack.push(name);
+      continue;
+    }
+    if (message.event === "testSuiteFinished") {
+      suites.add(name);
+      if (suiteStack[suiteStack.length - 1] === name) {
+        suiteStack.pop();
+      }
+      continue;
+    }
+
+    sawTestEvent = true;
+    const baseKey = `${flowId}\u0000${suiteStack.join("\u0000")}\u0000${name}`;
+    if (message.event === "testStarted") {
+      if (activeTestKeys.has(baseKey)) {
+        return INVALID_TEST_REPORT;
+      }
+      const testKey = `${baseKey}\u0000${testSequence}`;
+      testSequence += 1;
+      activeTestKeys.set(baseKey, testKey);
+      tests.set(testKey, { failed: false, skipped: false, finished: false });
+      continue;
+    }
+
+    const state = ensureTerminalState(baseKey);
+    if (message.event === "testFailed") {
+      state.failed = true;
+      continue;
+    }
+    if (message.event === "testIgnored") {
+      state.skipped = true;
+      continue;
+    }
+    if (message.event === "testFinished") {
+      const durationText = message.attributes.get("duration");
+      if (durationText !== undefined) {
+        const parsedDurationMs = parseSafeNonnegativeInteger(durationText);
+        if (parsedDurationMs === undefined) {
+          return INVALID_TEST_REPORT;
+        }
+        if (state.durationMs !== undefined) {
+          durationMs -= state.durationMs;
+        }
+        durationMs += parsedDurationMs;
+        if (!Number.isSafeInteger(durationMs)) {
+          return INVALID_TEST_REPORT;
+        }
+        state.durationMs = parsedDurationMs;
+        hasDuration = true;
+      }
+      state.finished = true;
+      activeTestKeys.delete(baseKey);
+    }
+  }
+
+  if (!sawTestEvent) {
+    return undefined;
+  }
+
+  let passed = 0;
+  let failed = 0;
+  let skipped = 0;
+  for (const state of tests.values()) {
+    if (!state.finished && !state.failed && !state.skipped) {
+      return INVALID_TEST_REPORT;
+    }
+    if (state.failed) {
+      failed += 1;
+    } else if (state.skipped) {
+      skipped += 1;
+    } else {
+      passed += 1;
+    }
+  }
+
+  const total = passed + failed + skipped;
+  if (total <= 0 || ![total, passed, failed, skipped].every(Number.isSafeInteger)) {
+    return INVALID_TEST_REPORT;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "teamcity",
+  };
+  assignNumber(report, "total", total);
+  assignNumber(report, "passed", passed);
+  assignNumber(report, "failed", failed);
+  assignNumber(report, "skipped", skipped);
+  assignNumber(report, "suites", suites.size > 0 ? suites.size : undefined);
+  assignNumber(report, "durationMs", hasDuration ? durationMs : undefined);
+  return hasReportCounts(report) ? report : undefined;
+}
+
+function teamCitySuiteStackForFlow(suiteStacks: Map<string, string[]>, flowId: string): string[] {
+  let suiteStack = suiteStacks.get(flowId);
+  if (!suiteStack) {
+    suiteStack = [];
+    suiteStacks.set(flowId, suiteStack);
+  }
+  return suiteStack;
+}
+
+function parseTeamCityServiceMessage(line: string): TeamCityServiceMessage | InvalidTestReport | undefined {
+  const match = /^##teamcity\[([A-Za-z][A-Za-z0-9_]*)(?:\s+([\s\S]*))?\]$/.exec(line);
+  if (!match) {
+    return looksLikeTeamCityTestServiceMessage(line) ? INVALID_TEST_REPORT : undefined;
+  }
+
+  const event = match[1] ?? "";
+  if (!isTeamCityTestServiceEvent(event)) {
+    return undefined;
+  }
+
+  const attributes = parseTeamCityAttributes(match[2] ?? "");
+  if (!attributes) {
+    return INVALID_TEST_REPORT;
+  }
+
+  return { event, attributes };
+}
+
+function looksLikeTeamCityTestServiceMessage(line: string): boolean {
+  return /^##teamcity\[(?:testSuiteStarted|testSuiteFinished|testStarted|testFinished|testFailed|testIgnored)(?:\s|\]|$)/.test(line);
+}
+
+function isTeamCityTestServiceEvent(event: string): boolean {
+  return event === "testSuiteStarted" ||
+    event === "testSuiteFinished" ||
+    event === "testStarted" ||
+    event === "testFinished" ||
+    event === "testFailed" ||
+    event === "testIgnored";
+}
+
+function parseTeamCityAttributes(text: string): Map<string, string> | undefined {
+  const attributes = new Map<string, string>();
+  let index = 0;
+
+  while (index < text.length) {
+    while (index < text.length && /\s/.test(text[index] ?? "")) {
+      index += 1;
+    }
+    if (index >= text.length) {
+      break;
+    }
+
+    const nameMatch = /^[A-Za-z_][A-Za-z0-9_.:-]*/.exec(text.slice(index));
+    if (!nameMatch) {
+      return undefined;
+    }
+    const attributeName = nameMatch[0];
+    if (attributes.has(attributeName)) {
+      return undefined;
+    }
+    index += attributeName.length;
+
+    while (index < text.length && /\s/.test(text[index] ?? "")) {
+      index += 1;
+    }
+    if (text[index] !== "=") {
+      return undefined;
+    }
+    index += 1;
+    while (index < text.length && /\s/.test(text[index] ?? "")) {
+      index += 1;
+    }
+    if (text[index] !== "'") {
+      return undefined;
+    }
+    index += 1;
+
+    let value = "";
+    let closed = false;
+    while (index < text.length) {
+      const character = text[index] ?? "";
+      if (character === "'") {
+        closed = true;
+        index += 1;
+        break;
+      }
+      if (character === "|") {
+        const escaped = parseTeamCityEscapedCharacter(text, index + 1);
+        if (!escaped) {
+          return undefined;
+        }
+        value += escaped.value;
+        index = escaped.nextIndex;
+        continue;
+      }
+      value += character;
+      index += 1;
+    }
+    if (!closed) {
+      return undefined;
+    }
+    attributes.set(attributeName, value);
+  }
+
+  return attributes;
+}
+
+function parseTeamCityEscapedCharacter(text: string, index: number): { value: string; nextIndex: number } | undefined {
+  const escaped = text[index];
+  if (escaped === undefined) {
+    return undefined;
+  }
+  if (escaped === "'") {
+    return { value: "'", nextIndex: index + 1 };
+  }
+  if (escaped === "n") {
+    return { value: "\n", nextIndex: index + 1 };
+  }
+  if (escaped === "r") {
+    return { value: "\r", nextIndex: index + 1 };
+  }
+  if (escaped === "|") {
+    return { value: "|", nextIndex: index + 1 };
+  }
+  if (escaped === "[") {
+    return { value: "[", nextIndex: index + 1 };
+  }
+  if (escaped === "]") {
+    return { value: "]", nextIndex: index + 1 };
+  }
+  const hexMatch = /^0x([0-9A-Fa-f]{4})/.exec(text.slice(index));
+  if (hexMatch) {
+    return {
+      value: String.fromCharCode(Number.parseInt(hexMatch[1] ?? "", 16)),
+      nextIndex: index + hexMatch[0].length,
+    };
+  }
+  return undefined;
 }
 
 function parseVitestReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {

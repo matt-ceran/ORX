@@ -4242,6 +4242,148 @@ test("parses captured JUnit XML reports before text fallback", () => {
   );
 });
 
+test("parses captured TeamCity service messages before text fallback", () => {
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "build log before tests",
+        "##teamcity[testSuiteStarted name='unit']",
+        "##teamcity[testStarted name='pass |'quoted|' |[x|]']",
+        "##teamcity[testFinished name='pass |'quoted|' |[x|]' duration='10']",
+        "##teamcity[testStarted name='fails']",
+        "##teamcity[testFailed name='fails' message='boom |n detail']",
+        "##teamcity[testFinished name='fails' duration='5']",
+        "##teamcity[testIgnored name='skips' message='pending']",
+        "##teamcity[testSuiteFinished name='unit']",
+        "Test Summary: 99 passed, 99 total",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "teamcity",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+      suites: 1,
+      durationMs: 15,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "##teamcity[testSuiteStarted name='suite-a']",
+        "##teamcity[testStarted name='same']",
+        "##teamcity[testFinished name='same' duration='1']",
+        "##teamcity[testSuiteFinished name='suite-a']",
+        "##teamcity[testSuiteStarted name='suite-b']",
+        "##teamcity[testStarted name='same']",
+        "##teamcity[testFinished name='same' duration='2']",
+        "##teamcity[testSuiteFinished name='suite-b']",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "teamcity",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+      suites: 2,
+      durationMs: 3,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "##teamcity[testSuiteStarted name='suite-a' flowId='a']",
+        "##teamcity[testStarted name='same' flowId='a']",
+        "##teamcity[testSuiteStarted name='suite-b' flowId='b']",
+        "##teamcity[testStarted name='same' flowId='b']",
+        "##teamcity[testFinished name='same' duration='1' flowId='a']",
+        "##teamcity[testSuiteFinished name='suite-a' flowId='a']",
+        "##teamcity[testFinished name='same' duration='2' flowId='b']",
+        "##teamcity[testSuiteFinished name='suite-b' flowId='b']",
+        "Test Summary: 99 passed, 99 total",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "teamcity",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+      suites: 2,
+      durationMs: 3,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "##teamcity[testSuiteStarted name='unit']",
+        "##teamcity[testSuiteFinished name='unit']",
+        "##teamcity[message text='hello']",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "generic",
+      total: 1,
+      passed: 1,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "##teamcity[testStarted name='open",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "##teamcity[testFinished duration='1']",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "##teamcity[testFinished name='one' duration='01']",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "##teamcity[testStarted name='one']",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+});
+
 test("parses node structured JUnit reports before stdout fallback", () => {
   const target = createTarget("node");
   const report = [
