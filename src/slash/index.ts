@@ -574,7 +574,7 @@ const DIAGNOSTIC_PROFILE_COMPLETIONS = [
   "clangd",
   "scip-typescript",
 ] as const;
-const RUNNABLE_DIAGNOSTIC_PROFILE_COMPLETIONS = ["typescript", "pyright", "gopls"] as const;
+const RUNNABLE_DIAGNOSTIC_PROFILE_COMPLETIONS = ["typescript", "pyright", "gopls", "clangd"] as const;
 const DIAGNOSTIC_RUN_OPTION_COMPLETIONS = ["--project", "--json"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;
 const PROMPT_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;

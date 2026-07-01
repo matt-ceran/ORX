@@ -76,6 +76,8 @@ orx diagnostics inspect pyright
 orx diagnostics run pyright
 orx diagnostics inspect gopls
 orx diagnostics run gopls --project src/main.go
+orx diagnostics inspect clangd
+orx diagnostics run clangd --project src/main.cpp
 orx orchestrator
 orx delegates plan
 orx delegates policy
@@ -168,6 +170,9 @@ orx diag run pyright --json
 orx diagnostics inspect gopls
 orx diagnostics run gopls --project src/main.go
 orx diag run gopls --project src/main.go --json
+orx diagnostics inspect clangd
+orx diagnostics run clangd --project src/main.cpp
+orx diag run clangd --project src/main.cpp --json
 orx scanners list
 orx scanners inspect semgrep
 orx scanners run semgrep src --config semgrep.yml
@@ -192,9 +197,12 @@ orx diag run pyright --json
 orx diagnostics inspect gopls
 orx diagnostics run gopls --project src/main.go
 orx diag run gopls --project src/main.go --json
+orx diagnostics inspect clangd
+orx diagnostics run clangd --project src/main.cpp
+orx diag run clangd --project src/main.cpp --json
 ```
 
-The runnable profiles are TypeScript, Pyright, and gopls. ORX never installs TypeScript, Pyright, gopls, Go toolchains, or language packages; it uses a project-local `node_modules/.bin/<binary>` when present, otherwise an existing `tsc`, `pyright`, or `gopls` on `PATH`. TypeScript runs `tsc --noEmit --pretty false --project <tsconfig>` with default project `tsconfig.json`; Pyright runs `pyright --outputjson --project <project-file-or-directory>` with default project `.`; gopls requires `--project <local-go-file>`, probes PATH with `gopls version`, runs `gopls check <go-file>`, and disables Go proxy/checksum/toolchain download paths in the child env. `--project` must name a local target under the current working directory, with symlink realpaths also staying inside cwd; gopls targets must be regular `.go` files. URLs, registry/package/launcher-like values, dash-prefixed values, control characters, and secret-like values are rejected before spawning. Runs use shell-disabled process execution, a minimal env without ORX/OpenRouter/Brave/API token values, bounded/redacted stdout and stderr, parsed diagnostics, and optional ORX-owned `--json` metadata. TypeScript Language Server, rust-analyzer, clangd, and SCIP TypeScript remain catalog/readiness profiles only.
+The runnable profiles are TypeScript, Pyright, gopls, and clangd. ORX never installs TypeScript, Pyright, gopls, clangd, Go toolchains, Python packages, C/C++ toolchains, or language packages; it uses a project-local `node_modules/.bin/<binary>` when present, otherwise an existing `tsc`, `pyright`, `gopls`, or `clangd` on `PATH`. TypeScript runs `tsc --noEmit --pretty false --project <tsconfig>` with default project `tsconfig.json`; Pyright runs `pyright --outputjson --project <project-file-or-directory>` with default project `.`; gopls requires `--project <local-go-file>`, probes PATH with `gopls version`, runs `gopls check <go-file>`, and disables Go proxy/checksum/toolchain download paths in the child env; clangd requires `--project <local-c-cpp-source-or-header-file>`, probes PATH with `clangd --version`, and runs `clangd --log=error --check=<file>`. `--project` must name a local target under the current working directory, with symlink realpaths also staying inside cwd; gopls targets must be regular `.go` files and clangd targets must be regular C/C++/Objective-C source or header files. URLs, registry/package/launcher-like values, dash-prefixed values, control characters, and secret-like values are rejected before spawning. Runs use shell-disabled process execution, a minimal env without ORX/OpenRouter/Brave/API token values, bounded/redacted stdout and stderr, parsed diagnostics, and optional ORX-owned `--json` metadata. TypeScript Language Server, rust-analyzer, and SCIP TypeScript remain catalog/readiness profiles only.
 
 Local security scanner profiles are explicit operator commands, not model tools:
 
@@ -461,8 +469,8 @@ The chat UI keeps in-session message history for the current process, streams as
 /outline <file>
 /scanners [list|inspect <profile>|run semgrep <path> --config <local-config-path> [--json]]
 /scan semgrep <path> --config <local-config-path> [--json]
-/diagnostics [list|inspect <profile>|run <typescript|pyright|gopls> [--project <local-project-path>] [--json]]
-/diag [list|inspect <profile>|run <typescript|pyright|gopls> [--project <local-project-path>] [--json]]
+/diagnostics [list|inspect <profile>|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]
+/diag [list|inspect <profile>|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]
 /plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold|validate|inspect|register|install|enable|disable]
 /plugin [list|status]
 /bins [list|inspect|trust|untrust|run]

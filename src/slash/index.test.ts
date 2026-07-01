@@ -130,7 +130,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
   assert.match(output, /\/scanners \[list\|inspect <profile>\|run semgrep <path> --config <local-config-path> \[--json\]\]/);
   assert.match(output, /\/scan semgrep <path> --config <local-config-path> \[--json\]/);
-  assert.match(output, /\/diagnostics \[list\|inspect <profile>\|run <typescript\|pyright\|gopls> \[--project <local-project-path>\] \[--json\]\]/);
+  assert.match(output, /\/diagnostics \[list\|inspect <profile>\|run <typescript\|pyright\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/refs <query>/);
   assert.match(output, /\/imports \[query\]/);
@@ -334,6 +334,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/diagnostics run t"), [["typescript "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run p"), [["pyright "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run g"), [["gopls "], "g"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics run c"), [["clangd "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/diag run typescript --p"), [["--project "], "--p"]);
   assert.deepEqual(completeSlashCommandLine("/skills a"), [["activate "], "a"]);
   assert.deepEqual(completeSlashCommandLine("/prompts a"), [["activate "], "a"]);
@@ -780,10 +781,13 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     writeFileSync(join(cwd, "src", "app.ts"), "const value: string = 1;\n");
     writeFileSync(join(cwd, "src", "app.py"), "value: str = 1\n");
     writeFileSync(join(cwd, "src", "main.go"), "package main\nfunc main() {}\n");
+    writeFileSync(join(cwd, "src", "main.cpp"), "int main() { return missing_symbol; }\n");
+    writeFileSync(join(cwd, "src", "notes.txt"), "not a clangd source\n");
     writeFileSync(join(cwd, "tsconfig.json"), "{\"compilerOptions\":{\"strict\":true},\"include\":[\"src\"]}\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "tsc"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "pyright"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "gopls"), "#!/usr/bin/env node\n");
+    writeFileSync(join(cwd, "node_modules", ".bin", "clangd"), "#!/usr/bin/env node\n");
 
     const list = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics", list.context), "continue");
@@ -791,6 +795,7 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.match(list.stdout(), /id=typescript state=runnable/);
     assert.match(list.stdout(), /id=pyright state=runnable/);
     assert.match(list.stdout(), /id=gopls state=runnable/);
+    assert.match(list.stdout(), /id=clangd state=runnable/);
 
     const inspect = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics inspect typescript", inspect.context), "continue");
@@ -808,9 +813,11 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.match(inspectGopls.stdout(), /default_project: none; --project <local-go-file> is required/);
     assert.match(inspectGopls.stdout(), /command_shape: gopls check <go-file>/);
 
-    const inspectCatalogOnly = createSlashHarness({ cwd });
-    assert.equal(await handleSlashCommand("/diagnostics inspect clangd", inspectCatalogOnly.context), "continue");
-    assert.match(inspectCatalogOnly.stdout(), /state: catalog_only/);
+    const inspectClangd = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics inspect clangd", inspectClangd.context), "continue");
+    assert.match(inspectClangd.stdout(), /state: runnable/);
+    assert.match(inspectClangd.stdout(), /default_project: none; --project <local-c-cpp-source-or-header-file> is required/);
+    assert.match(inspectClangd.stdout(), /command_shape: clangd --log=error --check=<file>/);
 
     const inspectUsage = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diag inspect", inspectUsage.context), "continue");
@@ -824,6 +831,13 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
           exitCode: 1,
           stdout: "src/main.go:7:2: undefined: missing access_token=abcd1234\n",
           stderr: "Authorization: Bearer should-redact\n",
+        });
+      }
+      if (String(options.command).includes("clangd")) {
+        return mockProcessResult(options, {
+          exitCode: 3,
+          stdout: "",
+          stderr: "E[02:01:35.987] [undeclared_var_use] Line 1: use of undeclared identifier 'missing_symbol' access_token=abcd1234\nAuthorization: Bearer should-redact\n",
         });
       }
       if (String(options.command).includes("pyright")) {
@@ -953,6 +967,28 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.equal(tscCalls.at(-1)?.env?.GOSUMDB, "off");
     assert.equal(tscCalls.at(-1)?.env?.GOTOOLCHAIN, "local");
 
+    const clangd = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(
+      await handleSlashCommand("/diagnostics run clangd --project src/main.cpp", clangd.context),
+      "continue",
+    );
+    assert.equal(clangd.stdout(), "");
+    assert.match(clangd.stderr(), /Local diagnostics run/);
+    assert.match(clangd.stderr(), /profile: clangd/);
+    assert.match(clangd.stderr(), /status: failed/);
+    assert.match(clangd.stderr(), /binary_source: local_node_modules/);
+    assert.match(clangd.stderr(), /parsed_diagnostics: 1/);
+    assert.match(clangd.stderr(), /src\/main\.cpp:1:1 error undeclared_var_use use of undeclared identifier 'missing_symbol' access_token=\[redacted\]/);
+    assert.match(clangd.stderr(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(clangd.stderr(), /abcd1234|should-redact/);
+    assert.match(tscCalls.at(-1)?.command ?? "", /node_modules\/\.bin\/clangd$/);
+    assert.deepEqual(tscCalls.at(-1)?.args, ["--log=error", "--check=src/main.cpp"]);
+    assert.equal(tscCalls.at(-1)?.shell, false);
+    assert.equal(tscCalls.at(-1)?.inheritEnv, false);
+    assert.equal(tscCalls.at(-1)?.env?.GOPROXY, undefined);
+    assert.equal(tscCalls.at(-1)?.env?.GOSUMDB, undefined);
+    assert.equal(tscCalls.at(-1)?.env?.GOTOOLCHAIN, undefined);
+
     const beforeGoplsInvalidCalls = tscCalls.length;
     const goplsMissingProject = createSlashHarness({ cwd, diagnosticsRunner });
     assert.equal(await handleSlashCommand("/diagnostics run gopls", goplsMissingProject.context), "continue");
@@ -966,6 +1002,28 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     );
     assert.match(goplsDirectoryProject.stderr(), /project must be a regular local \.go file/);
     assert.equal(tscCalls.length, beforeGoplsInvalidCalls);
+
+    const beforeClangdInvalidCalls = tscCalls.length;
+    const clangdMissingProject = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(await handleSlashCommand("/diagnostics run clangd", clangdMissingProject.context), "continue");
+    assert.match(clangdMissingProject.stderr(), /clangd diagnostics require --project <local-c-cpp-source-or-header-file>/);
+    assert.equal(tscCalls.length, beforeClangdInvalidCalls);
+
+    const clangdDirectoryProject = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(
+      await handleSlashCommand("/diagnostics run clangd --project src", clangdDirectoryProject.context),
+      "continue",
+    );
+    assert.match(clangdDirectoryProject.stderr(), /project must be a regular local C\/C\+\+\/Objective-C source or header file/);
+    assert.equal(tscCalls.length, beforeClangdInvalidCalls);
+
+    const clangdTextProject = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(
+      await handleSlashCommand("/diagnostics run clangd --project src/notes.txt", clangdTextProject.context),
+      "continue",
+    );
+    assert.match(clangdTextProject.stderr(), /project must be a local C\/C\+\+\/Objective-C source or header file/);
+    assert.equal(tscCalls.length, beforeClangdInvalidCalls);
 
     const pathOnlyCwd = mkdtempSync(join(tmpdir(), "orx-slash-diagnostics-path-gopls-"));
     try {
@@ -995,6 +1053,36 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
       assert.match(pathOnly.stdout(), /binary_source: path/);
     } finally {
       rmSync(pathOnlyCwd, { recursive: true, force: true });
+    }
+
+    const pathOnlyClangdCwd = mkdtempSync(join(tmpdir(), "orx-slash-diagnostics-path-clangd-"));
+    try {
+      writeFileSync(join(pathOnlyClangdCwd, "main.cpp"), "int main() { return 0; }\n");
+      const pathCalls: RunProcessOptions[] = [];
+      const pathOnly = createSlashHarness({
+        cwd: pathOnlyClangdCwd,
+        env: { PATH: "/usr/bin" },
+        diagnosticsRunner: async (options) => {
+          pathCalls.push(options);
+          if (String(options.command) === "clangd" && options.args?.join(" ") === "--version") {
+            return mockProcessResult(options, { exitCode: 0, stdout: "clangd version 18.0.0\n" });
+          }
+          return mockProcessResult(options, { exitCode: 0, stdout: "" });
+        },
+      });
+      assert.equal(
+        await handleSlashCommand("/diagnostics run clangd --project main.cpp", pathOnly.context),
+        "continue",
+      );
+      assert.deepEqual(pathCalls.map((call) => call.args), [
+        ["--version"],
+        ["--log=error", "--check=main.cpp"],
+      ]);
+      assert.equal(pathCalls[0]?.command, "clangd");
+      assert.equal(pathCalls[1]?.command, "clangd");
+      assert.match(pathOnly.stdout(), /binary_source: path/);
+    } finally {
+      rmSync(pathOnlyClangdCwd, { recursive: true, force: true });
     }
 
     const beforeUnsafeCalls = tscCalls.length;

@@ -435,3 +435,9 @@ Reasoning: Keychain storage improves local comfort without putting bearer tokens
 Decision: Model-supplied `delegate_task` arguments may be ergonomically normalized only when doing so cannot exceed operator policy. Blank delegate names are treated as omitted so a sole configured delegate can be selected; blank optional context and expected-output strings are omitted; timeout, result-byte, and max-cost requests above policy are capped to policy. Malformed names, malformed values, below-minimum bounds, and secret-like task/context/expected-output content still fail closed before network.
 
 Reasoning: Real-key dogfood showed capable controller models may emit blank optional fields or generic high limits even when the operator has already configured a stricter policy. Capping to policy preserves the trust boundary while making the model-visible delegation tool usable without repeated invalid-argument retries.
+
+## 2026-07-01: Use clangd Check Mode For C/C++ Diagnostics
+
+Decision: The runnable clangd diagnostics profile should use an installed local or PATH `clangd` binary through `clangd --log=error --check=<local-c-cpp-source-or-header-file>`, not LSP server mode.
+
+Reasoning: `--check` gives a deterministic single-file local diagnostics command shape that fits the existing explicit-operator, no-install, no-network, shell-disabled diagnostics boundary. `--log=error` preserves error diagnostics while avoiding clangd's default setup-log noise in bounded ORX output.

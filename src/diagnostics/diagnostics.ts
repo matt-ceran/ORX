@@ -6,13 +6,13 @@ import { runProcess, type RunProcessOptions, type RunProcessResult } from "../to
 import type { TextTruncation } from "../tools/types.js";
 
 export const DIAGNOSTICS_USAGE =
-  "Usage: orx diagnostics [list|inspect <profile>|run <typescript|pyright|gopls> [--project <local-project-path>] [--json]]";
+  "Usage: orx diagnostics [list|inspect <profile>|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const DIAG_USAGE =
-  "Usage: orx diag [list|inspect <profile>|run <typescript|pyright|gopls> [--project <local-project-path>] [--json]]";
+  "Usage: orx diag [list|inspect <profile>|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAGNOSTICS_USAGE =
-  "Usage: /diagnostics [list|inspect <profile>|run <typescript|pyright|gopls> [--project <local-project-path>] [--json]]";
+  "Usage: /diagnostics [list|inspect <profile>|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAG_USAGE =
-  "Usage: /diag [list|inspect <profile>|run <typescript|pyright|gopls> [--project <local-project-path>] [--json]]";
+  "Usage: /diag [list|inspect <profile>|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
 
 export type DiagnosticProfileId =
   | "typescript"
@@ -33,7 +33,7 @@ export interface DiagnosticProfile {
   networkBoundary: string;
 }
 
-export type RunnableDiagnosticProfileId = "typescript" | "pyright" | "gopls";
+export type RunnableDiagnosticProfileId = "typescript" | "pyright" | "gopls" | "clangd";
 
 export interface LocalDiagnosticsArgs {
   profile: RunnableDiagnosticProfileId;
@@ -162,11 +162,11 @@ const DIAGNOSTIC_PROFILES: DiagnosticProfile[] = [
   {
     id: "clangd",
     label: "clangd",
-    state: "catalog_only",
+    state: "runnable",
     binary: "clangd",
-    summary: "Catalog/readiness placeholder for future C/C++ diagnostics integration.",
-    runSupport: "not runnable in this slice",
-    networkBoundary: "no runnable no-network/no-auth/no-write command shape is enabled yet",
+    summary: "Local C/C++/Objective-C diagnostics using an already-installed clangd binary.",
+    runSupport: "runnable only through `run clangd --project <local-c-cpp-source-or-header-file> [--json]`",
+    networkBoundary: "no installs, package-manager calls, MCP calls, network calls, or model exposure",
   },
   {
     id: "scip-typescript",
@@ -180,19 +180,34 @@ const DIAGNOSTIC_PROFILES: DiagnosticProfile[] = [
 ];
 
 const PROFILE_IDS = new Set<DiagnosticProfileId>(DIAGNOSTIC_PROFILES.map((profile) => profile.id));
-const RUNNABLE_PROFILE_IDS = new Set<RunnableDiagnosticProfileId>(["typescript", "pyright", "gopls"]);
+const RUNNABLE_PROFILE_IDS = new Set<RunnableDiagnosticProfileId>(["typescript", "pyright", "gopls", "clangd"]);
 const DEFAULT_TYPESCRIPT_TIMEOUT_MS = 120_000;
 const DEFAULT_PYRIGHT_TIMEOUT_MS = 120_000;
 const DEFAULT_GOPLS_TIMEOUT_MS = 120_000;
+const DEFAULT_CLANGD_TIMEOUT_MS = 120_000;
 const DEFAULT_DIAGNOSTIC_OUTPUT_BYTES = 128 * 1024;
 const TSC_DISCOVERY_TIMEOUT_MS = 5_000;
 const PYRIGHT_DISCOVERY_TIMEOUT_MS = 5_000;
 const GOPLS_DISCOVERY_TIMEOUT_MS = 5_000;
+const CLANGD_DISCOVERY_TIMEOUT_MS = 5_000;
 const TSC_DISCOVERY_BYTES = 8 * 1024;
 const PYRIGHT_DISCOVERY_BYTES = 8 * 1024;
 const GOPLS_DISCOVERY_BYTES = 8 * 1024;
+const CLANGD_DISCOVERY_BYTES = 8 * 1024;
 const MAX_DIAGNOSTIC_PATH_LENGTH = 4096;
 const MAX_DIAGNOSTIC_PROFILE_LENGTH = 120;
+const CLANGD_SOURCE_EXTENSIONS = new Set([
+  ".c",
+  ".cc",
+  ".cpp",
+  ".cxx",
+  ".h",
+  ".hh",
+  ".hpp",
+  ".hxx",
+  ".m",
+  ".mm",
+]);
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
 const OUTPUT_CONTROL_CHAR_PATTERN = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
 const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
@@ -288,6 +303,17 @@ export function renderDiagnosticProfileInspect(profile: DiagnosticProfile): stri
       "  run: orx diagnostics run gopls --project <local-go-file> [--json]",
     );
   }
+  if (profile.id === "clangd") {
+    lines.push(
+      "  default_project: none; --project <local-c-cpp-source-or-header-file> is required",
+      "  command_shape: clangd --log=error --check=<file>",
+      "  binary_preference: cwd/node_modules/.bin/clangd before PATH clangd",
+      "  project_guard: local regular C/C++/Objective-C source or header file under cwd; symlink realpath must remain under cwd",
+      "  rejected_projects: URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
+      "  output: bounded and redacted; --json emits ORX-owned structured JSON with parsed clangd --check diagnostics",
+      "  run: orx diagnostics run clangd --project <local-c-cpp-source-or-header-file> [--json]",
+    );
+  }
 
   return lines.join("\n");
 }
@@ -359,7 +385,7 @@ export function parseDiagnosticRunArgs(
   if (!selectedProjectPath) {
     return {
       ok: false,
-      message: `${usage}\ngopls diagnostics require --project <local-go-file>; gopls check accepts file arguments.`,
+      message: `${usage}\n${missingProjectMessageForProfile(runnableProfile)}`,
     };
   }
   const projectError = validateProjectPathValue(selectedProjectPath, runnableProfile);
@@ -437,7 +463,7 @@ export async function runLocalDiagnostics(
   const stdout = sanitizeProcessOutput(result.stdout);
   const stderr = sanitizeProcessOutput(result.stderr);
   const status = classifyDiagnosticsRun(result);
-  const diagnostics = parseDiagnosticsForProfile(options.profile, stdout, stderr, root);
+  const diagnostics = parseDiagnosticsForProfile(options.profile, stdout, stderr, root, project.displayPath);
 
   return {
     ok: status === "ok",
@@ -620,6 +646,14 @@ function resolveProjectPath(
       return { ok: false, message: "project must be a local .go file." };
     }
   }
+  if (profile === "clangd") {
+    if (!safeIsFile(realResolved)) {
+      return { ok: false, message: "project must be a regular local C/C++/Objective-C source or header file." };
+    }
+    if (!isClangdProjectPath(relativePath)) {
+      return { ok: false, message: "project must be a local C/C++/Objective-C source or header file." };
+    }
+  }
   if (isFlagLikeValue(relativePath)) {
     return { ok: false, message: "project must not resolve to a dash-prefixed operand." };
   }
@@ -719,7 +753,10 @@ function validateProjectPathValue(value: string, profile: RunnableDiagnosticProf
     if (profile === "pyright") {
       return "project must be a local Pyright project file or directory, not a package, registry, or launcher value.";
     }
-    return "project must be a local Go file, not a package, registry, or launcher value.";
+    if (profile === "gopls") {
+      return "project must be a local Go file, not a package, registry, or launcher value.";
+    }
+    return "project must be a local C/C++/Objective-C source or header file, not a package, registry, or launcher value.";
   }
   return undefined;
 }
@@ -902,6 +939,7 @@ function parseDiagnosticsForProfile(
   stdout: string,
   stderr: string,
   root: string,
+  projectPath: string,
 ): ParsedTypeScriptDiagnostic[] {
   if (profile === "typescript") {
     return parseTypeScriptDiagnostics(`${stdout}\n${stderr}`);
@@ -909,7 +947,10 @@ function parseDiagnosticsForProfile(
   if (profile === "pyright") {
     return parsePyrightDiagnostics(stdout, root);
   }
-  return parseGoplsDiagnostics(`${stdout}\n${stderr}`, root);
+  if (profile === "gopls") {
+    return parseGoplsDiagnostics(`${stdout}\n${stderr}`, root);
+  }
+  return parseClangdDiagnostics(`${stdout}\n${stderr}`, projectPath);
 }
 
 function parseGoplsDiagnostics(output: string, root: string): ParsedTypeScriptDiagnostic[] {
@@ -931,6 +972,35 @@ function parseGoplsDiagnostics(output: string, root: string): ParsedTypeScriptDi
       severity: "error" as const,
       code: "gopls",
       message: sanitizeInline(match[4] ?? ""),
+    };
+    const key = JSON.stringify(diagnostic);
+    if (!seen.has(key)) {
+      seen.add(key);
+      diagnostics.push(diagnostic);
+    }
+  }
+  return diagnostics;
+}
+
+function parseClangdDiagnostics(output: string, projectPath: string): ParsedTypeScriptDiagnostic[] {
+  const diagnostics: ParsedTypeScriptDiagnostic[] = [];
+  const seen = new Set<string>();
+  for (const rawLine of output.replace(/\r\n|\r/g, "\n").split("\n")) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const match = /^([EWI])\[[^\]]+\]\s+(?:\[([^\]]+)\]\s+)?Line\s+(\d+)(?::(\d+))?:\s+(.+)$/.exec(line);
+    if (!match) {
+      continue;
+    }
+    const diagnostic = {
+      file: sanitizeInline(projectPath),
+      line: Number.parseInt(match[3] ?? "1", 10),
+      column: match[4] ? Number.parseInt(match[4], 10) : 1,
+      severity: normalizeClangdSeverity(match[1]),
+      code: sanitizeInline(match[2] ?? "clangd"),
+      message: sanitizeInline(match[5] ?? ""),
     };
     const key = JSON.stringify(diagnostic);
     if (!seen.has(key)) {
@@ -972,7 +1042,10 @@ function buildDiagnosticCommandArgs(profile: RunnableDiagnosticProfileId, projec
   if (profile === "pyright") {
     return ["--outputjson", "--project", projectArg];
   }
-  return ["check", projectArg];
+  if (profile === "gopls") {
+    return ["check", projectArg];
+  }
+  return ["--log=error", `--check=${projectArg}`];
 }
 
 function defaultProjectPathForProfile(profile: RunnableDiagnosticProfileId): string | undefined {
@@ -989,14 +1062,20 @@ function defaultTimeoutForProfile(profile: RunnableDiagnosticProfileId): number 
   if (profile === "typescript") {
     return DEFAULT_TYPESCRIPT_TIMEOUT_MS;
   }
-  return profile === "pyright" ? DEFAULT_PYRIGHT_TIMEOUT_MS : DEFAULT_GOPLS_TIMEOUT_MS;
+  if (profile === "pyright") {
+    return DEFAULT_PYRIGHT_TIMEOUT_MS;
+  }
+  return profile === "gopls" ? DEFAULT_GOPLS_TIMEOUT_MS : DEFAULT_CLANGD_TIMEOUT_MS;
 }
 
 function diagnosticBinaryForProfile(profile: RunnableDiagnosticProfileId): string {
   if (profile === "typescript") {
     return "tsc";
   }
-  return profile === "pyright" ? "pyright" : "gopls";
+  if (profile === "pyright") {
+    return "pyright";
+  }
+  return profile === "gopls" ? "gopls" : "clangd";
 }
 
 function diagnosticDiscoveryArgsForProfile(profile: RunnableDiagnosticProfileId): string[] {
@@ -1010,21 +1089,30 @@ function diagnosticMissingMessage(profile: RunnableDiagnosticProfileId): string 
   if (profile === "pyright") {
     return "pyright is not installed or not on PATH. Install Pyright locally in this project or make an existing pyright binary available on PATH; ORX will not install it for you.";
   }
-  return "gopls is not installed or not on PATH. Install gopls locally for this project or make an existing gopls binary available on PATH; ORX will not install it for you.";
+  if (profile === "gopls") {
+    return "gopls is not installed or not on PATH. Install gopls locally for this project or make an existing gopls binary available on PATH; ORX will not install it for you.";
+  }
+  return "clangd is not installed or not on PATH. Install clangd locally for this project or make an existing clangd binary available on PATH; ORX will not install it for you.";
 }
 
 function discoveryTimeoutForProfile(profile: RunnableDiagnosticProfileId): number {
   if (profile === "typescript") {
     return TSC_DISCOVERY_TIMEOUT_MS;
   }
-  return profile === "pyright" ? PYRIGHT_DISCOVERY_TIMEOUT_MS : GOPLS_DISCOVERY_TIMEOUT_MS;
+  if (profile === "pyright") {
+    return PYRIGHT_DISCOVERY_TIMEOUT_MS;
+  }
+  return profile === "gopls" ? GOPLS_DISCOVERY_TIMEOUT_MS : CLANGD_DISCOVERY_TIMEOUT_MS;
 }
 
 function discoveryBytesForProfile(profile: RunnableDiagnosticProfileId): number {
   if (profile === "typescript") {
     return TSC_DISCOVERY_BYTES;
   }
-  return profile === "pyright" ? PYRIGHT_DISCOVERY_BYTES : GOPLS_DISCOVERY_BYTES;
+  if (profile === "pyright") {
+    return PYRIGHT_DISCOVERY_BYTES;
+  }
+  return profile === "gopls" ? GOPLS_DISCOVERY_BYTES : CLANGD_DISCOVERY_BYTES;
 }
 
 function normalizePyrightSeverity(value: unknown): ParsedTypeScriptDiagnostic["severity"] {
@@ -1032,6 +1120,39 @@ function normalizePyrightSeverity(value: unknown): ParsedTypeScriptDiagnostic["s
     return value;
   }
   return "message";
+}
+
+function normalizeClangdSeverity(value: unknown): ParsedTypeScriptDiagnostic["severity"] {
+  if (value === "E") {
+    return "error";
+  }
+  if (value === "W") {
+    return "warning";
+  }
+  if (value === "I") {
+    return "information";
+  }
+  return "message";
+}
+
+function missingProjectMessageForProfile(profile: RunnableDiagnosticProfileId): string {
+  if (profile === "gopls") {
+    return "gopls diagnostics require --project <local-go-file>; gopls check accepts file arguments.";
+  }
+  if (profile === "clangd") {
+    return "clangd diagnostics require --project <local-c-cpp-source-or-header-file>; clangd --check accepts one file.";
+  }
+  return "diagnostics require --project <local-project-path>.";
+}
+
+function isClangdProjectPath(value: string): boolean {
+  const normalized = value.toLowerCase();
+  for (const extension of CLANGD_SOURCE_EXTENSIONS) {
+    if (normalized.endsWith(extension)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function toOneBasedNumber(value: unknown): number {

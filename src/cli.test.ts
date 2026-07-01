@@ -1941,10 +1941,13 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     writeFileSync(join(cwd, "src", "app.ts"), "const value: string = 1;\n");
     writeFileSync(join(cwd, "src", "app.py"), "value: str = 1\n");
     writeFileSync(join(cwd, "src", "main.go"), "package main\nfunc main() {}\n");
+    writeFileSync(join(cwd, "src", "main.cpp"), "int main() { return missing_symbol; }\n");
+    writeFileSync(join(cwd, "src", "notes.txt"), "not a clangd source\n");
     writeFileSync(join(cwd, "tsconfig.json"), "{\"compilerOptions\":{\"strict\":true},\"include\":[\"src\"]}\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "tsc"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "pyright"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "gopls"), "#!/usr/bin/env node\n");
+    writeFileSync(join(cwd, "node_modules", ".bin", "clangd"), "#!/usr/bin/env node\n");
 
     const list = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diagnostics", "list"], {}, list.io), 0);
@@ -1952,6 +1955,7 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.match(list.stdout(), /id=typescript state=runnable/);
     assert.match(list.stdout(), /id=pyright state=runnable/);
     assert.match(list.stdout(), /id=gopls state=runnable/);
+    assert.match(list.stdout(), /id=clangd state=runnable/);
 
     const inspect = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diag", "inspect", "typescript"], {}, inspect.io), 0);
@@ -1970,9 +1974,11 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.match(inspectGopls.stdout(), /command_shape: gopls check <go-file>/);
     assert.match(inspectGopls.stdout(), /GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local/);
 
-    const inspectCatalogOnly = createIo({ cwd });
-    assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "clangd"], {}, inspectCatalogOnly.io), 0);
-    assert.match(inspectCatalogOnly.stdout(), /state: catalog_only/);
+    const inspectClangd = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "clangd"], {}, inspectClangd.io), 0);
+    assert.match(inspectClangd.stdout(), /state: runnable/);
+    assert.match(inspectClangd.stdout(), /default_project: none; --project <local-c-cpp-source-or-header-file> is required/);
+    assert.match(inspectClangd.stdout(), /command_shape: clangd --log=error --check=<file>/);
 
     const inspectUsage = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diag", "inspect"], {}, inspectUsage.io), 1);
@@ -1986,6 +1992,13 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
           exitCode: 1,
           stdout: "src/main.go:7:2: undefined: missing access_token=abcd1234\n",
           stderr: "Authorization: Bearer should-redact\n",
+        });
+      }
+      if (String(options.command).includes("clangd")) {
+        return mockProcessResult(options, {
+          exitCode: 3,
+          stdout: "",
+          stderr: "E[02:01:35.987] [undeclared_var_use] Line 1: use of undeclared identifier 'missing_symbol' access_token=abcd1234\nAuthorization: Bearer should-redact\n",
         });
       }
       if (String(options.command).includes("pyright")) {
@@ -2130,6 +2143,28 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.equal(tscCalls.at(-1)?.env?.GOSUMDB, "off");
     assert.equal(tscCalls.at(-1)?.env?.GOTOOLCHAIN, "local");
 
+    const clangd = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "run", "clangd", "--project", "src/main.cpp"], {}, clangd.io),
+      1,
+    );
+    assert.equal(clangd.stdout(), "");
+    assert.match(clangd.stderr(), /Local diagnostics run/);
+    assert.match(clangd.stderr(), /profile: clangd/);
+    assert.match(clangd.stderr(), /status: failed/);
+    assert.match(clangd.stderr(), /binary_source: local_node_modules/);
+    assert.match(clangd.stderr(), /parsed_diagnostics: 1/);
+    assert.match(clangd.stderr(), /src\/main\.cpp:1:1 error undeclared_var_use use of undeclared identifier 'missing_symbol' access_token=\[redacted\]/);
+    assert.match(clangd.stderr(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(clangd.stderr(), /abcd1234|should-redact/);
+    assert.match(tscCalls.at(-1)?.command ?? "", /node_modules\/\.bin\/clangd$/);
+    assert.deepEqual(tscCalls.at(-1)?.args, ["--log=error", "--check=src/main.cpp"]);
+    assert.equal(tscCalls.at(-1)?.shell, false);
+    assert.equal(tscCalls.at(-1)?.inheritEnv, false);
+    assert.equal(tscCalls.at(-1)?.env?.GOPROXY, undefined);
+    assert.equal(tscCalls.at(-1)?.env?.GOSUMDB, undefined);
+    assert.equal(tscCalls.at(-1)?.env?.GOTOOLCHAIN, undefined);
+
     const beforeGoplsInvalidCalls = tscCalls.length;
     const goplsMissingProject = createIo({ cwd, diagnosticsRunner });
     assert.equal(await runCli(["node", "cli", "diagnostics", "run", "gopls"], {}, goplsMissingProject.io), 1);
@@ -2143,6 +2178,28 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     );
     assert.match(goplsDirectoryProject.stderr(), /project must be a regular local \.go file/);
     assert.equal(tscCalls.length, beforeGoplsInvalidCalls);
+
+    const beforeClangdInvalidCalls = tscCalls.length;
+    const clangdMissingProject = createIo({ cwd, diagnosticsRunner });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "run", "clangd"], {}, clangdMissingProject.io), 1);
+    assert.match(clangdMissingProject.stderr(), /clangd diagnostics require --project <local-c-cpp-source-or-header-file>/);
+    assert.equal(tscCalls.length, beforeClangdInvalidCalls);
+
+    const clangdDirectoryProject = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "run", "clangd", "--project", "src"], {}, clangdDirectoryProject.io),
+      1,
+    );
+    assert.match(clangdDirectoryProject.stderr(), /project must be a regular local C\/C\+\+\/Objective-C source or header file/);
+    assert.equal(tscCalls.length, beforeClangdInvalidCalls);
+
+    const clangdTextProject = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "run", "clangd", "--project", "src/notes.txt"], {}, clangdTextProject.io),
+      1,
+    );
+    assert.match(clangdTextProject.stderr(), /project must be a local C\/C\+\+\/Objective-C source or header file/);
+    assert.equal(tscCalls.length, beforeClangdInvalidCalls);
 
     const missingCwd = createTempDir();
     const missing = createIo({
@@ -2184,6 +2241,35 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
       assert.match(pathOnly.stdout(), /binary_source: path/);
     } finally {
       rmSync(pathOnlyCwd, { recursive: true, force: true });
+    }
+
+    const pathOnlyClangdCwd = createTempDir();
+    try {
+      writeFileSync(join(pathOnlyClangdCwd, "main.cpp"), "int main() { return 0; }\n");
+      const pathCalls: Array<Parameters<DiagnosticsProcessRunner>[0]> = [];
+      const pathOnly = createIo({
+        cwd: pathOnlyClangdCwd,
+        diagnosticsRunner: async (options) => {
+          pathCalls.push(options);
+          if (String(options.command) === "clangd" && options.args?.join(" ") === "--version") {
+            return mockProcessResult(options, { exitCode: 0, stdout: "clangd version 18.0.0\n" });
+          }
+          return mockProcessResult(options, { exitCode: 0, stdout: "" });
+        },
+      });
+      assert.equal(
+        await runCli(["node", "cli", "diagnostics", "run", "clangd", "--project", "main.cpp"], { PATH: "/usr/bin" }, pathOnly.io),
+        0,
+      );
+      assert.deepEqual(pathCalls.map((call) => call.args), [
+        ["--version"],
+        ["--log=error", "--check=main.cpp"],
+      ]);
+      assert.equal(pathCalls[0]?.command, "clangd");
+      assert.equal(pathCalls[1]?.command, "clangd");
+      assert.match(pathOnly.stdout(), /binary_source: path/);
+    } finally {
+      rmSync(pathOnlyClangdCwd, { recursive: true, force: true });
     }
 
     const beforeUnsafeCalls = tscCalls.length;
