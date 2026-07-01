@@ -2061,6 +2061,54 @@ test("parses common framework report summaries", () => {
     },
   );
 
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "Test summary: total: 4, failed: 1, succeeded: 2, skipped: 1, duration: 0.4s",
+    ),
+    {
+      framework: "unknown",
+      source: "dotnet",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+      durationMs: 400,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "Test summary: total: 2, failed: 0, succeeded: 2, skipped: 0, duration: 12 ms"),
+    {
+      framework: "node",
+      source: "dotnet",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+      durationMs: 12,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Test summary: total: 1, failed: 0, succeeded: 1, skipped: 0, duration: 1 ms",
+        "Test summary: total: 3, failed: 1, succeeded: 1, skipped: 1, duration: 2 ms",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "dotnet",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+      durationMs: 2,
+    },
+  );
+
   assert.equal(
     parseTestReportSummary(createTarget("unknown"), "Passed! - Failed: 1, Passed: 1, Skipped: 0, Total: 2"),
     undefined,
@@ -2079,6 +2127,48 @@ test("parses common framework report summaries", () => {
   );
   assert.equal(
     parseTestReportSummary(createTarget("unknown"), "Passed! - Failed: 0, Passed: 1, Skipped: 0, Total: 1, Duration: 1 s - after cleanup"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "Test summary: total: 2, failed: 0, succeeded: 1, skipped: 0, duration: 0.4s",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "Test summary: total: 2, failed: 0, passed: 2, skipped: 0, duration: 0.4s",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "Test summary: total: 1, failed: 0, succeeded: 1, skipped: 0, duration: 0.4s after cleanup",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Test summary: total: two, failed: 0, succeeded: 2, skipped: 0, duration: 0.4s",
+        "Test Summary: 2 passed, 2 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "Passed! - Failed: 0, Passed: 1, Skipped: 0, Total: 1, Duration: 1 s after cleanup",
+        "ℹ tests 1",
+        "ℹ pass 1",
+      ].join("\n"),
+    ),
     undefined,
   );
 
