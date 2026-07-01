@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "cucumber" | "behat" | "testthat" | "gtest" | "catch2" | "deno" | "exunit" | "gradle" | "junit-platform" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "rspec" | "minitest" | "karma" | "bun" | "unittest" | "junit-text" | "pest" | "phpunit" | "dotnet" | "ctest" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "cucumber" | "behat" | "testthat" | "gtest" | "catch2" | "deno" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "rspec" | "minitest" | "karma" | "bun" | "unittest" | "junit-text" | "pest" | "phpunit" | "dotnet" | "ctest" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -706,11 +706,11 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     unknown: parseGenericReportSummary,
   };
   if (framework === "node") {
-    return [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseCucumberReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseDenoReportSummary, parseGenericReportSummary];
+    return [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseScalaTestReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseCucumberReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseDenoReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseCucumberReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary]
-    : [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseCucumberReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
+    ? [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseScalaTestReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseCucumberReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary]
+    : [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseScalaTestReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseCucumberReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -1250,6 +1250,87 @@ function parseJunitPlatformReportSummary(text: string, framework: TestFramework)
   assignNumber(report, "failed", counts.failed);
   assignNumber(report, "skipped", skipped);
   assignNumber(report, "durationMs", durationMs);
+  return hasReportCounts(report) ? report : undefined;
+}
+
+function parseScalaTestReportSummary(text: string, framework: TestFramework): TestReportSummary | InvalidTestReport | undefined {
+  let counts:
+    | {
+        total: number;
+        passed: number;
+        failed: number;
+        skipped: number;
+        todo: number;
+        suites: number;
+        durationMs?: number;
+      }
+    | undefined;
+  const consumedLines = new Set<number>();
+  const lines = text.split(/\r?\n/).map(normalizeScalaTestLine);
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const runCandidate = parseScalaTestRunLine(lines[index] ?? "");
+    if (!runCandidate) {
+      if (looksLikeScalaTestRunLine(lines[index] ?? "") && hasNearbyScalaTestSummaryAnchor(lines, index)) {
+        return INVALID_TEST_REPORT;
+      }
+      continue;
+    }
+
+    const completedTests = parseScalaTestTotalTestsRunLine(lines[index + 1] ?? "");
+    const suiteCounts = parseScalaTestSuiteSummaryLine(lines[index + 2] ?? "");
+    const testCounts = parseScalaTestTestSummaryLine(lines[index + 3] ?? "");
+    if (completedTests !== undefined && suiteCounts && testCounts) {
+      if (completedTests !== testCounts.succeeded + testCounts.failed) {
+        return INVALID_TEST_REPORT;
+      }
+      counts = {
+        total: testCounts.succeeded + testCounts.failed + testCounts.canceled + testCounts.ignored + testCounts.pending,
+        passed: testCounts.succeeded,
+        failed: testCounts.failed,
+        skipped: testCounts.canceled + testCounts.ignored,
+        todo: testCounts.pending,
+        suites: suiteCounts.completed + suiteCounts.aborted,
+        durationMs: runCandidate.durationMs,
+      };
+      consumedLines.add(index);
+      consumedLines.add(index + 1);
+      consumedLines.add(index + 2);
+      consumedLines.add(index + 3);
+      index += 3;
+      continue;
+    }
+
+    if (
+      looksLikeScalaTestTotalTestsRunLine(lines[index + 1] ?? "") ||
+      looksLikeScalaTestSuiteSummaryLine(lines[index + 2] ?? "") ||
+      looksLikeScalaTestTestSummaryLine(lines[index + 3] ?? "")
+    ) {
+      return INVALID_TEST_REPORT;
+    }
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!consumedLines.has(index) && looksLikeScalaTestSummaryLine(lines[index] ?? "")) {
+      return INVALID_TEST_REPORT;
+    }
+  }
+
+  if (!counts) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "scalatest",
+  };
+  assignNumber(report, "total", counts.total);
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
+  assignNumber(report, "todo", counts.todo);
+  assignNumber(report, "suites", counts.suites);
+  assignNumber(report, "durationMs", counts.durationMs);
   return hasReportCounts(report) ? report : undefined;
 }
 
@@ -2985,6 +3066,146 @@ function looksLikeJunitPlatformDurationLine(line: string): boolean {
 
 function looksLikeJunitPlatformStatusLine(line: string): boolean {
   return /^\[\s*\d+\s+tests?\s+(?:found|skipped|aborted|started|successful|failed)(?:\s*\]?|$|\s+)/.test(line);
+}
+
+function normalizeScalaTestLine(line: string): string {
+  return line.trim().replace(/^\[info\]\s+/, "");
+}
+
+function parseScalaTestRunLine(line: string): { durationMs?: number } | undefined {
+  const completedMatch = /^Run completed(?: in (.+))?\.$/.exec(line);
+  if (completedMatch) {
+    const durationMs = completedMatch[1] === undefined ? undefined : parseScalaTestDurationMs(completedMatch[1]);
+    return completedMatch[1] === undefined || durationMs !== undefined ? { durationMs } : undefined;
+  }
+
+  const stoppedMatch = /^Run stopped after (.+)\.$/.exec(line);
+  if (stoppedMatch) {
+    const durationMs = parseScalaTestDurationMs(stoppedMatch[1] ?? "");
+    return durationMs === undefined ? undefined : { durationMs };
+  }
+
+  const abortedMatch = /^Run aborted(?: after (.+))?\.$/.exec(line);
+  if (abortedMatch) {
+    const durationMs = abortedMatch[1] === undefined ? undefined : parseScalaTestDurationMs(abortedMatch[1]);
+    return abortedMatch[1] === undefined || durationMs !== undefined ? { durationMs } : undefined;
+  }
+
+  return undefined;
+}
+
+function looksLikeScalaTestRunLine(line: string): boolean {
+  return /^Run (?:completed|stopped|aborted)(?:\.|\s+)/.test(line);
+}
+
+function parseScalaTestDurationMs(text: string): number | undefined {
+  let total = 0;
+  let matched = false;
+  const durationPartPattern = /(\d+(?:\.\d+)?)\s*(milliseconds?|msec|ms|seconds?|sec|s|minutes?|min|m|hours?|hr|h)/gi;
+  for (const match of text.matchAll(durationPartPattern)) {
+    const amount = Number.parseFloat(match[1] ?? "");
+    const unit = (match[2] ?? "").toLowerCase();
+    if (!Number.isFinite(amount) || amount < 0) {
+      return undefined;
+    }
+    matched = true;
+    if (unit.startsWith("ms") || unit.startsWith("millisecond") || unit === "msec") {
+      total += amount;
+    } else if (unit.startsWith("s")) {
+      total += amount * 1000;
+    } else if (unit.startsWith("m")) {
+      total += amount * 60_000;
+    } else if (unit.startsWith("h")) {
+      total += amount * 3_600_000;
+    }
+  }
+  const leftover = text.replace(durationPartPattern, "").replace(/[,\s]+/g, "");
+  return matched && leftover.length === 0 ? Math.round(total * 1000) / 1000 : undefined;
+}
+
+function parseScalaTestTotalTestsRunLine(line: string): number | undefined {
+  const match = /^Total number of tests run:\s+(\d+)$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const count = Number.parseInt(match[1] ?? "", 10);
+  return Number.isInteger(count) && count >= 0 ? count : undefined;
+}
+
+function looksLikeScalaTestTotalTestsRunLine(line: string): boolean {
+  return /^Total number of tests run:/.test(line);
+}
+
+function parseScalaTestSuiteSummaryLine(line: string): {
+  completed: number;
+  aborted: number;
+} | undefined {
+  const match = /^Suites: completed (\d+), aborted (\d+)(?: {2}Scopes: pending \d+)?$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const completed = Number.parseInt(match[1] ?? "", 10);
+  const aborted = Number.parseInt(match[2] ?? "", 10);
+  if (![completed, aborted].every((value) => Number.isInteger(value) && value >= 0)) {
+    return undefined;
+  }
+  return {
+    completed,
+    aborted,
+  };
+}
+
+function looksLikeScalaTestSuiteSummaryLine(line: string): boolean {
+  return /^Suites: completed\b/.test(line);
+}
+
+function parseScalaTestTestSummaryLine(line: string): {
+  succeeded: number;
+  failed: number;
+  canceled: number;
+  ignored: number;
+  pending: number;
+} | undefined {
+  const match = /^Tests: succeeded (\d+), failed (\d+), canceled (\d+), ignored (\d+), pending (\d+)$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const succeeded = Number.parseInt(match[1] ?? "", 10);
+  const failed = Number.parseInt(match[2] ?? "", 10);
+  const canceled = Number.parseInt(match[3] ?? "", 10);
+  const ignored = Number.parseInt(match[4] ?? "", 10);
+  const pending = Number.parseInt(match[5] ?? "", 10);
+  if (![succeeded, failed, canceled, ignored, pending].every((value) => Number.isInteger(value) && value >= 0)) {
+    return undefined;
+  }
+  return {
+    succeeded,
+    failed,
+    canceled,
+    ignored,
+    pending,
+  };
+}
+
+function looksLikeScalaTestTestSummaryLine(line: string): boolean {
+  return /^Tests:\s+succeeded\b/.test(line);
+}
+
+function looksLikeScalaTestSummaryLine(line: string): boolean {
+  return (
+    looksLikeScalaTestTotalTestsRunLine(line) ||
+    looksLikeScalaTestSuiteSummaryLine(line) ||
+    looksLikeScalaTestTestSummaryLine(line)
+  );
+}
+
+function hasNearbyScalaTestSummaryAnchor(lines: string[], runLineIndex: number): boolean {
+  for (let offset = 1; offset <= 3; offset += 1) {
+    if (looksLikeScalaTestSummaryLine(lines[runLineIndex + offset] ?? "")) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function parseTestngStatusLine(line: string): {

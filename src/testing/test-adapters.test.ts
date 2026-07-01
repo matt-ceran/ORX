@@ -796,6 +796,145 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Run completed in 386 milliseconds.",
+        "Total number of tests run: 2",
+        "Suites: completed 1, aborted 0",
+        "Tests: succeeded 1, failed 1, canceled 1, ignored 1, pending 1",
+        "*** 1 TEST FAILED ***",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "scalatest",
+      total: 5,
+      passed: 1,
+      failed: 1,
+      skipped: 2,
+      todo: 1,
+      suites: 1,
+      durationMs: 386,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "[info] Run completed in 0 milliseconds.",
+        "[info] Total number of tests run: 3",
+        "[info] Suites: completed 1, aborted 0",
+        "[info] Tests: succeeded 3, failed 0, canceled 0, ignored 0, pending 0",
+        "[info] All tests passed.",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "scalatest",
+      total: 3,
+      passed: 3,
+      failed: 0,
+      skipped: 0,
+      todo: 0,
+      suites: 1,
+      durationMs: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Run stopped after 1 second, 1 millisecond.",
+        "Total number of tests run: 1",
+        "Suites: completed 1, aborted 1  Scopes: pending 2",
+        "Tests: succeeded 0, failed 1, canceled 1, ignored 0, pending 1",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "scalatest",
+      total: 3,
+      passed: 0,
+      failed: 1,
+      skipped: 1,
+      todo: 1,
+      suites: 2,
+      durationMs: 1001,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Run completed in 10 milliseconds.",
+        "Total number of tests run: 3",
+        "Suites: completed 1, aborted 0",
+        "Tests: succeeded 1, failed 1, canceled 0, ignored 0, pending 0",
+        "Test Summary: 2 passed, 2 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Run completed in 10 milliseconds.",
+        "Total number of tests run: 2",
+        "Suites: completed 1, aborted 0",
+        "Test Summary: 2 passed, 2 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Run completed in nope.",
+        "Total number of tests run: 2",
+        "Suites: completed 1, aborted 0",
+        "Test Summary: 2 passed, 2 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Total number of tests run: 1",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Suites: completed 1, aborted 0",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Tests: succeeded 1, failed 0, canceled 0, ignored 0, pending 0",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
     parseTestReportSummary(createTarget("unknown"), "Total tests run: 4, Passes: 2, Failures: 1, Skips: 1"),
     {
       framework: "unknown",
