@@ -1645,6 +1645,78 @@ test("parses common framework report summaries", () => {
     },
   );
 
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 feature passed, 0 failed, 0 skipped",
+        "3 scenarios passed, 1 failed, 1 skipped",
+        "16 steps passed, 1 failed, 2 skipped, 1 undefined",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "behave",
+      total: 5,
+      passed: 3,
+      failed: 1,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "2 features passed, 1 failed, 1 skipped, 1 untested",
+        "2 scenarios passed, 1 error, 1 skipped, 1 untested",
+        "12 steps passed, 1 hook_error, 1 pending_warn, 2 skipped",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "behave",
+      total: 5,
+      passed: 2,
+      failed: 1,
+      skipped: 2,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 scenarios passed, 0 failed, 0 skipped",
+        "4 steps passed, 0 failed, 0 skipped",
+        "Tests: 2 passed, 2 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 scenario passed, 0 failed, 0 skipped",
+        "Tests: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "1 scenario passed, 0 failed, 0 skipped",
+        "3 steps passed, 0 failed, 0 skipped after cleanup",
+        "ℹ tests 1",
+        "ℹ pass 1",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
   assert.equal(
     parseTestReportSummary(
       createTarget("unknown"),

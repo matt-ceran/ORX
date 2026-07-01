@@ -222,6 +222,8 @@ JUnit Platform console summary parsing note: exact already-captured bracketed li
 
 Cucumber scenario summary parsing note: exact already-captured scenario lines such as `3 scenarios (1 failed, 2 passed)` now render `source=cucumber` counts through the same stdout/stderr fallback path, without reporter flags, report files, installs, network, or new model-tool exposure.
 
+Behave summary footer parsing note: exact already-captured feature/scenario/step summary footers such as `3 scenarios passed, 1 failed, 1 skipped` now render `source=behave` scenario counts through the same stdout/stderr fallback path, without reporter flags, report files, installs, network, or new model-tool exposure. Malformed Behave-looking footers reject before Cucumber/generic fallbacks.
+
 testthat bracket summary parsing note: exact already-captured bracket lines such as `[ FAIL 1 | WARN 0 | SKIP 2 | PASS 5 ]` now render `source=testthat` counts through the same stdout/stderr fallback path, without reporter flags, report files, installs, network, or new model-tool exposure.
 
 GoogleTest summary parsing note: exact already-captured final summary lines such as `[==========] 4 tests from 2 test suites ran. (12 ms total)`, `[  PASSED  ] 2 tests.`, and `[  FAILED  ] 1 test, listed below:` now render `source=gtest` counts through the same stdout/stderr fallback path, without reporter flags, report files, installs, network, or new model-tool exposure.
@@ -238,7 +240,7 @@ gopls diagnostics note: the runnable gopls adapter requires `--project <local-go
 
 Implement native or profile-scoped integrations:
 
-- Extend test adapters beyond direct Node JUnit, captured TAP/Mocha/pytest/Cargo/Cucumber/testthat/GoogleTest/Catch2/Dart/Deno/ExUnit/Gradle/JUnit-Platform/TestNG/NUnit/Go/go-json/Cypress/RSpec/Minitest/Karma/Bun/Python-unittest/JUnit-text/PHPUnit/dotnet-xUnit/CTest/XCTest-style summaries, and current JSON report package-script temp files, declared JSON output files, and config-declared JSON output files: cover additional non-JSON/custom reporters and wrapper commands only if this can be done without weakening execution/output bounds.
+- Extend test adapters beyond direct Node JUnit, captured TAP/Mocha/pytest/Cargo/Cucumber/Behat/Behave/testthat/GoogleTest/Catch2/Dart/Deno/ExUnit/Gradle/JUnit-Platform/TestNG/NUnit/Go/go-json/Cypress/RSpec/Minitest/Karma/Bun/Python-unittest/JUnit-text/PHPUnit/dotnet-xUnit/CTest/XCTest-style summaries, and current JSON report package-script temp files, declared JSON output files, and config-declared JSON output files: cover additional non-JSON/custom reporters and wrapper commands only if this can be done without weakening execution/output bounds.
 - tree-sitter-backed repo maps beyond the current repo-outline preview, semantic references, and package/semantic dependency-resolved call/dependency graphs beyond the current dependency-free overview/reference/import/call indexes and optional single-file tree-sitter import/ref/call plus bounded repo-outline/repo-ref/repo-call/repo-import/local-relative-repo-dep extraction.
 - ast-grep syntax-aware search and codemod previews. Status: implemented as optional local `sg`/`ast-grep` operator commands without autonomous edits or model exposure.
 - Extend diagnostics beyond the current TypeScript/Pyright/gopls CLI adapters with LSP/SCIP bridges for diagnostics, references, hover, and go-to-definition.
