@@ -4818,6 +4818,145 @@ test("parses captured xUnit XML reports before text fallback", () => {
   );
 });
 
+test("parses captured TRX XML reports before text fallback", () => {
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<TestRun id="run-1">',
+        '  <ResultSummary outcome="Failed">',
+        '    <Counters total="6" executed="5" passed="2" failed="1" error="1" timeout="1" aborted="0" inconclusive="1" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" passedButRunAborted="0"/>',
+        "  </ResultSummary>",
+        "</TestRun>",
+      ].join("\n"),
+      "Test Summary: 99 passed, 99 total",
+    ),
+    {
+      framework: "unknown",
+      source: "trx-xml",
+      total: 6,
+      passed: 2,
+      failed: 3,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "<TestRun>",
+        '  <ResultSummary><Counters total="3" passed="2" failed="1"/></ResultSummary>',
+        "</TestRun>",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "trx-xml",
+      total: 3,
+      passed: 2,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "<TestRun>",
+        '  <ResultSummary outcome="Completed">',
+        '    <Counters total="1" executed="0" passed="0" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0"/>',
+        "  </ResultSummary>",
+        "</TestRun>",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "trx-xml",
+      total: 1,
+      passed: 0,
+      failed: 0,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "debug before xml",
+        '<TestRun><ResultSummary><Counters total="1" passed="1" failed="0"/></ResultSummary></TestRun>',
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "generic",
+      total: 1,
+      passed: 1,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<TestRun><ResultSummary><Counters total="2" passed="3" failed="0"/></ResultSummary></TestRun>',
+      "Test Summary: 2 passed, 2 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<TestRun><ResultSummary><Counters total="2" passed="1" failed="oops"/></ResultSummary></TestRun>',
+      "Test Summary: 2 passed, 2 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<TestRun><ResultSummary><Counters total="2" passed="1" failed="0" inconclusive="2"/></ResultSummary></TestRun>',
+      "Test Summary: 2 passed, 2 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<TestRun><ResultSummary></ResultSummary><Counters total="2" passed="1" failed="1"/></TestRun>',
+      "Test Summary: 2 passed, 2 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<TestRun><ResultSummary><Counters total="3" executed="1" passed="2" failed="1"/></ResultSummary></TestRun>',
+      "Test Summary: 3 passed, 3 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<TestRun><ResultSummary><Counters total="2" passed="1"/></ResultSummary></TestRun>',
+      "Test Summary: 2 passed, 2 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<TestRun><ResultSummary><Counters total="1" passed="1" failed="0"/></ResultSummary></TestRuns>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+});
+
 test("parses captured TeamCity service messages before text fallback", () => {
   assert.deepEqual(
     parseTestReportSummary(

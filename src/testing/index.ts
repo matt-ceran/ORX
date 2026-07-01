@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "testng-xml" | "nunit-xml" | "xunit-xml" | "teamcity" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json" | "mocha-json" | "rspec-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "testng-xml" | "nunit-xml" | "xunit-xml" | "trx-xml" | "teamcity" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json" | "mocha-json" | "rspec-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -1202,7 +1202,8 @@ function parseCapturedXmlReportSummary(
   return parseCapturedJunitXmlReportSummary(text, framework) ??
     parseCapturedTestngXmlReportSummary(text, framework) ??
     parseCapturedNunitXmlReportSummary(text, framework) ??
-    parseCapturedXunitXmlReportSummary(text, framework);
+    parseCapturedXunitXmlReportSummary(text, framework) ??
+    parseCapturedTrxXmlReportSummary(text, framework);
 }
 
 function parseCapturedTestngXmlReportSummary(
@@ -1299,6 +1300,37 @@ function parseCapturedXunitXmlReportSummary(
   assignNumber(report, "failed", counts.failed);
   assignNumber(report, "skipped", counts.skipped);
   assignNumber(report, "durationMs", counts.durationMs);
+  return hasReportCounts(report) ? report : undefined;
+}
+
+function parseCapturedTrxXmlReportSummary(
+  text: string,
+  framework: TestFramework,
+): TestReportSummary | InvalidTestReport | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (!looksLikeWholeTrxXmlReport(trimmed)) {
+    if (startsLikeTrxXmlReport(trimmed)) {
+      return INVALID_TEST_REPORT;
+    }
+    return undefined;
+  }
+
+  const counts = parseTrxXmlCounts(trimmed);
+  if (!counts) {
+    return INVALID_TEST_REPORT;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "trx-xml",
+  };
+  assignNumber(report, "total", counts.total);
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
   return hasReportCounts(report) ? report : undefined;
 }
 
@@ -5934,6 +5966,14 @@ function startsLikeXunitXmlReport(text: string): boolean {
   return matchFirstXmlRootName(stripXmlDeclaration(text).trim()) === "assemblies";
 }
 
+function looksLikeWholeTrxXmlReport(text: string): boolean {
+  return matchWholeXmlRootName(stripXmlDeclaration(text).trim()) === "testrun";
+}
+
+function startsLikeTrxXmlReport(text: string): boolean {
+  return matchFirstXmlRootName(stripXmlDeclaration(text).trim()) === "testrun";
+}
+
 function stripXmlDeclaration(text: string): string {
   return text.replace(/^\s*<\?xml\b[^>]*\?>\s*/i, "");
 }
@@ -6160,6 +6200,69 @@ function collectXmlStartTagAttributes(text: string, tagName: string): string[] |
     attributes.push(rawAttributes.replace(/\/\s*$/, ""));
   }
   return attributes;
+}
+
+function collectXmlDirectChildStartTagAttributes(
+  text: string,
+  parentTagName: string,
+  childTagName: string,
+): string[] | undefined {
+  const attributes: string[] = [];
+  const normalizedParentTagName = parentTagName.toLowerCase();
+  const normalizedChildTagName = childTagName.toLowerCase();
+  const stack: string[] = [];
+  let parentDepth: number | undefined;
+  let searchIndex = 0;
+
+  while (searchIndex < text.length) {
+    const tagStart = text.indexOf("<", searchIndex);
+    if (tagStart < 0) {
+      break;
+    }
+    const token = readXmlToken(text, tagStart);
+    if (!token) {
+      return undefined;
+    }
+    searchIndex = token.end + 1;
+    if (token.kind !== "tag") {
+      continue;
+    }
+
+    const closeMatch = /^<\/\s*([A-Za-z_][\w:.-]*)\s*>$/.exec(token.tag);
+    if (closeMatch) {
+      const name = closeMatch[1].toLowerCase();
+      if (stack.pop() !== name) {
+        return undefined;
+      }
+      if (parentDepth !== undefined && stack.length < parentDepth) {
+        parentDepth = undefined;
+      }
+      continue;
+    }
+
+    const name = matchOpenXmlTagName(token.tag);
+    if (!name) {
+      return undefined;
+    }
+    if (parentDepth !== undefined && stack.length === parentDepth && name === normalizedChildTagName) {
+      attributes.push(extractXmlStartTagAttributes(token.tag));
+    }
+    const selfClosing = isSelfClosingXmlTag(token.tag);
+    if (!selfClosing) {
+      stack.push(name);
+      if (parentDepth === undefined && name === normalizedParentTagName) {
+        parentDepth = stack.length;
+      }
+    }
+  }
+
+  return stack.length === 0 ? attributes : undefined;
+}
+
+function extractXmlStartTagAttributes(tag: string): string {
+  const nameEnd = tag.search(/\s|\/|>/);
+  const rawAttributes = nameEnd < 0 ? "" : tag.slice(nameEnd, -1);
+  return rawAttributes.replace(/\/\s*$/, "");
 }
 
 function parseJunitXmlCounts(text: string):
@@ -6636,6 +6739,96 @@ function parseXunitXmlAssemblyAttributes(attributes: string):
     failed: failed + errors,
     skipped,
     durationMs: seconds === undefined ? undefined : Math.round(seconds * 1000 * 1000) / 1000,
+  };
+}
+
+function parseTrxXmlCounts(text: string):
+  | {
+      total: number;
+      passed: number;
+      failed: number;
+      skipped: number;
+    }
+  | undefined {
+  const resultSummaryTags = collectXmlStartTagAttributes(text, "ResultSummary");
+  const countersTags = collectXmlDirectChildStartTagAttributes(text, "ResultSummary", "Counters");
+  if (!resultSummaryTags || !countersTags || resultSummaryTags.length !== 1 || countersTags.length !== 1) {
+    return undefined;
+  }
+
+  return parseTrxXmlCountersAttributes(countersTags[0]);
+}
+
+function parseTrxXmlCountersAttributes(attributes: string):
+  | {
+      total: number;
+      passed: number;
+      failed: number;
+      skipped: number;
+    }
+  | undefined {
+  const total = matchXmlIntegerAttribute(attributes, "total");
+  const passed = matchXmlIntegerAttribute(attributes, "passed");
+  const failed = matchXmlIntegerAttribute(attributes, "failed");
+  const executed = matchOptionalXmlIntegerAttribute(attributes, "executed");
+  const error = matchOptionalXmlIntegerAttribute(attributes, "error", 0);
+  const timeout = matchOptionalXmlIntegerAttribute(attributes, "timeout", 0);
+  const aborted = matchOptionalXmlIntegerAttribute(attributes, "aborted", 0);
+  const inconclusive = matchOptionalXmlIntegerAttribute(attributes, "inconclusive", 0);
+  const notRunnable = matchOptionalXmlIntegerAttribute(attributes, "notRunnable", 0);
+  const notExecuted = matchOptionalXmlIntegerAttribute(attributes, "notExecuted", 0);
+  const disconnected = matchOptionalXmlIntegerAttribute(attributes, "disconnected", 0);
+  const warning = matchOptionalXmlIntegerAttribute(attributes, "warning", 0);
+  const completed = matchOptionalXmlIntegerAttribute(attributes, "completed", 0);
+  const inProgress = matchOptionalXmlIntegerAttribute(attributes, "inProgress", 0);
+  const pending = matchOptionalXmlIntegerAttribute(attributes, "pending", 0);
+  const passedButRunAborted = matchOptionalXmlIntegerAttribute(attributes, "passedButRunAborted", 0);
+  if (
+    total === undefined ||
+    passed === undefined ||
+    failed === undefined ||
+    executed === null ||
+    error === null ||
+    timeout === null ||
+    aborted === null ||
+    inconclusive === null ||
+    notRunnable === null ||
+    notExecuted === null ||
+    disconnected === null ||
+    warning === null ||
+    completed === null ||
+    inProgress === null ||
+    pending === null ||
+    passedButRunAborted === null
+  ) {
+    return undefined;
+  }
+
+  const failedTotal = failed + error + timeout + aborted;
+  const explicitlyNonPassing = inconclusive +
+    notRunnable +
+    notExecuted +
+    disconnected +
+    warning +
+    completed +
+    inProgress +
+    pending +
+    passedButRunAborted;
+  const skipped = total - passed - failedTotal;
+  if (
+    ![failedTotal, explicitlyNonPassing, skipped].every(Number.isSafeInteger) ||
+    skipped < 0 ||
+    explicitlyNonPassing > skipped ||
+    (executed !== undefined && (executed > total || executed < passed + failedTotal))
+  ) {
+    return undefined;
+  }
+
+  return {
+    total,
+    passed,
+    failed: failedTotal,
+    skipped,
   };
 }
 
