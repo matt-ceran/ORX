@@ -377,6 +377,122 @@ test("parses common framework report summaries", () => {
   assert.deepEqual(
     parseTestReportSummary(
       createTarget("unknown"),
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out (2ms)",
+    ),
+    {
+      framework: "unknown",
+      source: "deno",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      durationMs: 2,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "test result: FAILED. 2 passed; 1 failed; 1 ignored; 0 measured; 3 filtered out (0.25s)",
+    ),
+    {
+      framework: "unknown",
+      source: "deno",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+      durationMs: 250,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out (10ms)",
+    ),
+    {
+      framework: "node",
+      source: "deno",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+      durationMs: 10,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out (1ms)",
+        "test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out (2ms)",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "deno",
+      total: 3,
+      passed: 2,
+      failed: 0,
+      skipped: 1,
+      durationMs: 2,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "test result: ok. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out (2ms)",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "test result: FAILED. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out (2ms)",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out (2ms) after cleanup",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out (1ms)",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out (2ms) after cleanup",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out (1ms)",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "test result: ok. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out",
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
       [
         "=== RUN   TestAlpha",
         "--- PASS: TestAlpha (0.01s)",
