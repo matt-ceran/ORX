@@ -965,6 +965,76 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "2 tests, 1 passed, 1 failed"),
+    {
+      framework: "unknown",
+      source: "robot",
+      total: 2,
+      passed: 1,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "3 tests, 1 passed, 1 failed, 1 skipped"),
+    {
+      framework: "node",
+      source: "robot",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 test, 1 passed, 0 failed",
+        "4 tests, 2 passed, 1 failed, 1 skipped",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "robot",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 tests, 2 passed, 1 failed"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 tests, 1 passed, 1 failed after cleanup"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 tests, 1 passed, 1 errored"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 tests, 1 passed, 1 failed, 1 skipped"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 Tests, 1 Passed, 1 Failed"), undefined);
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "2 tests, 2 passed, 1 failed",
+        "Test Summary: 3 passed, 3 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "2 tests, 1 passed, 1 failed after cleanup",
+        "ℹ tests 2",
+        "ℹ fail 1",
+        "ℹ pass 1",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
     parseTestReportSummary(createTarget("unknown"), "3 scenarios (1 failed, 2 passed)"),
     {
       framework: "unknown",
