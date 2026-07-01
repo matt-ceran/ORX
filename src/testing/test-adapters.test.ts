@@ -493,6 +493,78 @@ test("parses common framework report summaries", () => {
       failed: 0,
     },
   );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "----------------------------------------------------------------------",
+        "Ran 4 tests in 0.012s",
+        "",
+        "OK",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "unittest",
+      total: 4,
+      passed: 4,
+      failed: 0,
+      durationMs: 12,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "----------------------------------------------------------------------",
+        "Ran 6 tests in 0.034s",
+        "",
+        "FAILED (failures=1, errors=1, skipped=1, expected failures=1, unexpected successes=1)",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "unittest",
+      total: 6,
+      passed: 1,
+      failed: 3,
+      skipped: 1,
+      todo: 1,
+      durationMs: 34,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Ran 3 tests in 0.001s",
+        "",
+        "OK (skipped=1, expected failures=1)",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "unittest",
+      total: 3,
+      passed: 1,
+      failed: 0,
+      skipped: 1,
+      todo: 1,
+      durationMs: 1,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "Ran 3 requests in 0.001s\nOK"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "Ran 3 tests in 0.001s\nOK after cleanup"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "Ran 3 tests in 0.001s\nFAILED (failures=1) after cleanup"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "Ran 3 tests in 0.001s\nOK\ncleanup done"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "Ran 3 tests in 0.001s\nFAILED (failures=1)\ncleanup done"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "Ran 3 tests in 0.001s\nFAILED (skipped=1)"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "Ran 3 tests in 0.001s\nOK (failures=1)"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "Ran 3 tests in 0.001s\nFAILED (failures=1, skipped=3)"), undefined);
 });
 
 test("parses structured framework JSON reports before stdout fallback", () => {

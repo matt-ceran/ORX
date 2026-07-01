@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "go" | "rspec" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "go" | "rspec" | "unittest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -703,8 +703,8 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     return [parseTapReportSummary, parseNodeReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseGenericReportSummary]
-    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseGenericReportSummary];
+    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parsePythonUnittestReportSummary, parseGenericReportSummary]
+    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parsePythonUnittestReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -1147,6 +1147,58 @@ function parseRspecReportSummary(text: string, framework: TestFramework): TestRe
   return hasReportCounts(report) ? report : undefined;
 }
 
+function parsePythonUnittestReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  let run:
+    | {
+        total: number;
+        durationMs?: number;
+      }
+    | undefined;
+  let statusLine: string | undefined;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (statusLine && line) {
+      return undefined;
+    }
+    const runMatch = /^Ran\s+(\d+)\s+tests?\s+in\s+(\d+(?:\.\d+)?)s$/.exec(line);
+    if (runMatch) {
+      const total = Number.parseInt(runMatch[1] ?? "", 10);
+      if (!Number.isInteger(total) || total < 0) {
+        return undefined;
+      }
+      run = {
+        total,
+        durationMs: parseSecondsDurationMs(runMatch[2] ?? ""),
+      };
+      statusLine = undefined;
+      continue;
+    }
+    if (run && (/^OK(?:\s+\(.+\))?$/.test(line) || /^FAILED\s+\(.+\)$/.test(line))) {
+      statusLine = line;
+    }
+  }
+  if (!run || !statusLine) {
+    return undefined;
+  }
+
+  const status = parsePythonUnittestStatusLine(statusLine, run.total);
+  if (!status) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "unittest",
+  };
+  assignNumber(report, "total", run.total);
+  assignNumber(report, "passed", status.passed);
+  assignNumber(report, "failed", status.failed);
+  assignNumber(report, "skipped", status.skipped);
+  assignNumber(report, "todo", status.todo);
+  assignNumber(report, "durationMs", run.durationMs);
+  return hasReportCounts(report) ? report : undefined;
+}
+
 function parseGenericReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
   const line = matchFirstNamedLine(text, ["Tests", "Test Results", "Test Summary", "Summary", "Results"]);
   if (!line) {
@@ -1181,6 +1233,70 @@ function parseStatusCounts(text: string): Partial<Record<"passed" | "failed" | "
   const parenthesizedTotal = text.match(/\((\d+)\)/);
   if (parenthesizedTotal && counts.total === undefined) {
     counts.total = Number.parseInt(parenthesizedTotal[1], 10);
+  }
+  return counts;
+}
+
+function parsePythonUnittestStatusLine(line: string, total: number): {
+  passed: number;
+  failed: number;
+  skipped?: number;
+  todo?: number;
+} | undefined {
+  const okMatch = /^OK(?:\s+\((.+)\))?$/.exec(line);
+  const failedMatch = /^FAILED\s+\((.+)\)$/.exec(line);
+  if (!okMatch && !failedMatch) {
+    return undefined;
+  }
+  const counts = parsePythonUnittestDetailCounts((okMatch?.[1] ?? failedMatch?.[1] ?? "").trim());
+  if (!counts) {
+    return undefined;
+  }
+  if (okMatch && (counts.failed ?? 0) > 0) {
+    return undefined;
+  }
+  if (failedMatch && (counts.failed ?? 0) === 0) {
+    return undefined;
+  }
+  const failed = counts.failed ?? 0;
+  const skipped = counts.skipped ?? 0;
+  const todo = counts.todo ?? 0;
+  const passed = total - failed - skipped - todo;
+  if (passed < 0) {
+    return undefined;
+  }
+  return {
+    passed,
+    failed,
+    skipped: counts.skipped,
+    todo: counts.todo,
+  };
+}
+
+function parsePythonUnittestDetailCounts(
+  details: string,
+): Partial<Record<"failed" | "skipped" | "todo", number>> | undefined {
+  const counts: Partial<Record<"failed" | "skipped" | "todo", number>> = {};
+  if (!details) {
+    return counts;
+  }
+  for (const rawPart of details.split(/\s*,\s*/)) {
+    const match = /^(failures?|errors?|skipped|expected failures?|unexpected successes?)=(\d+)$/.exec(rawPart.trim());
+    if (!match) {
+      return undefined;
+    }
+    const value = Number.parseInt(match[2] ?? "", 10);
+    if (!Number.isInteger(value) || value < 0) {
+      return undefined;
+    }
+    const label = (match[1] ?? "").toLowerCase();
+    if (label === "skipped") {
+      counts.skipped = (counts.skipped ?? 0) + value;
+    } else if (label.startsWith("expected failure")) {
+      counts.todo = (counts.todo ?? 0) + value;
+    } else {
+      counts.failed = (counts.failed ?? 0) + value;
+    }
   }
   return counts;
 }
