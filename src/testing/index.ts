@@ -14,7 +14,7 @@ import { runProcess, type RunProcessResult } from "../tools/process.js";
 
 export type TestTargetKind = "package-script" | "node-test";
 export type TestPackageManager = "npm" | "pnpm" | "yarn" | "bun";
-export type TestFramework = "node" | "vitest" | "jest" | "playwright" | "unknown";
+export type TestFramework = "node" | "vitest" | "jest" | "playwright" | "ava" | "unknown";
 export type TestRunStatus = "ok" | "failed" | "timed_out" | "process_error" | "not_found" | "invalid_arguments";
 
 export interface TestTarget {
@@ -684,6 +684,7 @@ function countTestFrameworks(targets: TestTarget[]): Record<TestFramework, numbe
     vitest: 0,
     jest: 0,
     playwright: 0,
+    ava: 0,
     unknown: 0,
   };
   for (const target of targets) {
@@ -703,6 +704,7 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     vitest: parseVitestReportSummary,
     jest: parseJestReportSummary,
     playwright: parsePlaywrightReportSummary,
+    ava: parseAvaReportSummary,
     unknown: parseGenericReportSummary,
   };
   if (framework === "node") {
@@ -974,6 +976,69 @@ function parsePlaywrightReportSummary(text: string, framework: TestFramework): T
   assignNumber(report, "total", sumDefined(counts.passed, counts.failed, counts.skipped, counts.flaky));
   assignNumber(report, "durationMs", durationMs);
   return report;
+}
+
+function parseAvaReportSummary(text: string, framework: TestFramework): TestReportSummary | InvalidTestReport | undefined {
+  if (framework !== "ava") {
+    return undefined;
+  }
+
+  let currentBlock: Partial<Record<"passed" | "knownFailures" | "failed" | "skipped" | "todo", number>> | undefined;
+  let currentLabels = new Set<string>();
+  let lastBlock: Partial<Record<"passed" | "knownFailures" | "failed" | "skipped" | "todo", number>> | undefined;
+
+  const finalizeBlock = (): void => {
+    if (currentBlock) {
+      lastBlock = currentBlock;
+      currentBlock = undefined;
+      currentLabels = new Set<string>();
+    }
+  };
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = stripTerminalControls(rawLine).trim();
+    const candidate = parseAvaSummaryLine(line);
+    if (candidate) {
+      currentBlock ??= {};
+      if (currentLabels.has(candidate.label)) {
+        return INVALID_TEST_REPORT;
+      }
+      currentLabels.add(candidate.label);
+      currentBlock[candidate.label] = candidate.count;
+      continue;
+    }
+    if (looksLikeAvaSummaryLine(line)) {
+      return INVALID_TEST_REPORT;
+    }
+    if (line !== "") {
+      finalizeBlock();
+    }
+  }
+  finalizeBlock();
+
+  if (!lastBlock) {
+    return undefined;
+  }
+
+  const passed = (lastBlock.passed ?? 0) + (lastBlock.knownFailures ?? 0);
+  const failed = lastBlock.failed ?? 0;
+  const skipped = lastBlock.skipped ?? 0;
+  const todo = lastBlock.todo ?? 0;
+  const total = passed + failed + skipped + todo;
+  if (total <= 0) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "ava",
+  };
+  assignNumber(report, "total", total);
+  assignNumber(report, "passed", passed);
+  assignNumber(report, "failed", failed);
+  assignNumber(report, "skipped", skipped);
+  assignNumber(report, "todo", todo);
+  return hasReportCounts(report) ? report : undefined;
 }
 
 function parseMochaReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -2858,6 +2923,46 @@ function parsePythonUnittestDetailCounts(
   return counts;
 }
 
+function parseAvaSummaryLine(line: string): {
+  label: "passed" | "knownFailures" | "failed" | "skipped" | "todo";
+  count: number;
+} | undefined {
+  const match = /^(\d+)\s+(?:(tests?)\s+(passed|failed|skipped|todo)|(passed|skipped|todo)|(known failures?))(?:\s+\[\d{2}:\d{2}:\d{2}\])?$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const count = Number.parseInt(match[1] ?? "", 10);
+  if (!Number.isInteger(count) || count <= 0) {
+    return undefined;
+  }
+  const testNoun = match[2];
+  const outcome = match[3] ?? match[4];
+  const knownFailure = match[5];
+  if (testNoun && (count === 1) !== (testNoun === "test")) {
+    return undefined;
+  }
+  if (knownFailure && (count === 1) !== (knownFailure === "known failure")) {
+    return undefined;
+  }
+  if (outcome === "passed" || outcome === "failed" || outcome === "skipped" || outcome === "todo") {
+    return {
+      count,
+      label: outcome,
+    };
+  }
+  if (knownFailure) {
+    return {
+      count,
+      label: "knownFailures",
+    };
+  }
+  return undefined;
+}
+
+function looksLikeAvaSummaryLine(line: string): boolean {
+  return /^\d+\s+(?:(?:tests?\s+)?(?:passed|failed|skipped|todo)|known failures?)(?:$|\s+)/.test(line);
+}
+
 function parsePytestStatusLine(line: string): {
   counts: Partial<Record<"passed" | "failed" | "skipped" | "todo", number>>;
   durationMs?: number;
@@ -4084,6 +4189,9 @@ function inferPackageScriptFramework(segments: string[][]): TestFramework {
         if (next === "test") {
           return "playwright";
         }
+      }
+      if (index === 0 && token === "ava") {
+        return "ava";
       }
       if (token === "node" && segmentRunsNodeTest(tokens, index)) {
         return "node";

@@ -115,7 +115,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(status.stdout(), /plugin_enabled_skills: 0/);
     assert.match(status.stdout(), /test_targets: 0/);
     assert.match(status.stdout(), /test_default_target: none/);
-    assert.match(status.stdout(), /test_frameworks: node=0, vitest=0, jest=0, playwright=0, unknown=0/);
+    assert.match(status.stdout(), /test_frameworks: node=0, vitest=0, jest=0, playwright=0, ava=0, unknown=0/);
     assert.match(status.stdout(), /active_profile: none/);
     assert.match(status.stdout(), /profile_count: 0/);
     assert.match(status.stdout(), /delegation_policy_execution: disabled/);

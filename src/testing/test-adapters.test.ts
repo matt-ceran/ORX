@@ -105,6 +105,7 @@ test("falls back to direct node:test files when no package test script exists", 
       vitest: 0,
       jest: 0,
       playwright: 0,
+      ava: 0,
       unknown: 0,
     });
   } finally {
@@ -245,6 +246,86 @@ test("parses common framework report summaries", () => {
       total: 6,
       durationMs: 4500,
     },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("ava"), "\x1b[32m1 test passed\x1b[39m"),
+    {
+      framework: "ava",
+      source: "ava",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      todo: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("ava"), "2 passed"),
+    {
+      framework: "ava",
+      source: "ava",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+      todo: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("ava"),
+      [
+        "\x1b[31m13 tests failed\x1b[39m",
+        "\x1b[31m1 known failure\x1b[39m",
+        "\x1b[33m1 test skipped\x1b[39m",
+        "\x1b[34m1 test todo\x1b[39m",
+        "\x1b[31m2 unhandled rejections\x1b[39m",
+      ].join("\n"),
+    ),
+    {
+      framework: "ava",
+      source: "ava",
+      total: 16,
+      passed: 1,
+      failed: 13,
+      skipped: 1,
+      todo: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("ava"),
+      [
+        "1 test failed",
+        "details from a previous watch run",
+        "1 test passed [17:19:12]",
+      ].join("\n"),
+    ),
+    {
+      framework: "ava",
+      source: "ava",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      todo: 0,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "1 test failed"), undefined);
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("ava"),
+      [
+        "1 test passed after cleanup",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
   );
 
   assert.deepEqual(
@@ -3585,6 +3666,7 @@ test("infers package-script frameworks and report metadata", () => {
       JSON.stringify({
         scripts: {
           test: "vitest run --reporter=json",
+          "test:ava": "ava --verbose",
           "test:custom-node": "node ./custom-runner.mjs --test",
           "test:jest": "jest --json",
           "test:node": "node --test --test-reporter=tap ./example.test.mjs",
@@ -3592,6 +3674,7 @@ test("infers package-script frameworks and report metadata", () => {
           "test:playwright-install": "playwright install && npm test",
           "test:react": "react-scripts test",
           "test:unknown": "node ./custom-runner.mjs",
+          "test:wrapped-ava": "node ./custom-runner.mjs ava --verbose",
         },
       }),
     );
@@ -3602,6 +3685,7 @@ test("infers package-script frameworks and report metadata", () => {
     );
     assert.deepEqual(frameworks, {
       "script:test": "vitest",
+      "script:test:ava": "ava",
       "script:test:custom-node": "unknown",
       "script:test:jest": "jest",
       "script:test:node": "node",
@@ -3609,6 +3693,7 @@ test("infers package-script frameworks and report metadata", () => {
       "script:test:playwright-install": "unknown",
       "script:test:react": "jest",
       "script:test:unknown": "unknown",
+      "script:test:wrapped-ava": "unknown",
     });
     assert.equal(discovery.targets.find((target) => target.id === "script:test")?.reporter, "json");
     assert.equal(discovery.targets.find((target) => target.id === "script:test:node")?.reporter, "tap");
@@ -3625,7 +3710,8 @@ test("infers package-script frameworks and report metadata", () => {
       vitest: 1,
       jest: 2,
       playwright: 1,
-      unknown: 3,
+      ava: 1,
+      unknown: 4,
     });
   } finally {
     rmSync(cwd, { recursive: true, force: true });
