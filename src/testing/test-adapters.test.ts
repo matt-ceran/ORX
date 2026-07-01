@@ -4957,6 +4957,136 @@ test("parses captured TRX XML reports before text fallback", () => {
   );
 });
 
+test("parses captured Robot Framework XML reports before text fallback", () => {
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<robot generator="Robot 7.0">',
+        '  <suite id="s1" name="Example"/>',
+        "  <statistics>",
+        "    <total>",
+        '      <stat pass="2" fail="1" skip="1">All Tests</stat>',
+        "    </total>",
+        "    <tag>",
+        '      <stat pass="99" fail="0" skip="0">smoke</stat>',
+        "    </tag>",
+        "    <suite>",
+        '      <stat pass="2" fail="1" skip="1" id="s1" name="Example">Example</stat>',
+        "    </suite>",
+        "  </statistics>",
+        "  <errors/>",
+        "</robot>",
+      ].join("\n"),
+      "Test Summary: 99 passed, 99 total",
+    ),
+    {
+      framework: "unknown",
+      source: "robot-xml",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "<robot>",
+        "<statistics><total><stat pass=\"2\" fail=\"0\">All Tests</stat></total><tag/><suite/></statistics>",
+        "</robot>",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "robot-xml",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "debug before xml",
+        '<robot><statistics><total><stat pass="1" fail="0"/></total><tag/><suite/></statistics></robot>',
+        "2 tests, 1 passed, 1 failed",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "robot",
+      total: 2,
+      passed: 1,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<robot><statistics><total><stat pass="1" fail="oops"/></total><tag/><suite/></statistics></robot>',
+      "2 tests, 1 passed, 1 failed",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<robot><statistics><total><stat pass="1" fail="0" skip="oops"/></total><tag/><suite/></statistics></robot>',
+      "1 test, 1 passed, 0 failed",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<robot><statistics><total><stat fail="0"/></total><tag/><suite/></statistics></robot>',
+      "1 test, 1 passed, 0 failed",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "<robot>",
+        "<statistics><total></total><tag><stat pass=\"1\" fail=\"0\">smoke</stat></tag><suite/></statistics>",
+        "</robot>",
+      ].join("\n"),
+      "1 test, 1 passed, 0 failed",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "<robot>",
+        '<statistics><total><stat pass="1" fail="0"/><stat pass="1" fail="0"/></total><tag/><suite/></statistics>',
+        "</robot>",
+      ].join("\n"),
+      "2 tests, 2 passed, 0 failed",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<robot><statistics><total><stat pass="1" fail="0"/></total><tag/><suite/></statistics></robots>',
+      "1 test, 1 passed, 0 failed",
+    ),
+    undefined,
+  );
+});
+
 test("parses captured TeamCity service messages before text fallback", () => {
   assert.deepEqual(
     parseTestReportSummary(
