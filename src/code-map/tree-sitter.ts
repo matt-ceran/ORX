@@ -256,7 +256,7 @@ export interface CodeTreeSitterRepoImportEdge extends CodeTreeSitterImportEdge {
 export interface CodeTreeSitterRepoDependencyEdge extends CodeTreeSitterRepoImportEdge {
   to?: string;
   resolution: "local" | "external" | "unresolved_local";
-  resolutionDetail?: "relative" | "tsconfig_path" | "tsconfig_base_url";
+  resolutionDetail?: "relative" | "config_path" | "config_base_url";
 }
 
 interface TreeSitterDependencyResolver {
@@ -308,6 +308,7 @@ const DEFAULT_TREE_SITTER_REPO_DEPENDENCY_EDGES = 400;
 const MAX_TREE_SITTER_REPO_DEPTH = 8;
 const MAX_TREE_SITTER_REPO_SOURCE_BYTES = 512 * 1024;
 const MAX_TREE_SITTER_TSCONFIG_BYTES = 64 * 1024;
+const TREE_SITTER_TYPESCRIPT_CONFIG_FILES = ["tsconfig.json", "jsconfig.json"];
 const MAX_PATH_LENGTH = 4096;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
 const OUTPUT_CONTROL_CHAR_PATTERN = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
@@ -1831,7 +1832,7 @@ function renderCodeTreeSitterRepoDependenciesResult(
     `  status: ${result.status}`,
     `  root: ${sanitizeInline(result.root)}`,
     `  path: ${sanitizeInline(result.targetPath)}`,
-    "  mode: AST-backed bounded repo dependency previews via optional tree-sitter CLI (local relative imports and safe tsconfig paths only; not package or semantic resolution)",
+    "  mode: AST-backed bounded repo dependency previews via optional tree-sitter CLI (local relative imports and safe tsconfig/jsconfig paths only; not package or semantic resolution)",
     "  mutation: none",
   ];
   if (result.commandLine) {
@@ -2447,25 +2448,26 @@ function createTreeSitterDependencyResolver(
 }
 
 function loadTreeSitterTsconfigResolver(root: string, warnings: string[]): TreeSitterTsconfigResolver | undefined {
-  const tsconfigPath = join(root, "tsconfig.json");
-  if (!existsSync(tsconfigPath)) {
+  const configFileName = TREE_SITTER_TYPESCRIPT_CONFIG_FILES.find((fileName) => existsSync(join(root, fileName)));
+  if (!configFileName) {
     return undefined;
   }
+  const tsconfigPath = join(root, configFileName);
 
   let stat;
   try {
     stat = lstatSync(tsconfigPath);
   } catch (error) {
-    warnings.push(`tsconfig.json path aliases were ignored because the file could not be inspected: ${formatTreeSitterConfigError(error)}`);
+    warnings.push(`${configFileName} path aliases were ignored because the file could not be inspected: ${formatTreeSitterConfigError(error)}`);
     return undefined;
   }
 
   if (!stat.isFile()) {
-    warnings.push("tsconfig.json path aliases were ignored because tsconfig.json is not a regular file.");
+    warnings.push(`${configFileName} path aliases were ignored because ${configFileName} is not a regular file.`);
     return undefined;
   }
   if (stat.size > MAX_TREE_SITTER_TSCONFIG_BYTES) {
-    warnings.push(`tsconfig.json path aliases were ignored because tsconfig.json exceeds ${MAX_TREE_SITTER_TSCONFIG_BYTES} bytes.`);
+    warnings.push(`${configFileName} path aliases were ignored because ${configFileName} exceeds ${MAX_TREE_SITTER_TSCONFIG_BYTES} bytes.`);
     return undefined;
   }
 
@@ -2473,12 +2475,12 @@ function loadTreeSitterTsconfigResolver(root: string, warnings: string[]): TreeS
   try {
     parsed = parseTreeSitterJsonConfig(readFileSync(tsconfigPath, "utf8"));
   } catch (error) {
-    warnings.push(`tsconfig.json path aliases were ignored because tsconfig.json could not be parsed: ${formatTreeSitterConfigError(error)}`);
+    warnings.push(`${configFileName} path aliases were ignored because ${configFileName} could not be parsed: ${formatTreeSitterConfigError(error)}`);
     return undefined;
   }
 
   if (!isTreeSitterRecord(parsed)) {
-    warnings.push("tsconfig.json path aliases were ignored because tsconfig.json is not a JSON object.");
+    warnings.push(`${configFileName} path aliases were ignored because ${configFileName} is not a JSON object.`);
     return undefined;
   }
 
@@ -2493,7 +2495,7 @@ function loadTreeSitterTsconfigResolver(root: string, warnings: string[]): TreeS
     : undefined;
   const unsafeBaseUrl = typeof rawBaseUrl === "string" && !baseUrl;
   if (unsafeBaseUrl) {
-    warnings.push("tsconfig.json compilerOptions.baseUrl was ignored because it is not a safe local path.");
+    warnings.push(`${configFileName} compilerOptions.baseUrl was ignored because it is not a safe local path.`);
   }
 
   const paths: TreeSitterTsconfigPathMapping[] = [];
@@ -2505,7 +2507,7 @@ function loadTreeSitterTsconfigResolver(root: string, warnings: string[]): TreeS
       }
     }
   } else if (isTreeSitterRecord(compilerOptions.paths) && unsafeBaseUrl) {
-    warnings.push("tsconfig.json compilerOptions.paths were ignored because compilerOptions.baseUrl is not a safe local path.");
+    warnings.push(`${configFileName} compilerOptions.paths were ignored because compilerOptions.baseUrl is not a safe local path.`);
   }
   paths.sort((a, b) => b.prefix.length - a.prefix.length || b.pattern.length - a.pattern.length);
 
@@ -2522,7 +2524,7 @@ function createTreeSitterTsconfigPathMapping(
   warnings: string[],
 ): TreeSitterTsconfigPathMapping | undefined {
   if (!isTreeSitterSafeTsconfigPattern(pattern, false)) {
-    warnings.push(`tsconfig.json path alias ${JSON.stringify(sanitizeInline(pattern))} was ignored because it is not a safe bare specifier pattern.`);
+    warnings.push(`TypeScript config path alias ${JSON.stringify(sanitizeInline(pattern))} was ignored because it is not a safe bare specifier pattern.`);
     return undefined;
   }
 
@@ -2537,12 +2539,12 @@ function createTreeSitterTsconfigPathMapping(
     }
     const normalizedTarget = normalizeTreeSitterTsconfigTargetPattern(rawTarget);
     if (!normalizedTarget || (starCount === 0 && normalizedTarget.includes("*"))) {
-      warnings.push(`tsconfig.json path target for ${JSON.stringify(sanitizeInline(pattern))} was ignored because it is not a safe local path.`);
+      warnings.push(`TypeScript config path target for ${JSON.stringify(sanitizeInline(pattern))} was ignored because it is not a safe local path.`);
       continue;
     }
     const combinedTarget = materializeTreeSitterTsconfigTarget(baseUrl, normalizedTarget, "");
     if (!combinedTarget) {
-      warnings.push(`tsconfig.json path target for ${JSON.stringify(sanitizeInline(pattern))} was ignored because it escapes the repository root.`);
+      warnings.push(`TypeScript config path target for ${JSON.stringify(sanitizeInline(pattern))} was ignored because it escapes the repository root.`);
       continue;
     }
     targets.push(normalizedTarget);
@@ -2574,7 +2576,7 @@ function resolveTreeSitterDependency(
   if (pathsResolution.matched) {
     return {
       to: pathsResolution.to,
-      resolutionDetail: pathsResolution.to ? "tsconfig_path" : undefined,
+      resolutionDetail: pathsResolution.to ? "config_path" : undefined,
       matchedLocalAlias: true,
     };
   }
@@ -2582,7 +2584,7 @@ function resolveTreeSitterDependency(
   if (resolver.tsconfig.baseUrl) {
     const to = resolveTreeSitterTsconfigBaseUrl(specifier, resolver.tsconfig.baseUrl, resolver.sourcePaths);
     if (to) {
-      return { to, resolutionDetail: "tsconfig_base_url", matchedLocalAlias: false };
+      return { to, resolutionDetail: "config_base_url", matchedLocalAlias: false };
     }
   }
 

@@ -1615,7 +1615,7 @@ test("tree-sitter repo deps resolves bounded local relative imports without pack
 
     const rendered = renderCodeTreeSitterResult(result);
     assert.match(rendered, /Code tree-sitter repo deps/);
-    assert.match(rendered, /local relative imports and safe tsconfig paths only/);
+    assert.match(rendered, /local relative imports and safe tsconfig\/jsconfig paths only/);
     assert.match(rendered, /not package or semantic resolution/);
     assert.match(rendered, /files_scanned: 3/);
     assert.match(rendered, /files_with_dependencies: 1/);
@@ -1667,7 +1667,7 @@ test("tree-sitter repo deps resolves bounded local relative imports without pack
   }
 });
 
-test("tree-sitter repo deps resolves safe tsconfig path aliases and baseUrl without package overclaim", () => {
+test("tree-sitter repo deps resolves safe tsconfig/jsconfig aliases without package overclaim", () => {
   const cwd = createTempDir();
   const runner: TreeSitterRunner = (command, args) => {
     if (args.includes("--version")) {
@@ -1711,7 +1711,7 @@ test("tree-sitter repo deps resolves safe tsconfig path aliases and baseUrl with
       join(cwd, "tsconfig.json"),
       [
         "{",
-        "  // JSONC is accepted for root tsconfig path previews.",
+        "  // JSONC is accepted for root TypeScript config path previews.",
         "  \"compilerOptions\": {",
         "    \"baseUrl\": \".\",",
         "    \"paths\": {",
@@ -1751,25 +1751,25 @@ test("tree-sitter repo deps resolves safe tsconfig path aliases and baseUrl with
     assert.equal(result.repoDependencies?.externalImports, 1);
     assert.equal(result.repoDependencies?.unresolvedLocalImports, 1);
     assert.ok(result.repoDependencies?.warnings.some((warning) =>
-      warning.includes("tsconfig.json path target") && warning.includes("@bad/*")));
+      warning.includes("TypeScript config path target") && warning.includes("@bad/*")));
     assert.deepEqual(
       result.repoDependencies?.edges.map((edge) =>
         `${edge.path}:${edge.resolution}:${edge.resolutionDetail ?? ""}:${edge.source}:${edge.to ?? ""}`),
       [
-        "src/index.ts:local:tsconfig_path:@lib/foo:src/lib/foo.ts",
-        "src/index.ts:local:tsconfig_base_url:src/app/root:src/app/root.ts",
+        "src/index.ts:local:config_path:@lib/foo:src/lib/foo.ts",
+        "src/index.ts:local:config_base_url:src/app/root:src/app/root.ts",
         "src/index.ts:unresolved_local::@bad/secret:",
         "src/index.ts:external::react:",
       ],
     );
 
     const rendered = renderCodeTreeSitterResult(result);
-    assert.match(rendered, /safe tsconfig paths only/);
-    assert.match(rendered, /specifier="@lib\/foo" resolution=local resolution_detail=tsconfig_path/);
-    assert.match(rendered, /specifier="src\/app\/root" resolution=local resolution_detail=tsconfig_base_url/);
+    assert.match(rendered, /safe tsconfig\/jsconfig paths only/);
+    assert.match(rendered, /specifier="@lib\/foo" resolution=local resolution_detail=config_path/);
+    assert.match(rendered, /specifier="src\/app\/root" resolution=local resolution_detail=config_base_url/);
     assert.match(rendered, /specifier="@bad\/secret" resolution=unresolved_local/);
     assert.match(rendered, /specifier="react" resolution=external/);
-    assert.match(rendered, /tsconfig\.json path target/);
+    assert.match(rendered, /TypeScript config path target/);
 
     writeFileSync(
       join(cwd, "tsconfig.json"),
@@ -1826,12 +1826,46 @@ test("tree-sitter repo deps resolves safe tsconfig path aliases and baseUrl with
         `${edge.resolution}:${edge.resolutionDetail ?? ""}:${edge.source}:${edge.to ?? ""}`),
       [
         "unresolved_local::@lib/foo:",
-        "local:tsconfig_base_url:src/app/root:src/app/root.ts",
+        "local:config_base_url:src/app/root:src/app/root.ts",
         "unresolved_local::@bad/secret:",
         "external::react:",
       ],
     );
     assert.doesNotMatch(renderCodeTreeSitterResult(overlappingPathsResult), /src\/fallback\/lib\/foo\.ts/);
+
+    rmSync(join(cwd, "tsconfig.json"), { force: true });
+    writeFileSync(
+      join(cwd, "jsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          baseUrl: ".",
+          paths: {
+            "@lib/*": ["src/lib/*"],
+          },
+        },
+      }),
+    );
+
+    const jsconfigResult = runCodeTreeSitter({
+      cwd,
+      targetPath: "src",
+      mode: "repo-deps",
+      runner,
+    });
+    assert.equal(jsconfigResult.ok, true);
+    assert.equal(jsconfigResult.repoDependencies?.localDependencies, 2);
+    assert.equal(jsconfigResult.repoDependencies?.externalImports, 2);
+    assert.equal(jsconfigResult.repoDependencies?.unresolvedLocalImports, 0);
+    assert.deepEqual(
+      jsconfigResult.repoDependencies?.edges.map((edge) =>
+        `${edge.resolution}:${edge.resolutionDetail ?? ""}:${edge.source}:${edge.to ?? ""}`),
+      [
+        "local:config_path:@lib/foo:src/lib/foo.ts",
+        "local:config_base_url:src/app/root:src/app/root.ts",
+        "external::@bad/secret:",
+        "external::react:",
+      ],
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
