@@ -241,7 +241,7 @@ import {
   renderScannerProfiles,
   renderScannerProfilesJson,
   renderScannerRunResult,
-  runSemgrepScanner,
+  runSecurityScanner,
   type ScannerProcessRunner,
 } from "./security/index.js";
 import { createDoctorReport } from "./doctor.js";
@@ -1365,7 +1365,7 @@ async function runScannerRunCommand(
     return 1;
   }
 
-  const result = await runSemgrepScanner({
+  const result = await runSecurityScanner({
     ...parsed.args,
     cwd: io.cwd,
     env,

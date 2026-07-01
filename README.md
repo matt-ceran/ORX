@@ -72,6 +72,8 @@ orx scanners list
 orx scanners list --json
 orx scanners inspect semgrep
 orx scanners inspect semgrep --json
+orx scanners inspect trivy
+orx scanners run trivy src
 orx diagnostics list
 orx diagnostics list --json
 orx diagnostics inspect typescript
@@ -187,8 +189,11 @@ orx diagnostics run clangd --project src/main.cpp
 orx diag run clangd --project src/main.cpp --json
 orx scanners list
 orx scanners inspect semgrep
+orx scanners inspect trivy
 orx scanners run semgrep src --config semgrep.yml
 orx scan semgrep src --config semgrep.yml --json
+orx scanners run trivy src
+orx scan trivy src --json
 ```
 
 The code map scans a bounded local tree, skips generated/vendor directories such as `node_modules`, `.git`, `.orx`, `dist`, `build`, and `coverage`, summarizes languages, key files, package/config/source entrypoints, and top JavaScript/TypeScript source imports/exports, and redacts secret-like rendered paths or symbols. The symbol index reuses the same bounded scan to list exported JavaScript/TypeScript symbols with file paths and line numbers. The reference index reuses the same bounded scan to find JavaScript/TypeScript code references for a query while skipping comments, string literals, and template literals. The import graph reuses the same bounded scan to render JavaScript/TypeScript import edges, including static imports, re-export-from edges, CommonJS `require(...)`, and string-literal dynamic `import(...)`, resolve local relative imports to source files where possible, and count external or unresolved local imports.
@@ -224,11 +229,14 @@ Local security scanner profiles are explicit operator commands, not model tools:
 ```sh
 orx scanners list
 orx scanners inspect semgrep
+orx scanners inspect trivy
 orx scanners run semgrep src --config semgrep.yml
 orx scan semgrep src --config semgrep.yml --json
+orx scanners run trivy src
+orx scan trivy src --json
 ```
 
-The first runnable profile is Semgrep. ORX never installs Semgrep and requires an already-installed local `semgrep` binary plus an explicit local `--config` file under the current working directory. Registry configs such as `auto` or `p/default`, URLs, dash-prefixed operands, symlink escapes outside cwd, control characters, and secret-like arguments are rejected before spawning. Runs use shell-disabled process execution, a minimal env without ORX/OpenRouter/Brave/API token values, `--metrics off`, bounded/redacted stdout and stderr, and no network by command selection. Snyk, Socket, OSV-Scanner, CodeQL, and Trivy are currently catalog/readiness profiles only.
+The runnable profiles are Semgrep and Trivy secret scanning. ORX never installs either scanner. Semgrep requires an already-installed local `semgrep` binary plus an explicit local `--config` file under the current working directory; registry configs such as `auto` or `p/default`, URLs, dash-prefixed operands, symlink escapes outside cwd, control characters, and secret-like arguments are rejected before spawning. Trivy requires an already-installed local `trivy` binary and runs only filesystem secret scans as `trivy fs --scanners secret --format json --offline-scan --skip-db-update --skip-java-db-update --skip-check-update --skip-version-check --disable-telemetry --no-progress <path>`; ORX rejects `--config` for this profile and does not enable vulnerability, misconfiguration, license, image, or registry scanning. Runs use shell-disabled process execution, a minimal env without ORX/OpenRouter/Brave/API token values, bounded/redacted stdout and stderr, and no network by command selection. Snyk, Socket, OSV-Scanner, and CodeQL are currently catalog/readiness profiles only.
 
 Delegation/orchestration CLI commands are no-key and sessionless. `orx orchestrator`, `orx delegate`, and `orx delegates` render delegation status, readiness blockers, saved-team guidance, and the current policy boundary. `orx delegates plan <saved-team-id>` and `orx delegate plan <saved-team-id>` preview a saved team against the current execution policy without loading it into chat. Mutating live-session forms such as `orx orchestrator openrouter <model>` and `orx delegate add <name> openrouter <model>` validate arguments, then refuse because the noninteractive CLI has no active chat session to mutate.
 
@@ -482,8 +490,8 @@ The chat UI keeps in-session message history for the current process, streams as
 /ast-grep <pattern> [path] [--lang <lang>]
 /tree-sitter [parse|outline|imports|refs|calls|repo-outline|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]
 /outline <file>
-/scanners [list|inspect <profile>|run semgrep <path> --config <local-config-path> [--json]]
-/scan semgrep <path> --config <local-config-path> [--json]
+/scanners [list|inspect <profile>|run <semgrep|trivy> <path> [--config <local-config-path>] [--json]]
+/scan <semgrep|trivy> <path> [--config <local-config-path>] [--json]
 /diagnostics [list|inspect <profile>|run <typescript|pyright|eslint|gopls|clangd> [--project <local-project-path>] [--json]]
 /diag [list|inspect <profile>|run <typescript|pyright|eslint|gopls|clangd> [--project <local-project-path>] [--json]]
 /plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold|validate|inspect|register|install|enable|disable]

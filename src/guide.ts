@@ -54,6 +54,7 @@ export function renderOperatorGuide(report: DoctorReport): string {
     "  - orx diagnostics run eslint",
     "  - orx diagnostics run gopls --project src/main.go",
     "  - orx diagnostics run clangd --project src/main.cpp",
+    "  - orx scanners run trivy src",
     "mcp_setup:",
     "  - orx mcp presets",
     "  - orx mcp plan context7",

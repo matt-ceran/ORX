@@ -5,13 +5,13 @@ import { runProcess, type RunProcessOptions, type RunProcessResult } from "../to
 import type { TextTruncation } from "../tools/types.js";
 
 export const SCANNERS_USAGE =
-  "Usage: orx scanners [list [--json]|inspect <profile> [--json]|run semgrep <path> --config <local-config-path> [--json]]";
+  "Usage: orx scanners [list [--json]|inspect <profile> [--json]|run <semgrep|trivy> <path> [--config <local-config-path>] [--json]]";
 export const SCAN_USAGE =
-  "Usage: orx scan semgrep <path> --config <local-config-path> [--json]";
+  "Usage: orx scan <semgrep|trivy> <path> [--config <local-config-path>] [--json]";
 export const SLASH_SCANNERS_USAGE =
-  "Usage: /scanners [list [--json]|inspect <profile> [--json]|run semgrep <path> --config <local-config-path> [--json]]";
+  "Usage: /scanners [list [--json]|inspect <profile> [--json]|run <semgrep|trivy> <path> [--config <local-config-path>] [--json]]";
 export const SLASH_SCAN_USAGE =
-  "Usage: /scan semgrep <path> --config <local-config-path> [--json]";
+  "Usage: /scan <semgrep|trivy> <path> [--config <local-config-path>] [--json]";
 
 export type ScannerProfileId =
   | "semgrep"
@@ -34,7 +34,7 @@ export interface ScannerProfile {
 export interface ScannerRunArgs {
   profile: ScannerProfileId;
   targetPath: string;
-  configPath: string;
+  configPath?: string;
   json: boolean;
 }
 
@@ -52,7 +52,7 @@ export type ScannerRunStatus =
 
 export type ScannerProcessRunner = (options: RunProcessOptions) => Promise<RunProcessResult>;
 
-export interface RunSemgrepScannerOptions extends ScannerRunArgs {
+export interface RunSecurityScannerOptions extends ScannerRunArgs {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   runner?: ScannerProcessRunner;
@@ -66,7 +66,7 @@ export interface ScannerRunResult {
   profile: ScannerProfileId;
   root: string;
   targetPath: string;
-  configPath: string;
+  configPath?: string;
   json: boolean;
   command?: string;
   args: string[];
@@ -136,11 +136,11 @@ const SCANNER_PROFILES: ScannerProfile[] = [
   {
     id: "trivy",
     label: "Trivy",
-    state: "catalog_only",
+    state: "runnable",
     binary: "trivy",
-    summary: "Catalog/readiness placeholder for future local filesystem/image scanning.",
-    runSupport: "not runnable in this slice",
-    networkBoundary: "no no-network/no-auth command selection is enabled yet",
+    summary: "Local filesystem secret scan using an already-installed Trivy CLI.",
+    runSupport: "runnable only through `run trivy <path> [--json]` for filesystem secret scanning",
+    networkBoundary: "secret scanner only with offline/update-skip flags; vulnerability, misconfiguration, license, image, and registry scanning are not enabled",
   },
 ];
 
@@ -157,6 +157,8 @@ const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const OSC_PATTERN = /\x1B\][^\x07]*(?:\x07|\x1B\\)/g;
 const SECRET_LIKE_PATTERN =
   /\b(?:bearer\s+[A-Za-z0-9._~+/=-]{8,}|authorization:\s*bearer\s+[A-Za-z0-9._~+/=-]{8,}|(?:access[_-]?token|api[_-]?key|token|key|secret|password|passwd)\s*[=:]\s*[A-Za-z0-9._~+/=-]{4,}|sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/i;
+const SENSITIVE_JSON_KEY_PATTERN = /(api[_-]?key|authorization|bearer|token|secret|password|credential)/i;
+const SAFE_SCANNER_JSON_KEY_EXCEPTIONS = /^(secrets)$/i;
 
 const EMPTY_TRUNCATION: TextTruncation = {
   truncated: false,
@@ -235,6 +237,16 @@ function scannerProfileJsonDetails(profile: ScannerProfile): Record<string, stri
       run: "orx scanners run semgrep <path> --config <local-config-path> [--json]",
     };
   }
+  if (profile.id === "trivy") {
+    return {
+      scan_scope: "filesystem secret scanning only",
+      command_shape: "trivy fs --scanners secret --format json --offline-scan --skip-db-update --skip-java-db-update --skip-check-update --skip-version-check --disable-telemetry --no-progress <path>",
+      target_guard: "local regular file or directory under cwd; symlink realpath must remain under cwd",
+      rejected_options: "--config, URLs, dash-prefixed values, symlink escapes, secrets, and control characters",
+      output: "bounded and redacted; run --json passes redacted bounded Trivy JSON stdout only on success",
+      run: "orx scanners run trivy <path> [--json]",
+    };
+  }
   return undefined;
 }
 
@@ -258,6 +270,16 @@ export function renderScannerProfileInspect(profile: ScannerProfile): string {
       "  rejected_configs: URLs, registry configs such as auto or p/default, dash-prefixed values, symlink escapes, secrets, and control characters",
       "  output: bounded and redacted; --json passes redacted bounded Semgrep stdout only on success",
       "  run: orx scanners run semgrep <path> --config <local-config-path> [--json]",
+    );
+  }
+  if (profile.id === "trivy") {
+    lines.push(
+      "  scan_scope: filesystem secret scanning only",
+      "  command_shape: trivy fs --scanners secret --format json --offline-scan --skip-db-update --skip-java-db-update --skip-check-update --skip-version-check --disable-telemetry --no-progress <path>",
+      "  target_guard: local regular file or directory under cwd; symlink realpath must remain under cwd",
+      "  rejected_options: --config, URLs, dash-prefixed values, symlink escapes, secrets, and control characters",
+      "  output: bounded and redacted; --json passes redacted bounded Trivy JSON stdout only on success",
+      "  run: orx scanners run trivy <path> [--json]",
     );
   }
 
@@ -306,6 +328,7 @@ export function parseScannerRunArgs(
 ): ScannerRunParseResult {
   const positional: string[] = [];
   let configPath: string | undefined;
+  let configProvided = false;
   let json = false;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -323,11 +346,13 @@ export function parseScannerRunArgs(
       if (value === undefined) {
         return { ok: false, message: `${usage}\nMissing value for --config.` };
       }
+      configProvided = true;
       configPath = value;
       index += 1;
       continue;
     }
     if (arg.startsWith("--config=")) {
+      configProvided = true;
       configPath = arg.slice("--config=".length);
       continue;
     }
@@ -349,7 +374,7 @@ export function parseScannerRunArgs(
   if (!PROFILE_IDS.has(profile)) {
     return { ok: false, message: renderMissingScannerProfile(profile) };
   }
-  if (profile !== "semgrep") {
+  if (profile !== "semgrep" && profile !== "trivy") {
     return {
       ok: false,
       message: `Scanner profile ${profile} is catalog/readiness-only in this slice; no run path is enabled.`,
@@ -359,14 +384,20 @@ export function parseScannerRunArgs(
   if (targetError) {
     return { ok: false, message: `${usage}\n${targetError}` };
   }
-  if (!configPath) {
+  if (profile === "trivy" && configProvided) {
+    return {
+      ok: false,
+      message: `${usage}\nTrivy secret scans do not accept --config; ORX does not load Trivy config files in this profile.`,
+    };
+  }
+  if (profile === "semgrep" && (!configProvided || !configPath)) {
     return { ok: false, message: `${usage}\nMissing required --config <local-config-path>.` };
   }
-  const configError = validateScannerValue("config", configPath, MAX_SCANNER_PATH_LENGTH);
+  const configError = configPath ? validateScannerValue("config", configPath, MAX_SCANNER_PATH_LENGTH) : undefined;
   if (configError) {
     return { ok: false, message: `${usage}\n${configError}` };
   }
-  if (isRegistrySemgrepConfig(configPath)) {
+  if (configPath && isRegistrySemgrepConfig(configPath)) {
     return {
       ok: false,
       message: `${usage}\nconfig must be a local file under cwd, not a Semgrep registry config such as auto or p/default.`,
@@ -392,7 +423,7 @@ export function parseScannerRunArgText(argText: string, usage = SCANNERS_USAGE):
   return parseScannerRunArgs(tokens, usage);
 }
 
-export async function runSemgrepScanner(options: RunSemgrepScannerOptions): Promise<ScannerRunResult> {
+export async function runSecurityScanner(options: RunSecurityScannerOptions): Promise<ScannerRunResult> {
   const root = resolve(options.cwd ?? process.cwd());
   const env = createScannerEnv(options.env ?? process.env);
   const maxBytes = options.maxBytes ?? DEFAULT_SCANNER_OUTPUT_BYTES;
@@ -400,7 +431,7 @@ export async function runSemgrepScanner(options: RunSemgrepScannerOptions): Prom
   const runner = options.runner ?? runProcess;
   const emptyText = emptyScannerText();
 
-  if (options.profile !== "semgrep") {
+  if (options.profile !== "semgrep" && options.profile !== "trivy") {
     return {
       ok: false,
       status: "invalid_arguments",
@@ -415,28 +446,30 @@ export async function runSemgrepScanner(options: RunSemgrepScannerOptions): Prom
       stderr: "",
       stdoutTruncation: emptyText.truncation,
       stderrTruncation: emptyText.truncation,
-      message: "Only the semgrep scanner profile is runnable in this slice.",
+      message: "Only the semgrep and trivy scanner profiles are runnable in this slice.",
     };
   }
 
-  const target = resolveScannerPath(root, options.targetPath, "path", { mustExist: true });
+  const target = resolveScannerPath(root, options.targetPath, "path", { mustExist: true, mustBeFileOrDirectory: true });
   if (!target.ok) {
     return invalidScannerRun(options, root, target.message);
   }
-  const config = resolveScannerPath(root, options.configPath, "config", { mustExist: true, mustBeFile: true });
-  if (!config.ok) {
+  const config = options.profile === "semgrep"
+    ? resolveScannerPath(root, options.configPath ?? "", "config", { mustExist: true, mustBeFile: true })
+    : undefined;
+  if (config && !config.ok) {
     return invalidScannerRun(options, root, config.message);
   }
 
-  const command = await resolveSemgrepCommand(root, env, runner);
+  const command = await resolveScannerCommand(options.profile, root, env, runner);
   if (!command.ok) {
     return {
       ok: false,
       status: "tool_missing",
-      profile: "semgrep",
+      profile: options.profile,
       root,
       targetPath: target.displayPath,
-      configPath: config.displayPath,
+      configPath: config?.displayPath,
       json: options.json,
       args: [],
       timedOut: false,
@@ -448,7 +481,9 @@ export async function runSemgrepScanner(options: RunSemgrepScannerOptions): Prom
     };
   }
 
-  const spawnArgs = buildSemgrepArgs(target.arg, config.arg, options.json);
+  const spawnArgs = options.profile === "semgrep"
+    ? buildSemgrepArgs(target.arg, config?.arg ?? "", options.json)
+    : buildTrivyArgs(target.arg);
   const result = await runner({
     command: command.command,
     args: spawnArgs,
@@ -466,10 +501,10 @@ export async function runSemgrepScanner(options: RunSemgrepScannerOptions): Prom
   return {
     ok: status === "ok",
     status,
-    profile: "semgrep",
+    profile: options.profile,
     root,
     targetPath: target.displayPath,
-    configPath: config.displayPath,
+    configPath: config?.displayPath,
     json: options.json,
     command: command.command,
     args: spawnArgs,
@@ -486,6 +521,10 @@ export async function runSemgrepScanner(options: RunSemgrepScannerOptions): Prom
   };
 }
 
+export async function runSemgrepScanner(options: RunSecurityScannerOptions): Promise<ScannerRunResult> {
+  return runSecurityScanner(options);
+}
+
 export function renderScannerRunResult(result: ScannerRunResult, usage = SCANNERS_USAGE): string {
   const lines = [
     "Security scanner run",
@@ -493,12 +532,14 @@ export function renderScannerRunResult(result: ScannerRunResult, usage = SCANNER
     `  status: ${result.status}`,
     `  root: ${sanitizeInline(result.root)}`,
     `  path: ${sanitizeInline(result.targetPath)}`,
-    `  config: ${sanitizeInline(result.configPath)}`,
     "  execution: shell_disabled",
     "  env: minimal_no_orx_openrouter_brave_api_token_values",
     "  network: none_by_command_selection",
     "  model_tool: not_exposed",
   ];
+  if (result.configPath) {
+    lines.splice(5, 0, `  config: ${sanitizeInline(result.configPath)}`);
+  }
   if (result.commandLine) {
     lines.push(`  command: ${result.commandLine}`);
   }
@@ -512,7 +553,7 @@ export function renderScannerRunResult(result: ScannerRunResult, usage = SCANNER
     lines.push(`  duration_ms: ${result.durationMs}`);
   }
   if (result.status === "tool_missing") {
-    lines.push(`  setup: ${semgrepMissingMessage()}`);
+    lines.push(`  setup: ${scannerMissingMessage(result.profile)}`);
   }
   if (result.message && result.status !== "tool_missing") {
     lines.push(`  message: ${sanitizeInline(result.message)}`);
@@ -543,6 +584,35 @@ function buildSemgrepArgs(targetPath: string, configPath: string, json: boolean)
   return args;
 }
 
+function buildTrivyArgs(targetPath: string): string[] {
+  return [
+    "fs",
+    "--scanners",
+    "secret",
+    "--format",
+    "json",
+    "--offline-scan",
+    "--skip-db-update",
+    "--skip-java-db-update",
+    "--skip-check-update",
+    "--skip-version-check",
+    "--disable-telemetry",
+    "--no-progress",
+    targetPath,
+  ];
+}
+
+async function resolveScannerCommand(
+  profile: "semgrep" | "trivy",
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  runner: ScannerProcessRunner,
+): Promise<{ ok: true; command: "semgrep" | "trivy" } | { ok: false; message: string }> {
+  return profile === "semgrep"
+    ? resolveSemgrepCommand(cwd, env, runner)
+    : resolveTrivyCommand(cwd, env, runner);
+}
+
 async function resolveSemgrepCommand(
   cwd: string,
   env: NodeJS.ProcessEnv,
@@ -562,11 +632,38 @@ async function resolveSemgrepCommand(
     return { ok: true, command: "semgrep" };
   }
   if (result.error && isCommandMissingError(result.error)) {
-    return { ok: false, message: semgrepMissingMessage() };
+    return { ok: false, message: scannerMissingMessage("semgrep") };
   }
   return {
     ok: false,
-    message: `Semgrep was found but did not respond to --version successfully. ${semgrepMissingMessage()}`,
+    message: `Semgrep was found but did not respond to --version successfully. ${scannerMissingMessage("semgrep")}`,
+  };
+}
+
+async function resolveTrivyCommand(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  runner: ScannerProcessRunner,
+): Promise<{ ok: true; command: "trivy" } | { ok: false; message: string }> {
+  const result = await runner({
+    command: "trivy",
+    args: ["--version"],
+    cwd,
+    env,
+    inheritEnv: false,
+    shell: false,
+    timeoutMs: SCANNER_DISCOVERY_TIMEOUT_MS,
+    maxBytes: SCANNER_DISCOVERY_BYTES,
+  });
+  if (result.exitCode === 0) {
+    return { ok: true, command: "trivy" };
+  }
+  if (result.error && isCommandMissingError(result.error)) {
+    return { ok: false, message: scannerMissingMessage("trivy") };
+  }
+  return {
+    ok: false,
+    message: `Trivy was found but did not respond to --version successfully. ${scannerMissingMessage("trivy")}`,
   };
 }
 
@@ -574,7 +671,7 @@ function resolveScannerPath(
   cwd: string,
   value: string,
   label: "path" | "config",
-  options: { mustExist: boolean; mustBeFile?: boolean },
+  options: { mustExist: boolean; mustBeFile?: boolean; mustBeFileOrDirectory?: boolean },
 ): { ok: true } & ResolvedScannerPath | { ok: false; message: string } {
   const validation = validateScannerValue(label, value, MAX_SCANNER_PATH_LENGTH);
   if (validation) {
@@ -604,6 +701,12 @@ function resolveScannerPath(
     const filePath = realResolved ?? resolved;
     if (!safeIsFile(filePath)) {
       return { ok: false, message: `${label} must be a regular local file.` };
+    }
+  }
+  if (options.mustBeFileOrDirectory) {
+    const targetPath = realResolved ?? resolved;
+    if (!safeIsFile(targetPath) && !safeIsDirectory(targetPath)) {
+      return { ok: false, message: `${label} must be a regular local file or directory.` };
     }
   }
 
@@ -710,7 +813,7 @@ function classifySemgrepRun(result: RunProcessResult): ScannerRunStatus {
 }
 
 function invalidScannerRun(
-  options: RunSemgrepScannerOptions,
+  options: RunSecurityScannerOptions,
   root: string,
   message: string,
 ): ScannerRunResult {
@@ -806,10 +909,29 @@ function sanitizeJsonProcessOutput(value: string): string {
     .replace(OUTPUT_CONTROL_CHAR_PATTERN, "");
   try {
     const parsed = JSON.parse(stripped);
-    return `${JSON.stringify(redactSecrets(parsed))}\n`;
+    return `${JSON.stringify(redactScannerJson(parsed))}\n`;
   } catch {
     return sanitizeProcessOutput(stripped);
   }
+}
+
+function redactScannerJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => redactScannerJson(item));
+  }
+  if (value && typeof value === "object") {
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+      sanitized[key] = SENSITIVE_JSON_KEY_PATTERN.test(key) && !SAFE_SCANNER_JSON_KEY_EXCEPTIONS.test(key)
+        ? "[redacted]"
+        : redactScannerJson(nestedValue);
+    }
+    return sanitized;
+  }
+  if (typeof value === "string") {
+    return redactSecrets(value);
+  }
+  return value;
 }
 
 function sanitizeInline(value: string): string {
@@ -833,7 +955,10 @@ function formatCommandLine(command: string, args: string[]): string {
   return [command, ...args].map((part) => JSON.stringify(sanitizeInline(part))).join(" ");
 }
 
-function semgrepMissingMessage(): string {
+function scannerMissingMessage(profile: ScannerProfileId): string {
+  if (profile === "trivy") {
+    return "Trivy is not installed or not on PATH. Install Trivy yourself, ensure `trivy` is available locally, and rerun with an explicit local target path under the current working directory.";
+  }
   return "Semgrep is not installed or not on PATH. Install Semgrep yourself, ensure `semgrep` is available locally, and rerun with an explicit local --config file under the current working directory.";
 }
 
@@ -852,6 +977,14 @@ function safeRealpath(path: string): string | undefined {
 function safeIsFile(path: string): boolean {
   try {
     return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function safeIsDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
   } catch {
     return false;
   }

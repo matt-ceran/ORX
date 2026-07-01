@@ -15,6 +15,7 @@ export {
   renderScannerProfiles,
   renderScannerProfilesJson,
   renderScannerRunResult,
+  runSecurityScanner,
   runSemgrepScanner,
   type ScannerProcessRunner,
   type ScannerProfile,

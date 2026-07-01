@@ -1848,7 +1848,7 @@ test("cli scanner commands list, inspect, and run semgrep with a mocked local bi
     assert.equal(profileReport.network, "none_for_list_or_inspect");
     const profileEntries = profileReport.profiles as Array<{ id: string; state: string }>;
     assert.equal(profileEntries.find((profile) => profile.id === "semgrep")?.state, "runnable");
-    assert.equal(profileEntries.find((profile) => profile.id === "trivy")?.state, "catalog_only");
+    assert.equal(profileEntries.find((profile) => profile.id === "trivy")?.state, "runnable");
     assert.equal(listJson.stderr(), "");
 
     const inspect = createIo({ cwd });
@@ -1864,19 +1864,34 @@ test("cli scanner commands list, inspect, and run semgrep with a mocked local bi
     assert.equal(inspectReport.profile.details.config_required, "local file under cwd via --config");
     assert.equal(inspectJson.stderr(), "");
 
+    const inspectTrivy = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "scanners", "inspect", "trivy"], {}, inspectTrivy.io), 0);
+    assert.match(inspectTrivy.stdout(), /Security scanner profile: trivy/);
+    assert.match(inspectTrivy.stdout(), /command_shape: trivy fs --scanners secret --format json/);
+
     const inspectCatalogOnly = createIo({ cwd });
-    assert.equal(await runCli(["node", "cli", "scanners", "inspect", "trivy"], {}, inspectCatalogOnly.io), 0);
+    assert.equal(await runCli(["node", "cli", "scanners", "inspect", "snyk"], {}, inspectCatalogOnly.io), 0);
     assert.match(inspectCatalogOnly.stdout(), /state: catalog_only/);
 
     const listExtra = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "scanners", "list", "extra"], {}, listExtra.io), 1);
     assert.match(listExtra.stderr(), /^Usage: orx scanners/);
 
-    const semgrepCalls: Array<Parameters<ScannerProcessRunner>[0]> = [];
+    const scannerCalls: Array<Parameters<ScannerProcessRunner>[0]> = [];
     const scannerRunner: ScannerProcessRunner = async (options) => {
-      semgrepCalls.push(options);
-      if (options.args?.includes("--version")) {
+      scannerCalls.push(options);
+      if (options.command === "semgrep" && options.args?.includes("--version")) {
         return mockProcessResult(options, { exitCode: 0, stdout: "semgrep 1.0.0\n" });
+      }
+      if (options.command === "trivy" && options.args?.includes("--version")) {
+        return mockProcessResult(options, { exitCode: 0, stdout: "Version: 0.63.0\n" });
+      }
+      if (options.command === "trivy") {
+        return mockProcessResult(options, {
+          exitCode: 0,
+          stdout: "{\"Results\":[{\"Secrets\":[{\"RuleID\":\"generic-api-key\",\"Match\":\"api_key=trivy-secret\"}]}]}\n",
+          stderr: "Authorization: Bearer should-redact\n",
+        });
       }
       return mockProcessResult(options, {
         exitCode: 0,
@@ -1907,7 +1922,7 @@ test("cli scanner commands list, inspect, and run semgrep with a mocked local bi
     assert.match(run.stdout(), /Authorization: Bearer \[redacted\]/);
     assert.doesNotMatch(run.stdout(), /abcd1234|should-redact|sk-or-v1-secret|brave-secret/);
     assert.equal(run.stderr(), "");
-    assert.deepEqual(semgrepCalls.at(-1)?.args, [
+    assert.deepEqual(scannerCalls.at(-1)?.args, [
       "scan",
       "--config",
       "semgrep.yml",
@@ -1917,17 +1932,17 @@ test("cli scanner commands list, inspect, and run semgrep with a mocked local bi
       "--no-suppress-errors",
       "src",
     ]);
-    assert.equal(semgrepCalls.at(-1)?.shell, false);
-    assert.equal(semgrepCalls.at(-1)?.inheritEnv, false);
-    assert.equal(semgrepCalls.at(-1)?.env?.PATH, "/usr/bin");
-    assert.equal(semgrepCalls.at(-1)?.env?.LANG, "C");
-    assert.equal(semgrepCalls.at(-1)?.env?.OPENROUTER_API_KEY, undefined);
-    assert.equal(semgrepCalls.at(-1)?.env?.BRAVE_SEARCH_API_KEY, undefined);
-    assert.equal(semgrepCalls.at(-1)?.env?.ORX_PLUGIN_REGISTRY_PATH, undefined);
-    assert.equal(semgrepCalls.at(-1)?.env?.HOME, undefined);
-    assert.equal(semgrepCalls.at(-1)?.env?.SEMGREP_SEND_METRICS, "off");
+    assert.equal(scannerCalls.at(-1)?.shell, false);
+    assert.equal(scannerCalls.at(-1)?.inheritEnv, false);
+    assert.equal(scannerCalls.at(-1)?.env?.PATH, "/usr/bin");
+    assert.equal(scannerCalls.at(-1)?.env?.LANG, "C");
+    assert.equal(scannerCalls.at(-1)?.env?.OPENROUTER_API_KEY, undefined);
+    assert.equal(scannerCalls.at(-1)?.env?.BRAVE_SEARCH_API_KEY, undefined);
+    assert.equal(scannerCalls.at(-1)?.env?.ORX_PLUGIN_REGISTRY_PATH, undefined);
+    assert.equal(scannerCalls.at(-1)?.env?.HOME, undefined);
+    assert.equal(scannerCalls.at(-1)?.env?.SEMGREP_SEND_METRICS, "off");
     assert.equal(
-      semgrepCalls.every((call) => call.env?.HOME === undefined),
+      scannerCalls.every((call) => call.env?.HOME === undefined),
       true,
     );
 
@@ -1946,6 +1961,56 @@ test("cli scanner commands list, inspect, and run semgrep with a mocked local bi
     );
     assert.equal(json.stdout(), "{\"results\":[{\"extra\":{\"api_key\":\"[redacted]\",\"message\":\"ok\"}}]}\n");
 
+    const trivy = createIo({ cwd, scannerRunner });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "scanners", "run", "trivy", "src"],
+        {
+          OPENROUTER_API_KEY: "sk-or-v1-secret",
+          BRAVE_SEARCH_API_KEY: "brave-secret",
+          ORX_PLUGIN_REGISTRY_PATH: "should-not-forward",
+          HOME: join(cwd, "sk-or-v1-home-secret"),
+          PATH: "/usr/bin",
+          LANG: "C",
+        },
+        trivy.io,
+      ),
+      0,
+    );
+    assert.match(trivy.stdout(), /Security scanner run/);
+    assert.match(trivy.stdout(), /profile: trivy/);
+    assert.match(trivy.stdout(), /command: "trivy" "fs" "--scanners" "secret" "--format" "json"/);
+    assert.match(trivy.stdout(), /api_key=\[redacted\]/);
+    assert.match(trivy.stdout(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(trivy.stdout(), /trivy-secret|should-redact|sk-or-v1-secret|brave-secret/);
+    assert.equal(trivy.stderr(), "");
+    assert.deepEqual(scannerCalls.at(-1)?.args, [
+      "fs",
+      "--scanners",
+      "secret",
+      "--format",
+      "json",
+      "--offline-scan",
+      "--skip-db-update",
+      "--skip-java-db-update",
+      "--skip-check-update",
+      "--skip-version-check",
+      "--disable-telemetry",
+      "--no-progress",
+      "src",
+    ]);
+    assert.equal(scannerCalls.at(-1)?.command, "trivy");
+    assert.equal(scannerCalls.at(-1)?.shell, false);
+    assert.equal(scannerCalls.at(-1)?.inheritEnv, false);
+    assert.equal(scannerCalls.at(-1)?.env?.HOME, undefined);
+
+    const trivyJson = createIo({ cwd, scannerRunner });
+    assert.equal(await runCli(["node", "cli", "scan", "trivy", "src", "--json"], {}, trivyJson.io), 0);
+    const trivyJsonReport = JSON.parse(trivyJson.stdout());
+    assert.equal(trivyJsonReport.Results[0].Secrets[0].Match, "api_key=[redacted]");
+    assert.doesNotMatch(trivyJson.stdout(), /trivy-secret|should-redact/);
+    assert.equal(trivyJson.stderr(), "");
+
     const missing = createIo({
       cwd,
       scannerRunner: async (options) => mockProcessResult(options, {
@@ -1959,14 +2024,32 @@ test("cli scanner commands list, inspect, and run semgrep with a mocked local bi
     );
     assert.match(missing.stderr(), /Semgrep is not installed or not on PATH/);
 
-    const beforeUnsafeCalls = semgrepCalls.length;
+    const beforeUnsafeCalls = scannerCalls.length;
     const unsafeRegistryConfig = createIo({ cwd, scannerRunner });
     assert.equal(
       await runCli(["node", "cli", "scanners", "run", "semgrep", "src", "--config", "p/default"], {}, unsafeRegistryConfig.io),
       1,
     );
     assert.match(unsafeRegistryConfig.stderr(), /not a Semgrep registry config/);
-    assert.equal(semgrepCalls.length, beforeUnsafeCalls);
+    assert.equal(scannerCalls.length, beforeUnsafeCalls);
+
+    const trivyConfig = createIo({ cwd, scannerRunner });
+    assert.equal(
+      await runCli(["node", "cli", "scan", "trivy", "src", "--config", "semgrep.yml"], {}, trivyConfig.io),
+      1,
+    );
+    assert.match(trivyConfig.stderr(), /Trivy secret scans do not accept --config/);
+    assert.equal(scannerCalls.length, beforeUnsafeCalls);
+
+    const trivyEmptyConfigEquals = createIo({ cwd, scannerRunner });
+    assert.equal(await runCli(["node", "cli", "scan", "trivy", "src", "--config="], {}, trivyEmptyConfigEquals.io), 1);
+    assert.match(trivyEmptyConfigEquals.stderr(), /Trivy secret scans do not accept --config/);
+    assert.equal(scannerCalls.length, beforeUnsafeCalls);
+
+    const trivyEmptyConfigValue = createIo({ cwd, scannerRunner });
+    assert.equal(await runCli(["node", "cli", "scan", "trivy", "src", "--config", ""], {}, trivyEmptyConfigValue.io), 1);
+    assert.match(trivyEmptyConfigValue.stderr(), /Trivy secret scans do not accept --config/);
+    assert.equal(scannerCalls.length, beforeUnsafeCalls);
 
     const outside = createTempDir();
     writeFileSync(join(outside, "outside.yml"), "rules: []\n");
@@ -1981,6 +2064,15 @@ test("cli scanner commands list, inspect, and run semgrep with a mocked local bi
       1,
     );
     assert.match(unsafeSymlink.stderr(), /config resolves outside the current working directory/);
+
+    symlinkSync(join(outside, "outside.yml"), join(cwd, "outside-target.yml"));
+    const unsafeTrivySymlink = createIo({ cwd, scannerRunner });
+    assert.equal(
+      await runCli(["node", "cli", "scan", "trivy", "outside-target.yml"], {}, unsafeTrivySymlink.io),
+      1,
+    );
+    assert.match(unsafeTrivySymlink.stderr(), /path resolves outside the current working directory/);
+    assert.equal(scannerCalls.length, beforeUnsafeCalls);
     rmSync(outside, { recursive: true, force: true });
   } finally {
     rmSync(cwd, { recursive: true, force: true });

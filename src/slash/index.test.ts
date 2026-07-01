@@ -128,8 +128,8 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/tests \[list \[--json\]\|status \[--json\]\|run \[target-id\] \[-- args\.\.\.\]\]/);
   assert.match(output, /\/code \[map\|symbols\|refs\|imports\|calls\|ast-grep\|tree-sitter\|outline\]/);
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
-  assert.match(output, /\/scanners \[list \[--json\]\|inspect <profile> \[--json\]\|run semgrep <path> --config <local-config-path> \[--json\]\]/);
-  assert.match(output, /\/scan semgrep <path> --config <local-config-path> \[--json\]/);
+  assert.match(output, /\/scanners \[list \[--json\]\|inspect <profile> \[--json\]\|run <semgrep\|trivy> <path> \[--config <local-config-path>\] \[--json\]\]/);
+  assert.match(output, /\/scan <semgrep\|trivy> <path> \[--config <local-config-path>\] \[--json\]/);
   assert.match(output, /\/diagnostics \[list \[--json\]\|inspect <profile> \[--json\]\|run <typescript\|pyright\|eslint\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/refs <query>/);
@@ -334,9 +334,13 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/scanners inspect s"), [["semgrep ", "snyk ", "socket "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/scanners show semgrep --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/scanners run s"), [["semgrep "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/scanners run t"), [["trivy "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/scanners run semgrep src --c"), [["--config "], "--c"]);
+  assert.deepEqual(completeSlashCommandLine("/scanners run trivy src --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/scan s"), [["semgrep "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/scan t"), [["trivy "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/scan semgrep src --j"), [["--json "], "--j"]);
+  assert.deepEqual(completeSlashCommandLine("/scan trivy src --c"), [[], "/scan trivy src --c"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics s"), [["status ", "show "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics r"), [["run "], "r"]);
@@ -671,7 +675,7 @@ test("scanner slash commands list, inspect, and run Semgrep with a mocked local 
     assert.equal(await handleSlashCommand("/scanners", list.context), "continue");
     assert.match(list.stdout(), /Security scanner profiles/);
     assert.match(list.stdout(), /id=semgrep state=runnable/);
-    assert.match(list.stdout(), /id=trivy state=catalog_only/);
+    assert.match(list.stdout(), /id=trivy state=runnable/);
 
     const listJson = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/scanners --json", listJson.context), "continue");
@@ -681,7 +685,7 @@ test("scanner slash commands list, inspect, and run Semgrep with a mocked local 
     assert.equal(profileReport.network, "none_for_list_or_inspect");
     const profileEntries = profileReport.profiles as Array<{ id: string; state: string }>;
     assert.equal(profileEntries.find((profile) => profile.id === "semgrep")?.state, "runnable");
-    assert.equal(profileEntries.find((profile) => profile.id === "trivy")?.state, "catalog_only");
+    assert.equal(profileEntries.find((profile) => profile.id === "trivy")?.state, "runnable");
     assert.equal(listJson.stderr(), "");
 
     const inspect = createSlashHarness({ cwd });
@@ -697,6 +701,11 @@ test("scanner slash commands list, inspect, and run Semgrep with a mocked local 
     assert.equal(inspectReport.profile.details.config_required, "local file under cwd via --config");
     assert.equal(inspectJson.stderr(), "");
 
+    const inspectTrivy = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/scanners inspect trivy", inspectTrivy.context), "continue");
+    assert.match(inspectTrivy.stdout(), /Security scanner profile: trivy/);
+    assert.match(inspectTrivy.stdout(), /command_shape: trivy fs --scanners secret --format json/);
+
     const inspectCatalogOnly = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/scanners inspect snyk", inspectCatalogOnly.context), "continue");
     assert.match(inspectCatalogOnly.stdout(), /state: catalog_only/);
@@ -705,11 +714,21 @@ test("scanner slash commands list, inspect, and run Semgrep with a mocked local 
     assert.equal(await handleSlashCommand("/scanners list extra", listExtra.context), "continue");
     assert.match(listExtra.stderr(), /^Usage: \/scanners/);
 
-    const semgrepCalls: RunProcessOptions[] = [];
+    const scannerCalls: RunProcessOptions[] = [];
     const scannerRunner: ScannerProcessRunner = async (options) => {
-      semgrepCalls.push(options);
-      if (options.args?.includes("--version")) {
+      scannerCalls.push(options);
+      if (options.command === "semgrep" && options.args?.includes("--version")) {
         return mockProcessResult(options, { exitCode: 0, stdout: "semgrep 1.0.0\n" });
+      }
+      if (options.command === "trivy" && options.args?.includes("--version")) {
+        return mockProcessResult(options, { exitCode: 0, stdout: "Version: 0.63.0\n" });
+      }
+      if (options.command === "trivy") {
+        return mockProcessResult(options, {
+          exitCode: 0,
+          stdout: "{\"Results\":[{\"Secrets\":[{\"RuleID\":\"generic-api-key\",\"Match\":\"api_key=trivy-secret\"}]}]}\n",
+          stderr: "Authorization: Bearer should-redact\n",
+        });
       }
       return mockProcessResult(options, {
         exitCode: 0,
@@ -738,7 +757,7 @@ test("scanner slash commands list, inspect, and run Semgrep with a mocked local 
     assert.match(run.stdout(), /Authorization: Bearer \[redacted\]/);
     assert.doesNotMatch(run.stdout(), /abcd1234|should-redact|sk-or-v1-secret|brave-secret/);
     assert.equal(run.stderr(), "");
-    assert.deepEqual(semgrepCalls.at(-1)?.args, [
+    assert.deepEqual(scannerCalls.at(-1)?.args, [
       "scan",
       "--config",
       "semgrep.yml",
@@ -748,17 +767,17 @@ test("scanner slash commands list, inspect, and run Semgrep with a mocked local 
       "--no-suppress-errors",
       "src",
     ]);
-    assert.equal(semgrepCalls.at(-1)?.shell, false);
-    assert.equal(semgrepCalls.at(-1)?.inheritEnv, false);
-    assert.equal(semgrepCalls.at(-1)?.env?.PATH, "/usr/bin");
-    assert.equal(semgrepCalls.at(-1)?.env?.LANG, "C");
-    assert.equal(semgrepCalls.at(-1)?.env?.OPENROUTER_API_KEY, undefined);
-    assert.equal(semgrepCalls.at(-1)?.env?.BRAVE_SEARCH_API_KEY, undefined);
-    assert.equal(semgrepCalls.at(-1)?.env?.ORX_PLUGIN_REGISTRY_PATH, undefined);
-    assert.equal(semgrepCalls.at(-1)?.env?.HOME, undefined);
-    assert.equal(semgrepCalls.at(-1)?.env?.SEMGREP_SEND_METRICS, "off");
+    assert.equal(scannerCalls.at(-1)?.shell, false);
+    assert.equal(scannerCalls.at(-1)?.inheritEnv, false);
+    assert.equal(scannerCalls.at(-1)?.env?.PATH, "/usr/bin");
+    assert.equal(scannerCalls.at(-1)?.env?.LANG, "C");
+    assert.equal(scannerCalls.at(-1)?.env?.OPENROUTER_API_KEY, undefined);
+    assert.equal(scannerCalls.at(-1)?.env?.BRAVE_SEARCH_API_KEY, undefined);
+    assert.equal(scannerCalls.at(-1)?.env?.ORX_PLUGIN_REGISTRY_PATH, undefined);
+    assert.equal(scannerCalls.at(-1)?.env?.HOME, undefined);
+    assert.equal(scannerCalls.at(-1)?.env?.SEMGREP_SEND_METRICS, "off");
     assert.equal(
-      semgrepCalls.every((call) => call.env?.HOME === undefined),
+      scannerCalls.every((call) => call.env?.HOME === undefined),
       true,
     );
 
@@ -774,6 +793,53 @@ test("scanner slash commands list, inspect, and run Semgrep with a mocked local 
     assert.equal(await handleSlashCommand("/scan semgrep src --config semgrep.yml --json", json.context), "continue");
     assert.equal(json.stdout(), "{\"results\":[{\"extra\":{\"api_key\":\"[redacted]\",\"message\":\"ok\"}}]}\n");
 
+    const trivy = createSlashHarness({
+      cwd,
+      scannerRunner,
+      env: {
+        OPENROUTER_API_KEY: "sk-or-v1-secret",
+        BRAVE_SEARCH_API_KEY: "brave-secret",
+        ORX_PLUGIN_REGISTRY_PATH: "should-not-forward",
+        HOME: join(cwd, "sk-or-v1-home-secret"),
+        PATH: "/usr/bin",
+        LANG: "C",
+      },
+    });
+    assert.equal(await handleSlashCommand("/scanners run trivy src", trivy.context), "continue");
+    assert.match(trivy.stdout(), /Security scanner run/);
+    assert.match(trivy.stdout(), /profile: trivy/);
+    assert.match(trivy.stdout(), /command: "trivy" "fs" "--scanners" "secret" "--format" "json"/);
+    assert.match(trivy.stdout(), /api_key=\[redacted\]/);
+    assert.match(trivy.stdout(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(trivy.stdout(), /trivy-secret|should-redact|sk-or-v1-secret|brave-secret/);
+    assert.equal(trivy.stderr(), "");
+    assert.deepEqual(scannerCalls.at(-1)?.args, [
+      "fs",
+      "--scanners",
+      "secret",
+      "--format",
+      "json",
+      "--offline-scan",
+      "--skip-db-update",
+      "--skip-java-db-update",
+      "--skip-check-update",
+      "--skip-version-check",
+      "--disable-telemetry",
+      "--no-progress",
+      "src",
+    ]);
+    assert.equal(scannerCalls.at(-1)?.command, "trivy");
+    assert.equal(scannerCalls.at(-1)?.shell, false);
+    assert.equal(scannerCalls.at(-1)?.inheritEnv, false);
+    assert.equal(scannerCalls.at(-1)?.env?.HOME, undefined);
+
+    const trivyJson = createSlashHarness({ cwd, scannerRunner });
+    assert.equal(await handleSlashCommand("/scan trivy src --json", trivyJson.context), "continue");
+    const trivyJsonReport = JSON.parse(trivyJson.stdout());
+    assert.equal(trivyJsonReport.Results[0].Secrets[0].Match, "api_key=[redacted]");
+    assert.doesNotMatch(trivyJson.stdout(), /trivy-secret|should-redact/);
+    assert.equal(trivyJson.stderr(), "");
+
     const missing = createSlashHarness({
       cwd,
       scannerRunner: async (options) => mockProcessResult(options, {
@@ -784,16 +850,31 @@ test("scanner slash commands list, inspect, and run Semgrep with a mocked local 
     assert.equal(await handleSlashCommand("/scanners run semgrep src --config semgrep.yml", missing.context), "continue");
     assert.match(missing.stderr(), /Semgrep is not installed or not on PATH/);
 
-    const beforeUnsafeCalls = semgrepCalls.length;
+    const beforeUnsafeCalls = scannerCalls.length;
     const unsafeRegistryConfig = createSlashHarness({ cwd, scannerRunner });
     assert.equal(await handleSlashCommand("/scanners run semgrep src --config p/default", unsafeRegistryConfig.context), "continue");
     assert.match(unsafeRegistryConfig.stderr(), /not a Semgrep registry config/);
-    assert.equal(semgrepCalls.length, beforeUnsafeCalls);
+    assert.equal(scannerCalls.length, beforeUnsafeCalls);
+
+    const trivyConfig = createSlashHarness({ cwd, scannerRunner });
+    assert.equal(await handleSlashCommand("/scan trivy src --config semgrep.yml", trivyConfig.context), "continue");
+    assert.match(trivyConfig.stderr(), /Trivy secret scans do not accept --config/);
+    assert.equal(scannerCalls.length, beforeUnsafeCalls);
+
+    const trivyEmptyConfigEquals = createSlashHarness({ cwd, scannerRunner });
+    assert.equal(await handleSlashCommand("/scan trivy src --config=", trivyEmptyConfigEquals.context), "continue");
+    assert.match(trivyEmptyConfigEquals.stderr(), /Trivy secret scans do not accept --config/);
+    assert.equal(scannerCalls.length, beforeUnsafeCalls);
+
+    const trivyEmptyConfigValue = createSlashHarness({ cwd, scannerRunner });
+    assert.equal(await handleSlashCommand('/scan trivy src --config ""', trivyEmptyConfigValue.context), "continue");
+    assert.match(trivyEmptyConfigValue.stderr(), /Trivy secret scans do not accept --config/);
+    assert.equal(scannerCalls.length, beforeUnsafeCalls);
 
     const unsafeProfile = createSlashHarness({ cwd, scannerRunner });
     assert.equal(await handleSlashCommand("/scan snyk src --config semgrep.yml", unsafeProfile.context), "continue");
     assert.match(unsafeProfile.stderr(), /catalog\/readiness-only/);
-    assert.equal(semgrepCalls.length, beforeUnsafeCalls);
+    assert.equal(scannerCalls.length, beforeUnsafeCalls);
 
     const outside = mkdtempSync(join(tmpdir(), "orx-slash-scanner-outside-"));
     writeFileSync(join(outside, "outside.yml"), "rules: []\n");
@@ -804,6 +885,12 @@ test("scanner slash commands list, inspect, and run Semgrep with a mocked local 
       "continue",
     );
     assert.match(unsafeSymlink.stderr(), /config resolves outside the current working directory/);
+
+    symlinkSync(join(outside, "outside.yml"), join(cwd, "outside-target.yml"));
+    const unsafeTrivySymlink = createSlashHarness({ cwd, scannerRunner });
+    assert.equal(await handleSlashCommand("/scan trivy outside-target.yml", unsafeTrivySymlink.context), "continue");
+    assert.match(unsafeTrivySymlink.stderr(), /path resolves outside the current working directory/);
+    assert.equal(scannerCalls.length, beforeUnsafeCalls);
     rmSync(outside, { recursive: true, force: true });
   } finally {
     rmSync(cwd, { recursive: true, force: true });

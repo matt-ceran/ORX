@@ -299,7 +299,7 @@ import {
   renderScannerProfiles,
   renderScannerProfilesJson,
   renderScannerRunResult,
-  runSemgrepScanner,
+  runSecurityScanner,
   type ScannerProcessRunner,
 } from "../security/index.js";
 import { gitDiffTool } from "../tools/index.js";
@@ -573,9 +573,10 @@ const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls
 const TREE_SITTER_MODE_COMPLETIONS = ["parse", "outline", "imports", "refs", "calls", "repo-outline", "repo-refs", "repo-calls", "repo-imports", "repo-deps"] as const;
 const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "run"] as const;
 const SCANNER_PROFILE_COMPLETIONS = ["semgrep", "snyk", "socket", "osv-scanner", "codeql", "trivy"] as const;
-const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep"] as const;
+const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep", "trivy"] as const;
 const SCANNER_READINESS_OPTION_COMPLETIONS = ["--json"] as const;
 const SCANNER_RUN_OPTION_COMPLETIONS = ["--config", "--json"] as const;
+const TRIVY_SCANNER_RUN_OPTION_COMPLETIONS = ["--json"] as const;
 const DIAGNOSTICS_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "run"] as const;
 const DIAGNOSTIC_PROFILE_COMPLETIONS = [
   "typescript",
@@ -1983,7 +1984,9 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
         return [...RUNNABLE_SCANNER_PROFILE_COMPLETIONS];
       }
       if (firstArg === "run" && argIndex >= 3) {
-        return [...SCANNER_RUN_OPTION_COMPLETIONS];
+        return completedArgs[1]?.toLowerCase() === "trivy"
+          ? [...TRIVY_SCANNER_RUN_OPTION_COMPLETIONS]
+          : [...SCANNER_RUN_OPTION_COMPLETIONS];
       }
       return [];
     case "/scan":
@@ -1991,7 +1994,7 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
         return [...RUNNABLE_SCANNER_PROFILE_COMPLETIONS];
       }
       if (argIndex >= 2) {
-        return [...SCANNER_RUN_OPTION_COMPLETIONS];
+        return firstArg === "trivy" ? [...TRIVY_SCANNER_RUN_OPTION_COMPLETIONS] : [...SCANNER_RUN_OPTION_COMPLETIONS];
       }
       return [];
     case "/diagnostics":
@@ -2669,7 +2672,7 @@ async function handleScannerRunText(
     return;
   }
 
-  const result = await runSemgrepScanner({
+  const result = await runSecurityScanner({
     ...parsed.args,
     cwd: context.io.cwd,
     env: context.env,
