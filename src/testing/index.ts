@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "go" | "rspec" | "unittest" | "junit-text" | "phpunit" | "dotnet" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "go" | "rspec" | "unittest" | "junit-text" | "phpunit" | "dotnet" | "ctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -700,11 +700,11 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     unknown: parseGenericReportSummary,
   };
   if (framework === "node") {
-    return [parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseGenericReportSummary];
+    return [parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseGenericReportSummary]
-    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseGenericReportSummary];
+    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseGenericReportSummary]
+    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -1296,6 +1296,46 @@ function parseDotnetReportSummary(text: string, framework: TestFramework): TestR
   return hasReportCounts(report) ? report : undefined;
 }
 
+function parseCtestReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  let counts:
+    | {
+        total: number;
+        passed: number;
+        failed: number;
+        durationMs?: number;
+      }
+    | undefined;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const candidate = parseCtestStatusLine(line);
+    if (candidate) {
+      counts = candidate;
+      continue;
+    }
+    const durationMs = parseCtestDurationLine(line);
+    if (durationMs !== undefined && counts) {
+      counts.durationMs = durationMs;
+      continue;
+    }
+    if (/^Total Test time\b/.test(line)) {
+      return undefined;
+    }
+  }
+  if (!counts) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "ctest",
+  };
+  assignNumber(report, "total", counts.total);
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "durationMs", counts.durationMs);
+  return hasReportCounts(report) ? report : undefined;
+}
+
 function parseGenericReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
   const line = matchFirstNamedLine(text, ["Tests", "Test Results", "Test Summary", "Summary", "Results"]);
   if (!line) {
@@ -1436,6 +1476,43 @@ function parseDotnetDurationMs(text: string): number | undefined {
     }
   }
   return Math.round(total * 1000) / 1000;
+}
+
+function parseCtestStatusLine(line: string): {
+  total: number;
+  passed: number;
+  failed: number;
+} | undefined {
+  const match = /^(\d+)% tests? passed,\s*(\d+)\s+tests? failed out of\s+(\d+)$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const percent = Number.parseInt(match[1] ?? "", 10);
+  const failed = Number.parseInt(match[2] ?? "", 10);
+  const total = Number.parseInt(match[3] ?? "", 10);
+  if (![percent, failed, total].every((value) => Number.isInteger(value) && value >= 0) || percent > 100) {
+    return undefined;
+  }
+  const passed = total - failed;
+  if (total <= 0 || passed < 0) {
+    return undefined;
+  }
+  if (Math.round((passed / total) * 100) !== percent) {
+    return undefined;
+  }
+  return {
+    total,
+    passed,
+    failed,
+  };
+}
+
+function parseCtestDurationLine(line: string): number | undefined {
+  const match = /^Total Test time \(real\) =\s+(\d+(?:\.\d+)?)\s+sec$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  return parseSecondsDurationMs(match[1] ?? "");
 }
 
 function parsePhpunitOkLine(line: string): {

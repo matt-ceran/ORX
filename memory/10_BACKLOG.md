@@ -1,6 +1,6 @@
 # Backlog
 
-Last updated: 2026-06-30
+Last updated: 2026-07-01
 
 ## P0
 
@@ -22,6 +22,7 @@ Completed:
 - Add JUnit/Surefire-style text summary parsing: when already-captured bounded test stdout/stderr contains exact `Tests run: N, Failures: N, Errors: N, Skipped: N` summary lines with optional Maven log prefix, failure marker, and elapsed time/class suffix, ORX parses compact numeric counts before generic summary fallback without adding reporter flags, report files, installs, network, or model-tool exposure changes.
 - Add PHPUnit-style text summary parsing: when already-captured bounded test stdout/stderr contains exact `OK (N tests, N assertions)` or `Tests: N, Assertions: N, ...` final summary lines, ORX parses compact numeric counts before generic summary fallback without adding reporter flags, report files, installs, network, or model-tool exposure changes.
 - Add `.NET test` summary parsing: when already-captured bounded test stdout/stderr contains exact `Passed!` or `Failed!` final summary lines with ordered failed/passed/skipped/total counts and optional duration, ORX parses compact numeric counts before generic summary fallback without adding reporter flags, report files, installs, network, or model-tool exposure changes.
+- Add CTest summary parsing: when already-captured bounded test stdout/stderr contains exact `N% tests passed, N tests failed out of N` final summary lines with optional exact `Total Test time (real) = Ns`, ORX parses compact numeric counts before generic summary fallback without adding reporter flags, report files, installs, network, or model-tool exposure changes.
 - Add private JSON report files for package-script JSON reporters: when Jest/Vitest/Playwright package scripts already declare append-safe JSON reporters and do not declare their own output file, ORX requests an ORX-owned temporary JSON report file, parses bounded counts before stdout/stderr fallback, and deletes the temp directory without forcing JSON reporters onto default scripts.
 - Add default-reporter package-script JSON report files: when exact final no-reporter `jest`, `vitest`, or `playwright test` package-script invocations do not declare their own output file, ORX requests an ORX-owned temporary JSON report file, parses bounded counts before stdout/stderr fallback, and keeps wrapper commands, custom reporters, and unsafe multi-step shapes on fallback. Declared JSON output paths are now handled by the later read-only parsing slice.
 - Add parsing for declared framework JSON report files: when an append-safe Jest/Vitest/Playwright package-script run already declares a JSON reporter output file through the script or per-run args, ORX reads a changed cwd-confined bounded JSON report after the run without creating, mutating, or deleting the declared file, and ignores stale files, symlink/out-of-cwd paths, wrapper commands, non-JSON/custom reporters, and unsafe multi-step shapes.
@@ -231,7 +232,7 @@ Next:
 - Extend model-loop MCP controls with clearer prompt-injection boundaries and optional operator grants for any future billable/write model exposure.
 - Extend plugin metadata further only where needed for remote source UX, marketplace/catalog trust, or executable surface policy decisions.
 - Extend tree-sitter-backed code intelligence beyond the current operator parse/outline/single-file-import/single-file-ref/repo-ref/single-file-call/repo-call/repo-import previews into richer semantic reference and dependency-resolution slices when grammar/runtime constraints are acceptable.
-- Extend structured test report ingestion beyond direct Node JUnit, captured TAP/Mocha/pytest/Cargo/Go/RSpec/Python-unittest/JUnit-text/PHPUnit/dotnet-style summaries, JSON stdout/stderr, JSON reporter temp files, exact default framework runner temp files, declared JSON output files, and config-declared JSON output files to additional non-JSON/custom reporters or wrapper commands when safe.
+- Extend structured test report ingestion beyond direct Node JUnit, captured TAP/Mocha/pytest/Cargo/Go/RSpec/Python-unittest/JUnit-text/PHPUnit/dotnet/CTest-style summaries, JSON stdout/stderr, JSON reporter temp files, exact default framework runner temp files, declared JSON output files, and config-declared JSON output files to additional non-JSON/custom reporters or wrapper commands when safe.
 - Extend diagnostics beyond the current TypeScript/Pyright/gopls local CLI profiles with LSP/SCIP bridges for diagnostics, references, hover, and go-to-definition.
 - Add docs/retrieval providers: Context7, DeepWiki, OpenAI Docs, Microsoft Learn, AWS docs, Google Developer Knowledge.
 - Add official GitHub MCP read-only integration before write-capable GitHub operations.

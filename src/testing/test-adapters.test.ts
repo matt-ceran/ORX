@@ -864,6 +864,78 @@ test("parses common framework report summaries", () => {
     parseTestReportSummary(createTarget("unknown"), "Passed! - Failed: 0, Passed: 1, Skipped: 0, Total: 1, Duration: 1 s - after cleanup"),
     undefined,
   );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "100% tests passed, 0 tests failed out of 5",
+        "Total Test time (real) =   0.12 sec",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "ctest",
+      total: 5,
+      passed: 5,
+      failed: 0,
+      durationMs: 120,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "67% tests passed, 1 tests failed out of 3"),
+    {
+      framework: "unknown",
+      source: "ctest",
+      total: 3,
+      passed: 2,
+      failed: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "0% tests passed, 1 test failed out of 1"),
+    {
+      framework: "node",
+      source: "ctest",
+      total: 1,
+      passed: 0,
+      failed: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "100% tests passed, 0 tests failed out of 1",
+        "0% tests passed, 1 test failed out of 1",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "ctest",
+      total: 1,
+      passed: 0,
+      failed: 1,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "66% tests passed, 1 tests failed out of 3"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "100% tests passed, 1 tests failed out of 1"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "100% tests passed, 0 tests failed out of 0"), undefined);
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "100% tests passed, 0 tests failed out of 5 after cleanup"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "100% tests passed, 0 tests failed out of 5\nTotal Test time (real) = 0.12 sec after cleanup",
+    ),
+    undefined,
+  );
 });
 
 test("parses structured framework JSON reports before stdout fallback", () => {
