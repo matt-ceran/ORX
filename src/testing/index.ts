@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -348,6 +348,16 @@ export function parseTestReportSummary(
     parseFrameworkJsonReportSummary(limitReportText(stderr), target.framework);
   if (jsonReport && hasReportCounts(jsonReport)) {
     return jsonReport;
+  }
+
+  const xmlReport =
+    parseCapturedJunitXmlReportSummary(limitReportText(stdout), target.framework) ??
+    parseCapturedJunitXmlReportSummary(limitReportText(stderr), target.framework);
+  if (xmlReport === INVALID_TEST_REPORT) {
+    return undefined;
+  }
+  if (xmlReport && hasReportCounts(xmlReport)) {
+    return xmlReport;
   }
 
   const parsers = orderedReportParsers(target.framework);
@@ -904,6 +914,39 @@ function parseNodeJunitReportSummary(text: string, framework: TestFramework): Te
     assignNumber(report, "passed", Math.max(0, report.total - (report.failed ?? 0) - (report.skipped ?? 0)));
   }
 
+  return hasReportCounts(report) ? report : undefined;
+}
+
+function parseCapturedJunitXmlReportSummary(
+  text: string,
+  framework: TestFramework,
+): TestReportSummary | InvalidTestReport | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (!looksLikeWholeJunitXmlReport(trimmed)) {
+    if (startsLikeJunitXmlReport(trimmed)) {
+      return INVALID_TEST_REPORT;
+    }
+    return undefined;
+  }
+
+  const counts = parseJunitXmlCounts(trimmed);
+  if (!counts) {
+    return INVALID_TEST_REPORT;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "junit-xml",
+  };
+  assignNumber(report, "total", counts.total);
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
+  assignNumber(report, "suites", counts.suites);
+  assignNumber(report, "durationMs", counts.durationMs);
   return hasReportCounts(report) ? report : undefined;
 }
 
@@ -5207,6 +5250,542 @@ function matchXmlAttributeNumber(text: string, attribute: string): number | unde
   const escaped = attribute.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = text.match(new RegExp(`\\b${escaped}=["'](\\d+(?:\\.\\d+)?)["']`, "i"));
   return match ? Number.parseFloat(match[1]) : undefined;
+}
+
+function looksLikeWholeJunitXmlReport(text: string): boolean {
+  const rootName = matchWholeXmlRootName(stripXmlDeclaration(text).trim());
+  return rootName === "testsuite" || rootName === "testsuites";
+}
+
+function startsLikeJunitXmlReport(text: string): boolean {
+  const rootName = matchFirstXmlRootName(stripXmlDeclaration(text).trim());
+  return rootName === "testsuite" || rootName === "testsuites";
+}
+
+function stripXmlDeclaration(text: string): string {
+  return text.replace(/^\s*<\?xml\b[^>]*\?>\s*/i, "");
+}
+
+function matchFirstXmlRootName(text: string): string | undefined {
+  let searchIndex = 0;
+  while (searchIndex < text.length) {
+    const tagStart = text.indexOf("<", searchIndex);
+    if (tagStart < 0) {
+      return undefined;
+    }
+    if (text.slice(searchIndex, tagStart).trim()) {
+      return undefined;
+    }
+    const token = readXmlToken(text, tagStart);
+    if (!token) {
+      return undefined;
+    }
+    searchIndex = token.end + 1;
+    if (isXmlTriviaToken(token)) {
+      continue;
+    }
+    if (token.kind !== "tag") {
+      return undefined;
+    }
+    return matchOpenXmlTagName(token.tag);
+  }
+  return undefined;
+}
+
+function matchWholeXmlRootName(text: string): string | undefined {
+  let rootName: string | undefined;
+  let rootClosed = false;
+  const stack: string[] = [];
+  let searchIndex = 0;
+
+  while (searchIndex < text.length) {
+    const tagStart = text.indexOf("<", searchIndex);
+    if (tagStart < 0) {
+      break;
+    }
+    if (!rootName && text.slice(searchIndex, tagStart).trim()) {
+      return undefined;
+    }
+    if (rootClosed && text.slice(searchIndex, tagStart).trim()) {
+      return undefined;
+    }
+
+    const token = readXmlToken(text, tagStart);
+    if (!token) {
+      return undefined;
+    }
+    searchIndex = token.end + 1;
+
+    if (rootClosed) {
+      if (isXmlTriviaToken(token)) {
+        continue;
+      }
+      return undefined;
+    }
+    if (isXmlTriviaToken(token)) {
+      continue;
+    }
+    if (token.kind === "cdata" && stack.length > 0) {
+      continue;
+    }
+    if (token.kind !== "tag") {
+      return undefined;
+    }
+
+    const closeMatch = /^<\/\s*([A-Za-z_][\w:.-]*)\s*>$/.exec(token.tag);
+    if (closeMatch) {
+      const name = closeMatch[1].toLowerCase();
+      if (stack.pop() !== name) {
+        return undefined;
+      }
+      if (stack.length === 0) {
+        rootClosed = true;
+      }
+      continue;
+    }
+
+    const name = matchOpenXmlTagName(token.tag);
+    if (!name) {
+      return undefined;
+    }
+    const selfClosing = isSelfClosingXmlTag(token.tag);
+    if (!rootName) {
+      rootName = name;
+    }
+    if (!selfClosing) {
+      stack.push(name);
+    } else if (stack.length === 0) {
+      rootClosed = true;
+    }
+  }
+
+  if (!rootClosed || stack.length > 0 || text.slice(searchIndex).trim()) {
+    return undefined;
+  }
+  return rootName;
+}
+
+function readXmlToken(
+  text: string,
+  start: number,
+): { kind: "tag" | "trivia" | "cdata"; tag: string; end: number } | undefined {
+  if (text[start] !== "<") {
+    return undefined;
+  }
+  if (text.startsWith("<!--", start)) {
+    const end = text.indexOf("-->", start + 4);
+    return end < 0 ? undefined : { kind: "trivia", tag: text.slice(start, end + 3), end: end + 2 };
+  }
+  if (text.startsWith("<![CDATA[", start)) {
+    const end = text.indexOf("]]>", start + 9);
+    return end < 0 ? undefined : { kind: "cdata", tag: text.slice(start, end + 3), end: end + 2 };
+  }
+  if (text.startsWith("<?", start)) {
+    const end = text.indexOf("?>", start + 2);
+    return end < 0 ? undefined : { kind: "trivia", tag: text.slice(start, end + 2), end: end + 1 };
+  }
+  if (text.startsWith("<!", start)) {
+    const end = findXmlDeclarationEnd(text, start);
+    return end === undefined ? undefined : { kind: "trivia", tag: text.slice(start, end + 1), end };
+  }
+  const end = findXmlTagEnd(text, start);
+  return end === undefined ? undefined : { kind: "tag", tag: text.slice(start, end + 1), end };
+}
+
+function findXmlTagEnd(text: string, start: number): number | undefined {
+  let quote: string | undefined;
+  for (let index = start + 1; index < text.length; index += 1) {
+    const character = text[index];
+    if (quote) {
+      if (character === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === ">") {
+      return index;
+    }
+  }
+  return undefined;
+}
+
+function findXmlDeclarationEnd(text: string, start: number): number | undefined {
+  let quote: string | undefined;
+  let bracketDepth = 0;
+  for (let index = start + 2; index < text.length; index += 1) {
+    const character = text[index];
+    if (quote) {
+      if (character === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+    if (character === "]" && bracketDepth > 0) {
+      bracketDepth -= 1;
+      continue;
+    }
+    if (character === ">" && bracketDepth === 0) {
+      return index;
+    }
+  }
+  return undefined;
+}
+
+function isXmlTriviaToken(token: { kind: "tag" | "trivia" | "cdata" }): boolean {
+  return token.kind === "trivia";
+}
+
+function matchOpenXmlTagName(tag: string): string | undefined {
+  const match = /^<\s*([A-Za-z_][\w:.-]*)\b[\s\S]*>$/.exec(tag);
+  return match?.[1].toLowerCase();
+}
+
+function isSelfClosingXmlTag(tag: string): boolean {
+  for (let index = tag.length - 2; index >= 0; index -= 1) {
+    const character = tag[index];
+    if (!/\s/.test(character)) {
+      return character === "/";
+    }
+  }
+  return false;
+}
+
+function collectXmlStartTagAttributes(text: string, tagName: string): string[] | undefined {
+  const attributes: string[] = [];
+  const normalizedTagName = tagName.toLowerCase();
+  let searchIndex = 0;
+  while (searchIndex < text.length) {
+    const tagStart = text.indexOf("<", searchIndex);
+    if (tagStart < 0) {
+      break;
+    }
+    const token = readXmlToken(text, tagStart);
+    if (!token) {
+      return undefined;
+    }
+    searchIndex = token.end + 1;
+    if (token.kind !== "tag" || /^<\s*\//.test(token.tag)) {
+      continue;
+    }
+    const name = matchOpenXmlTagName(token.tag);
+    if (name !== normalizedTagName) {
+      continue;
+    }
+    const nameEnd = token.tag.search(/\s|\/|>/);
+    const rawAttributes = nameEnd < 0 ? "" : token.tag.slice(nameEnd, -1);
+    attributes.push(rawAttributes.replace(/\/\s*$/, ""));
+  }
+  return attributes;
+}
+
+function parseJunitXmlCounts(text: string):
+  | {
+      total: number;
+      passed: number;
+      failed: number;
+      skipped: number;
+      suites?: number;
+      durationMs?: number;
+    }
+  | undefined {
+  const rootSuiteTags = collectXmlStartTagAttributes(text, "testsuites");
+  const suiteTags = collectXmlStartTagAttributes(text, "testsuite");
+  if (!rootSuiteTags || !suiteTags) {
+    return undefined;
+  }
+  const rootSuitesAttributes = rootSuiteTags[0] ?? "";
+  const hasRootSuites = rootSuiteTags.length > 0;
+  const rootCounts = hasRootSuites ? parseJunitXmlSuiteAttributes(rootSuitesAttributes) : undefined;
+  if (hasRootSuites && !rootCounts && hasJunitXmlCountAttribute(rootSuitesAttributes)) {
+    return undefined;
+  }
+
+  let counts:
+    | {
+        total: number;
+        failed: number;
+        skipped: number;
+        suites?: number;
+        durationMs?: number;
+      }
+    | undefined;
+
+  if (rootCounts) {
+    counts = {
+      total: rootCounts.total,
+      failed: rootCounts.failed,
+      skipped: rootCounts.skipped,
+      suites: rootCounts.suites ?? suiteTags.length,
+      durationMs: rootCounts.durationMs,
+    };
+    const childCounts = parseJunitXmlSuiteTagCounts(suiteTags);
+    if (childCounts && !junitXmlCountsAgree(counts, childCounts)) {
+      return undefined;
+    }
+    if (!childCounts && suiteTags.some(hasJunitXmlCountAttribute)) {
+      return undefined;
+    }
+  } else {
+    const childCounts = parseJunitXmlSuiteTagCounts(suiteTags);
+    if (!childCounts && suiteTags.some(hasJunitXmlCountAttribute)) {
+      return undefined;
+    }
+    counts = childCounts ?? parseJunitXmlTestcaseCounts(text);
+  }
+
+  if (!counts) {
+    return undefined;
+  }
+  const passed = counts.total - counts.failed - counts.skipped;
+  if (counts.total < 0 || counts.failed < 0 || counts.skipped < 0 || passed < 0) {
+    return undefined;
+  }
+  return {
+    total: counts.total,
+    passed,
+    failed: counts.failed,
+    skipped: counts.skipped,
+    suites: counts.suites,
+    durationMs: counts.durationMs,
+  };
+}
+
+function parseJunitXmlSuiteTagCounts(tags: string[]):
+  | {
+      total: number;
+      failed: number;
+      skipped: number;
+      suites: number;
+      durationMs?: number;
+    }
+  | undefined {
+  if (tags.length === 0) {
+    return undefined;
+  }
+  let total = 0;
+  let failed = 0;
+  let skipped = 0;
+  let durationMs = 0;
+  let hasDuration = false;
+  for (const tag of tags) {
+    const counts = parseJunitXmlSuiteAttributes(tag);
+    if (!counts) {
+      return undefined;
+    }
+    total += counts.total;
+    failed += counts.failed;
+    skipped += counts.skipped;
+    if (counts.durationMs !== undefined) {
+      durationMs += counts.durationMs;
+      hasDuration = true;
+    }
+  }
+  if (![total, failed, skipped].every(Number.isSafeInteger)) {
+    return undefined;
+  }
+  return {
+    total,
+    failed,
+    skipped,
+    suites: tags.length,
+    durationMs: hasDuration ? Math.round(durationMs * 1000) / 1000 : undefined,
+  };
+}
+
+function parseJunitXmlSuiteAttributes(attributes: string):
+  | {
+      total: number;
+      failed: number;
+      skipped: number;
+      suites?: number;
+      durationMs?: number;
+    }
+  | undefined {
+  const total = matchXmlIntegerAttribute(attributes, "tests");
+  if (total === undefined) {
+    return undefined;
+  }
+  const failures = matchOptionalXmlIntegerAttribute(attributes, "failures", 0);
+  const errors = matchOptionalXmlIntegerAttribute(attributes, "errors", 0);
+  const skipped = matchOptionalXmlIntegerAttribute(attributes, "skipped", 0);
+  const disabled = matchOptionalXmlIntegerAttribute(attributes, "disabled", 0);
+  const suites = matchOptionalXmlIntegerAttribute(attributes, "suites");
+  const seconds = matchOptionalXmlDecimalAttribute(attributes, "time");
+  if (
+    failures === null ||
+    errors === null ||
+    skipped === null ||
+    disabled === null ||
+    suites === null ||
+    seconds === null
+  ) {
+    return undefined;
+  }
+  const failed = failures + errors;
+  const skippedTotal = skipped + disabled;
+  if (![failed, skippedTotal].every(Number.isSafeInteger)) {
+    return undefined;
+  }
+  return {
+    total,
+    failed,
+    skipped: skippedTotal,
+    suites,
+    durationMs: seconds === undefined ? undefined : Math.round(seconds * 1000 * 1000) / 1000,
+  };
+}
+
+function parseJunitXmlTestcaseCounts(text: string):
+  | {
+      total: number;
+      failed: number;
+      skipped: number;
+      suites: number;
+    }
+  | undefined {
+  const testcases = collectXmlStartTagAttributes(text, "testcase");
+  const failures = collectXmlStartTagAttributes(text, "failure");
+  const errors = collectXmlStartTagAttributes(text, "error");
+  const skipped = collectXmlStartTagAttributes(text, "skipped");
+  const suites = collectXmlStartTagAttributes(text, "testsuite");
+  if (!testcases || !failures || !errors || !skipped || !suites) {
+    return undefined;
+  }
+  const total = testcases.length;
+  if (total <= 0) {
+    return undefined;
+  }
+  return {
+    total,
+    failed: failures.length + errors.length,
+    skipped: skipped.length,
+    suites: suites.length || 1,
+  };
+}
+
+function junitXmlCountsAgree(
+  aggregate: { total: number; failed: number; skipped: number },
+  children: { total: number; failed: number; skipped: number },
+): boolean {
+  return aggregate.total === children.total &&
+    aggregate.failed === children.failed &&
+    aggregate.skipped === children.skipped;
+}
+
+function matchXmlIntegerAttribute(text: string, attribute: string): number | undefined {
+  const value = matchXmlAttributeValue(text, attribute);
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!/^(?:0|[1-9]\d*)$/.test(value)) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+function matchOptionalXmlIntegerAttribute(text: string, attribute: string): number | undefined | null;
+function matchOptionalXmlIntegerAttribute(text: string, attribute: string, defaultValue: number): number | null;
+function matchOptionalXmlIntegerAttribute(text: string, attribute: string, defaultValue?: number): number | undefined | null {
+  const value = matchXmlAttributeValue(text, attribute);
+  if (value === undefined) {
+    return defaultValue;
+  }
+  return matchXmlIntegerAttribute(text, attribute) ?? null;
+}
+
+function matchXmlDecimalAttribute(text: string, attribute: string): number | undefined {
+  const value = matchXmlAttributeValue(text, attribute);
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function matchOptionalXmlDecimalAttribute(text: string, attribute: string): number | undefined | null {
+  const value = matchXmlAttributeValue(text, attribute);
+  if (value === undefined) {
+    return undefined;
+  }
+  return matchXmlDecimalAttribute(text, attribute) ?? null;
+}
+
+function matchXmlAttributeValue(text: string, attribute: string): string | undefined {
+  const target = attribute.toLowerCase();
+  let quote: string | undefined;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quote) {
+      if (character === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (text.slice(index, index + attribute.length).toLowerCase() !== target) {
+      continue;
+    }
+    if (isXmlNameCharacter(text[index - 1]) || isXmlNameCharacter(text[index + attribute.length])) {
+      continue;
+    }
+
+    let cursor = index + attribute.length;
+    while (cursor < text.length && /\s/.test(text[cursor])) {
+      cursor += 1;
+    }
+    if (text[cursor] !== "=") {
+      continue;
+    }
+    cursor += 1;
+    while (cursor < text.length && /\s/.test(text[cursor])) {
+      cursor += 1;
+    }
+    const valueQuote = text[cursor];
+    if (valueQuote !== '"' && valueQuote !== "'") {
+      return undefined;
+    }
+    cursor += 1;
+    const valueStart = cursor;
+    while (cursor < text.length && text[cursor] !== valueQuote) {
+      cursor += 1;
+    }
+    if (cursor >= text.length) {
+      return undefined;
+    }
+    return text.slice(valueStart, cursor);
+  }
+
+  return undefined;
+}
+
+function isXmlNameCharacter(character: string | undefined): boolean {
+  return character !== undefined && /[A-Za-z0-9_.:-]/.test(character);
+}
+
+function hasJunitXmlCountAttribute(text: string): boolean {
+  return ["tests", "failures", "errors", "skipped", "disabled"].some((attribute) =>
+    matchXmlAttributeValue(text, attribute) !== undefined
+  );
 }
 
 function countXmlTags(text: string, tag: string): number | undefined {

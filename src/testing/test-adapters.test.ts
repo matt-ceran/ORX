@@ -3954,6 +3954,294 @@ test("parses structured framework JSON reports before stdout fallback", () => {
   );
 });
 
+test("parses captured JUnit XML reports before text fallback", () => {
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<testsuite name="unit" tests="4" failures="1" errors="1" skipped="1" time="0.250">',
+        '  <testcase name="passes"/>',
+        '  <testcase name="fails"><failure message="bad"/></testcase>',
+        '  <testcase name="errors"><error message="boom"/></testcase>',
+        '  <testcase name="skips"><skipped/></testcase>',
+        "</testsuite>",
+      ].join("\n"),
+      "Tests: 99 passed, 99 total",
+    ),
+    {
+      framework: "unknown",
+      source: "junit-xml",
+      total: 4,
+      passed: 1,
+      failed: 2,
+      skipped: 1,
+      suites: 1,
+      durationMs: 250,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        '<testsuites name="all" tests="5" failures="1" errors="0" skipped="1" suites="2" time="0.500">',
+        '  <testsuite name="a" tests="2" failures="1" errors="0" skipped="0" time="0.200"/>',
+        '  <testsuite name="b" tests="3" failures="0" errors="0" skipped="1" time="0.300"/>',
+        "</testsuites>",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "junit-xml",
+      total: 5,
+      passed: 3,
+      failed: 1,
+      skipped: 1,
+      suites: 2,
+      durationMs: 500,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        '<testsuite time="0.250">',
+        '  <testcase name="passes"/>',
+        '  <testcase name="fails"><failure/></testcase>',
+        '  <testcase name="errors"><error/></testcase>',
+        '  <testcase name="skips"><skipped/></testcase>',
+        "</testsuite>",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "junit-xml",
+      total: 4,
+      passed: 1,
+      failed: 2,
+      skipped: 1,
+      suites: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "<!-- generated report -->",
+        "<testsuite>",
+        '  <testcase name="fails"><failure message="expected > actual"/></testcase>',
+        "</testsuite>",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "junit-xml",
+      total: 1,
+      passed: 0,
+      failed: 1,
+      skipped: 0,
+      suites: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<testsuite name=\'failures="1" > suite\' tests="1" failures="0" errors="0" skipped="0"></testsuite>',
+    ),
+    {
+      framework: "unknown",
+      source: "junit-xml",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      suites: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<testsuite name=\'tests="01" > suite\' tests="1" failures="0" errors="0" skipped="0"></testsuite>',
+    ),
+    {
+      framework: "unknown",
+      source: "junit-xml",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      suites: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        '<testsuite tests="1" failures="1" errors="0" skipped="0">',
+        '  <testcase name="fails"><failure><![CDATA[expected > actual]]></failure></testcase>',
+        "</testsuite>",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "junit-xml",
+      total: 1,
+      passed: 0,
+      failed: 1,
+      skipped: 0,
+      suites: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "debug before xml",
+        '<testsuite tests="1" failures="0" errors="0" skipped="0"></testsuite>',
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "generic",
+      total: 1,
+      passed: 1,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<testsuite tests="1" failures="2" errors="0" skipped="0"></testsuite>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<testsuite tests="9007199254740993" failures="0" errors="0" skipped="0"></testsuite>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<testsuite tests="01" failures="0" errors="0" skipped="0"></testsuite>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<testsuite tests="1" failures="oops" errors="0" skipped="0"></testsuite>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        '<testsuite tests="2" failures="oops" errors="0" skipped="0">',
+        '  <testcase name="a"/>',
+        '  <testcase name="b"/>',
+        "</testsuite>",
+      ].join("\n"),
+      "Test Summary: 2 passed, 2 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        '<testsuites tests="2" failures="0" errors="0" skipped="0">',
+        '  <testsuite name="a" tests="1" failures="0" errors="0" skipped="0"/>',
+        "</testsuites>",
+      ].join("\n"),
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<testsuite tests="1" failures="0" errors="0" skipped="0"></testsuites>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        '<testsuite tests="1" failures="0" errors="0" skipped="0"></testsuite>',
+        '<testsuite tests="1" failures="0" errors="0" skipped="0"></testsuite>',
+      ].join("\n"),
+      "Test Summary: 2 passed, 2 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "<!-- generated report -->",
+        '<testsuite tests="1" failures="0" errors="0" skipped="0"></testsuite>',
+        '<testsuite tests="1" failures="0" errors="0" skipped="0"></testsuite>',
+      ].join("\n"),
+      "Test Summary: 2 passed, 2 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "<!DOCTYPE testsuite>",
+        '<testsuite tests="1" failures="0" errors="0" skipped="0"></testsuite>',
+        '<testsuite tests="1" failures="0" errors="0" skipped="0"></testsuite>',
+      ].join("\n"),
+      "Test Summary: 2 passed, 2 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        '<testsuites tests="1" failures="0" errors="0" skipped="0">',
+        '  <testsuite name="a" tests="01" failures="0" errors="0" skipped="0"/>',
+        "</testsuites>",
+      ].join("\n"),
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        '<testsuites tests="1" failures="0" errors="0" skipped="0">',
+        '  <testsuite name="a" tests="9007199254740993" failures="0" errors="0" skipped="0"/>',
+        "</testsuites>",
+      ].join("\n"),
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+});
+
 test("parses node structured JUnit reports before stdout fallback", () => {
   const target = createTarget("node");
   const report = [
