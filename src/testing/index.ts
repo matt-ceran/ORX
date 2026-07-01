@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "go" | "rspec" | "minitest" | "unittest" | "junit-text" | "phpunit" | "dotnet" | "ctest" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "go" | "rspec" | "minitest" | "karma" | "unittest" | "junit-text" | "phpunit" | "dotnet" | "ctest" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -706,11 +706,11 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     unknown: parseGenericReportSummary,
   };
   if (framework === "node") {
-    return [parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseMinitestReportSummary, parseGenericReportSummary];
+    return [parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary]
-    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
+    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary]
+    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -1191,6 +1191,36 @@ function parseMinitestReportSummary(text: string, framework: TestFramework): Tes
   return hasReportCounts(report) ? report : undefined;
 }
 
+function parseKarmaReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  let counts:
+    | {
+        total: number;
+        passed: number;
+        failed: number;
+        skipped: number;
+      }
+    | undefined;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const candidate = parseKarmaStatusLine(rawLine.trim());
+    if (candidate) {
+      counts = candidate;
+    }
+  }
+  if (!counts) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "karma",
+  };
+  assignNumber(report, "total", counts.total);
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
+  return hasReportCounts(report) ? report : undefined;
+}
+
 function parsePythonUnittestReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
   let run:
     | {
@@ -1632,6 +1662,46 @@ function parseMinitestDurationLine(line: string): number | undefined {
     return undefined;
   }
   return parseSecondsDurationMs(match[1] ?? "");
+}
+
+function parseKarmaStatusLine(line: string): {
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+} | undefined {
+  const match = /^TOTAL:\s+(.+)$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+
+  let passed = 0;
+  let failed = 0;
+  let skipped = 0;
+  for (const segment of (match[1] ?? "").split(/,\s+/)) {
+    const segmentMatch = /^(\d+)\s+(SUCCESS|FAILED|SKIPPED)$/.exec(segment);
+    if (!segmentMatch) {
+      return undefined;
+    }
+    const value = Number.parseInt(segmentMatch[1] ?? "", 10);
+    if (!Number.isInteger(value) || value < 0) {
+      return undefined;
+    }
+    const label = segmentMatch[2] ?? "";
+    if (label === "SUCCESS") {
+      passed += value;
+    } else if (label === "FAILED") {
+      failed += value;
+    } else {
+      skipped += value;
+    }
+  }
+  return {
+    total: passed + failed + skipped,
+    passed,
+    failed,
+    skipped,
+  };
 }
 
 function parseXctestStatusLine(line: string): {

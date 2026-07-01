@@ -582,6 +582,64 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "TOTAL: 1 FAILED, 2 SUCCESS, 1 SKIPPED"),
+    {
+      framework: "unknown",
+      source: "karma",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "TOTAL: 69 SUCCESS"),
+    {
+      framework: "unknown",
+      source: "karma",
+      total: 69,
+      passed: 69,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "TOTAL: 2 SUCCESS"),
+    {
+      framework: "node",
+      source: "karma",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "TOTAL: 1 SUCCESS",
+        "TOTAL: 1 FAILED, 1 SUCCESS",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "karma",
+      total: 2,
+      passed: 1,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "TOTAL: 2 SUCCESS after cleanup"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "TOTAL: 1 SUCCESS, 1 ERROR"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "Total: 1 SUCCESS"), undefined);
+
+  assert.deepEqual(
     parseTestReportSummary(
       createTarget("unknown"),
       [
