@@ -572,6 +572,59 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "00:02 +3 ~1: All tests passed!"),
+    {
+      framework: "unknown",
+      source: "dart",
+      total: 4,
+      passed: 3,
+      failed: 0,
+      skipped: 1,
+      durationMs: 2000,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "01:02 +2 -1 ~1: Some tests failed."),
+    {
+      framework: "unknown",
+      source: "dart",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+      durationMs: 62000,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "01:02:03 +0 ~2: All tests skipped."),
+    {
+      framework: "node",
+      source: "dart",
+      total: 2,
+      passed: 0,
+      failed: 0,
+      skipped: 2,
+      durationMs: 3723000,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "00:00 +1: loading test/widget_test.dart"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "00:00 +1 -1: All tests passed!"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "00:01 +0 ~1: All tests passed!"), undefined);
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "00:00 +1 -1: All tests passed!",
+        "Summary: 2 total, 1 passed",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
     parseTestReportSummary(
       createTarget("unknown"),
       [
