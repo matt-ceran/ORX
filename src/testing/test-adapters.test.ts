@@ -692,6 +692,82 @@ test("parses common framework report summaries", () => {
     parseTestReportSummary(createTarget("unknown"), "[ERROR] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0 after cleanup"),
     undefined,
   );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "OK (3 tests, 5 assertions)"),
+    {
+      framework: "unknown",
+      source: "phpunit",
+      total: 3,
+      passed: 3,
+      failed: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "Tests: 6, Assertions: 8, Errors: 1, Failures: 1, Skipped: 1, Incomplete: 1, Risky: 1.",
+    ),
+    {
+      framework: "unknown",
+      source: "phpunit",
+      total: 6,
+      passed: 1,
+      failed: 3,
+      skipped: 1,
+      todo: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "Test: 1, Assertion: 1, Failure: 1."),
+    {
+      framework: "unknown",
+      source: "phpunit",
+      total: 1,
+      passed: 0,
+      failed: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "OK (2 tests, 4 assertions)"),
+    {
+      framework: "node",
+      source: "phpunit",
+      total: 2,
+      passed: 2,
+      failed: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "OK (1 test, 1 assertion)",
+        "Tests: 2, Assertions: 2, Failure: 1.",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "phpunit",
+      total: 2,
+      passed: 1,
+      failed: 1,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "OK (3 tests, 5 assertions) after cleanup"), undefined);
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "Tests: 2, Assertions: 2, Errors: 2, Failures: 1."),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "Tests: 2, Assertions: 2, Failures: 1. after cleanup"),
+    undefined,
+  );
 });
 
 test("parses structured framework JSON reports before stdout fallback", () => {
