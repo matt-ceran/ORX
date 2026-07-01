@@ -1061,6 +1061,73 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "All tests passed (4 assertions in 2 test cases)"),
+    {
+      framework: "unknown",
+      source: "catch2",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "test cases: 4 | 2 passed | 1 failed | 1 skipped"),
+    {
+      framework: "node",
+      source: "catch2",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "test cases: 1 | 1 passed",
+        "test cases: 3 | 1 passed | 1 failed | 1 skipped",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "catch2",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "test cases: 2 | 3 passed"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "test cases: 2 | 1 passed | 1 errored"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "All tests passed (4 assertions in 2 test cases) after cleanup"), undefined);
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "test cases: 2 | 3 passed",
+        "Test Summary: 3 passed, 3 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "All tests passed (4 assertions in 2 test cases) after cleanup",
+        "ℹ tests 2",
+        "ℹ pass 2",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
     parseTestReportSummary(
       createTarget("unknown"),
       [
