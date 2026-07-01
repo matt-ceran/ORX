@@ -935,6 +935,116 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "     Summary [   0.021s] 14 tests run: 14 passed, 177 skipped",
+    ),
+    {
+      framework: "unknown",
+      source: "nextest",
+      total: 191,
+      passed: 14,
+      failed: 0,
+      skipped: 177,
+      flaky: 0,
+      durationMs: 21,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      "\x1b[32;1m     Summary\x1b[0m [   0.155s] \x1b[1m1\x1b[0m test run: \x1b[1m1\x1b[0m \x1b[32;1mpassed\x1b[0m, \x1b[1m50\x1b[0m \x1b[33;1mskipped\x1b[0m",
+    ),
+    {
+      framework: "node",
+      source: "nextest",
+      total: 51,
+      passed: 1,
+      failed: 0,
+      skipped: 50,
+      flaky: 0,
+      durationMs: 155,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "     Summary [  15.750s] 8/10 tests run: 5 passed (1 slow, 1 flaky, 1 leaky), 2 failed, 1 exec failed, 1 timed out, 2 skipped",
+    ),
+    {
+      framework: "unknown",
+      source: "nextest",
+      total: 11,
+      passed: 5,
+      failed: 4,
+      skipped: 2,
+      flaky: 1,
+      durationMs: 15750,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s",
+        "     Summary [   0.105s] 1 test run: 0 passed, 1 failed (1 due to being leaky), 26 skipped",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "nextest",
+      total: 27,
+      passed: 0,
+      failed: 1,
+      skipped: 26,
+      flaky: 0,
+      durationMs: 105,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "     Summary [ 120.000s] 25/50 stress run iterations: 25 passed"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), " Stress test [ duration] iteration 1/5: 1 test run: 1 passed, 31 skipped"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "     Summary [ duration] 1 test run: 1 passed, 0 skipped",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "     Summary [   0.001s] 1 test run: 1 passed",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "     Summary [   0.001s] 1 test run: 1 passed (1 flaky, 1 flaky), 0 skipped",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
     parseTestReportSummary(createTarget("unknown"), "Total tests run: 4, Passes: 2, Failures: 1, Skips: 1"),
     {
       framework: "unknown",
