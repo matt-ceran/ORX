@@ -909,7 +909,7 @@ function helpText(): string {
     "  bins          List, inspect, trust, untrust, or run plugin bins",
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  tests         Discover or run native test targets",
-    "  code          Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses/outlines/imports/refs/calls/repo-outline/repo-symbols/repo-refs/repo-calls/repo-imports/repo-deps",
+    "  code          Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses/outlines/imports/refs/calls/repo-files/repo-outline/repo-symbols/repo-refs/repo-calls/repo-imports/repo-deps",
     "  scanners      List, inspect, or run local security scanner profiles",
     "  scan          Alias for a local scanner run",
     "  diagnostics  List, inspect, or run local diagnostics profiles",
@@ -1189,7 +1189,7 @@ function runCodeAstGrepCommand(args: string[], io: CliIo): number {
 function runCodeTreeSitterCommand(
   args: string[],
   io: CliIo,
-  options: { defaultMode?: "parse" | "outline" | "imports" | "refs" | "calls" | "repo-outline" | "repo-symbols" | "repo-refs" | "repo-calls" | "repo-imports" | "repo-deps"; usage?: string } = {},
+  options: { defaultMode?: "parse" | "outline" | "imports" | "refs" | "calls" | "repo-files" | "repo-outline" | "repo-symbols" | "repo-refs" | "repo-calls" | "repo-imports" | "repo-deps"; usage?: string } = {},
 ): number {
   const usage = options.usage ?? CODE_TREE_SITTER_USAGE;
   if (isNamespaceHelp(args)) {

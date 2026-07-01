@@ -53,7 +53,7 @@ npm run pack:dry-run
 - First-run/readiness: `orx init`, `orx auth`, `orx auth setup`, `orx auth init`, `orx doctor`, `orx doctor --strict`, `orx doctor --json`, `orx guide`, `orx quickstart`, `orx status`.
 - OpenRouter interaction: `orx` / `orx chat`, `orx ask`, `orx models`, `orx credits`, `orx generation`, exact model ids, `openrouter/auto`, `openrouter/fusion`, Fusion presets, streaming metadata, and cost/token summaries when OpenRouter returns them.
 - Config/local UX: `orx config show|path|set`, profiles, themes, prompt history, TTY status/composer polish, multiline input, command discovery, and slash-command completion.
-- Local coding tools: file/search/shell/diff/patch model tools, native `run_tests`, `orx tests` with discovery-only JSON target listings and structured report summaries, code maps, symbols, refs, imports, lexical call graphs, and optional local ast-grep previews.
+- Local coding tools: file/search/shell/diff/patch model tools, native `run_tests`, `orx tests` with discovery-only JSON target listings and structured report summaries, code maps, symbols, refs, imports, lexical call graphs, optional local ast-grep previews, and optional local tree-sitter parse/file-inventory previews.
 - Explicit operator integrations: TypeScript/Pyright/ESLint/Ruff/Mypy/gopls/clangd diagnostics, Semgrep and Trivy-secret scanner profiles, MCP preset/profile management, guarded MCP calls/model grants, plugin scaffold/validate/install/review, trusted plugin bins/hooks, skills/prompts/rules, and policy-gated delegation.
 - Automation: `npm run verify:release`, `npm run verify:global-install`, and `npm run pack:dry-run`.
 
@@ -70,7 +70,7 @@ OpenRouter remains the normal inference path. Credentials are detected from envi
 
 ## Known optional post-v0.1 work
 
-- LSP/SCIP and deeper semantic tree-sitter-backed reference/call/dependency intelligence beyond the current outline, single-file import/ref/call extraction, bounded repo AST outline/symbol previews, bounded repo AST identifier refs, bounded repo AST call previews, bounded repo AST import-source previews, bounded local-relative repo dependency previews, and dependency-free indexes.
+- LSP/SCIP and deeper semantic tree-sitter-backed reference/call/dependency intelligence beyond the current outline, bounded repo source-file inventory, single-file import/ref/call extraction, bounded repo AST outline/symbol previews, bounded repo AST identifier refs, bounded repo AST call previews, bounded repo AST import-source previews, bounded local-relative repo dependency previews, and dependency-free indexes.
 - Broader test report integrations for additional non-JSON/custom reporters or wrapper commands beyond the current direct Node, captured TAP/Mocha JSON/RSpec JSON/Mocha-style/pytest/Cargo/Cucumber/testthat/GoogleTest/Catch2/Deno/ExUnit/Gradle/JUnit-Platform/TestNG/NUnit/Go/RSpec/Minitest/Karma/Bun/Python-unittest/JUnit-text/JUnit-XML/TestNG-XML/NUnit-XML/xUnit-XML/TRX-XML/Robot-XML/CTest-XML/PHPUnit/dotnet-xUnit/CTest/XCTest-style summaries, declared/config JSON output, existing JSON reporter, exact default Jest/Vitest/Playwright runner paths, and exact no-install npx framework runner paths.
 - Additional provider read-only profiles and any remaining write-capable provider profiles, including GitLab CI-write, only as explicit opt-ins with the same operator boundaries as existing MCP/plugin surfaces.
 - Managed OAuth/device/browser credential flows for MCP providers beyond bearer env vars and opt-in macOS Keychain support.

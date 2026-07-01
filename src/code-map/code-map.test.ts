@@ -1066,6 +1066,33 @@ test("tree-sitter repo outline scans bounded source files without semantic symbo
     writeFileSync(join(cwd, "src", "notes.md"), "export function ignored() {}\n");
     writeFileSync(join(cwd, "node_modules", "pkg", "ignored.ts"), "export function ignored() {}\n");
 
+    const filesParsed = parseCodeTreeSitterArgs(["repo-files", "src"]);
+    if (!filesParsed.ok) {
+      assert.fail(filesParsed.message);
+    }
+    const filesResult = runCodeTreeSitter({
+      ...filesParsed.args,
+      cwd,
+      env: {
+        PATH: "/usr/bin",
+        OPENROUTER_API_KEY: "sk-or-v1-secret",
+      },
+      runner,
+    });
+    assert.equal(filesResult.ok, true);
+    assert.equal(filesResult.mode, "repo-files");
+    assert.equal(filesResult.repoFiles?.targetPath, "src");
+    assert.equal(filesResult.repoFiles?.filesScanned, 2);
+    assert.deepEqual(filesResult.repoFiles?.files, ["src/index.ts", "src/util.ts"]);
+    assert.equal(calls.length, 0);
+    const renderedFiles = renderCodeTreeSitterResult(filesResult);
+    assert.match(renderedFiles, /Code tree-sitter repo files/);
+    assert.match(renderedFiles, /no parsing or semantic analysis/);
+    assert.match(renderedFiles, /files_scanned: 2/);
+    assert.match(renderedFiles, /- src\/index\.ts/);
+    assert.match(renderedFiles, /parse: use repo-outline, repo-symbols, repo-refs, repo-calls, repo-imports, or repo-deps/);
+    assert.doesNotMatch(renderedFiles, /node_modules/);
+
     const parsed = parseCodeTreeSitterArgs(["repo-outline", "src"]);
     if (!parsed.ok) {
       assert.fail(parsed.message);
@@ -1138,6 +1165,20 @@ test("tree-sitter repo outline scans bounded source files without semantic symbo
       assert.equal(defaultTarget.args.mode, "repo-outline");
     }
 
+    const defaultFilesTarget = parseCodeTreeSitterArgs(["repo-files"]);
+    assert.equal(defaultFilesTarget.ok, true);
+    if (defaultFilesTarget.ok) {
+      assert.equal(defaultFilesTarget.args.targetPath, ".");
+      assert.equal(defaultFilesTarget.args.mode, "repo-files");
+    }
+
+    const filesAliasTarget = parseCodeTreeSitterArgs(["repo-source-files", "src"]);
+    assert.equal(filesAliasTarget.ok, true);
+    if (filesAliasTarget.ok) {
+      assert.equal(filesAliasTarget.args.targetPath, "src");
+      assert.equal(filesAliasTarget.args.mode, "repo-files");
+    }
+
     const aliasTarget = parseCodeTreeSitterArgs(["outlines-all", "src"]);
     assert.equal(aliasTarget.ok, true);
     if (aliasTarget.ok) {
@@ -1181,6 +1222,19 @@ test("tree-sitter repo outline scans bounded source files without semantic symbo
     assert.equal(unsupportedFile.ok, true);
     assert.equal(unsupportedFile.repoOutline?.filesScanned, 0);
     assert.ok(unsupportedFile.repoOutline?.omissions.some((omission) =>
+      omission.path === "src/notes.md" &&
+      omission.reason === "source file extension is not supported for tree-sitter repo scan"));
+
+    const unsupportedRepoFilesFile = runCodeTreeSitter({
+      cwd,
+      targetPath: "src/notes.md",
+      mode: "repo-files",
+      runner,
+    });
+    assert.equal(unsupportedRepoFilesFile.ok, true);
+    assert.equal(unsupportedRepoFilesFile.repoFiles?.filesScanned, 0);
+    assert.ok(unsupportedRepoFilesFile.repoFiles?.warnings.includes("no source files found for bounded tree-sitter repo file scan"));
+    assert.ok(unsupportedRepoFilesFile.repoFiles?.omissions.some((omission) =>
       omission.path === "src/notes.md" &&
       omission.reason === "source file extension is not supported for tree-sitter repo scan"));
   } finally {

@@ -1715,6 +1715,18 @@ test("cli code map renders a bounded repository overview without an API key", as
         stderr: "",
       };
     };
+
+    const treeSitterRepoFiles = createIo({ cwd, treeSitterRunner });
+    assert.equal(
+      await runCli(["node", "cli", "code", "tree-sitter", "repo-files", "src/index.ts"], {}, treeSitterRepoFiles.io),
+      0,
+    );
+    assert.match(treeSitterRepoFiles.stdout(), /Code tree-sitter repo files/);
+    assert.match(treeSitterRepoFiles.stdout(), /no parsing or semantic analysis/);
+    assert.match(treeSitterRepoFiles.stdout(), /files_scanned: 1/);
+    assert.match(treeSitterRepoFiles.stdout(), /- src\/index\.ts/);
+    assert.equal(treeSitterCalls.length, 0);
+
     const treeSitterOutline = createIo({ cwd, treeSitterRunner });
     assert.equal(
       await runCli(["node", "cli", "code", "tree-sitter", "outline", "src/index.ts"], {}, treeSitterOutline.io),
