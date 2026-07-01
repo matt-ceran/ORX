@@ -1615,7 +1615,7 @@ test("tree-sitter repo deps resolves bounded local relative imports without pack
 
     const rendered = renderCodeTreeSitterResult(result);
     assert.match(rendered, /Code tree-sitter repo deps/);
-    assert.match(rendered, /local relative imports only/);
+    assert.match(rendered, /local relative imports and safe tsconfig paths only/);
     assert.match(rendered, /not package or semantic resolution/);
     assert.match(rendered, /files_scanned: 3/);
     assert.match(rendered, /files_with_dependencies: 1/);
@@ -1623,10 +1623,10 @@ test("tree-sitter repo deps resolves bounded local relative imports without pack
     assert.match(rendered, /local_dependencies: 2/);
     assert.match(rendered, /external_imports: 1/);
     assert.match(rendered, /unresolved_local_imports: 1/);
-    assert.match(rendered, /from="src\/index\.ts" to="src\/util\.ts" specifier="\.\/util\.js" resolution=local kind="import" line=1 column=1/);
+    assert.match(rendered, /from="src\/index\.ts" to="src\/util\.ts" specifier="\.\/util\.js" resolution=local resolution_detail=relative kind="import" line=1 column=1/);
     assert.match(rendered, /from="src\/index\.ts" to="external" specifier="external-pkg" resolution=external kind="import" line=2 column=1/);
     assert.match(rendered, /from="src\/index\.ts" to="unresolved_local" specifier="\.\/missing" resolution=unresolved_local kind="require" line=3 column=17/);
-    assert.match(rendered, /from="src\/index\.ts" to="src\/feature\/index\.ts" specifier="\.\/feature" resolution=local kind="reexport" line=4 column=1/);
+    assert.match(rendered, /from="src\/index\.ts" to="src\/feature\/index\.ts" specifier="\.\/feature" resolution=local resolution_detail=relative kind="reexport" line=4 column=1/);
     assert.doesNotMatch(rendered, /node_modules/);
 
     const defaultTarget = parseCodeTreeSitterArgs(["repo-deps"]);
@@ -1662,6 +1662,176 @@ test("tree-sitter repo deps resolves bounded local relative imports without pack
     assert.equal(generatedTarget.ok, false);
     assert.equal(generatedTarget.status, "invalid_arguments");
     assert.match(renderCodeTreeSitterResult(generatedTarget), /generated or vendor directories/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("tree-sitter repo deps resolves safe tsconfig path aliases and baseUrl without package overclaim", () => {
+  const cwd = createTempDir();
+  const runner: TreeSitterRunner = (command, args) => {
+    if (args.includes("--version")) {
+      return { status: command === "tree-sitter" ? 0 : 1, signal: null, stdout: "tree-sitter 0.0.0\n", stderr: "" };
+    }
+    if (args[1] === "src/index.ts") {
+      return {
+        status: 0,
+        signal: null,
+        stdout: [
+          "(program [0, 0] - [5, 0]",
+          "  (import_statement [0, 0] - [0, 31]",
+          "    source: (string [0, 20] - [0, 30]",
+          "      (string_fragment [0, 21] - [0, 29])))",
+          "  (import_statement [1, 0] - [1, 36]",
+          "    source: (string [1, 21] - [1, 35]",
+          "      (string_fragment [1, 22] - [1, 34])))",
+          "  (import_statement [2, 0] - [2, 30]",
+          "    source: (string [2, 16] - [2, 29]",
+          "      (string_fragment [2, 17] - [2, 28])))",
+          "  (import_statement [3, 0] - [3, 26]",
+          "    source: (string [3, 18] - [3, 25]",
+          "      (string_fragment [3, 19] - [3, 24])))",
+          "",
+        ].join("\n"),
+        stderr: "",
+      };
+    }
+    return {
+      status: 0,
+      signal: null,
+      stdout: "(program [0, 0] - [1, 0]\n",
+      stderr: "",
+    };
+  };
+
+  try {
+    mkdirSync(join(cwd, "src", "app"), { recursive: true });
+    mkdirSync(join(cwd, "src", "lib"), { recursive: true });
+    writeFileSync(
+      join(cwd, "tsconfig.json"),
+      [
+        "{",
+        "  // JSONC is accepted for root tsconfig path previews.",
+        "  \"compilerOptions\": {",
+        "    \"baseUrl\": \".\",",
+        "    \"paths\": {",
+        "      \"@lib/*\": [\"src/lib/*\"],",
+        "      \"@bad/*\": [\"../outside/*\"],",
+        "    },",
+        "  },",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(cwd, "src", "index.ts"),
+      [
+        "import { foo } from '@lib/foo';",
+        "import { root } from 'src/app/root';",
+        "import bad from '@bad/secret';",
+        "import react from 'react';",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(join(cwd, "src", "app", "root.ts"), "export const root = true;\n");
+    writeFileSync(join(cwd, "src", "lib", "foo.ts"), "export const foo = true;\n");
+
+    const result = runCodeTreeSitter({
+      cwd,
+      targetPath: "src",
+      mode: "repo-deps",
+      runner,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.repoDependencies?.filesScanned, 3);
+    assert.equal(result.repoDependencies?.filesWithDependencies, 1);
+    assert.equal(result.repoDependencies?.totalEdges, 4);
+    assert.equal(result.repoDependencies?.localDependencies, 2);
+    assert.equal(result.repoDependencies?.externalImports, 1);
+    assert.equal(result.repoDependencies?.unresolvedLocalImports, 1);
+    assert.ok(result.repoDependencies?.warnings.some((warning) =>
+      warning.includes("tsconfig.json path target") && warning.includes("@bad/*")));
+    assert.deepEqual(
+      result.repoDependencies?.edges.map((edge) =>
+        `${edge.path}:${edge.resolution}:${edge.resolutionDetail ?? ""}:${edge.source}:${edge.to ?? ""}`),
+      [
+        "src/index.ts:local:tsconfig_path:@lib/foo:src/lib/foo.ts",
+        "src/index.ts:local:tsconfig_base_url:src/app/root:src/app/root.ts",
+        "src/index.ts:unresolved_local::@bad/secret:",
+        "src/index.ts:external::react:",
+      ],
+    );
+
+    const rendered = renderCodeTreeSitterResult(result);
+    assert.match(rendered, /safe tsconfig paths only/);
+    assert.match(rendered, /specifier="@lib\/foo" resolution=local resolution_detail=tsconfig_path/);
+    assert.match(rendered, /specifier="src\/app\/root" resolution=local resolution_detail=tsconfig_base_url/);
+    assert.match(rendered, /specifier="@bad\/secret" resolution=unresolved_local/);
+    assert.match(rendered, /specifier="react" resolution=external/);
+    assert.match(rendered, /tsconfig\.json path target/);
+
+    writeFileSync(
+      join(cwd, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          baseUrl: "../outside",
+          paths: {
+            "@lib/*": ["src/lib/*"],
+          },
+        },
+      }),
+    );
+
+    const unsafeBaseUrlResult = runCodeTreeSitter({
+      cwd,
+      targetPath: "src",
+      mode: "repo-deps",
+      runner,
+    });
+    assert.equal(unsafeBaseUrlResult.ok, true);
+    assert.equal(unsafeBaseUrlResult.repoDependencies?.localDependencies, 0);
+    assert.equal(unsafeBaseUrlResult.repoDependencies?.externalImports, 4);
+    assert.equal(unsafeBaseUrlResult.repoDependencies?.unresolvedLocalImports, 0);
+    assert.ok(unsafeBaseUrlResult.repoDependencies?.warnings.some((warning) =>
+      warning.includes("compilerOptions.paths were ignored")));
+
+    mkdirSync(join(cwd, "src", "fallback", "lib"), { recursive: true });
+    writeFileSync(join(cwd, "src", "fallback", "lib", "foo.ts"), "export const fallback = true;\n");
+    writeFileSync(
+      join(cwd, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          baseUrl: ".",
+          paths: {
+            "@lib/*": ["src/missing/*"],
+            "@*": ["src/fallback/*"],
+          },
+        },
+      }),
+    );
+
+    const overlappingPathsResult = runCodeTreeSitter({
+      cwd,
+      targetPath: "src",
+      mode: "repo-deps",
+      runner,
+    });
+    assert.equal(overlappingPathsResult.ok, true);
+    assert.equal(overlappingPathsResult.repoDependencies?.localDependencies, 1);
+    assert.equal(overlappingPathsResult.repoDependencies?.externalImports, 1);
+    assert.equal(overlappingPathsResult.repoDependencies?.unresolvedLocalImports, 2);
+    assert.deepEqual(
+      overlappingPathsResult.repoDependencies?.edges.map((edge) =>
+        `${edge.resolution}:${edge.resolutionDetail ?? ""}:${edge.source}:${edge.to ?? ""}`),
+      [
+        "unresolved_local::@lib/foo:",
+        "local:tsconfig_base_url:src/app/root:src/app/root.ts",
+        "unresolved_local::@bad/secret:",
+        "external::react:",
+      ],
+    );
+    assert.doesNotMatch(renderCodeTreeSitterResult(overlappingPathsResult), /src\/fallback\/lib\/foo\.ts/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

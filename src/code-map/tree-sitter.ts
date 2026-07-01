@@ -256,6 +256,25 @@ export interface CodeTreeSitterRepoImportEdge extends CodeTreeSitterImportEdge {
 export interface CodeTreeSitterRepoDependencyEdge extends CodeTreeSitterRepoImportEdge {
   to?: string;
   resolution: "local" | "external" | "unresolved_local";
+  resolutionDetail?: "relative" | "tsconfig_path" | "tsconfig_base_url";
+}
+
+interface TreeSitterDependencyResolver {
+  sourcePaths: Set<string>;
+  tsconfig?: TreeSitterTsconfigResolver;
+  warnings: string[];
+}
+
+interface TreeSitterTsconfigResolver {
+  baseUrl?: string;
+  paths: TreeSitterTsconfigPathMapping[];
+}
+
+interface TreeSitterTsconfigPathMapping {
+  pattern: string;
+  prefix: string;
+  suffix: string;
+  targets: string[];
 }
 
 export interface CodeTreeSitterRepoOmission {
@@ -288,6 +307,7 @@ const DEFAULT_TREE_SITTER_REPO_IMPORT_EDGES = 400;
 const DEFAULT_TREE_SITTER_REPO_DEPENDENCY_EDGES = 400;
 const MAX_TREE_SITTER_REPO_DEPTH = 8;
 const MAX_TREE_SITTER_REPO_SOURCE_BYTES = 512 * 1024;
+const MAX_TREE_SITTER_TSCONFIG_BYTES = 64 * 1024;
 const MAX_PATH_LENGTH = 4096;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
 const OUTPUT_CONTROL_CHAR_PATTERN = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
@@ -1173,9 +1193,10 @@ function runCodeTreeSitterRepoDependencies(options: {
 
   const discovered = discoverTreeSitterRepoFiles(options.root, target.resolvedPath);
   const sourcePaths = new Set(discovered.files);
+  const dependencyResolver = createTreeSitterDependencyResolver(options.root, sourcePaths);
   const startedAt = performance.now();
   const edges: CodeTreeSitterRepoDependencyEdge[] = [];
-  const warnings: string[] = [];
+  const warnings: string[] = [...dependencyResolver.warnings];
   const omissions = [...discovered.omissions];
   const failureLines: string[] = [];
   let totalEdges = 0;
@@ -1221,7 +1242,7 @@ function runCodeTreeSitterRepoDependencies(options: {
     }
     totalEdges += imports.totalEdges;
     for (const edge of imports.edges) {
-      const dependencyEdge = createTreeSitterRepoDependencyEdge(filePath, edge, sourcePaths);
+      const dependencyEdge = createTreeSitterRepoDependencyEdge(filePath, edge, dependencyResolver);
       if (dependencyEdge.resolution === "local") {
         localDependencies += 1;
       } else if (dependencyEdge.resolution === "unresolved_local") {
@@ -1810,7 +1831,7 @@ function renderCodeTreeSitterRepoDependenciesResult(
     `  status: ${result.status}`,
     `  root: ${sanitizeInline(result.root)}`,
     `  path: ${sanitizeInline(result.targetPath)}`,
-    "  mode: AST-backed bounded repo dependency previews via optional tree-sitter CLI (local relative imports only; not package or semantic resolution)",
+    "  mode: AST-backed bounded repo dependency previews via optional tree-sitter CLI (local relative imports and safe tsconfig paths only; not package or semantic resolution)",
     "  mutation: none",
   ];
   if (result.commandLine) {
@@ -2396,12 +2417,15 @@ function pathHasSkippedRepoComponent(path: string): boolean {
 function createTreeSitterRepoDependencyEdge(
   path: string,
   edge: CodeTreeSitterImportEdge,
-  sourcePaths: Set<string>,
+  resolver: TreeSitterDependencyResolver,
 ): CodeTreeSitterRepoDependencyEdge {
-  const to = edge.source ? resolveTreeSitterLocalDependency(path, edge.source, sourcePaths) : undefined;
+  const resolved = edge.source
+    ? resolveTreeSitterDependency(path, edge.source, resolver)
+    : { matchedLocalAlias: false };
+  const to = resolved.to;
   const resolution = to
     ? "local"
-    : edge.source && isTreeSitterRelativeImport(edge.source)
+    : edge.source && (isTreeSitterRelativeImport(edge.source) || resolved.matchedLocalAlias)
       ? "unresolved_local"
       : "external";
   return {
@@ -2409,7 +2433,220 @@ function createTreeSitterRepoDependencyEdge(
     path,
     to,
     resolution,
+    resolutionDetail: resolved.resolutionDetail,
   };
+}
+
+function createTreeSitterDependencyResolver(
+  root: string,
+  sourcePaths: Set<string>,
+): TreeSitterDependencyResolver {
+  const warnings: string[] = [];
+  const tsconfig = loadTreeSitterTsconfigResolver(root, warnings);
+  return { sourcePaths, tsconfig, warnings };
+}
+
+function loadTreeSitterTsconfigResolver(root: string, warnings: string[]): TreeSitterTsconfigResolver | undefined {
+  const tsconfigPath = join(root, "tsconfig.json");
+  if (!existsSync(tsconfigPath)) {
+    return undefined;
+  }
+
+  let stat;
+  try {
+    stat = lstatSync(tsconfigPath);
+  } catch (error) {
+    warnings.push(`tsconfig.json path aliases were ignored because the file could not be inspected: ${formatTreeSitterConfigError(error)}`);
+    return undefined;
+  }
+
+  if (!stat.isFile()) {
+    warnings.push("tsconfig.json path aliases were ignored because tsconfig.json is not a regular file.");
+    return undefined;
+  }
+  if (stat.size > MAX_TREE_SITTER_TSCONFIG_BYTES) {
+    warnings.push(`tsconfig.json path aliases were ignored because tsconfig.json exceeds ${MAX_TREE_SITTER_TSCONFIG_BYTES} bytes.`);
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = parseTreeSitterJsonConfig(readFileSync(tsconfigPath, "utf8"));
+  } catch (error) {
+    warnings.push(`tsconfig.json path aliases were ignored because tsconfig.json could not be parsed: ${formatTreeSitterConfigError(error)}`);
+    return undefined;
+  }
+
+  if (!isTreeSitterRecord(parsed)) {
+    warnings.push("tsconfig.json path aliases were ignored because tsconfig.json is not a JSON object.");
+    return undefined;
+  }
+
+  const compilerOptions = isTreeSitterRecord(parsed.compilerOptions) ? parsed.compilerOptions : undefined;
+  if (!compilerOptions) {
+    return undefined;
+  }
+
+  const rawBaseUrl = compilerOptions.baseUrl;
+  const baseUrl = typeof rawBaseUrl === "string"
+    ? normalizeTreeSitterTsconfigConcretePath(rawBaseUrl)
+    : undefined;
+  const unsafeBaseUrl = typeof rawBaseUrl === "string" && !baseUrl;
+  if (unsafeBaseUrl) {
+    warnings.push("tsconfig.json compilerOptions.baseUrl was ignored because it is not a safe local path.");
+  }
+
+  const paths: TreeSitterTsconfigPathMapping[] = [];
+  if (isTreeSitterRecord(compilerOptions.paths) && !unsafeBaseUrl) {
+    for (const [pattern, rawTargets] of Object.entries(compilerOptions.paths)) {
+      const mapping = createTreeSitterTsconfigPathMapping(pattern, rawTargets, baseUrl ?? ".", warnings);
+      if (mapping) {
+        paths.push(mapping);
+      }
+    }
+  } else if (isTreeSitterRecord(compilerOptions.paths) && unsafeBaseUrl) {
+    warnings.push("tsconfig.json compilerOptions.paths were ignored because compilerOptions.baseUrl is not a safe local path.");
+  }
+  paths.sort((a, b) => b.prefix.length - a.prefix.length || b.pattern.length - a.pattern.length);
+
+  if (!baseUrl && paths.length === 0) {
+    return undefined;
+  }
+  return { baseUrl, paths };
+}
+
+function createTreeSitterTsconfigPathMapping(
+  pattern: string,
+  rawTargets: unknown,
+  baseUrl: string,
+  warnings: string[],
+): TreeSitterTsconfigPathMapping | undefined {
+  if (!isTreeSitterSafeTsconfigPattern(pattern, false)) {
+    warnings.push(`tsconfig.json path alias ${JSON.stringify(sanitizeInline(pattern))} was ignored because it is not a safe bare specifier pattern.`);
+    return undefined;
+  }
+
+  const starCount = countTreeSitterStars(pattern);
+  const [prefix = "", suffix = ""] = pattern.split("*");
+  const targetValues = Array.isArray(rawTargets) ? rawTargets : [];
+  const targets: string[] = [];
+
+  for (const rawTarget of targetValues) {
+    if (typeof rawTarget !== "string") {
+      continue;
+    }
+    const normalizedTarget = normalizeTreeSitterTsconfigTargetPattern(rawTarget);
+    if (!normalizedTarget || (starCount === 0 && normalizedTarget.includes("*"))) {
+      warnings.push(`tsconfig.json path target for ${JSON.stringify(sanitizeInline(pattern))} was ignored because it is not a safe local path.`);
+      continue;
+    }
+    const combinedTarget = materializeTreeSitterTsconfigTarget(baseUrl, normalizedTarget, "");
+    if (!combinedTarget) {
+      warnings.push(`tsconfig.json path target for ${JSON.stringify(sanitizeInline(pattern))} was ignored because it escapes the repository root.`);
+      continue;
+    }
+    targets.push(normalizedTarget);
+  }
+
+  return {
+    pattern,
+    prefix,
+    suffix,
+    targets,
+  };
+}
+
+function resolveTreeSitterDependency(
+  fromPath: string,
+  specifier: string,
+  resolver: TreeSitterDependencyResolver,
+): { to?: string; resolutionDetail?: CodeTreeSitterRepoDependencyEdge["resolutionDetail"]; matchedLocalAlias: boolean } {
+  if (isTreeSitterRelativeImport(specifier)) {
+    const to = resolveTreeSitterLocalDependency(fromPath, specifier, resolver.sourcePaths);
+    return { to, resolutionDetail: to ? "relative" : undefined, matchedLocalAlias: false };
+  }
+
+  if (!resolver.tsconfig || !isTreeSitterSafeBareSpecifier(specifier)) {
+    return { matchedLocalAlias: false };
+  }
+
+  const pathsResolution = resolveTreeSitterTsconfigPaths(specifier, resolver.tsconfig, resolver.sourcePaths);
+  if (pathsResolution.matched) {
+    return {
+      to: pathsResolution.to,
+      resolutionDetail: pathsResolution.to ? "tsconfig_path" : undefined,
+      matchedLocalAlias: true,
+    };
+  }
+
+  if (resolver.tsconfig.baseUrl) {
+    const to = resolveTreeSitterTsconfigBaseUrl(specifier, resolver.tsconfig.baseUrl, resolver.sourcePaths);
+    if (to) {
+      return { to, resolutionDetail: "tsconfig_base_url", matchedLocalAlias: false };
+    }
+  }
+
+  return { matchedLocalAlias: false };
+}
+
+function resolveTreeSitterTsconfigPaths(
+  specifier: string,
+  tsconfig: TreeSitterTsconfigResolver,
+  sourcePaths: Set<string>,
+): { matched: boolean; to?: string } {
+  for (const mapping of tsconfig.paths) {
+    const wildcard = matchTreeSitterTsconfigPathPattern(specifier, mapping);
+    if (wildcard === undefined) {
+      continue;
+    }
+    for (const target of mapping.targets) {
+      const targetPath = materializeTreeSitterTsconfigTarget(tsconfig.baseUrl ?? ".", target, wildcard);
+      if (!targetPath) {
+        continue;
+      }
+      const to = resolveTreeSitterLocalDependencyBase(targetPath, sourcePaths);
+      if (to) {
+        return { matched: true, to };
+      }
+    }
+    return { matched: true };
+  }
+  return { matched: false };
+}
+
+function resolveTreeSitterTsconfigBaseUrl(
+  specifier: string,
+  baseUrl: string,
+  sourcePaths: Set<string>,
+): string | undefined {
+  const targetPath = materializeTreeSitterTsconfigTarget(baseUrl, specifier, "");
+  return targetPath ? resolveTreeSitterLocalDependencyBase(targetPath, sourcePaths) : undefined;
+}
+
+function matchTreeSitterTsconfigPathPattern(
+  specifier: string,
+  mapping: TreeSitterTsconfigPathMapping,
+): string | undefined {
+  if (!mapping.pattern.includes("*")) {
+    return specifier === mapping.pattern ? "" : undefined;
+  }
+  if (!specifier.startsWith(mapping.prefix) || !specifier.endsWith(mapping.suffix)) {
+    return undefined;
+  }
+  const wildcardEnd = specifier.length - mapping.suffix.length;
+  if (wildcardEnd < mapping.prefix.length) {
+    return undefined;
+  }
+  return specifier.slice(mapping.prefix.length, wildcardEnd);
+}
+
+function materializeTreeSitterTsconfigTarget(
+  baseUrl: string,
+  targetPattern: string,
+  wildcard: string,
+): string | undefined {
+  const target = targetPattern.includes("*") ? targetPattern.replace("*", wildcard) : targetPattern;
+  return normalizeTreeSitterTsconfigConcretePath(posix.join(baseUrl, target));
 }
 
 function resolveTreeSitterLocalDependency(
@@ -2424,6 +2661,13 @@ function resolveTreeSitterLocalDependency(
   if (basePath === "." || basePath.startsWith("../") || basePath.includes("/../")) {
     return undefined;
   }
+  return resolveTreeSitterLocalDependencyBase(basePath, sourcePaths);
+}
+
+function resolveTreeSitterLocalDependencyBase(
+  basePath: string,
+  sourcePaths: Set<string>,
+): string | undefined {
   for (const candidate of buildTreeSitterDependencyCandidates(basePath)) {
     if (sourcePaths.has(candidate)) {
       return candidate;
@@ -2466,6 +2710,169 @@ function buildTreeSitterDependencyCandidates(basePath: string): string[] {
 
 function isTreeSitterRelativeImport(specifier: string): boolean {
   return specifier === "." || specifier === ".." || specifier.startsWith("./") || specifier.startsWith("../");
+}
+
+function isTreeSitterSafeBareSpecifier(specifier: string): boolean {
+  return isTreeSitterSafeTsconfigPattern(specifier, true);
+}
+
+function isTreeSitterSafeTsconfigPattern(value: string, allowRelative: boolean): boolean {
+  const normalized = value.replace(/\\/g, "/").trim();
+  if (!normalized || normalized.length > MAX_PATH_LENGTH || CONTROL_CHAR_PATTERN.test(normalized)) {
+    return false;
+  }
+  if (!allowRelative && isTreeSitterRelativeImport(normalized)) {
+    return false;
+  }
+  if (normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(normalized)) {
+    return false;
+  }
+  if (isFlagLikeValue(normalized) || normalized.split("/").includes("..") || countTreeSitterStars(normalized) > 1) {
+    return false;
+  }
+  return true;
+}
+
+function normalizeTreeSitterTsconfigTargetPattern(value: string): string | undefined {
+  const normalized = normalizeTreeSitterTsconfigRawPath(value);
+  if (!normalized || countTreeSitterStars(normalized) > 1) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function normalizeTreeSitterTsconfigConcretePath(value: string): string | undefined {
+  const normalized = normalizeTreeSitterTsconfigRawPath(value);
+  if (!normalized || normalized.includes("*")) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function normalizeTreeSitterTsconfigRawPath(value: string): string | undefined {
+  const raw = value.replace(/\\/g, "/").trim();
+  if (!raw || raw.length > MAX_PATH_LENGTH || CONTROL_CHAR_PATTERN.test(raw)) {
+    return undefined;
+  }
+  if (raw.startsWith("/") || /^[A-Za-z]:\//.test(raw) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(raw)) {
+    return undefined;
+  }
+  if (isFlagLikeValue(raw) || raw.split("/").includes("..")) {
+    return undefined;
+  }
+  const normalized = posix.normalize(raw);
+  const pathForSkippedCheck = normalized.replace("*", "__orx_wildcard__");
+  if (normalized === ".." || normalized.startsWith("../") || normalized.includes("/../") || pathHasSkippedRepoComponent(pathForSkippedCheck)) {
+    return undefined;
+  }
+  return normalized === "" ? "." : normalized;
+}
+
+function countTreeSitterStars(value: string): number {
+  return (value.match(/\*/g) ?? []).length;
+}
+
+function parseTreeSitterJsonConfig(text: string): unknown {
+  return JSON.parse(stripTreeSitterJsonTrailingCommas(stripTreeSitterJsonComments(text)));
+}
+
+function stripTreeSitterJsonComments(text: string): string {
+  let output = "";
+  let inString = false;
+  let escaping = false;
+  let lineComment = false;
+  let blockComment = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index] ?? "";
+    const next = text[index + 1] ?? "";
+    if (lineComment) {
+      if (char === "\n" || char === "\r") {
+        lineComment = false;
+        output += char;
+      }
+      continue;
+    }
+    if (blockComment) {
+      if (char === "*" && next === "/") {
+        blockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+    if (inString) {
+      output += char;
+      if (escaping) {
+        escaping = false;
+      } else if (char === "\\") {
+        escaping = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === "\"") {
+      inString = true;
+      output += char;
+      continue;
+    }
+    if (char === "/" && next === "/") {
+      lineComment = true;
+      index += 1;
+      continue;
+    }
+    if (char === "/" && next === "*") {
+      blockComment = true;
+      index += 1;
+      continue;
+    }
+    output += char;
+  }
+
+  return output;
+}
+
+function stripTreeSitterJsonTrailingCommas(text: string): string {
+  let output = "";
+  let inString = false;
+  let escaping = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index] ?? "";
+    if (inString) {
+      output += char;
+      if (escaping) {
+        escaping = false;
+      } else if (char === "\\") {
+        escaping = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === "\"") {
+      inString = true;
+      output += char;
+      continue;
+    }
+    if (char === ",") {
+      const next = text.slice(index + 1).match(/\S/)?.[0];
+      if (next === "}" || next === "]") {
+        continue;
+      }
+    }
+    output += char;
+  }
+
+  return output;
+}
+
+function isTreeSitterRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatTreeSitterConfigError(error: unknown): string {
+  return sanitizeInline(error instanceof Error ? error.message : String(error));
 }
 
 function splitTreeSitterArgText(text: string): string[] | string {
@@ -3339,6 +3746,7 @@ function formatRepoDependencyEdge(edge: CodeTreeSitterRepoDependencyEdge): strin
     `to=${JSON.stringify(sanitizeInline(edge.to ?? edge.resolution))}`,
     `specifier=${JSON.stringify(sanitizeInline(edge.source ?? ""))}`,
     `resolution=${edge.resolution}`,
+    edge.resolutionDetail ? `resolution_detail=${edge.resolutionDetail}` : undefined,
     `kind=${JSON.stringify(sanitizeInline(edge.kind))}`,
     edge.line !== undefined ? `line=${edge.line}` : undefined,
     edge.column !== undefined ? `column=${edge.column}` : undefined,
