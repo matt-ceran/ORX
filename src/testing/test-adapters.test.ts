@@ -565,6 +565,133 @@ test("parses common framework report summaries", () => {
   assert.equal(parseTestReportSummary(createTarget("unknown"), "Ran 3 tests in 0.001s\nFAILED (skipped=1)"), undefined);
   assert.equal(parseTestReportSummary(createTarget("unknown"), "Ran 3 tests in 0.001s\nOK (failures=1)"), undefined);
   assert.equal(parseTestReportSummary(createTarget("unknown"), "Ran 3 tests in 0.001s\nFAILED (failures=1, skipped=3)"), undefined);
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "Tests run: 6, Failures: 1, Errors: 1, Skipped: 2, Time elapsed: 0.123 s -- in com.example.FooTest",
+    ),
+    {
+      framework: "unknown",
+      source: "junit-text",
+      total: 6,
+      passed: 2,
+      failed: 2,
+      skipped: 2,
+      durationMs: 123,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "Tests run: 2, Failures: 0, Errors: 0, Skipped: 0"),
+    {
+      framework: "unknown",
+      source: "junit-text",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "[ERROR] Tests run: 1, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 0.039 s <<< FAILURE! -- in com.example.FooTest",
+    ),
+    {
+      framework: "unknown",
+      source: "junit-text",
+      total: 1,
+      passed: 0,
+      failed: 1,
+      skipped: 0,
+      durationMs: 39,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "Tests run: 1, Failures: 0, Errors: 1, Skipped: 0 <<< ERROR!"),
+    {
+      framework: "unknown",
+      source: "junit-text",
+      total: 1,
+      passed: 0,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "Tests run: 2, Failures: 0, Errors: 0, Skipped: 0 -- in com.example.FooTest"),
+    {
+      framework: "unknown",
+      source: "junit-text",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "Tests run: 2, Failures: 1, Errors: 0, Skipped: 0 <<< FAILURE! -- in com.example.FooTest"),
+    {
+      framework: "unknown",
+      source: "junit-text",
+      total: 2,
+      passed: 1,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "Tests run: 1, Failures: 0, Errors: 1, Skipped: 0 <<< ERROR!"),
+    {
+      framework: "node",
+      source: "junit-text",
+      total: 1,
+      passed: 0,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0",
+        "Tests run: 2, Failures: 1, Errors: 0, Skipped: 0",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "junit-text",
+      total: 2,
+      passed: 1,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "Tests run: 2, Failures: 2, Errors: 1, Skipped: 0"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "Tests run: 2, Failures: 0, Errors: 0, Skipped: 0 after cleanup"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.1 s after cleanup"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "[ERROR] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0 after cleanup"),
+    undefined,
+  );
 });
 
 test("parses structured framework JSON reports before stdout fallback", () => {

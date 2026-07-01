@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "go" | "rspec" | "unittest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "go" | "rspec" | "unittest" | "junit-text" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -700,11 +700,11 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     unknown: parseGenericReportSummary,
   };
   if (framework === "node") {
-    return [parseTapReportSummary, parseNodeReportSummary, parseGenericReportSummary];
+    return [parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parsePythonUnittestReportSummary, parseGenericReportSummary]
-    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parsePythonUnittestReportSummary, parseGenericReportSummary];
+    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parseGenericReportSummary]
+    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -1199,6 +1199,38 @@ function parsePythonUnittestReportSummary(text: string, framework: TestFramework
   return hasReportCounts(report) ? report : undefined;
 }
 
+function parseJunitTextReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  let counts:
+    | {
+        total: number;
+        passed: number;
+        failed: number;
+        skipped: number;
+        durationMs?: number;
+      }
+    | undefined;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const candidate = parseJunitTextStatusLine(rawLine.trim());
+    if (candidate) {
+      counts = candidate;
+    }
+  }
+  if (!counts) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "junit-text",
+  };
+  assignNumber(report, "total", counts.total);
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
+  assignNumber(report, "durationMs", counts.durationMs);
+  return hasReportCounts(report) ? report : undefined;
+}
+
 function parseGenericReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
   const line = matchFirstNamedLine(text, ["Tests", "Test Results", "Test Summary", "Summary", "Results"]);
   if (!line) {
@@ -1235,6 +1267,38 @@ function parseStatusCounts(text: string): Partial<Record<"passed" | "failed" | "
     counts.total = Number.parseInt(parenthesizedTotal[1], 10);
   }
   return counts;
+}
+
+function parseJunitTextStatusLine(line: string): {
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  durationMs?: number;
+} | undefined {
+  const match = /^(?:\[(?:INFO|WARNING|ERROR)\]\s*)?Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)(?:,\s*Time elapsed:\s*(\d+(?:\.\d+)?)\s*s)?(?:\s+<<<\s+(?:FAILURE|ERROR)!)?(?:\s+--\s+in\s+\S+)?$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const total = Number.parseInt(match[1] ?? "", 10);
+  const failures = Number.parseInt(match[2] ?? "", 10);
+  const errors = Number.parseInt(match[3] ?? "", 10);
+  const skipped = Number.parseInt(match[4] ?? "", 10);
+  if (![total, failures, errors, skipped].every((value) => Number.isInteger(value) && value >= 0)) {
+    return undefined;
+  }
+  const failed = failures + errors;
+  const passed = total - failed - skipped;
+  if (passed < 0) {
+    return undefined;
+  }
+  return {
+    total,
+    passed,
+    failed,
+    skipped,
+    durationMs: match[5] === undefined ? undefined : parseSecondsDurationMs(match[5]),
+  };
 }
 
 function parsePythonUnittestStatusLine(line: string, total: number): {
