@@ -1866,6 +1866,50 @@ test("tree-sitter repo deps resolves safe tsconfig/jsconfig aliases without pack
         "external::react:",
       ],
     );
+
+    mkdirSync(join(cwd, "src", "jsconfig-lib"), { recursive: true });
+    writeFileSync(join(cwd, "src", "jsconfig-lib", "foo.ts"), "export const jsconfigFoo = true;\n");
+    writeFileSync(
+      join(cwd, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          baseUrl: ".",
+          paths: {
+            "@lib/*": ["src/lib/*"],
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      join(cwd, "jsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          baseUrl: ".",
+          paths: {
+            "@lib/*": ["src/jsconfig-lib/*"],
+          },
+        },
+      }),
+    );
+
+    const configPrecedenceResult = runCodeTreeSitter({
+      cwd,
+      targetPath: "src",
+      mode: "repo-deps",
+      runner,
+    });
+    assert.equal(configPrecedenceResult.ok, true);
+    assert.deepEqual(
+      configPrecedenceResult.repoDependencies?.edges.map((edge) =>
+        `${edge.resolution}:${edge.resolutionDetail ?? ""}:${edge.source}:${edge.to ?? ""}`),
+      [
+        "local:config_path:@lib/foo:src/lib/foo.ts",
+        "local:config_base_url:src/app/root:src/app/root.ts",
+        "external::@bad/secret:",
+        "external::react:",
+      ],
+    );
+    assert.doesNotMatch(renderCodeTreeSitterResult(configPrecedenceResult), /src\/jsconfig-lib\/foo\.ts/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
