@@ -105,6 +105,17 @@ Current files:
 
 ## Latest Work
 
+Added captured TestNG XML report parsing:
+
+- The test report parser now recognizes bounded already-captured whole-object TestNG XML reporter output rooted at `<testng-results>`, validates strict root aggregate `total`, `passed`, `failed`, optional `skipped`, and optional `ignored` counts, maps `skipped + ignored` to skipped, sums optional suite `duration-ms` values, and renders compact `source=testng-xml` counts in `orx tests run`, `/tests run`, and model-visible `run_tests` summaries.
+- Malformed TestNG-shaped XML, including impossible aggregate totals, malformed numeric attributes, malformed suite durations, or incomplete whole-root XML, is treated as invalid structured report data and does not fall through to looser text summaries. Mixed logs plus XML remain on the existing text fallback path.
+- This slice does not add reporter flags, report files, installs, invocation changes, network calls, subprocess shape changes, model-tool exposure changes, or broader wrapper/custom-reporter support.
+- README, release notes, command memory, architecture/tooling notes, backlog, and integration handoff now document TestNG XML parsing as already-captured output only.
+- Verification: focused source `node --import tsx --test src/testing/test-adapters.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`, full `npm test` with 542 tests, `npm run verify:release`, and independent verifier `019f1ea8-b6d3-7663-959c-20031f7f758c` passed. The verifier also ran focused source tests, typecheck, diff-check, and direct parser probes.
+- Next likely work after this slice remains another bounded optional completion slice such as LSP/SCIP diagnostics/references, semantic tree-sitter refs/dependency depth, additional non-JSON/custom reporter parsing, Sourcegraph/GitHub read-only profiles, or scanner adapters/additional Trivy modes only after deterministic no-network/no-auth local command shapes are proven.
+
+Previous latest work:
+
 Added captured RSpec JSON report parsing:
 
 - The test report parser now recognizes bounded already-captured whole-object RSpec JSON reporter output with `summary.example_count`, `summary.failure_count`, `summary.pending_count`, optional numeric `summary.errors_outside_of_examples_count`, numeric seconds `summary.duration`, and matching `examples[].status` values, then renders compact `source=rspec-json` counts in `orx tests run`, `/tests run`, and model-visible `run_tests` summaries.

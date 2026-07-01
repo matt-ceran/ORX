@@ -4429,6 +4429,107 @@ test("parses captured JUnit XML reports before text fallback", () => {
   );
 });
 
+test("parses captured TestNG XML reports before text fallback", () => {
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<testng-results skipped="1" failed="1" ignored="1" total="5" passed="2">',
+        '  <suite name="unit" duration-ms="123.5">',
+        '    <test name="cases">',
+        '      <class name="ExampleTest"/>',
+        "    </test>",
+        "  </suite>",
+        "</testng-results>",
+      ].join("\n"),
+      "Test Summary: 99 passed, 99 total",
+    ),
+    {
+      framework: "unknown",
+      source: "testng-xml",
+      total: 5,
+      passed: 2,
+      failed: 1,
+      skipped: 2,
+      suites: 1,
+      durationMs: 123.5,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        '<testng-results skipped="0" failed="1" total="3" passed="2">',
+        '  <suite name="unit-a" duration-ms="10"/>',
+        '  <suite name="unit-b" duration-ms="15"/>',
+        "</testng-results>",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "testng-xml",
+      total: 3,
+      passed: 2,
+      failed: 1,
+      skipped: 0,
+      suites: 2,
+      durationMs: 25,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "debug before xml",
+        '<testng-results skipped="0" failed="0" total="1" passed="1"></testng-results>',
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "generic",
+      total: 1,
+      passed: 1,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<testng-results skipped="0" failed="2" total="1" passed="0"></testng-results>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<testng-results skipped="0" failed="oops" total="1" passed="1"></testng-results>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<testng-results skipped="0" failed="0" total="1" passed="1"><suite duration-ms="oops"/></testng-results>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<testng-results skipped="0" failed="0" total="1" passed="1"></testng-result>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+});
+
 test("parses captured TeamCity service messages before text fallback", () => {
   assert.deepEqual(
     parseTestReportSummary(

@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "teamcity" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json" | "mocha-json" | "rspec-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "testng-xml" | "teamcity" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json" | "mocha-json" | "rspec-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -422,12 +422,15 @@ export function parseTestReportSummary(
     return jsonReport;
   }
 
-  const xmlReport =
-    parseCapturedJunitXmlReportSummary(limitReportText(stdout), target.framework) ??
-    parseCapturedJunitXmlReportSummary(limitReportText(stderr), target.framework);
-  if (xmlReport === INVALID_TEST_REPORT) {
+  const stdoutXmlReport = parseCapturedXmlReportSummary(limitReportText(stdout), target.framework);
+  if (stdoutXmlReport === INVALID_TEST_REPORT) {
     return undefined;
   }
+  const stderrXmlReport = parseCapturedXmlReportSummary(limitReportText(stderr), target.framework);
+  if (stderrXmlReport === INVALID_TEST_REPORT) {
+    return undefined;
+  }
+  const xmlReport = stdoutXmlReport ?? stderrXmlReport;
   if (xmlReport && hasReportCounts(xmlReport)) {
     return xmlReport;
   }
@@ -1182,6 +1185,47 @@ function parseCapturedJunitXmlReportSummary(
   const report: TestReportSummary = {
     framework,
     source: "junit-xml",
+  };
+  assignNumber(report, "total", counts.total);
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
+  assignNumber(report, "suites", counts.suites);
+  assignNumber(report, "durationMs", counts.durationMs);
+  return hasReportCounts(report) ? report : undefined;
+}
+
+function parseCapturedXmlReportSummary(
+  text: string,
+  framework: TestFramework,
+): TestReportSummary | InvalidTestReport | undefined {
+  return parseCapturedJunitXmlReportSummary(text, framework) ??
+    parseCapturedTestngXmlReportSummary(text, framework);
+}
+
+function parseCapturedTestngXmlReportSummary(
+  text: string,
+  framework: TestFramework,
+): TestReportSummary | InvalidTestReport | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (!looksLikeWholeTestngXmlReport(trimmed)) {
+    if (startsLikeTestngXmlReport(trimmed)) {
+      return INVALID_TEST_REPORT;
+    }
+    return undefined;
+  }
+
+  const counts = parseTestngXmlCounts(trimmed);
+  if (!counts) {
+    return INVALID_TEST_REPORT;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "testng-xml",
   };
   assignNumber(report, "total", counts.total);
   assignNumber(report, "passed", counts.passed);
@@ -5798,6 +5842,14 @@ function startsLikeJunitXmlReport(text: string): boolean {
   return rootName === "testsuite" || rootName === "testsuites";
 }
 
+function looksLikeWholeTestngXmlReport(text: string): boolean {
+  return matchWholeXmlRootName(stripXmlDeclaration(text).trim()) === "testng-results";
+}
+
+function startsLikeTestngXmlReport(text: string): boolean {
+  return matchFirstXmlRootName(stripXmlDeclaration(text).trim()) === "testng-results";
+}
+
 function stripXmlDeclaration(text: string): string {
   return text.replace(/^\s*<\?xml\b[^>]*\?>\s*/i, "");
 }
@@ -6218,6 +6270,74 @@ function junitXmlCountsAgree(
   return aggregate.total === children.total &&
     aggregate.failed === children.failed &&
     aggregate.skipped === children.skipped;
+}
+
+function parseTestngXmlCounts(text: string):
+  | {
+      total: number;
+      passed: number;
+      failed: number;
+      skipped: number;
+      suites?: number;
+      durationMs?: number;
+    }
+  | undefined {
+  const rootTags = collectXmlStartTagAttributes(text, "testng-results");
+  const suiteTags = collectXmlStartTagAttributes(text, "suite");
+  if (!rootTags || !suiteTags || rootTags.length !== 1) {
+    return undefined;
+  }
+
+  const rootAttributes = rootTags[0];
+  const total = matchXmlIntegerAttribute(rootAttributes, "total");
+  const passed = matchXmlIntegerAttribute(rootAttributes, "passed");
+  const failed = matchXmlIntegerAttribute(rootAttributes, "failed");
+  const skipped = matchOptionalXmlIntegerAttribute(rootAttributes, "skipped", 0);
+  const ignored = matchOptionalXmlIntegerAttribute(rootAttributes, "ignored", 0);
+  if (
+    total === undefined ||
+    passed === undefined ||
+    failed === undefined ||
+    skipped === null ||
+    ignored === null
+  ) {
+    return undefined;
+  }
+
+  const skippedTotal = skipped + ignored;
+  if (!Number.isSafeInteger(skippedTotal) || passed + failed + skippedTotal !== total) {
+    return undefined;
+  }
+
+  const durationMs = sumTestngSuiteDurations(suiteTags);
+  if (durationMs === null) {
+    return undefined;
+  }
+
+  return {
+    total,
+    passed,
+    failed,
+    skipped: skippedTotal,
+    suites: suiteTags.length || undefined,
+    durationMs,
+  };
+}
+
+function sumTestngSuiteDurations(tags: string[]): number | undefined | null {
+  let total = 0;
+  let hasDuration = false;
+  for (const tag of tags) {
+    const duration = matchOptionalXmlDecimalAttribute(tag, "duration-ms");
+    if (duration === null) {
+      return null;
+    }
+    if (duration !== undefined) {
+      total += duration;
+      hasDuration = true;
+    }
+  }
+  return hasDuration ? Math.round(total * 1000) / 1000 : undefined;
 }
 
 function matchXmlIntegerAttribute(text: string, attribute: string): number | undefined {
