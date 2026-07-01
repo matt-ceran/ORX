@@ -3247,6 +3247,89 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "-----------------------",
+        "3 Tests 1 Failures 1 Ignored",
+        "FAIL",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "unity",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "-----------------------",
+        "2 Tests 0 Failures 1 Ignored",
+        "OK",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "unity",
+      total: 2,
+      passed: 1,
+      failed: 0,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 Tests 1 Failures 0 Ignored",
+        "FAILED",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "unity",
+      total: 1,
+      passed: 0,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 Tests 0 Failures 0 Ignored",
+        "Tests: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "0 Tests 0 Failures 0 Ignored\nOK"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "1 Tests 2 Failures 0 Ignored\nFAIL"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "1 Tests 1 Failures 0 Ignored\nOK"), undefined);
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "1 Tests 0 Failures 0 Ignored",
+        "1 Tests 0 Failures 0 Ignored",
+        "OK",
+        "ℹ tests 1",
+        "ℹ pass 1",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
     parseTestReportSummary(createTarget("unknown"), "Executed 3 tests, with 1 failure (1 unexpected) in 0.123 (0.124) seconds"),
     {
       framework: "unknown",
