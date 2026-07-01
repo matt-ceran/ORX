@@ -689,6 +689,116 @@ test("parses common framework report summaries", () => {
     parseTestReportSummary(
       createTarget("unknown"),
       [
+        "Test run finished after 125 ms",
+        "[         4 tests found           ]",
+        "[         0 tests skipped         ]",
+        "[         1 tests aborted         ]",
+        "[         4 tests started         ]",
+        "[         2 tests successful      ]",
+        "[         1 tests failed          ]",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "junit-platform",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+      durationMs: 125,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "[ 1 test successful ]"),
+    {
+      framework: "node",
+      source: "junit-platform",
+      total: 1,
+      passed: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "[ 1 test found ]",
+        "[ 1 test successful ]",
+        "[ 2 tests found ]",
+        "[ 1 test successful ]",
+        "[ 1 test failed ]",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "junit-platform",
+      total: 2,
+      passed: 1,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "[ 2 tests found ]",
+        "[ 3 tests successful ]",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "[ 0 tests found ]"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "[ 2 tests failed ] after cleanup"), undefined);
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "[ 2 tests failed ] after cleanup",
+        "Tests: 2 failed, 2 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "[ 2 tests failed ] after cleanup",
+        "ℹ tests 2",
+        "ℹ fail 2",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Test run finished after 125 ms after cleanup",
+        "Tests: 2 failed, 2 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "Test run finished after 125 ms after cleanup",
+        "ℹ tests 2",
+        "ℹ fail 2",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
         "=== RUN   TestAlpha",
         "--- PASS: TestAlpha (0.01s)",
         "=== RUN   TestBeta",

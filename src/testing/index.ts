@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "deno" | "exunit" | "gradle" | "go" | "rspec" | "minitest" | "karma" | "bun" | "unittest" | "junit-text" | "phpunit" | "dotnet" | "ctest" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "deno" | "exunit" | "gradle" | "junit-platform" | "go" | "rspec" | "minitest" | "karma" | "bun" | "unittest" | "junit-text" | "phpunit" | "dotnet" | "ctest" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -706,11 +706,11 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     unknown: parseGenericReportSummary,
   };
   if (framework === "node") {
-    return [parseExunitReportSummary, parseGradleReportSummary, parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseDenoReportSummary, parseGenericReportSummary];
+    return [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseDenoReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseExunitReportSummary, parseGradleReportSummary, parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary]
-    : [parseExunitReportSummary, parseGradleReportSummary, parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
+    ? [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary]
+    : [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -1186,6 +1186,70 @@ function parseGradleReportSummary(text: string, framework: TestFramework): TestR
   assignNumber(report, "passed", counts.passed);
   assignNumber(report, "failed", counts.failed);
   assignNumber(report, "skipped", counts.skipped);
+  return hasReportCounts(report) ? report : undefined;
+}
+
+function parseJunitPlatformReportSummary(text: string, framework: TestFramework): TestReportSummary | InvalidTestReport | undefined {
+  const counts: Partial<Record<"found" | "skipped" | "aborted" | "started" | "successful" | "failed", number>> = {};
+  let durationMs: number | undefined;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const durationCandidate = parseJunitPlatformDurationLine(line);
+    if (durationCandidate !== undefined) {
+      durationMs = durationCandidate;
+      continue;
+    }
+    if (looksLikeJunitPlatformDurationLine(line)) {
+      return INVALID_TEST_REPORT;
+    }
+    const candidate = parseJunitPlatformStatusLine(line);
+    if (candidate) {
+      counts[candidate.label] = candidate.count;
+      continue;
+    }
+    if (looksLikeJunitPlatformStatusLine(line)) {
+      return INVALID_TEST_REPORT;
+    }
+  }
+
+  const skippedCount = sumDefined(counts.skipped, counts.aborted);
+  let skipped = skippedCount;
+  if (
+    skipped === undefined &&
+    counts.found !== undefined &&
+    counts.successful !== undefined &&
+    counts.failed !== undefined &&
+    counts.successful + counts.failed === counts.found
+  ) {
+    skipped = 0;
+  }
+  const outcomeTotal = sumDefined(counts.successful, counts.failed, skipped);
+  const total = counts.found ?? outcomeTotal;
+  if (total === undefined || total <= 0) {
+    return undefined;
+  }
+  if (outcomeTotal !== undefined && outcomeTotal > total) {
+    return undefined;
+  }
+  if (
+    counts.found !== undefined &&
+    counts.successful !== undefined &&
+    counts.failed !== undefined &&
+    skipped !== undefined &&
+    outcomeTotal !== counts.found
+  ) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "junit-platform",
+  };
+  assignNumber(report, "total", total);
+  assignNumber(report, "passed", counts.successful);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", skipped);
+  assignNumber(report, "durationMs", durationMs);
   return hasReportCounts(report) ? report : undefined;
 }
 
@@ -2347,6 +2411,40 @@ function parseGradleStatusLine(line: string): {
 
 function looksLikeGradleStatusLine(line: string): boolean {
   return /^\d+\s+tests?\s+completed,\s+\d+\s+failed(?:,|$|\s+)/.test(line);
+}
+
+function parseJunitPlatformStatusLine(line: string): {
+  label: "found" | "skipped" | "aborted" | "started" | "successful" | "failed";
+  count: number;
+} | undefined {
+  const match = /^\[\s*(\d+)\s+tests?\s+(found|skipped|aborted|started|successful|failed)\s*\]$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const count = Number.parseInt(match[1] ?? "", 10);
+  if (!Number.isInteger(count) || count < 0) {
+    return undefined;
+  }
+  return {
+    count,
+    label: (match[2] ?? "") as "found" | "skipped" | "aborted" | "started" | "successful" | "failed",
+  };
+}
+
+function parseJunitPlatformDurationLine(line: string): number | undefined {
+  const match = /^Test run finished after\s+(\d+(?:\.\d+)?)\s*(ms|s)$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  return parseMillisecondsOrSecondsDurationMs(match[1] ?? "", match[2] ?? "");
+}
+
+function looksLikeJunitPlatformDurationLine(line: string): boolean {
+  return /^Test run finished after(?:$|\s+)/.test(line);
+}
+
+function looksLikeJunitPlatformStatusLine(line: string): boolean {
+  return /^\[\s*\d+\s+tests?\s+(?:found|skipped|aborted|started|successful|failed)(?:\s*\]?|$|\s+)/.test(line);
 }
 
 function parseSecondsDurationMs(seconds: string): number | undefined {
