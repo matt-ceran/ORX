@@ -768,6 +768,102 @@ test("parses common framework report summaries", () => {
     parseTestReportSummary(createTarget("unknown"), "Tests: 2, Assertions: 2, Failures: 1. after cleanup"),
     undefined,
   );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "Passed!  - Failed:     0, Passed:    10, Skipped:     1, Total:    11, Duration: 123 ms - Example.Tests.dll (net8.0)",
+    ),
+    {
+      framework: "unknown",
+      source: "dotnet",
+      total: 11,
+      passed: 10,
+      failed: 0,
+      skipped: 1,
+      durationMs: 123,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "Failed! - Failed: 1, Passed: 2, Skipped: 1, Total: 4, Duration: 1.5 s",
+    ),
+    {
+      framework: "unknown",
+      source: "dotnet",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+      durationMs: 1500,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "Passed! - Failed: 0, Passed: 2, Skipped: 0, Total: 2"),
+    {
+      framework: "node",
+      source: "dotnet",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "Passed! - Failed: 0, Passed: 1, Skipped: 0, Total: 1, Duration: 0 ms"),
+    {
+      framework: "unknown",
+      source: "dotnet",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      durationMs: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Passed! - Failed: 0, Passed: 1, Skipped: 0, Total: 1",
+        "Failed! - Failed: 1, Passed: 1, Skipped: 0, Total: 2",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "dotnet",
+      total: 2,
+      passed: 1,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "Passed! - Failed: 1, Passed: 1, Skipped: 0, Total: 2"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "Failed! - Failed: 0, Passed: 2, Skipped: 0, Total: 2"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "Passed! - Failed: 0, Passed: 1, Skipped: 0, Total: 2"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "Passed! - Failed: 0, Passed: 1, Skipped: 0, Total: 1, Duration: 1 s after cleanup"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "Passed! - Failed: 0, Passed: 1, Skipped: 0, Total: 1, Duration: 1 s - after cleanup"),
+    undefined,
+  );
 });
 
 test("parses structured framework JSON reports before stdout fallback", () => {

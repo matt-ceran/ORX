@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "go" | "rspec" | "unittest" | "junit-text" | "phpunit" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "go" | "rspec" | "unittest" | "junit-text" | "phpunit" | "dotnet" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -700,11 +700,11 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     unknown: parseGenericReportSummary,
   };
   if (framework === "node") {
-    return [parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseGenericReportSummary];
+    return [parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseGenericReportSummary]
-    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseGenericReportSummary];
+    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseGenericReportSummary]
+    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -1264,6 +1264,38 @@ function parsePhpunitReportSummary(text: string, framework: TestFramework): Test
   return hasReportCounts(report) ? report : undefined;
 }
 
+function parseDotnetReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  let counts:
+    | {
+        total: number;
+        passed: number;
+        failed: number;
+        skipped: number;
+        durationMs?: number;
+      }
+    | undefined;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const candidate = parseDotnetStatusLine(rawLine.trim());
+    if (candidate) {
+      counts = candidate;
+    }
+  }
+  if (!counts) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "dotnet",
+  };
+  assignNumber(report, "total", counts.total);
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
+  assignNumber(report, "durationMs", counts.durationMs);
+  return hasReportCounts(report) ? report : undefined;
+}
+
 function parseGenericReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
   const line = matchFirstNamedLine(text, ["Tests", "Test Results", "Test Summary", "Summary", "Results"]);
   if (!line) {
@@ -1332,6 +1364,78 @@ function parseJunitTextStatusLine(line: string): {
     skipped,
     durationMs: match[5] === undefined ? undefined : parseSecondsDurationMs(match[5]),
   };
+}
+
+function parseDotnetStatusLine(line: string): {
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  durationMs?: number;
+} | undefined {
+  const match = /^(Passed|Failed)!\s+-\s+Failed:\s*(\d+),\s*Passed:\s*(\d+),\s*Skipped:\s*(\d+),\s*Total:\s*(\d+)(?:,\s*Duration:\s*(.+))?$/i.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const status = (match[1] ?? "").toLowerCase();
+  const failed = Number.parseInt(match[2] ?? "", 10);
+  const passed = Number.parseInt(match[3] ?? "", 10);
+  const skipped = Number.parseInt(match[4] ?? "", 10);
+  const total = Number.parseInt(match[5] ?? "", 10);
+  if (![failed, passed, skipped, total].every((value) => Number.isInteger(value) && value >= 0)) {
+    return undefined;
+  }
+  if (passed + failed + skipped !== total) {
+    return undefined;
+  }
+  if ((status === "passed" && failed > 0) || (status === "failed" && failed === 0)) {
+    return undefined;
+  }
+  const durationMs = match[6] === undefined ? undefined : parseDotnetDurationMs(match[6]);
+  if (match[6] !== undefined && durationMs === undefined) {
+    return undefined;
+  }
+
+  return {
+    total,
+    passed,
+    failed,
+    skipped,
+    durationMs,
+  };
+}
+
+function parseDotnetDurationMs(text: string): number | undefined {
+  let durationText = text.trim();
+  const suffixIndex = durationText.search(/\s+-\s+\S/);
+  if (suffixIndex >= 0) {
+    const suffix = durationText.slice(suffixIndex).trim();
+    if (!/^-\s+\S+\.dll(?:\s+\([^)]+\))?$/.test(suffix)) {
+      return undefined;
+    }
+    durationText = durationText.slice(0, suffixIndex).trim();
+  }
+  if (!/^(?:\d+(?:\.\d+)?\s*(?:milliseconds?|msec|ms|minutes?|min|m|seconds?|sec|s|hours?|hr|h)(?:\s+|$))+$/.test(durationText)) {
+    return undefined;
+  }
+  let total = 0;
+  for (const match of durationText.matchAll(/(\d+(?:\.\d+)?)\s*(milliseconds?|msec|ms|minutes?|min|m|seconds?|sec|s|hours?|hr|h)/gi)) {
+    const amount = Number.parseFloat(match[1] ?? "");
+    const unit = (match[2] ?? "").toLowerCase();
+    if (!Number.isFinite(amount) || amount < 0) {
+      return undefined;
+    }
+    if (unit === "ms" || unit === "msec" || unit.startsWith("millisecond")) {
+      total += amount;
+    } else if (unit === "s" || unit === "sec" || unit.startsWith("second")) {
+      total += amount * 1000;
+    } else if (unit === "m" || unit === "min" || unit.startsWith("minute")) {
+      total += amount * 60_000;
+    } else {
+      total += amount * 3_600_000;
+    }
+  }
+  return Math.round(total * 1000) / 1000;
 }
 
 function parsePhpunitOkLine(line: string): {
