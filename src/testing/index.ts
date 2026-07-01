@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   existsSync,
   lstatSync,
@@ -102,6 +103,10 @@ export interface RunTestOptions {
   maxBytes?: number;
   signal?: AbortSignal;
 }
+
+export type TestRunArgsParseResult =
+  | { ok: true; targetId?: string; extraArgs: string[]; json: boolean }
+  | { ok: false; message: string };
 
 const MAX_SCRIPT_TARGETS = 32;
 const MAX_TEST_FILES = 64;
@@ -293,7 +298,7 @@ export function renderTestTargets(discovery: TestDiscovery): string {
     }
   }
 
-  lines.push("  usage: orx tests run [target-id] [-- args...]");
+  lines.push("  usage: orx tests run [target-id] [--json] [-- args...]");
   return lines.join("\n");
 }
 
@@ -315,7 +320,7 @@ export function renderTestTargetsJson(discovery: TestDiscovery): string {
     omissions_truncated: discovery.omissions.length > 10,
     omitted_omission_count: Math.max(0, discovery.omissions.length - 10),
     omissions: discovery.omissions.slice(0, 10).map(testTargetOmissionJson),
-    usage: "orx tests run [target-id] [-- args...]",
+    usage: "orx tests run [target-id] [--json] [-- args...]",
   }, null, 2);
 }
 
@@ -343,6 +348,42 @@ function testTargetOmissionJson(omission: TestTargetOmission): Record<string, st
   return {
     reason: omission.reason,
     path: omission.path ? sanitizeRenderedToken(omission.path) : undefined,
+  };
+}
+
+export function parseTestRunArgs(
+  args: string[],
+  usage = "Usage: orx tests run [target-id] [--json] [-- args...]",
+): TestRunArgsParseResult {
+  const positional: string[] = [];
+  let json = false;
+  let extraArgs: string[] = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (arg === "--") {
+      extraArgs = args.slice(index + 1);
+      break;
+    }
+    if (arg === "--json") {
+      json = true;
+      continue;
+    }
+    if (arg.startsWith("-")) {
+      return { ok: false, message: `${usage}\nUnknown tests run option: ${sanitizeRenderedToken(arg)}` };
+    }
+    positional.push(arg);
+  }
+
+  if (positional.length > 1) {
+    return { ok: false, message: usage };
+  }
+
+  return {
+    ok: true,
+    targetId: positional[0],
+    extraArgs,
+    json,
   };
 }
 
@@ -387,6 +428,41 @@ export function renderTestRunResult(result: TestRunResult): string {
   ];
 
   return lines.filter((line): line is string => typeof line === "string").join("\n");
+}
+
+export function renderTestRunResultJson(result: TestRunResult): string {
+  return JSON.stringify({
+    schema_version: 1,
+    surface: "orx.test_run",
+    operator_only: true,
+    model_tool: "run_tests_separate_native_tool",
+    execution: "explicit_operator_test_run",
+    network: "orx_does_not_call_network; invoked test command may do its own work",
+    status: result.status,
+    ok: result.ok,
+    target: result.target ? testTargetJson(result.target) : undefined,
+    command: result.command
+      ? {
+          binary: sanitizeRenderedToken(result.command),
+          args: result.args.map(sanitizeRenderedToken),
+          shell: false,
+          command_line: sanitizeRenderedToken([result.command, ...result.args].join(" ")),
+        }
+      : undefined,
+    cwd: sanitizeRenderedToken(result.cwd),
+    process: {
+      exit_code: result.exitCode,
+      signal: result.signal,
+      timed_out: result.timedOut,
+      duration_ms: result.durationMs,
+    },
+    report: result.report,
+    raw_output: {
+      stdout: testOutputJson(result.stdout, result.stdoutTruncated),
+      stderr: testOutputJson(result.stderr, result.stderrTruncated),
+    },
+    message: sanitizeRenderedToken(result.message),
+  }, null, 2);
 }
 
 export function formatTestTargetIdForMessage(id: string): string {
@@ -8006,6 +8082,16 @@ function sanitizeRenderedToken(text: string): string {
   const withoutControls = stripTerminalControls(text).replace(CONTROL_CHAR_PATTERN, "");
   const redacted = redactSecrets(withoutControls);
   return typeof redacted === "string" && redacted.trim() ? redacted.trim() : "[redacted]";
+}
+
+function testOutputJson(value = "", truncated = false): Record<string, unknown> {
+  return {
+    text: value,
+    sha256: createHash("sha256").update(value).digest("hex"),
+    truncated,
+    bytes: Buffer.byteLength(value, "utf8"),
+    lines: value ? value.replace(/\r\n|\r/g, "\n").split("\n").length : 0,
+  };
 }
 
 function formatOutputBlock(text: string): string {

@@ -7,8 +7,10 @@ import {
   discoverTestTargets,
   getTestAdapterSummary,
   parseTestReportSummary,
+  parseTestRunArgs,
   parseStructuredTestReportSummary,
   renderTestRunResult,
+  renderTestRunResultJson,
   renderTestTargets,
   runTestTarget,
   type TestFramework,
@@ -63,6 +65,35 @@ test("discovers and runs package script test targets", async () => {
     assert.match(result.stdout ?? "", /adapter-pass unit,--flag/);
     assert.match(renderTestRunResult(result), /status: ok/);
     assert.match(renderTestRunResult(result), /report: source=generic tests=1 passed=1/);
+    const renderedJson = JSON.parse(renderTestRunResultJson(result)) as {
+      surface: string;
+      status: string;
+      ok: boolean;
+      target: { id: string };
+      report: { source: string; total: number; passed: number };
+      raw_output: { stdout: { text: string; truncated: boolean } };
+    };
+    assert.equal(renderedJson.surface, "orx.test_run");
+    assert.equal(renderedJson.status, "ok");
+    assert.equal(renderedJson.ok, true);
+    assert.equal(renderedJson.target.id, "script:test:unit");
+    assert.equal(renderedJson.report.source, "generic");
+    assert.equal(renderedJson.report.total, 1);
+    assert.equal(renderedJson.report.passed, 1);
+    assert.match(renderedJson.raw_output.stdout.text, /adapter-pass unit,--flag/);
+    assert.equal(renderedJson.raw_output.stdout.truncated, false);
+    assert.deepEqual(parseTestRunArgs(["script:test:unit", "--json", "--", "--flag"]), {
+      ok: true,
+      targetId: "script:test:unit",
+      extraArgs: ["--flag"],
+      json: true,
+    });
+    assert.deepEqual(parseTestRunArgs(["--", "--json"]), {
+      ok: true,
+      targetId: undefined,
+      extraArgs: ["--json"],
+      json: false,
+    });
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

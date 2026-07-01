@@ -250,7 +250,9 @@ import { formatStatus } from "./status.js";
 import {
   discoverTestTargets,
   parseTestReadinessJsonFlag,
+  parseTestRunArgs,
   renderTestRunResult,
+  renderTestRunResultJson,
   renderTestTargets,
   renderTestTargetsJson,
   runTestTarget,
@@ -308,7 +310,7 @@ const CLI_NAMESPACE_USAGES = {
   plugins: "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|doctor|audit|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
   bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
-  tests: "Usage: orx tests [list [--json]|status [--json]|run [target-id] [-- args...]]",
+  tests: "Usage: orx tests [list [--json]|status [--json]|run [target-id] [--json] [-- args...]]",
   code: "Usage: orx code [map|symbols|refs|imports|calls|ast-grep|tree-sitter|outline] [query-or-path]",
   scanners: SCANNERS_USAGE,
   scan: SCAN_USAGE,
@@ -1074,13 +1076,17 @@ async function runTestsCommand(args: string[], io: CliIo): Promise<number> {
   }
 
   if (subcommand === "run") {
-    const parsed = parseTestRunArgs(args.slice(1));
+    const parsed = parseTestRunArgs(args.slice(1), CLI_NAMESPACE_USAGES.tests);
+    if (!parsed.ok) {
+      writeLine(io.stderr, parsed.message);
+      return 1;
+    }
     const result = await runTestTarget({
       cwd: io.cwd,
       targetId: parsed.targetId,
       extraArgs: parsed.extraArgs,
     });
-    writeLine(result.ok ? io.stdout : io.stderr, renderTestRunResult(result));
+    writeLine(result.ok ? io.stdout : io.stderr, parsed.json ? renderTestRunResultJson(result) : renderTestRunResult(result));
     return result.ok ? 0 : 1;
   }
 
@@ -2212,19 +2218,6 @@ function runProfileCommand(
 
   writeLine(io.stderr, CLI_NAMESPACE_USAGES.profile);
   return 1;
-}
-
-function parseTestRunArgs(args: string[]): { targetId?: string; extraArgs: string[] } {
-  if (args.length === 0) {
-    return { extraArgs: [] };
-  }
-  if (args[0] === "--") {
-    return { extraArgs: args.slice(1) };
-  }
-  if (args[1] === "--") {
-    return { targetId: args[0], extraArgs: args.slice(2) };
-  }
-  return { targetId: args[0], extraArgs: args.slice(1) };
 }
 
 async function runPluginsCommand(

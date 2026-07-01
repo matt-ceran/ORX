@@ -89,7 +89,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.match(output, /\/auth \[status\|setup\|env\|init\|env-file\]\s+Inspect or initialize core OpenRouter auth setup/);
   assert.match(output, /\/profile \[list\|save <id> \[options\]\|use\|inspect\|delete\]\s+Manage saved local config profiles/);
   assert.match(output, /\/history \[search <query>\|clear\]\s+Search or clear local prompt history/);
-  assert.match(output, /\/tests \[list \[--json\]\|status \[--json\]\|run \[target-id\] \[-- args\.\.\.\]\]\s+Discover or run native test targets \(aliases: \/test\)/);
+  assert.match(output, /\/tests \[list \[--json\]\|status \[--json\]\|run \[target-id\] \[--json\] \[-- args\.\.\.\]\]\s+Discover or run native test targets \(aliases: \/test\)/);
   assert.match(output, /\/map \[path\]\s+Render a bounded local repository code map/);
   assert.match(output, /\/model <id-or-search>\s+Resolve and switch OpenRouter model \(aliases: \/m\)/);
   assert.match(output, /\/quit\s+Leave chat \(aliases: \/q, \/exit\)/);
@@ -125,7 +125,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/orchestrator \[status\|plan\|openrouter <model>\|clear\]/);
   assert.match(output, /\/delegate \[help\|status\|plan\|add\|remove\|clear\|team\|policy\]/);
   assert.match(output, /\/delegates \[list\|status\|plan\|policy\|teams\|save\|use\|inspect\|delete\]/);
-  assert.match(output, /\/tests \[list \[--json\]\|status \[--json\]\|run \[target-id\] \[-- args\.\.\.\]\]/);
+  assert.match(output, /\/tests \[list \[--json\]\|status \[--json\]\|run \[target-id\] \[--json\] \[-- args\.\.\.\]\]/);
   assert.match(output, /\/code \[map\|symbols\|refs\|imports\|calls\|ast-grep\|tree-sitter\|outline\]/);
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
   assert.match(output, /\/scanners \[list \[--json\]\|status \[--json\]\|inspect <profile> \[--json\]\|show <profile> \[--json\]\|run <semgrep\|trivy> <path> \[--config <local-config-path>\] \[--json\]\]/);
@@ -316,6 +316,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/tests r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/tests list --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/tests status --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/tests run --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/code m"), [["map "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/code s"), [["symbols "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/code c"), [["calls "], "c"]);
@@ -1665,6 +1666,29 @@ test("tests slash command lists and runs package scripts", async () => {
     assert.match(harness.stdout(), /status: ok/);
     assert.match(harness.stdout(), /slash-test unit,--flag/);
     assert.equal(harness.stderr(), "");
+
+    const runJson = createSlashHarness({ cwd });
+    assert.equal(
+      await handleSlashCommand("/tests run script:test:unit --json -- --flag", runJson.context),
+      "continue",
+    );
+    const runReport = JSON.parse(runJson.stdout());
+    assert.equal(runReport.surface, "orx.test_run");
+    assert.equal(runReport.status, "ok");
+    assert.equal(runReport.ok, true);
+    assert.equal(runReport.target.id, "script:test:unit");
+    assert.match(runReport.raw_output.stdout.text, /slash-test unit,--flag/);
+    assert.equal(runJson.stderr(), "");
+
+    const passThroughJsonArg = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/tests run script:test:unit -- --json", passThroughJsonArg.context), "continue");
+    assert.match(passThroughJsonArg.stdout(), /slash-test unit,--json/);
+    assert.doesNotMatch(passThroughJsonArg.stdout(), /"surface": "orx\.test_run"/);
+
+    const badRunOption = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/tests run --xml", badRunOption.context), "continue");
+    assert.match(badRunOption.stderr(), /Unknown tests run option: --xml/);
+    assert.equal(badRunOption.stdout(), "");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

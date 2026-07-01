@@ -53,7 +53,7 @@ npm run pack:dry-run
 - First-run/readiness: `orx init`, `orx auth`, `orx auth setup`, `orx auth init`, `orx doctor`, `orx doctor --strict`, `orx doctor --json`, `orx guide`, `orx quickstart`, `orx status`.
 - OpenRouter interaction: `orx` / `orx chat`, `orx ask`, `orx models`, `orx credits`, `orx generation`, exact model ids, `openrouter/auto`, `openrouter/fusion`, Fusion presets, streaming metadata, and cost/token summaries when OpenRouter returns them.
 - Config/local UX: `orx config show|path|set`, profiles, themes, prompt history, TTY status/composer polish, multiline input, command discovery, and slash-command completion.
-- Local coding tools: file/search/shell/diff/patch model tools, native `run_tests`, `orx tests` with discovery-only JSON target listings and structured report summaries, code maps, symbols, refs, imports, lexical call graphs, optional local ast-grep previews, and optional local tree-sitter parse/file-inventory previews.
+- Local coding tools: file/search/shell/diff/patch model tools, native `run_tests`, `orx tests` with discovery-only JSON target listings, structured test-run JSON, and structured report summaries, code maps, symbols, refs, imports, lexical call graphs, optional local ast-grep previews, and optional local tree-sitter parse/file-inventory previews.
 - Explicit operator integrations: TypeScript/Pyright/ESLint/Ruff/Mypy/gopls/clangd diagnostics, Semgrep and Trivy-secret scanner profiles, MCP preset/profile management, guarded MCP calls/model grants, plugin scaffold/validate/install/review, trusted plugin bins/hooks, skills/prompts/rules, and policy-gated delegation.
 - Automation: `npm run verify:release`, `npm run verify:global-install`, and `npm run pack:dry-run`.
 

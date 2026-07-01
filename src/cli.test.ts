@@ -1482,6 +1482,32 @@ test("cli tests commands list and run package scripts without an API key", async
     assert.match(ran.stdout(), /cli-test unit,--flag/);
     assert.equal(ran.stderr(), "");
 
+    const runJson = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "tests", "run", "script:test:unit", "--json", "--", "--flag"], {}, runJson.io),
+      0,
+    );
+    const runJsonReport = JSON.parse(runJson.stdout());
+    assert.equal(runJsonReport.surface, "orx.test_run");
+    assert.equal(runJsonReport.status, "ok");
+    assert.equal(runJsonReport.ok, true);
+    assert.equal(runJsonReport.target.id, "script:test:unit");
+    assert.equal(runJsonReport.command.shell, false);
+    assert.match(runJsonReport.raw_output.stdout.text, /cli-test unit,--flag/);
+    assert.equal(runJson.stderr(), "");
+
+    const passThroughJsonArg = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "tests", "run", "script:test:unit", "--", "--json"], {}, passThroughJsonArg.io),
+      0,
+    );
+    assert.match(passThroughJsonArg.stdout(), /cli-test unit,--json/);
+    assert.doesNotMatch(passThroughJsonArg.stdout(), /"surface": "orx\.test_run"/);
+
+    const badRunOption = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "tests", "run", "--xml"], {}, badRunOption.io), 1);
+    assert.match(badRunOption.stderr(), /Unknown tests run option: --xml/);
+
     const unknown = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "tests", "unknown"], {}, unknown.io), 1);
     assert.match(unknown.stderr(), /Usage: orx tests/);

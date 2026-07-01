@@ -218,6 +218,8 @@ Current status as of 2026-07-01: first native test adapter, framework-aware test
 
 Later 2026-07-01 tree-sitter repo-file update: `orx code tree-sitter repo-files [path]`, `orx tree-sitter repo-files [path]`, `/code tree-sitter repo-files [path]`, and `/tree-sitter repo-files [path]` now expose the bounded cwd-confined source-file inventory and omissions used by repo tree-sitter modes without invoking or requiring `tree-sitter`, parsing files, mutating files, exposing a model tool, or claiming semantic analysis.
 
+Later 2026-07-01 test run JSON update: `orx tests run [target-id] --json` and `/tests run [target-id] --json` now emit ORX-owned structured run metadata after explicit operator execution, including status, target, command, process, parsed report counts, and bounded redacted stdout/stderr text plus hashes; `--json` after `--` remains a test-runner argument.
+
 Karma-style summary parsing note: exact already-captured `TOTAL:` lines such as `TOTAL: 1 FAILED, 2 SUCCESS, 1 SKIPPED` now render `source=karma` counts through the same stdout/stderr fallback path, without reporter flags, report files, installs, network, or new model-tool exposure.
 
 Bun-style summary parsing note: exact already-captured default-console lines such as `4 pass`, `0 fail`, and `Ran 4 tests in 1.44ms` or `Ran 3 tests across 2 files. [50.00ms]` now render `source=bun` counts through the same stdout/stderr fallback path, without reporter flags, report files, installs, network, or new model-tool exposure.

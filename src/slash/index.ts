@@ -276,7 +276,9 @@ import {
 import {
   discoverTestTargets,
   parseTestReadinessJsonFlag,
+  parseTestRunArgs,
   renderTestRunResult,
+  renderTestRunResultJson,
   renderTestTargets,
   renderTestTargetsJson,
   runTestTarget,
@@ -570,7 +572,8 @@ const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untru
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
 const TEST_READINESS_OPTION_COMPLETIONS = ["--json"] as const;
-const SLASH_TESTS_USAGE = "/tests [list [--json]|status [--json]|run [target-id] [-- args...]]";
+const TEST_RUN_OPTION_COMPLETIONS = ["--json"] as const;
+const SLASH_TESTS_USAGE = "/tests [list [--json]|status [--json]|run [target-id] [--json] [-- args...]]";
 const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls", "ast-grep", "tree-sitter", "outline"] as const;
 const TREE_SITTER_MODE_COMPLETIONS = ["parse", "outline", "imports", "refs", "calls", "repo-files", "repo-outline", "repo-symbols", "repo-refs", "repo-calls", "repo-imports", "repo-deps"] as const;
 const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "run"] as const;
@@ -1960,6 +1963,9 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       if ((firstArg === "list" || firstArg === "status") && argIndex === 1) {
         return [...TEST_READINESS_OPTION_COMPLETIONS];
       }
+      if (firstArg === "run" && argIndex >= 1 && !completedArgs.includes("--")) {
+        return [...TEST_RUN_OPTION_COMPLETIONS];
+      }
       return [];
     case "/code":
       if (argIndex === 0) {
@@ -2718,30 +2724,21 @@ async function handleTestsCommand(command: SlashCommand, context: SlashCommandCo
   }
 
   if (subcommand === "run") {
-    const parsed = parseTestRunArgs(command.args.slice(1));
+    const parsed = parseTestRunArgs(command.args.slice(1), `Usage: ${SLASH_TESTS_USAGE}`);
+    if (!parsed.ok) {
+      writeLine(context.io.stderr, parsed.message);
+      return;
+    }
     const result = await runTestTarget({
       cwd: context.io.cwd,
       targetId: parsed.targetId,
       extraArgs: parsed.extraArgs,
     });
-    writeLine(result.ok ? context.io.stdout : context.io.stderr, renderTestRunResult(result));
+    writeLine(result.ok ? context.io.stdout : context.io.stderr, parsed.json ? renderTestRunResultJson(result) : renderTestRunResult(result));
     return;
   }
 
   writeLine(context.io.stderr, `Usage: ${SLASH_TESTS_USAGE}`);
-}
-
-function parseTestRunArgs(args: string[]): { targetId?: string; extraArgs: string[] } {
-  if (args.length === 0) {
-    return { extraArgs: [] };
-  }
-  if (args[0] === "--") {
-    return { extraArgs: args.slice(1) };
-  }
-  if (args[1] === "--") {
-    return { targetId: args[0], extraArgs: args.slice(2) };
-  }
-  return { targetId: args[0], extraArgs: args.slice(1) };
 }
 
 function handleOpenRouterAuthCommand(command: SlashCommand, context: SlashCommandContext): void {
