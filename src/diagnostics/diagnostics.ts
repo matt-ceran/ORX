@@ -6,13 +6,13 @@ import { runProcess, type RunProcessOptions, type RunProcessResult } from "../to
 import type { TextTruncation } from "../tools/types.js";
 
 export const DIAGNOSTICS_USAGE =
-  "Usage: orx diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: orx diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const DIAG_USAGE =
-  "Usage: orx diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: orx diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAGNOSTICS_USAGE =
-  "Usage: /diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: /diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAG_USAGE =
-  "Usage: /diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: /diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
 
 export type DiagnosticProfileId =
   | "typescript"
@@ -20,6 +20,7 @@ export type DiagnosticProfileId =
   | "pyright"
   | "eslint"
   | "ruff"
+  | "mypy"
   | "rust-analyzer"
   | "gopls"
   | "clangd"
@@ -35,7 +36,7 @@ export interface DiagnosticProfile {
   networkBoundary: string;
 }
 
-export type RunnableDiagnosticProfileId = "typescript" | "pyright" | "eslint" | "ruff" | "gopls" | "clangd";
+export type RunnableDiagnosticProfileId = "typescript" | "pyright" | "eslint" | "ruff" | "mypy" | "gopls" | "clangd";
 
 export interface LocalDiagnosticsArgs {
   profile: RunnableDiagnosticProfileId;
@@ -162,6 +163,15 @@ const DIAGNOSTIC_PROFILES: DiagnosticProfile[] = [
     networkBoundary: "no installs, package-manager calls, MCP calls, network calls, or model exposure by command selection",
   },
   {
+    id: "mypy",
+    label: "Mypy",
+    state: "runnable",
+    binary: "mypy",
+    summary: "Local Python type diagnostics using an already-installed Mypy binary.",
+    runSupport: "runnable only through `run mypy [--project <local-file-or-directory>] [--json]`",
+    networkBoundary: "no installs, package-manager calls, MCP calls, network calls, cache writes, or model exposure by command selection",
+  },
+  {
     id: "rust-analyzer",
     label: "rust-analyzer",
     state: "catalog_only",
@@ -200,11 +210,12 @@ const DIAGNOSTIC_PROFILES: DiagnosticProfile[] = [
 ];
 
 const PROFILE_IDS = new Set<DiagnosticProfileId>(DIAGNOSTIC_PROFILES.map((profile) => profile.id));
-const RUNNABLE_PROFILE_IDS = new Set<RunnableDiagnosticProfileId>(["typescript", "pyright", "eslint", "ruff", "gopls", "clangd"]);
+const RUNNABLE_PROFILE_IDS = new Set<RunnableDiagnosticProfileId>(["typescript", "pyright", "eslint", "ruff", "mypy", "gopls", "clangd"]);
 const DEFAULT_TYPESCRIPT_TIMEOUT_MS = 120_000;
 const DEFAULT_PYRIGHT_TIMEOUT_MS = 120_000;
 const DEFAULT_ESLINT_TIMEOUT_MS = 120_000;
 const DEFAULT_RUFF_TIMEOUT_MS = 120_000;
+const DEFAULT_MYPY_TIMEOUT_MS = 120_000;
 const DEFAULT_GOPLS_TIMEOUT_MS = 120_000;
 const DEFAULT_CLANGD_TIMEOUT_MS = 120_000;
 const DEFAULT_DIAGNOSTIC_OUTPUT_BYTES = 128 * 1024;
@@ -212,12 +223,14 @@ const TSC_DISCOVERY_TIMEOUT_MS = 5_000;
 const PYRIGHT_DISCOVERY_TIMEOUT_MS = 5_000;
 const ESLINT_DISCOVERY_TIMEOUT_MS = 5_000;
 const RUFF_DISCOVERY_TIMEOUT_MS = 5_000;
+const MYPY_DISCOVERY_TIMEOUT_MS = 5_000;
 const GOPLS_DISCOVERY_TIMEOUT_MS = 5_000;
 const CLANGD_DISCOVERY_TIMEOUT_MS = 5_000;
 const TSC_DISCOVERY_BYTES = 8 * 1024;
 const PYRIGHT_DISCOVERY_BYTES = 8 * 1024;
 const ESLINT_DISCOVERY_BYTES = 8 * 1024;
 const RUFF_DISCOVERY_BYTES = 8 * 1024;
+const MYPY_DISCOVERY_BYTES = 8 * 1024;
 const GOPLS_DISCOVERY_BYTES = 8 * 1024;
 const CLANGD_DISCOVERY_BYTES = 8 * 1024;
 const MAX_DIAGNOSTIC_PATH_LENGTH = 4096;
@@ -354,6 +367,17 @@ function diagnosticProfileJsonDetails(profile: DiagnosticProfile): Record<string
       run: "orx diagnostics run ruff [--project <local-file-or-directory>] [--json]",
     };
   }
+  if (profile.id === "mypy") {
+    return {
+      default_project: ". under cwd",
+      command_shape: "mypy --no-color-output --no-error-summary --show-column-numbers --no-incremental --cache-dir <null-device> <file-or-directory>",
+      binary_preference: "cwd/node_modules/.bin/mypy, then cwd/.venv/bin/mypy or cwd/venv/bin/mypy, before PATH mypy",
+      project_guard: "local regular file or directory under cwd; symlink realpath must remain under cwd",
+      rejected_projects: "URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
+      output: "bounded and redacted; --json emits ORX-owned structured JSON with parsed Mypy text diagnostics",
+      run: "orx diagnostics run mypy [--project <local-file-or-directory>] [--json]",
+    };
+  }
   if (profile.id === "gopls") {
     return {
       default_project: "none; --project <local-go-file> is required",
@@ -436,6 +460,17 @@ export function renderDiagnosticProfileInspect(profile: DiagnosticProfile): stri
       "  rejected_projects: URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
       "  output: bounded and redacted; --json emits ORX-owned structured JSON with parsed Ruff diagnostics",
       "  run: orx diagnostics run ruff [--project <local-file-or-directory>] [--json]",
+    );
+  }
+  if (profile.id === "mypy") {
+    lines.push(
+      "  default_project: . under cwd",
+      "  command_shape: mypy --no-color-output --no-error-summary --show-column-numbers --no-incremental --cache-dir <null-device> <file-or-directory>",
+      "  binary_preference: cwd/node_modules/.bin/mypy, then cwd/.venv/bin/mypy or cwd/venv/bin/mypy, before PATH mypy",
+      "  project_guard: local regular file or directory under cwd; symlink realpath must remain under cwd",
+      "  rejected_projects: URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
+      "  output: bounded and redacted; --json emits ORX-owned structured JSON with parsed Mypy text diagnostics",
+      "  run: orx diagnostics run mypy [--project <local-file-or-directory>] [--json]",
     );
   }
   if (profile.id === "gopls") {
@@ -817,6 +852,9 @@ function resolveProjectPath(
   if (profile === "ruff" && !safeIsFile(realResolved) && !safeIsDirectory(realResolved)) {
     return { ok: false, message: "project must be a regular local file or directory." };
   }
+  if (profile === "mypy" && !safeIsFile(realResolved) && !safeIsDirectory(realResolved)) {
+    return { ok: false, message: "project must be a regular local file or directory." };
+  }
 
   const relativePath = relative(cwd, resolved).split(/[\\/]/g).join("/") || ".";
   if (profile === "gopls") {
@@ -919,10 +957,15 @@ function resolveLocalDiagnosticCommand(
       source: "local_node_modules",
     };
   }
-  if (profile === "ruff") {
+  if (profile === "ruff" || profile === "mypy") {
     const venvCandidates = process.platform === "win32"
-      ? [".venv/Scripts/ruff.exe", "venv/Scripts/ruff.exe", ".venv/Scripts/ruff.cmd", "venv/Scripts/ruff.cmd"]
-      : [".venv/bin/ruff", "venv/bin/ruff"];
+      ? [
+        `.venv/Scripts/${binary}.exe`,
+        `venv/Scripts/${binary}.exe`,
+        `.venv/Scripts/${binary}.cmd`,
+        `venv/Scripts/${binary}.cmd`,
+      ]
+      : [`.venv/bin/${binary}`, `venv/bin/${binary}`];
     for (const candidate of venvCandidates) {
       const absolute = resolve(cwd, candidate);
       if (!existsSync(absolute)) {
@@ -966,6 +1009,9 @@ function validateProjectPathValue(value: string, profile: RunnableDiagnosticProf
     }
     if (profile === "ruff") {
       return "project must be a local Ruff file or directory, not a package, registry, or launcher value.";
+    }
+    if (profile === "mypy") {
+      return "project must be a local Mypy file or directory, not a package, registry, or launcher value.";
     }
     if (profile === "gopls") {
       return "project must be a local Go file, not a package, registry, or launcher value.";
@@ -1167,6 +1213,9 @@ function parseDiagnosticsForProfile(
   if (profile === "ruff") {
     return parseRuffDiagnostics(stdout, root);
   }
+  if (profile === "mypy") {
+    return parseMypyDiagnostics(`${stdout}\n${stderr}`, root);
+  }
   if (profile === "gopls") {
     return parseGoplsDiagnostics(`${stdout}\n${stderr}`, root);
   }
@@ -1250,6 +1299,37 @@ function parseRuffDiagnostics(output: string, root: string): ParsedTypeScriptDia
         ? sanitizeInline(entry.code)
         : "ruff",
       message: typeof entry.message === "string" ? sanitizeInline(entry.message) : "[redacted]",
+    };
+    const key = JSON.stringify(diagnostic);
+    if (!seen.has(key)) {
+      seen.add(key);
+      diagnostics.push(diagnostic);
+    }
+  }
+  return diagnostics;
+}
+
+function parseMypyDiagnostics(output: string, root: string): ParsedTypeScriptDiagnostic[] {
+  const diagnostics: ParsedTypeScriptDiagnostic[] = [];
+  const seen = new Set<string>();
+  const linePattern = /^(.+?):(?:(\d+):)?(?:(\d+):)?\s*(error|note|warning):\s+(.+)$/;
+  for (const rawLine of output.replace(/\r\n|\r/g, "\n").split("\n")) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const match = line.match(linePattern);
+    if (!match) {
+      continue;
+    }
+    const messageAndCode = extractTrailingBracketCode(match[5] ?? "", "mypy");
+    const diagnostic = {
+      file: formatDiagnosticFile(match[1] ?? "", root),
+      line: Number.parseInt(match[2] ?? "1", 10),
+      column: toMypyColumnNumber(match[3]),
+      severity: normalizeMypySeverity(match[4]),
+      code: messageAndCode.code,
+      message: messageAndCode.message,
     };
     const key = JSON.stringify(diagnostic);
     if (!seen.has(key)) {
@@ -1355,6 +1435,17 @@ function buildDiagnosticCommandArgs(profile: RunnableDiagnosticProfileId, projec
   if (profile === "ruff") {
     return ["check", "--output-format", "json", "--no-cache", projectArg];
   }
+  if (profile === "mypy") {
+    return [
+      "--no-color-output",
+      "--no-error-summary",
+      "--show-column-numbers",
+      "--no-incremental",
+      "--cache-dir",
+      mypyNullCachePath(),
+      projectArg,
+    ];
+  }
   if (profile === "gopls") {
     return ["check", projectArg];
   }
@@ -1374,6 +1465,9 @@ function defaultProjectPathForProfile(profile: RunnableDiagnosticProfileId): str
   if (profile === "ruff") {
     return ".";
   }
+  if (profile === "mypy") {
+    return ".";
+  }
   return undefined;
 }
 
@@ -1390,6 +1484,9 @@ function defaultTimeoutForProfile(profile: RunnableDiagnosticProfileId): number 
   if (profile === "ruff") {
     return DEFAULT_RUFF_TIMEOUT_MS;
   }
+  if (profile === "mypy") {
+    return DEFAULT_MYPY_TIMEOUT_MS;
+  }
   return profile === "gopls" ? DEFAULT_GOPLS_TIMEOUT_MS : DEFAULT_CLANGD_TIMEOUT_MS;
 }
 
@@ -1405,6 +1502,9 @@ function diagnosticBinaryForProfile(profile: RunnableDiagnosticProfileId): strin
   }
   if (profile === "ruff") {
     return "ruff";
+  }
+  if (profile === "mypy") {
+    return "mypy";
   }
   return profile === "gopls" ? "gopls" : "clangd";
 }
@@ -1426,6 +1526,9 @@ function diagnosticMissingMessage(profile: RunnableDiagnosticProfileId): string 
   if (profile === "ruff") {
     return "ruff is not installed or not on PATH. Install Ruff locally in this project, project virtualenv, or make an existing ruff binary available on PATH; ORX will not install it for you.";
   }
+  if (profile === "mypy") {
+    return "mypy is not installed or not on PATH. Install Mypy locally in this project, project virtualenv, or make an existing mypy binary available on PATH; ORX will not install it for you.";
+  }
   if (profile === "gopls") {
     return "gopls is not installed or not on PATH. Install gopls locally for this project or make an existing gopls binary available on PATH; ORX will not install it for you.";
   }
@@ -1445,6 +1548,9 @@ function discoveryTimeoutForProfile(profile: RunnableDiagnosticProfileId): numbe
   if (profile === "ruff") {
     return RUFF_DISCOVERY_TIMEOUT_MS;
   }
+  if (profile === "mypy") {
+    return MYPY_DISCOVERY_TIMEOUT_MS;
+  }
   return profile === "gopls" ? GOPLS_DISCOVERY_TIMEOUT_MS : CLANGD_DISCOVERY_TIMEOUT_MS;
 }
 
@@ -1460,6 +1566,9 @@ function discoveryBytesForProfile(profile: RunnableDiagnosticProfileId): number 
   }
   if (profile === "ruff") {
     return RUFF_DISCOVERY_BYTES;
+  }
+  if (profile === "mypy") {
+    return MYPY_DISCOVERY_BYTES;
   }
   return profile === "gopls" ? GOPLS_DISCOVERY_BYTES : CLANGD_DISCOVERY_BYTES;
 }
@@ -1488,6 +1597,27 @@ function normalizeEslintSeverity(value: unknown): ParsedTypeScriptDiagnostic["se
   return value === 1 ? "warning" : "error";
 }
 
+function normalizeMypySeverity(value: unknown): ParsedTypeScriptDiagnostic["severity"] {
+  if (value === "error") {
+    return "error";
+  }
+  if (value === "warning") {
+    return "warning";
+  }
+  return "message";
+}
+
+function extractTrailingBracketCode(value: string, fallback: string): { message: string; code: string } {
+  const match = /^(.*?)(?:\s+\[([A-Za-z0-9_.-]+)\])?$/.exec(value);
+  const message = sanitizeInline(match?.[1] ?? value);
+  const code = match?.[2] ? sanitizeInline(match[2]) : fallback;
+  return { message, code };
+}
+
+function mypyNullCachePath(): string {
+  return process.platform === "win32" ? "nul" : "/dev/null";
+}
+
 function missingProjectMessageForProfile(profile: RunnableDiagnosticProfileId): string {
   if (profile === "gopls") {
     return "gopls diagnostics require --project <local-go-file>; gopls check accepts file arguments.";
@@ -1514,6 +1644,14 @@ function toOneBasedNumber(value: unknown): number {
 
 function toPositiveOneBasedNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.trunc(value) : 1;
+}
+
+function toMypyColumnNumber(value: unknown): number {
+  if (typeof value !== "string" || !value.trim()) {
+    return 1;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed + 1 : 1;
 }
 
 function formatDiagnosticFile(value: unknown, root: string): string {

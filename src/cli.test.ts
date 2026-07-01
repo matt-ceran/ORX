@@ -2099,6 +2099,8 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     writeFileSync(join(cwd, "node_modules", ".bin", "gopls"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "clangd"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, ".venv", "bin", "ruff"), "#!/usr/bin/env python\n");
+    writeFileSync(join(cwd, ".venv", "bin", "mypy"), "#!/usr/bin/env python\n");
+    const mypyCacheDir = process.platform === "win32" ? "nul" : "/dev/null";
 
     const list = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diagnostics", "list"], {}, list.io), 0);
@@ -2107,6 +2109,7 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.match(list.stdout(), /id=pyright state=runnable/);
     assert.match(list.stdout(), /id=eslint state=runnable/);
     assert.match(list.stdout(), /id=ruff state=runnable/);
+    assert.match(list.stdout(), /id=mypy state=runnable/);
     assert.match(list.stdout(), /id=gopls state=runnable/);
     assert.match(list.stdout(), /id=clangd state=runnable/);
 
@@ -2120,6 +2123,7 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.equal(profileEntries.find((profile) => profile.id === "typescript")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "eslint")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "ruff")?.state, "runnable");
+    assert.equal(profileEntries.find((profile) => profile.id === "mypy")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "rust-analyzer")?.state, "catalog_only");
     assert.equal(listJson.stderr(), "");
 
@@ -2142,6 +2146,11 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "ruff"], {}, inspectRuff.io), 0);
     assert.match(inspectRuff.stdout(), /Local diagnostics profile: ruff/);
     assert.match(inspectRuff.stdout(), /command_shape: ruff check --output-format json --no-cache <file-or-directory>/);
+
+    const inspectMypy = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "mypy"], {}, inspectMypy.io), 0);
+    assert.match(inspectMypy.stdout(), /Local diagnostics profile: mypy/);
+    assert.match(inspectMypy.stdout(), /command_shape: mypy --no-color-output --no-error-summary --show-column-numbers --no-incremental --cache-dir <null-device> <file-or-directory>/);
 
     const inspectPyrightJson = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "pyright", "--json"], {}, inspectPyrightJson.io), 0);
@@ -2166,6 +2175,17 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.equal(ruffInspectReport.profile.id, "ruff");
     assert.equal(ruffInspectReport.profile.details.command_shape, "ruff check --output-format json --no-cache <file-or-directory>");
     assert.equal(inspectRuffJson.stderr(), "");
+
+    const inspectMypyJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "mypy", "--json"], {}, inspectMypyJson.io), 0);
+    const mypyInspectReport = JSON.parse(inspectMypyJson.stdout());
+    assert.equal(mypyInspectReport.surface, "orx.local_diagnostics_profile");
+    assert.equal(mypyInspectReport.profile.id, "mypy");
+    assert.equal(
+      mypyInspectReport.profile.details.command_shape,
+      "mypy --no-color-output --no-error-summary --show-column-numbers --no-incremental --cache-dir <null-device> <file-or-directory>",
+    );
+    assert.equal(inspectMypyJson.stderr(), "");
 
     const inspectGopls = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diag", "inspect", "gopls"], {}, inspectGopls.io), 0);
@@ -2264,6 +2284,17 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
               end_location: { row: 1, column: 14 },
             },
           ]),
+          stderr: "Authorization: Bearer should-redact\n",
+        });
+      }
+      if (String(options.command).includes("mypy")) {
+        return mockProcessResult(options, {
+          exitCode: 1,
+          stdout: [
+            "src/app.py:1:7: error: Incompatible types in assignment access_token=abcd1234  [assignment]",
+            "src/app.py: note: See https://mypy.readthedocs.io/",
+            "",
+          ].join("\n"),
           stderr: "Authorization: Bearer should-redact\n",
         });
       }
@@ -2431,6 +2462,57 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.equal(ruffReport.diagnostics[0].file, "src/app.py");
     assert.doesNotMatch(ruffJson.stdout(), /abcd1234|should-redact/);
     assert.equal(ruffJson.stderr(), "");
+
+    const mypy = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "run", "mypy", "--project", "src/app.py"], {}, mypy.io),
+      1,
+    );
+    assert.equal(mypy.stdout(), "");
+    assert.match(mypy.stderr(), /Local diagnostics run/);
+    assert.match(mypy.stderr(), /profile: mypy/);
+    assert.match(mypy.stderr(), /status: failed/);
+    assert.match(mypy.stderr(), /binary_source: local_venv/);
+    assert.match(mypy.stderr(), /parsed_diagnostics: 2/);
+    assert.match(mypy.stderr(), /src\/app\.py:1:8 error assignment Incompatible types in assignment access_token=\[redacted\]/);
+    assert.match(mypy.stderr(), /src\/app\.py:1:1 message mypy See https:\/\/mypy\.readthedocs\.io\//);
+    assert.match(mypy.stderr(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(mypy.stderr(), /abcd1234|should-redact/);
+    assert.match(tscCalls.at(-1)?.command ?? "", /\.venv\/bin\/mypy$/);
+    assert.deepEqual(tscCalls.at(-1)?.args, [
+      "--no-color-output",
+      "--no-error-summary",
+      "--show-column-numbers",
+      "--no-incremental",
+      "--cache-dir",
+      mypyCacheDir,
+      "src/app.py",
+    ]);
+    assert.equal(tscCalls.at(-1)?.shell, false);
+    assert.equal(tscCalls.at(-1)?.inheritEnv, false);
+
+    const mypyJson = createIo({ cwd, diagnosticsRunner });
+    assert.equal(await runCli(["node", "cli", "diag", "run", "mypy", "--json"], {}, mypyJson.io), 1);
+    const mypyReport = JSON.parse(mypyJson.stdout());
+    assert.equal(mypyReport.surface, "orx.local_diagnostics");
+    assert.equal(mypyReport.profile, "mypy");
+    assert.equal(mypyReport.command.shell, false);
+    assert.deepEqual(mypyReport.command.args, [
+      "--no-color-output",
+      "--no-error-summary",
+      "--show-column-numbers",
+      "--no-incremental",
+      "--cache-dir",
+      mypyCacheDir,
+      ".",
+    ]);
+    assert.equal(mypyReport.command.binary_source, "local_venv");
+    assert.equal(mypyReport.diagnostics[0].code, "assignment");
+    assert.equal(mypyReport.diagnostics[0].file, "src/app.py");
+    assert.equal(mypyReport.diagnostics[0].column, 8);
+    assert.equal(mypyReport.diagnostics[1].severity, "message");
+    assert.doesNotMatch(mypyJson.stdout(), /abcd1234|should-redact/);
+    assert.equal(mypyJson.stderr(), "");
 
     const gopls = createIo({ cwd, diagnosticsRunner });
     assert.equal(
@@ -2612,6 +2694,43 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
       rmSync(pathOnlyRuffCwd, { recursive: true, force: true });
     }
 
+    const pathOnlyMypyCwd = createTempDir();
+    try {
+      writeFileSync(join(pathOnlyMypyCwd, "app.py"), "value: str = 1\n");
+      const pathCalls: Array<Parameters<DiagnosticsProcessRunner>[0]> = [];
+      const pathOnly = createIo({
+        cwd: pathOnlyMypyCwd,
+        diagnosticsRunner: async (options) => {
+          pathCalls.push(options);
+          if (String(options.command) === "mypy" && options.args?.join(" ") === "--version") {
+            return mockProcessResult(options, { exitCode: 0, stdout: "mypy 1.18.0\n" });
+          }
+          return mockProcessResult(options, { exitCode: 0, stdout: "" });
+        },
+      });
+      assert.equal(
+        await runCli(["node", "cli", "diagnostics", "run", "mypy", "--project", "app.py"], { PATH: "/usr/bin" }, pathOnly.io),
+        0,
+      );
+      assert.deepEqual(pathCalls.map((call) => call.args), [
+        ["--version"],
+        [
+          "--no-color-output",
+          "--no-error-summary",
+          "--show-column-numbers",
+          "--no-incremental",
+          "--cache-dir",
+          mypyCacheDir,
+          "app.py",
+        ],
+      ]);
+      assert.equal(pathCalls[0]?.command, "mypy");
+      assert.equal(pathCalls[1]?.command, "mypy");
+      assert.match(pathOnly.stdout(), /binary_source: path/);
+    } finally {
+      rmSync(pathOnlyMypyCwd, { recursive: true, force: true });
+    }
+
     const beforeUnsafeCalls = tscCalls.length;
     const catalogOnly = createIo({ cwd, diagnosticsRunner });
     assert.equal(await runCli(["node", "cli", "diagnostics", "run", "rust-analyzer"], {}, catalogOnly.io), 1);
@@ -2642,6 +2761,14 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.match(unsafeRuffProject.stderr(), /not a URL/);
     assert.equal(tscCalls.length, beforeUnsafeCalls);
 
+    const unsafeMypyProject = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "run", "mypy", "--project", "npx:mypy"], {}, unsafeMypyProject.io),
+      1,
+    );
+    assert.match(unsafeMypyProject.stderr(), /not a package, registry, or launcher value/);
+    assert.equal(tscCalls.length, beforeUnsafeCalls);
+
     const outside = createTempDir();
     writeFileSync(join(outside, "tsconfig.json"), "{}\n");
     symlinkSync(join(outside, "tsconfig.json"), join(cwd, "outside-tsconfig.json"));
@@ -2659,6 +2786,12 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
       1,
     );
     assert.match(unsafeRuffSymlink.stderr(), /project resolves outside the current working directory/);
+    const unsafeMypySymlink = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "run", "mypy", "--project", "outside-app.py"], {}, unsafeMypySymlink.io),
+      1,
+    );
+    assert.match(unsafeMypySymlink.stderr(), /project resolves outside the current working directory/);
     assert.equal(tscCalls.length, beforeUnsafeCalls);
     rmSync(outside, { recursive: true, force: true });
 

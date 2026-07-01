@@ -85,6 +85,8 @@ orx diagnostics inspect eslint
 orx diagnostics run eslint
 orx diagnostics inspect ruff
 orx diagnostics run ruff
+orx diagnostics inspect mypy
+orx diagnostics run mypy
 orx diagnostics inspect gopls
 orx diagnostics run gopls --project src/main.go
 orx diagnostics inspect clangd
@@ -186,6 +188,9 @@ orx diag run eslint --json
 orx diagnostics inspect ruff
 orx diagnostics run ruff
 orx diag run ruff --json
+orx diagnostics inspect mypy
+orx diagnostics run mypy
+orx diag run mypy --json
 orx diagnostics inspect gopls
 orx diagnostics run gopls --project src/main.go
 orx diag run gopls --project src/main.go --json
@@ -230,7 +235,7 @@ orx diagnostics run clangd --project src/main.cpp
 orx diag run clangd --project src/main.cpp --json
 ```
 
-The runnable profiles are TypeScript, Pyright, ESLint, Ruff, gopls, and clangd. ORX never installs TypeScript, Pyright, ESLint, Ruff, gopls, clangd, Go toolchains, Python packages, C/C++ toolchains, Node packages, or language packages; it uses a project-local `node_modules/.bin/<binary>` when present, then Ruff-specific `.venv/bin/ruff` or `venv/bin/ruff` candidates for Ruff, otherwise an existing `tsc`, `pyright`, `eslint`, `ruff`, `gopls`, or `clangd` on `PATH`. TypeScript runs `tsc --noEmit --pretty false --project <tsconfig>` with default project `tsconfig.json`; Pyright runs `pyright --outputjson --project <project-file-or-directory>` with default project `.`; ESLint runs `eslint --format json <file-or-directory>` with default project `.`; Ruff runs `ruff check --output-format json --no-cache <file-or-directory>` with default project `.`; gopls requires `--project <local-go-file>`, probes PATH with `gopls version`, runs `gopls check <go-file>`, and disables Go proxy/checksum/toolchain download paths in the child env; clangd requires `--project <local-c-cpp-source-or-header-file>`, probes PATH with `clangd --version`, and runs `clangd --log=error --check=<file>`. `--project` must name a local target under the current working directory, with symlink realpaths also staying inside cwd; ESLint, Ruff, and Pyright targets may be regular files or directories, gopls targets must be regular `.go` files, and clangd targets must be regular C/C++/Objective-C source or header files. URLs, registry/package/launcher-like values, dash-prefixed values, control characters, and secret-like values are rejected before spawning. Runs use shell-disabled process execution, a minimal env without ORX/OpenRouter/Brave/API token values, bounded/redacted stdout and stderr, parsed diagnostics, and optional ORX-owned `--json` metadata. TypeScript Language Server, rust-analyzer, and SCIP TypeScript remain catalog/readiness profiles only.
+The runnable profiles are TypeScript, Pyright, ESLint, Ruff, Mypy, gopls, and clangd. ORX never installs TypeScript, Pyright, ESLint, Ruff, Mypy, gopls, clangd, Go toolchains, Python packages, C/C++ toolchains, Node packages, or language packages; it uses a project-local `node_modules/.bin/<binary>` when present, then Python virtualenv candidates for Ruff and Mypy, otherwise an existing `tsc`, `pyright`, `eslint`, `ruff`, `mypy`, `gopls`, or `clangd` on `PATH`. TypeScript runs `tsc --noEmit --pretty false --project <tsconfig>` with default project `tsconfig.json`; Pyright runs `pyright --outputjson --project <project-file-or-directory>` with default project `.`; ESLint runs `eslint --format json <file-or-directory>` with default project `.`; Ruff runs `ruff check --output-format json --no-cache <file-or-directory>` with default project `.`; Mypy runs `mypy --no-color-output --no-error-summary --show-column-numbers --no-incremental --cache-dir <null-device> <file-or-directory>` with default project `.`; gopls requires `--project <local-go-file>`, probes PATH with `gopls version`, runs `gopls check <go-file>`, and disables Go proxy/checksum/toolchain download paths in the child env; clangd requires `--project <local-c-cpp-source-or-header-file>`, probes PATH with `clangd --version`, and runs `clangd --log=error --check=<file>`. `--project` must name a local target under the current working directory, with symlink realpaths also staying inside cwd; Pyright, ESLint, Ruff, and Mypy targets may be regular files or directories, gopls targets must be regular `.go` files, and clangd targets must be regular C/C++/Objective-C source or header files. URLs, registry/package/launcher-like values, dash-prefixed values, control characters, and secret-like values are rejected before spawning. Runs use shell-disabled process execution, a minimal env without ORX/OpenRouter/Brave/API token values, bounded/redacted stdout and stderr, parsed diagnostics, and optional ORX-owned `--json` metadata. TypeScript Language Server, rust-analyzer, and SCIP TypeScript remain catalog/readiness profiles only.
 
 Local security scanner profiles are explicit operator commands, not model tools:
 
@@ -500,8 +505,8 @@ The chat UI keeps in-session message history for the current process, streams as
 /outline <file>
 /scanners [list|inspect <profile>|run <semgrep|trivy> <path> [--config <local-config-path>] [--json]]
 /scan <semgrep|trivy> <path> [--config <local-config-path>] [--json]
-/diagnostics [list|inspect <profile>|run <typescript|pyright|eslint|ruff|gopls|clangd> [--project <local-project-path>] [--json]]
-/diag [list|inspect <profile>|run <typescript|pyright|eslint|ruff|gopls|clangd> [--project <local-project-path>] [--json]]
+/diagnostics [list|inspect <profile>|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]
+/diag [list|inspect <profile>|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]
 /plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold|validate|inspect|register|install|enable|disable]
 /plugin [list|status]
 /bins [list|inspect|trust|untrust|run]
