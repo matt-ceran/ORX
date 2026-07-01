@@ -258,10 +258,12 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mcp m"), [["model "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp p"), [["plan ", "presets "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan c"), [["cloudflare-api ", "cloudflare-docs ", "context7 "], "c"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp plan git"), [["github-readonly ", "gitlab-readonly "], "git"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan source"), [["sourcegraph-github-readonly "], "source"]);
   assert.deepEqual(completeSlashCommandLine("/mcp model e"), [["enable "], "e"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets i"), [["inspect ", "info "], "i"]);
-  assert.deepEqual(completeSlashCommandLine("/mcp presets inspect g"), [["github-readonly "], "g"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets inspect g"), [["github-readonly ", "gitlab-readonly "], "g"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets inspect gitl"), [["gitlab-readonly "], "gitl"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets show m"), [["microsoft-learn "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect s"), [["sentry-readonly ", "sourcegraph-github-readonly "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect source"), [["sourcegraph-github-readonly "], "source"]);
@@ -4350,6 +4352,7 @@ test("mcp slash commands install provider presets", async () => {
     assert.match(harness.stdout(), /id=context7/);
     assert.match(harness.stdout(), /id=browser/);
     assert.match(harness.stdout(), /id=figma/);
+    assert.match(harness.stdout(), /id=gitlab-readonly/);
     assert.match(harness.stdout(), /id=sentry-readonly/);
     assert.match(harness.stdout(), /id=sourcegraph-github-readonly/);
 
@@ -4375,12 +4378,28 @@ test("mcp slash commands install provider presets", async () => {
     assert.match(harness.stdout(), /static_tools: 0/);
     assert.match(harness.stdout(), /remote_tool_review:/);
 
+    assert.equal(await handleSlashCommand("/mcp presets gitlab-readonly", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP Provider Preset: gitlab-readonly/);
+    assert.match(harness.stdout(), /url: https:\/\/gitlab\.com\/api\/v4\/mcp/);
+    assert.match(harness.stdout(), /auth_required: yes/);
+    assert.match(harness.stdout(), /write_capable: no/);
+    assert.match(harness.stdout(), /static_tools: 0/);
+    assert.match(harness.stdout(), /remote_tool_review:/);
+
     assert.equal(await handleSlashCommand("/mcp plan microsoft-learn", harness.context), "continue");
     assert.match(harness.stdout(), /MCP setup plan: microsoft-learn/);
     assert.match(harness.stdout(), /status: preset_available/);
     assert.match(harness.stdout(), /orx mcp add-preset microsoft-learn/);
     assert.match(harness.stdout(), /data_state_writes: none/);
     assert.match(harness.stdout(), /plan_side_effects: no install, enable, trust, grant, fetch, call, audit, or model exposure/);
+
+    assert.equal(await handleSlashCommand("/mcp plan gitlab-readonly", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP setup plan: gitlab-readonly/);
+    assert.match(harness.stdout(), /status: preset_available/);
+    assert.match(harness.stdout(), /profile: user:gitlab-readonly/);
+    assert.match(harness.stdout(), /network_calls: none/);
+    assert.match(harness.stdout(), /data_state_writes: none/);
+    assert.match(harness.stdout(), /orx mcp add-preset gitlab-readonly/);
 
     assert.equal(
       await handleSlashCommand("/mcp add-preset microsoft-learn --id mslearn", harness.context),

@@ -176,6 +176,18 @@ export const MCP_PROVIDER_PRESETS: McpProviderPreset[] = [
     tags: ["github", "repo", "read-only", "auth"],
   },
   {
+    id: "gitlab-readonly",
+    name: "GitLab read-only",
+    profileId: "gitlab-readonly",
+    url: "https://gitlab.com/api/v4/mcp",
+    authRequired: true,
+    riskLevel: "medium",
+    tools: [],
+    notes:
+      "GitLab hosted MCP beta endpoint for project, repository, issue, and merge request context. Auth is required; review remote tool metadata and import or add only read-only declarations explicitly.",
+    tags: ["gitlab", "repo", "issues", "merge-requests", "read-only", "auth"],
+  },
+  {
     id: "sentry-readonly",
     name: "Sentry read-only",
     profileId: "sentry-readonly",

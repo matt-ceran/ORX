@@ -3473,6 +3473,8 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(listed.stdout(), /id=cloudflare-api/);
     assert.match(listed.stdout(), /id=context7/);
     assert.match(listed.stdout(), /id=figma/);
+    assert.match(listed.stdout(), /id=github-readonly/);
+    assert.match(listed.stdout(), /id=gitlab-readonly/);
     assert.match(listed.stdout(), /id=microsoft-learn/);
     assert.match(listed.stdout(), /id=sentry-readonly/);
     assert.match(listed.stdout(), /id=sourcegraph-github-readonly/);
@@ -3506,6 +3508,18 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(sourcegraphInspect.stdout(), /remote_tool_review:/);
     assert.match(sourcegraphInspect.stdout(), /inspect_side_effects: none/);
 
+    const gitlabInspect = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "presets", "inspect", "gitlab-readonly"], env, gitlabInspect.io),
+      0,
+    );
+    assert.match(gitlabInspect.stdout(), /MCP Provider Preset: gitlab-readonly/);
+    assert.match(gitlabInspect.stdout(), /url: https:\/\/gitlab\.com\/api\/v4\/mcp/);
+    assert.match(gitlabInspect.stdout(), /auth_required: yes/);
+    assert.match(gitlabInspect.stdout(), /write_capable: no/);
+    assert.match(gitlabInspect.stdout(), /static_tools: 0/);
+    assert.match(gitlabInspect.stdout(), /remote_tool_review:/);
+
     const cloudflareInspect = createIo({ cwd });
     assert.equal(
       await runCli(["node", "cli", "mcp", "presets", "inspect", "cloudflare-api"], env, cloudflareInspect.io),
@@ -3533,6 +3547,16 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(sourcegraphPlan.stdout(), /network_calls: none/);
     assert.match(sourcegraphPlan.stdout(), /data_state_writes: none/);
     assert.match(sourcegraphPlan.stdout(), /orx mcp add-preset sourcegraph-github-readonly/);
+
+    const gitlabPlan = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "plan", "gitlab-readonly"], env, gitlabPlan.io), 0);
+    assert.match(gitlabPlan.stdout(), /MCP setup plan: gitlab-readonly/);
+    assert.match(gitlabPlan.stdout(), /status: preset_available/);
+    assert.match(gitlabPlan.stdout(), /profile: user:gitlab-readonly/);
+    assert.match(gitlabPlan.stdout(), /auth_required: yes/);
+    assert.match(gitlabPlan.stdout(), /network_calls: none/);
+    assert.match(gitlabPlan.stdout(), /data_state_writes: none/);
+    assert.match(gitlabPlan.stdout(), /orx mcp add-preset gitlab-readonly/);
 
     const pluginList = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "catalog"], env, pluginList.io), 0);

@@ -88,6 +88,11 @@ npm run dev -- mcp auth init openrouter
 npm run dev -- mcp auth keychain status openrouter
 npm run dev -- mcp auth keychain set openrouter
 npm run dev -- mcp allow-model-tool openrouter models-list
+npm run dev -- mcp presets
+npm run dev -- mcp presets inspect gitlab-readonly
+npm run dev -- mcp plan gitlab-readonly
+npm run dev -- mcp add-preset gitlab-readonly
+npm run dev -- mcp auth setup user:gitlab-readonly
 OPENROUTER_API_KEY="sk-or-..." ORX_MCP_BEARER_OPENROUTER="..." npm run dev -- ask "Use OpenRouter MCP metadata" --mcp-tools
 npm run dev -- tests list
 npm run dev -- tests run

@@ -521,6 +521,7 @@ const MCP_PROVIDER_PRESET_COMPLETIONS = [
   "context7",
   "figma",
   "github-readonly",
+  "gitlab-readonly",
   "microsoft-learn",
   "sentry-readonly",
   "sourcegraph-github-readonly",

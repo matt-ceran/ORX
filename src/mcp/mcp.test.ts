@@ -343,6 +343,7 @@ test("MCP provider presets install local user catalog profiles", () => {
     assert.match(rendered, /id=context7/);
     assert.match(rendered, /id=figma/);
     assert.match(rendered, /id=github-readonly/);
+    assert.match(rendered, /id=gitlab-readonly/);
     assert.match(rendered, /id=microsoft-learn/);
     assert.match(rendered, /id=sentry-readonly/);
     assert.match(rendered, /id=sourcegraph-github-readonly/);
@@ -426,6 +427,24 @@ test("MCP provider presets install local user catalog profiles", () => {
     assert.equal(sourcegraphProfile.riskLevel, "medium");
     assert.equal(sourcegraphProfile.writeCapable, false);
     assert.equal(sourcegraphProfile.tools.length, 0);
+
+    const gitlabResult = installMcpProviderPreset("gitlab-readonly", {
+      profileCatalogPath,
+    });
+    assert.equal(gitlabResult.ok, true);
+    assert.equal(gitlabResult.profileId, "user:gitlab-readonly");
+    assert.equal(gitlabResult.toolCount, 0);
+
+    const loadedWithGitLab = loadUserMcpProfileCatalog({ profileCatalogPath });
+    const gitlabProfile = loadedWithGitLab.profiles.find(
+      (profile) => profile.id === "user:gitlab-readonly",
+    );
+    assert.ok(gitlabProfile);
+    assert.equal(gitlabProfile.transport.url, "https://gitlab.com/api/v4/mcp");
+    assert.equal(gitlabProfile.authRequired, true);
+    assert.equal(gitlabProfile.riskLevel, "medium");
+    assert.equal(gitlabProfile.writeCapable, false);
+    assert.equal(gitlabProfile.tools.length, 0);
 
     const unknown = installMcpProviderPreset("missing", { profileCatalogPath });
     assert.equal(unknown.ok, false);
@@ -2618,6 +2637,22 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
     assert.match(sourcegraphSetup, /network_calls: none/);
     assert.doesNotMatch(sourcegraphSetup, /mcp-secret-token/);
 
+    assert.equal(installMcpProviderPreset("gitlab-readonly", { profileCatalogPath }).ok, true);
+    const gitlabReport = getMcpProfileAuthReport("user:gitlab-readonly", {
+      cwd,
+      env,
+      profileCatalogPath,
+    });
+    assert.ok(gitlabReport);
+    const gitlabSetup = renderMcpProfileAuthSetup(gitlabReport);
+
+    assert.match(gitlabSetup, /provider_auth: gitlab/);
+    assert.match(gitlabSetup, /setup_url: https:\/\/docs\.gitlab\.com\/user\/gitlab_duo\/model_context_protocol\/mcp_server\//);
+    assert.match(gitlabSetup, /scope_hint: approve read-only repository\/project scopes only/);
+    assert.match(gitlabSetup, /provider_warning: GitLab documents the MCP server as beta/);
+    assert.match(gitlabSetup, /network_calls: none/);
+    assert.doesNotMatch(gitlabSetup, /mcp-secret-token/);
+
     assert.equal(installMcpProviderPreset("figma", { profileCatalogPath }).ok, true);
     const figmaReport = getMcpProfileAuthReport("user:figma", {
       cwd,
@@ -2673,6 +2708,30 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
     );
     assert.equal(
       upsertUserMcpRemoteProfile(
+        "gitlab-spoof",
+        {
+          name: "GitLab-looking profile",
+          url: "https://gitlab.com.evil.test/api/v4/mcp",
+          authRequired: true,
+        },
+        { profileCatalogPath },
+      ).ok,
+      true,
+    );
+    assert.equal(
+      upsertUserMcpRemoteProfile(
+        "gitlab-subpath",
+        {
+          name: "GitLab subpath profile",
+          url: "https://gitlab.com/api/v4/mcp/extra",
+          authRequired: true,
+        },
+        { profileCatalogPath },
+      ).ok,
+      true,
+    );
+    assert.equal(
+      upsertUserMcpRemoteProfile(
         "cloudflare-spoof",
         {
           name: "Cloudflare-looking profile",
@@ -2687,6 +2746,8 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
     for (const spoofProfileId of [
       "user:openrouter-spoof",
       "user:github-spoof",
+      "user:gitlab-spoof",
+      "user:gitlab-subpath",
       "user:cloudflare-spoof",
     ]) {
       const spoofReport = getMcpProfileAuthReport(spoofProfileId, {
@@ -2699,9 +2760,11 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
       assert.match(spoofStatus, /provider_auth: generic/);
       assert.doesNotMatch(spoofStatus, /provider_auth: openrouter/);
       assert.doesNotMatch(spoofStatus, /provider_auth: github/);
+      assert.doesNotMatch(spoofStatus, /provider_auth: gitlab/);
       assert.doesNotMatch(spoofStatus, /provider_auth: cloudflare/);
       assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/openrouter\.ai\/docs\/mcp-server/);
       assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/docs\.github\.com/);
+      assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/docs\.gitlab\.com/);
       assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/github\.com\/cloudflare\/mcp/);
     }
   } finally {

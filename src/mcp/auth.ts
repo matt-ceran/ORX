@@ -252,6 +252,21 @@ function getMcpProviderAuthGuidance(profile: McpProfile): McpProviderAuthGuidanc
     };
   }
 
+  if (isExactMcpProviderEndpoint(endpoint, "gitlab.com", "/api/v4/mcp")) {
+    return {
+      provider: "gitlab",
+      credentialSource:
+        "GitLab hosted MCP uses OAuth/provider authorization for GitLab project access.",
+      credentialLifetime: "provider managed",
+      scopeHint:
+        "approve read-only repository/project scopes only; do not approve CI, write, or admin scopes for read-only ORX profiles",
+      setupUrl: "https://docs.gitlab.com/user/gitlab_duo/model_context_protocol/mcp_server/",
+      orxSupport:
+        "complete provider OAuth externally; ORX stores only bearer-compatible credentials in profile env vars or opted-in macOS Keychain",
+      warning: "GitLab documents the MCP server as beta; review remote tool metadata before importing tools",
+    };
+  }
+
   if (isMcpProviderEndpoint(endpoint, "sourcegraph.com", "/mcp")) {
     return {
       provider: "sourcegraph",
@@ -373,6 +388,20 @@ function isMcpProviderEndpoint(
   const normalizedPath = endpoint.pathname.replace(/\/+$/g, "") || "/";
   const normalizedPrefix = pathPrefix.replace(/\/+$/g, "") || "/";
   return normalizedPath === normalizedPrefix || normalizedPath.startsWith(`${normalizedPrefix}/`);
+}
+
+function isExactMcpProviderEndpoint(
+  endpoint: URL | undefined,
+  hostname: string,
+  path: string,
+): boolean {
+  if (!endpoint || endpoint.hostname.toLowerCase() !== hostname) {
+    return false;
+  }
+
+  const normalizedPath = endpoint.pathname.replace(/\/+$/g, "") || "/";
+  const normalizedExpectedPath = path.replace(/\/+$/g, "") || "/";
+  return normalizedPath === normalizedExpectedPath;
 }
 
 export function defaultMcpAuthEnvDirectory(): string {
