@@ -1928,6 +1928,58 @@ test("parses common framework report summaries", () => {
     },
   );
 
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "{\"Action\":\"run\",\"Package\":\"example.com/project/pkg\",\"Test\":\"TestAlpha\"}",
+        "{\"Action\":\"pass\",\"Package\":\"example.com/project/pkg\",\"Test\":\"TestAlpha\",\"Elapsed\":0.01}",
+        "{\"Action\":\"run\",\"Package\":\"example.com/project/pkg\",\"Test\":\"TestBeta\"}",
+        "{\"Action\":\"fail\",\"Package\":\"example.com/project/pkg\",\"Test\":\"TestBeta\",\"Elapsed\":0.02}",
+        "{\"Action\":\"skip\",\"Package\":\"example.com/project/pkg\",\"Test\":\"TestSkip\",\"Elapsed\":0}",
+        "{\"Action\":\"fail\",\"Package\":\"example.com/project/pkg\",\"Elapsed\":0.123}",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "go-json",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+      durationMs: 123,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "{\"Action\":\"fail\",\"Package\":\"example.com/project/pkg\",\"Test\":\"TestRetry\",\"Elapsed\":0.01}",
+        "{\"Action\":\"pass\",\"Package\":\"example.com/project/pkg\",\"Test\":\"TestRetry\",\"Elapsed\":0.02}",
+        "{\"Action\":\"pass\",\"Package\":\"example.com/project/pkg\",\"Elapsed\":0.2}",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "go-json",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      durationMs: 200,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "{\"Action\":\"pass\",\"Package\":\"example.com/project/pkg\",\"Elapsed\":0.01}"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "{\"Action\":\"output\",\"Package\":\"example.com/project/pkg\",\"Test\":\"TestAlpha\",\"Output\":\"PASS\"}"),
+    undefined,
+  );
+
   assert.equal(parseTestReportSummary(createTarget("unknown"), "2 failed network requests (99)"), undefined);
   assert.equal(parseTestReportSummary(createTarget("playwright"), "2 failed network requests (99)"), undefined);
   assert.equal(parseTestReportSummary(createTarget("unknown"), "ok 1 - only a log line"), undefined);
