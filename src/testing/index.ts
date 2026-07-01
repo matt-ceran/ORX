@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "testng-xml" | "nunit-xml" | "xunit-xml" | "trx-xml" | "robot-xml" | "teamcity" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json" | "mocha-json" | "rspec-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "testng-xml" | "nunit-xml" | "xunit-xml" | "trx-xml" | "robot-xml" | "ctest-xml" | "teamcity" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json" | "mocha-json" | "rspec-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -1204,7 +1204,8 @@ function parseCapturedXmlReportSummary(
     parseCapturedNunitXmlReportSummary(text, framework) ??
     parseCapturedXunitXmlReportSummary(text, framework) ??
     parseCapturedTrxXmlReportSummary(text, framework) ??
-    parseCapturedRobotXmlReportSummary(text, framework);
+    parseCapturedRobotXmlReportSummary(text, framework) ??
+    parseCapturedCtestXmlReportSummary(text, framework);
 }
 
 function parseCapturedTestngXmlReportSummary(
@@ -1358,6 +1359,37 @@ function parseCapturedRobotXmlReportSummary(
   const report: TestReportSummary = {
     framework,
     source: "robot-xml",
+  };
+  assignNumber(report, "total", counts.total);
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
+  return hasReportCounts(report) ? report : undefined;
+}
+
+function parseCapturedCtestXmlReportSummary(
+  text: string,
+  framework: TestFramework,
+): TestReportSummary | InvalidTestReport | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (!looksLikeWholeCtestXmlReport(trimmed)) {
+    if (startsLikeCtestXmlReport(trimmed)) {
+      return INVALID_TEST_REPORT;
+    }
+    return undefined;
+  }
+
+  const counts = parseCtestXmlCounts(trimmed);
+  if (!counts) {
+    return INVALID_TEST_REPORT;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "ctest-xml",
   };
   assignNumber(report, "total", counts.total);
   assignNumber(report, "passed", counts.passed);
@@ -6014,6 +6046,20 @@ function startsLikeRobotXmlReport(text: string): boolean {
   return matchFirstXmlRootName(stripXmlDeclaration(text).trim()) === "robot";
 }
 
+function looksLikeWholeCtestXmlReport(text: string): boolean {
+  const stripped = stripXmlDeclaration(text).trim();
+  if (matchWholeXmlRootName(stripped) !== "site") {
+    return false;
+  }
+  const testingTags = collectXmlStartTagAttributesAtPath(stripped, ["site", "testing"]);
+  return testingTags !== undefined && testingTags.length > 0;
+}
+
+function startsLikeCtestXmlReport(text: string): boolean {
+  const stripped = stripXmlDeclaration(text).trim();
+  return matchFirstXmlRootName(stripped) === "site" && /<\s*Testing\b/i.test(stripped);
+}
+
 function stripXmlDeclaration(text: string): string {
   return text.replace(/^\s*<\?xml\b[^>]*\?>\s*/i, "");
 }
@@ -6965,6 +7011,49 @@ function parseRobotXmlTotalStatAttributes(attributes: string):
     return undefined;
   }
 
+  return {
+    total,
+    passed,
+    failed,
+    skipped,
+  };
+}
+
+function parseCtestXmlCounts(text: string):
+  | {
+      total: number;
+      passed: number;
+      failed: number;
+      skipped: number;
+    }
+  | undefined {
+  const testingTags = collectXmlStartTagAttributesAtPath(text, ["site", "testing"]);
+  const testTags = collectXmlStartTagAttributesAtPath(text, ["site", "testing", "test"]);
+  if (!testingTags || !testTags || testingTags.length === 0 || testTags.length === 0) {
+    return undefined;
+  }
+
+  let passed = 0;
+  let failed = 0;
+  let skipped = 0;
+  for (const attributes of testTags) {
+    const status = matchXmlAttributeValue(attributes, "Status");
+    if (status === "passed") {
+      passed += 1;
+      continue;
+    }
+    if (status === "failed") {
+      failed += 1;
+      continue;
+    }
+    if (status === "notrun") {
+      skipped += 1;
+      continue;
+    }
+    return undefined;
+  }
+
+  const total = testTags.length;
   return {
     total,
     passed,

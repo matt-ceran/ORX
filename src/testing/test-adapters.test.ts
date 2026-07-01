@@ -5087,6 +5087,142 @@ test("parses captured Robot Framework XML reports before text fallback", () => {
   );
 });
 
+test("parses captured CTest XML reports before text fallback", () => {
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<Site BuildName="linux" Name="builder" Generator="ctest-3.30">',
+        "  <Testing>",
+        "    <TestList>",
+        "      <Test>./passes</Test>",
+        "      <Test>./fails</Test>",
+        "      <Test>./skips</Test>",
+        "    </TestList>",
+        '    <Test Status="passed">',
+        "      <Name>passes</Name>",
+        "      <Results/>",
+        "    </Test>",
+        '    <Test Status="failed">',
+        "      <Name>fails</Name>",
+        "      <Results/>",
+        "    </Test>",
+        '    <Test Status="notrun">',
+        "      <Name>skips</Name>",
+        "      <Results/>",
+        "    </Test>",
+        "  </Testing>",
+        "</Site>",
+      ].join("\n"),
+      "100% tests passed, 0 tests failed out of 99",
+    ),
+    {
+      framework: "unknown",
+      source: "ctest-xml",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "<Site>",
+        "<Testing><Test Status=\"passed\"/><Test Status=\"failed\"/></Testing>",
+        "<Testing><Test Status=\"notrun\"/></Testing>",
+        "</Site>",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "ctest-xml",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "debug before xml",
+        '<Site><Testing><Test Status="passed"/></Testing></Site>',
+        "50% tests passed, 1 tests failed out of 2",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "ctest",
+      total: 2,
+      passed: 1,
+      failed: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "<Site><Build/></Site>",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "generic",
+      total: 1,
+      passed: 1,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<Site><Testing><Test/></Testing></Site>',
+      "100% tests passed, 0 tests failed out of 1",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<Site><Testing><Test Status="timeout"/></Testing></Site>',
+      "100% tests passed, 0 tests failed out of 1",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<Site><Testing><Test Status="Passed"/></Testing></Site>',
+      "100% tests passed, 0 tests failed out of 1",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<Site><Testing><TestList><Test>./passes</Test></TestList></Testing></Site>',
+      "100% tests passed, 0 tests failed out of 1",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<Site><Testing><Test Status="passed"/></Testing></Sites>',
+      "100% tests passed, 0 tests failed out of 1",
+    ),
+    undefined,
+  );
+});
+
 test("parses captured TeamCity service messages before text fallback", () => {
   assert.deepEqual(
     parseTestReportSummary(
