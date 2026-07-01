@@ -494,6 +494,112 @@ test("parses common framework report summaries", () => {
     parseTestReportSummary(
       createTarget("unknown"),
       [
+        "Finished in 0.05 seconds (0.03s async, 0.02s sync)",
+        "3 tests, 1 failure, 1 skipped",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "exunit",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+      durationMs: 50,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "1 doctest, 2 tests, 0 failures"),
+    {
+      framework: "unknown",
+      source: "exunit",
+      total: 3,
+      passed: 3,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "1 test, 0 failures"),
+    {
+      framework: "node",
+      source: "exunit",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 test, 0 failures",
+        "2 tests, 1 failure",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "exunit",
+      total: 2,
+      passed: 1,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 tests, 3 failures"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 tests, 0 failures, 3 skipped"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 tests, 0 failures after cleanup"), undefined);
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 test, 0 failures",
+        "2 tests, 0 failures after cleanup",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "2 tests, 3 failures",
+        "Tests: 2 failed, 2 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "2 tests, 3 failures",
+        "ℹ tests 2",
+        "ℹ fail 2",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("jest"),
+      [
+        "2 tests, 3 failures",
+        "Tests: 2 failed, 2 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
         "=== RUN   TestAlpha",
         "--- PASS: TestAlpha (0.01s)",
         "=== RUN   TestBeta",
