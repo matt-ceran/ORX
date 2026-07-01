@@ -3330,6 +3330,162 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Testing Time: 1.23s",
+        "",
+        "Total Discovered Tests: 9",
+        "  Unsupported        : 1 (11.11%)",
+        "  Passed             : 2 (22.22%)",
+        "  Passed With Retry  : 1 (11.11%)",
+        "  Expectedly Failed  : 1 (11.11%)",
+        "  Unresolved         : 1 (11.11%)",
+        "  Timed Out          : 1 (11.11%)",
+        "  Failed             : 1 (11.11%)",
+        "  Unexpectedly Passed: 1 (11.11%)",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "lit",
+      total: 9,
+      passed: 2,
+      failed: 4,
+      skipped: 1,
+      todo: 1,
+      flaky: 1,
+      durationMs: 1230,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Total Discovered Tests: 1",
+        "  Passed: 1 (100.00%)",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "lit",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      todo: 0,
+      flaky: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "Total Discovered Tests: 2",
+        "  Unsupported: 1 (50.00%)",
+        "  Failed     : 1 (50.00%)",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "lit",
+      total: 2,
+      passed: 0,
+      failed: 1,
+      skipped: 1,
+      todo: 0,
+      flaky: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "Testing Time: 1.23s",
+        "ℹ tests 1",
+        "ℹ pass 1",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "node",
+      total: 1,
+      passed: 1,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Total Discovered Tests: two",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Total Discovered Tests: 2",
+        "  Passed: 1 (50.00%)",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Total Discovered Tests: 4",
+        "  Passed: 1 (20.00%)",
+        "  Failed: 3 (75.00%)",
+        "Test Summary: 4 total, 1 passed, 3 failed",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "Total Discovered Tests: 2",
+        "  Passed: 1 (50.00%)",
+        "  Passed: 1 (50.00%)",
+        "ℹ tests 2",
+        "ℹ pass 2",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Testing Time: nope",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Total Discovered Tests: 1",
+        "  Expected Passes: 1 (100.00%)",
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
     parseTestReportSummary(createTarget("unknown"), "Executed 3 tests, with 1 failure (1 unexpected) in 0.123 (0.124) seconds"),
     {
       framework: "unknown",

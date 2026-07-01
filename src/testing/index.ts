@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "unittest" | "junit-text" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "unittest" | "junit-text" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -708,11 +708,11 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     unknown: parseGenericReportSummary,
   };
   if (framework === "node") {
-    return [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseScalaTestReportSummary, parseNextestReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseBehaveReportSummary, parseCucumberReportSummary, parseMesonReportSummary, parseUnityReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseCypressReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseDartReportSummary, parseDenoReportSummary, parseGenericReportSummary];
+    return [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseScalaTestReportSummary, parseNextestReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseBehaveReportSummary, parseCucumberReportSummary, parseMesonReportSummary, parseUnityReportSummary, parseLitReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseCypressReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseDartReportSummary, parseDenoReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseScalaTestReportSummary, parseNextestReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseBehaveReportSummary, parseCucumberReportSummary, parseMesonReportSummary, parseUnityReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseCypressReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDartReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoJsonReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary]
-    : [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseScalaTestReportSummary, parseNextestReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseBehaveReportSummary, parseCucumberReportSummary, parseMesonReportSummary, parseUnityReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parsers[framework], parseTapReportSummary, parseCypressReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDartReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoJsonReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
+    ? [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseScalaTestReportSummary, parseNextestReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseBehaveReportSummary, parseCucumberReportSummary, parseMesonReportSummary, parseUnityReportSummary, parseLitReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseCypressReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDartReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoJsonReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary]
+    : [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseScalaTestReportSummary, parseNextestReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseBehaveReportSummary, parseCucumberReportSummary, parseMesonReportSummary, parseUnityReportSummary, parseLitReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parsers[framework], parseTapReportSummary, parseCypressReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDartReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoJsonReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -2608,6 +2608,119 @@ function parseUnityReportSummary(text: string, framework: TestFramework): TestRe
   return hasReportCounts(report) ? report : undefined;
 }
 
+type LitSummaryLabel = "unsupported" | "passed" | "flaky" | "todo" | "unresolved" | "timeout" | "failed" | "xpass";
+
+interface LitSummaryBlock {
+  total: number;
+  durationMs?: number;
+  rows: Array<{ label: LitSummaryLabel; count: number; percent: number }>;
+  seenLabels: Set<LitSummaryLabel>;
+}
+
+function parseLitReportSummary(text: string, framework: TestFramework): TestReportSummary | InvalidTestReport | undefined {
+  let active: LitSummaryBlock | undefined;
+  let parsed: LitSummaryBlock | undefined;
+  let pendingDurationMs: number | undefined;
+  let sawLitLine = false;
+
+  const finishActive = (): boolean => {
+    if (!active) {
+      return true;
+    }
+    if (!isValidLitSummaryBlock(active)) {
+      return false;
+    }
+    parsed = active;
+    active = undefined;
+    return true;
+  };
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = stripTerminalControls(rawLine).trim();
+    const durationMs = parseLitTestingTimeLine(line);
+    if (durationMs !== undefined) {
+      if (active && !finishActive()) {
+        return INVALID_TEST_REPORT;
+      }
+      pendingDurationMs = durationMs;
+      continue;
+    }
+    if (looksLikeLitTestingTimeLine(line)) {
+      return INVALID_TEST_REPORT;
+    }
+
+    const total = parseLitTotalDiscoveredLine(line);
+    if (total !== undefined) {
+      if (active && !finishActive()) {
+        return INVALID_TEST_REPORT;
+      }
+      active = {
+        total,
+        durationMs: pendingDurationMs,
+        rows: [],
+        seenLabels: new Set<LitSummaryLabel>(),
+      };
+      pendingDurationMs = undefined;
+      sawLitLine = true;
+      continue;
+    }
+    if (looksLikeLitTotalDiscoveredLine(line)) {
+      return INVALID_TEST_REPORT;
+    }
+
+    if (active) {
+      if (!line) {
+        continue;
+      }
+      const row = parseLitResultLine(line);
+      if (!row) {
+        return INVALID_TEST_REPORT;
+      }
+      if (active.seenLabels.has(row.label)) {
+        return INVALID_TEST_REPORT;
+      }
+      active.seenLabels.add(row.label);
+      active.rows.push(row);
+      continue;
+    }
+  }
+
+  if (active && !finishActive()) {
+    return INVALID_TEST_REPORT;
+  }
+  if (!parsed) {
+    return sawLitLine ? INVALID_TEST_REPORT : undefined;
+  }
+
+  const counts: Partial<Record<"passed" | "failed" | "skipped" | "todo" | "flaky", number>> = {};
+  for (const row of parsed.rows) {
+    if (row.label === "passed") {
+      counts.passed = (counts.passed ?? 0) + row.count;
+    } else if (row.label === "unsupported") {
+      counts.skipped = (counts.skipped ?? 0) + row.count;
+    } else if (row.label === "flaky") {
+      counts.flaky = (counts.flaky ?? 0) + row.count;
+    } else if (row.label === "todo") {
+      counts.todo = (counts.todo ?? 0) + row.count;
+    } else {
+      counts.failed = (counts.failed ?? 0) + row.count;
+    }
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "lit",
+  };
+  assignNumber(report, "total", parsed.total);
+  assignNumber(report, "passed", counts.passed ?? 0);
+  assignNumber(report, "failed", counts.failed ?? 0);
+  assignNumber(report, "skipped", counts.skipped ?? 0);
+  assignNumber(report, "todo", counts.todo ?? 0);
+  assignNumber(report, "flaky", counts.flaky ?? 0);
+  assignNumber(report, "durationMs", parsed.durationMs);
+  return hasReportCounts(report) ? report : undefined;
+}
+
 function parseXctestReportSummary(text: string, framework: TestFramework): TestReportSummary | InvalidTestReport | undefined {
   let counts:
     | {
@@ -2933,6 +3046,80 @@ function parseUnitySummaryLine(line: string): {
 
 function looksLikeUnitySummaryLine(line: string): boolean {
   return /^\d+\s+Tests\b/.test(line);
+}
+
+function parseLitTestingTimeLine(line: string): number | undefined {
+  const match = /^Testing Time:\s+(\d+(?:\.\d+)?)s$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  return parseSecondsDurationMs(match[1] ?? "");
+}
+
+function looksLikeLitTestingTimeLine(line: string): boolean {
+  return /^Testing Time:/.test(line);
+}
+
+function parseLitTotalDiscoveredLine(line: string): number | undefined {
+  const match = /^Total Discovered Tests:\s+(\d+)$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const total = Number.parseInt(match[1] ?? "", 10);
+  return Number.isInteger(total) && total > 0 ? total : undefined;
+}
+
+function looksLikeLitTotalDiscoveredLine(line: string): boolean {
+  return /^Total Discovered Tests:/.test(line);
+}
+
+function parseLitResultLine(line: string): { label: LitSummaryLabel; count: number; percent: number } | undefined {
+  const match = /^(Unsupported|Passed|Passed With Retry|Expectedly Failed|Unresolved|Timed Out|Failed|Unexpectedly Passed)\s*:\s+(\d+)\s+\((\d+(?:\.\d+)?)%\)$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const count = Number.parseInt(match[2] ?? "", 10);
+  const percent = Number.parseFloat(match[3] ?? "");
+  if (!Number.isInteger(count) || count < 0 || !Number.isFinite(percent) || percent < 0 || percent > 100) {
+    return undefined;
+  }
+  const rawLabel = match[1] ?? "";
+  let label: LitSummaryLabel;
+  if (rawLabel === "Unsupported") {
+    label = "unsupported";
+  } else if (rawLabel === "Passed") {
+    label = "passed";
+  } else if (rawLabel === "Passed With Retry") {
+    label = "flaky";
+  } else if (rawLabel === "Expectedly Failed") {
+    label = "todo";
+  } else if (rawLabel === "Unresolved") {
+    label = "unresolved";
+  } else if (rawLabel === "Timed Out") {
+    label = "timeout";
+  } else if (rawLabel === "Failed") {
+    label = "failed";
+  } else {
+    label = "xpass";
+  }
+  return { label, count, percent };
+}
+
+function isValidLitSummaryBlock(block: LitSummaryBlock): boolean {
+  if (block.rows.length === 0) {
+    return false;
+  }
+  const sum = block.rows.reduce((total, row) => total + row.count, 0);
+  if (sum !== block.total) {
+    return false;
+  }
+  for (const row of block.rows) {
+    const expectedPercent = Math.round((row.count / block.total) * 10000) / 100;
+    if (Math.abs(row.percent - expectedPercent) > 0.005) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function parseMinitestStatusLine(line: string): {
