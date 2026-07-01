@@ -1980,6 +1980,76 @@ test("parses common framework report summaries", () => {
     undefined,
   );
 
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "All specs passed!                        00:05        4        3        -        1        -",
+    ),
+    {
+      framework: "unknown",
+      source: "cypress",
+      total: 4,
+      passed: 3,
+      failed: 0,
+      skipped: 0,
+      todo: 1,
+      durationMs: 5000,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "1 of 2 failed (50%)                      01:02        4        2        1        -        1",
+    ),
+    {
+      framework: "unknown",
+      source: "cypress",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+      todo: 0,
+      durationMs: 62000,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "│ ✔  All specs passed!                    00:05        4        3        -        1        - │",
+    ),
+    {
+      framework: "unknown",
+      source: "cypress",
+      total: 4,
+      passed: 3,
+      failed: 0,
+      skipped: 0,
+      todo: 1,
+      durationMs: 5000,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "All specs passed!                        00:05        4        3        1        -        -",
+    ),
+    undefined,
+  );
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "All specs passed! after cleanup"), undefined);
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "All specs passed! 00:05 4 3 1 - -",
+        "Summary: 4 total, 3 passed",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
   assert.equal(parseTestReportSummary(createTarget("unknown"), "2 failed network requests (99)"), undefined);
   assert.equal(parseTestReportSummary(createTarget("playwright"), "2 failed network requests (99)"), undefined);
   assert.equal(parseTestReportSummary(createTarget("unknown"), "ok 1 - only a log line"), undefined);
