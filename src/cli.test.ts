@@ -1995,12 +1995,14 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     mkdirSync(join(cwd, "node_modules", ".bin"), { recursive: true });
     writeFileSync(join(cwd, "src", "app.ts"), "const value: string = 1;\n");
     writeFileSync(join(cwd, "src", "app.py"), "value: str = 1\n");
+    writeFileSync(join(cwd, "src", "app.js"), "console.log(missing);\n");
     writeFileSync(join(cwd, "src", "main.go"), "package main\nfunc main() {}\n");
     writeFileSync(join(cwd, "src", "main.cpp"), "int main() { return missing_symbol; }\n");
     writeFileSync(join(cwd, "src", "notes.txt"), "not a clangd source\n");
     writeFileSync(join(cwd, "tsconfig.json"), "{\"compilerOptions\":{\"strict\":true},\"include\":[\"src\"]}\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "tsc"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "pyright"), "#!/usr/bin/env node\n");
+    writeFileSync(join(cwd, "node_modules", ".bin", "eslint"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "gopls"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "clangd"), "#!/usr/bin/env node\n");
 
@@ -2009,6 +2011,7 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.match(list.stdout(), /Local diagnostics profiles/);
     assert.match(list.stdout(), /id=typescript state=runnable/);
     assert.match(list.stdout(), /id=pyright state=runnable/);
+    assert.match(list.stdout(), /id=eslint state=runnable/);
     assert.match(list.stdout(), /id=gopls state=runnable/);
     assert.match(list.stdout(), /id=clangd state=runnable/);
 
@@ -2020,6 +2023,7 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.equal(profileReport.network, "none_for_list_or_inspect");
     const profileEntries = profileReport.profiles as Array<{ id: string; state: string }>;
     assert.equal(profileEntries.find((profile) => profile.id === "typescript")?.state, "runnable");
+    assert.equal(profileEntries.find((profile) => profile.id === "eslint")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "rust-analyzer")?.state, "catalog_only");
     assert.equal(listJson.stderr(), "");
 
@@ -2033,13 +2037,26 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.match(inspectPyright.stdout(), /Local diagnostics profile: pyright/);
     assert.match(inspectPyright.stdout(), /command_shape: pyright --outputjson --project <project-file-or-directory>/);
 
-    const inspectJson = createIo({ cwd });
-    assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "pyright", "--json"], {}, inspectJson.io), 0);
-    const inspectReport = JSON.parse(inspectJson.stdout());
-    assert.equal(inspectReport.surface, "orx.local_diagnostics_profile");
-    assert.equal(inspectReport.profile.id, "pyright");
-    assert.equal(inspectReport.profile.details.command_shape, "pyright --outputjson --project <project-file-or-directory>");
-    assert.equal(inspectJson.stderr(), "");
+    const inspectEslint = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "eslint"], {}, inspectEslint.io), 0);
+    assert.match(inspectEslint.stdout(), /Local diagnostics profile: eslint/);
+    assert.match(inspectEslint.stdout(), /command_shape: eslint --format json <file-or-directory>/);
+
+    const inspectPyrightJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "pyright", "--json"], {}, inspectPyrightJson.io), 0);
+    const pyrightInspectReport = JSON.parse(inspectPyrightJson.stdout());
+    assert.equal(pyrightInspectReport.surface, "orx.local_diagnostics_profile");
+    assert.equal(pyrightInspectReport.profile.id, "pyright");
+    assert.equal(pyrightInspectReport.profile.details.command_shape, "pyright --outputjson --project <project-file-or-directory>");
+    assert.equal(inspectPyrightJson.stderr(), "");
+
+    const inspectEslintJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "eslint", "--json"], {}, inspectEslintJson.io), 0);
+    const eslintInspectReport = JSON.parse(inspectEslintJson.stdout());
+    assert.equal(eslintInspectReport.surface, "orx.local_diagnostics_profile");
+    assert.equal(eslintInspectReport.profile.id, "eslint");
+    assert.equal(eslintInspectReport.profile.details.command_shape, "eslint --format json <file-or-directory>");
+    assert.equal(inspectEslintJson.stderr(), "");
 
     const inspectGopls = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diag", "inspect", "gopls"], {}, inspectGopls.io), 0);
@@ -2096,6 +2113,33 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
             ],
             summary: { filesAnalyzed: 1, errorCount: 1, warningCount: 0, informationCount: 0, timeInSec: 0.1 },
           }),
+          stderr: "Authorization: Bearer should-redact\n",
+        });
+      }
+      if (String(options.command).includes("eslint")) {
+        return mockProcessResult(options, {
+          exitCode: 1,
+          stdout: JSON.stringify([
+            {
+              filePath: join(cwd, "src", "app.js"),
+              messages: [
+                {
+                  ruleId: "no-undef",
+                  severity: 2,
+                  message: "'missing' is not defined. access_token=abcd1234",
+                  line: 1,
+                  column: 13,
+                },
+                {
+                  ruleId: "no-console",
+                  severity: 1,
+                  message: "Unexpected console statement.",
+                  line: 1,
+                  column: 1,
+                },
+              ],
+            },
+          ]),
           stderr: "Authorization: Bearer should-redact\n",
         });
       }
@@ -2198,6 +2242,39 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
       "--project",
       "config",
     ]);
+
+    const eslint = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "run", "eslint", "--project", "src/app.js"], {}, eslint.io),
+      1,
+    );
+    assert.equal(eslint.stdout(), "");
+    assert.match(eslint.stderr(), /Local diagnostics run/);
+    assert.match(eslint.stderr(), /profile: eslint/);
+    assert.match(eslint.stderr(), /status: failed/);
+    assert.match(eslint.stderr(), /binary_source: local_node_modules/);
+    assert.match(eslint.stderr(), /parsed_diagnostics: 2/);
+    assert.match(eslint.stderr(), /src\/app\.js:1:13 error no-undef 'missing' is not defined\. access_token=\[redacted\]/);
+    assert.match(eslint.stderr(), /src\/app\.js:1:1 warning no-console Unexpected console statement\./);
+    assert.match(eslint.stderr(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(eslint.stderr(), /abcd1234|should-redact/);
+    assert.match(tscCalls.at(-1)?.command ?? "", /node_modules\/\.bin\/eslint$/);
+    assert.deepEqual(tscCalls.at(-1)?.args, ["--format", "json", "src/app.js"]);
+    assert.equal(tscCalls.at(-1)?.shell, false);
+    assert.equal(tscCalls.at(-1)?.inheritEnv, false);
+
+    const eslintJson = createIo({ cwd, diagnosticsRunner });
+    assert.equal(await runCli(["node", "cli", "diag", "run", "eslint", "--json"], {}, eslintJson.io), 1);
+    const eslintReport = JSON.parse(eslintJson.stdout());
+    assert.equal(eslintReport.surface, "orx.local_diagnostics");
+    assert.equal(eslintReport.profile, "eslint");
+    assert.equal(eslintReport.command.shell, false);
+    assert.deepEqual(eslintReport.command.args, ["--format", "json", "."]);
+    assert.equal(eslintReport.diagnostics[0].code, "no-undef");
+    assert.equal(eslintReport.diagnostics[0].severity, "error");
+    assert.equal(eslintReport.diagnostics[1].severity, "warning");
+    assert.doesNotMatch(eslintJson.stdout(), /abcd1234|should-redact/);
+    assert.equal(eslintJson.stderr(), "");
 
     const gopls = createIo({ cwd, diagnosticsRunner });
     assert.equal(

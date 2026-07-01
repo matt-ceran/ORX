@@ -6,18 +6,19 @@ import { runProcess, type RunProcessOptions, type RunProcessResult } from "../to
 import type { TextTruncation } from "../tools/types.js";
 
 export const DIAGNOSTICS_USAGE =
-  "Usage: orx diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: orx diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const DIAG_USAGE =
-  "Usage: orx diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: orx diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAGNOSTICS_USAGE =
-  "Usage: /diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: /diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAG_USAGE =
-  "Usage: /diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: /diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|gopls|clangd> [--project <local-project-path>] [--json]]";
 
 export type DiagnosticProfileId =
   | "typescript"
   | "typescript-language-server"
   | "pyright"
+  | "eslint"
   | "rust-analyzer"
   | "gopls"
   | "clangd"
@@ -33,7 +34,7 @@ export interface DiagnosticProfile {
   networkBoundary: string;
 }
 
-export type RunnableDiagnosticProfileId = "typescript" | "pyright" | "gopls" | "clangd";
+export type RunnableDiagnosticProfileId = "typescript" | "pyright" | "eslint" | "gopls" | "clangd";
 
 export interface LocalDiagnosticsArgs {
   profile: RunnableDiagnosticProfileId;
@@ -142,6 +143,15 @@ const DIAGNOSTIC_PROFILES: DiagnosticProfile[] = [
     networkBoundary: "no installs, package-manager calls, MCP calls, network calls, or model exposure",
   },
   {
+    id: "eslint",
+    label: "ESLint",
+    state: "runnable",
+    binary: "eslint",
+    summary: "Local JavaScript/TypeScript lint diagnostics using an already-installed ESLint binary.",
+    runSupport: "runnable only through `run eslint [--project <local-file-or-directory>] [--json]`",
+    networkBoundary: "no installs, package-manager calls, MCP calls, network calls, or model exposure by command selection",
+  },
+  {
     id: "rust-analyzer",
     label: "rust-analyzer",
     state: "catalog_only",
@@ -180,18 +190,21 @@ const DIAGNOSTIC_PROFILES: DiagnosticProfile[] = [
 ];
 
 const PROFILE_IDS = new Set<DiagnosticProfileId>(DIAGNOSTIC_PROFILES.map((profile) => profile.id));
-const RUNNABLE_PROFILE_IDS = new Set<RunnableDiagnosticProfileId>(["typescript", "pyright", "gopls", "clangd"]);
+const RUNNABLE_PROFILE_IDS = new Set<RunnableDiagnosticProfileId>(["typescript", "pyright", "eslint", "gopls", "clangd"]);
 const DEFAULT_TYPESCRIPT_TIMEOUT_MS = 120_000;
 const DEFAULT_PYRIGHT_TIMEOUT_MS = 120_000;
+const DEFAULT_ESLINT_TIMEOUT_MS = 120_000;
 const DEFAULT_GOPLS_TIMEOUT_MS = 120_000;
 const DEFAULT_CLANGD_TIMEOUT_MS = 120_000;
 const DEFAULT_DIAGNOSTIC_OUTPUT_BYTES = 128 * 1024;
 const TSC_DISCOVERY_TIMEOUT_MS = 5_000;
 const PYRIGHT_DISCOVERY_TIMEOUT_MS = 5_000;
+const ESLINT_DISCOVERY_TIMEOUT_MS = 5_000;
 const GOPLS_DISCOVERY_TIMEOUT_MS = 5_000;
 const CLANGD_DISCOVERY_TIMEOUT_MS = 5_000;
 const TSC_DISCOVERY_BYTES = 8 * 1024;
 const PYRIGHT_DISCOVERY_BYTES = 8 * 1024;
+const ESLINT_DISCOVERY_BYTES = 8 * 1024;
 const GOPLS_DISCOVERY_BYTES = 8 * 1024;
 const CLANGD_DISCOVERY_BYTES = 8 * 1024;
 const MAX_DIAGNOSTIC_PATH_LENGTH = 4096;
@@ -306,6 +319,17 @@ function diagnosticProfileJsonDetails(profile: DiagnosticProfile): Record<string
       run: "orx diagnostics run pyright [--project <local-project-file-or-directory>] [--json]",
     };
   }
+  if (profile.id === "eslint") {
+    return {
+      default_project: ". under cwd",
+      command_shape: "eslint --format json <file-or-directory>",
+      binary_preference: "cwd/node_modules/.bin/eslint before PATH eslint",
+      project_guard: "local regular file or directory under cwd; symlink realpath must remain under cwd",
+      rejected_projects: "URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
+      output: "bounded and redacted; --json emits ORX-owned structured JSON with parsed ESLint messages",
+      run: "orx diagnostics run eslint [--project <local-file-or-directory>] [--json]",
+    };
+  }
   if (profile.id === "gopls") {
     return {
       default_project: "none; --project <local-go-file> is required",
@@ -366,6 +390,17 @@ export function renderDiagnosticProfileInspect(profile: DiagnosticProfile): stri
       "  rejected_projects: URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
       "  output: bounded and redacted; --json emits ORX-owned structured JSON with parsed generalDiagnostics",
       "  run: orx diagnostics run pyright [--project <local-project-file-or-directory>] [--json]",
+    );
+  }
+  if (profile.id === "eslint") {
+    lines.push(
+      "  default_project: . under cwd",
+      "  command_shape: eslint --format json <file-or-directory>",
+      "  binary_preference: cwd/node_modules/.bin/eslint before PATH eslint",
+      "  project_guard: local regular file or directory under cwd; symlink realpath must remain under cwd",
+      "  rejected_projects: URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
+      "  output: bounded and redacted; --json emits ORX-owned structured JSON with parsed ESLint messages",
+      "  run: orx diagnostics run eslint [--project <local-file-or-directory>] [--json]",
     );
   }
   if (profile.id === "gopls") {
@@ -741,6 +776,9 @@ function resolveProjectPath(
   if (profile === "pyright" && !safeIsFile(realResolved) && !safeIsDirectory(realResolved)) {
     return { ok: false, message: "project must be a regular local file or directory." };
   }
+  if (profile === "eslint" && !safeIsFile(realResolved) && !safeIsDirectory(realResolved)) {
+    return { ok: false, message: "project must be a regular local file or directory." };
+  }
 
   const relativePath = relative(cwd, resolved).split(/[\\/]/g).join("/") || ".";
   if (profile === "gopls") {
@@ -857,6 +895,9 @@ function validateProjectPathValue(value: string, profile: RunnableDiagnosticProf
     }
     if (profile === "pyright") {
       return "project must be a local Pyright project file or directory, not a package, registry, or launcher value.";
+    }
+    if (profile === "eslint") {
+      return "project must be a local ESLint file or directory, not a package, registry, or launcher value.";
     }
     if (profile === "gopls") {
       return "project must be a local Go file, not a package, registry, or launcher value.";
@@ -1052,10 +1093,59 @@ function parseDiagnosticsForProfile(
   if (profile === "pyright") {
     return parsePyrightDiagnostics(stdout, root);
   }
+  if (profile === "eslint") {
+    return parseEslintDiagnostics(stdout, root);
+  }
   if (profile === "gopls") {
     return parseGoplsDiagnostics(`${stdout}\n${stderr}`, root);
   }
   return parseClangdDiagnostics(`${stdout}\n${stderr}`, projectPath);
+}
+
+function parseEslintDiagnostics(output: string, root: string): ParsedTypeScriptDiagnostic[] {
+  const trimmed = output.trim();
+  if (!trimmed) {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  const diagnostics: ParsedTypeScriptDiagnostic[] = [];
+  const seen = new Set<string>();
+  for (const fileResult of parsed) {
+    if (!isRecord(fileResult) || !Array.isArray(fileResult.messages)) {
+      continue;
+    }
+    const file = formatDiagnosticFile(fileResult.filePath, root);
+    for (const message of fileResult.messages) {
+      if (!isRecord(message)) {
+        continue;
+      }
+      const diagnostic = {
+        file,
+        line: toPositiveOneBasedNumber(message.line),
+        column: toPositiveOneBasedNumber(message.column),
+        severity: normalizeEslintSeverity(message.severity),
+        code: typeof message.ruleId === "string" && message.ruleId.trim()
+          ? sanitizeInline(message.ruleId)
+          : "eslint",
+        message: typeof message.message === "string" ? sanitizeInline(message.message) : "[redacted]",
+      };
+      const key = JSON.stringify(diagnostic);
+      if (!seen.has(key)) {
+        seen.add(key);
+        diagnostics.push(diagnostic);
+      }
+    }
+  }
+  return diagnostics;
 }
 
 function parseGoplsDiagnostics(output: string, root: string): ParsedTypeScriptDiagnostic[] {
@@ -1147,6 +1237,9 @@ function buildDiagnosticCommandArgs(profile: RunnableDiagnosticProfileId, projec
   if (profile === "pyright") {
     return ["--outputjson", "--project", projectArg];
   }
+  if (profile === "eslint") {
+    return ["--format", "json", projectArg];
+  }
   if (profile === "gopls") {
     return ["check", projectArg];
   }
@@ -1160,6 +1253,9 @@ function defaultProjectPathForProfile(profile: RunnableDiagnosticProfileId): str
   if (profile === "pyright") {
     return ".";
   }
+  if (profile === "eslint") {
+    return ".";
+  }
   return undefined;
 }
 
@@ -1170,6 +1266,9 @@ function defaultTimeoutForProfile(profile: RunnableDiagnosticProfileId): number 
   if (profile === "pyright") {
     return DEFAULT_PYRIGHT_TIMEOUT_MS;
   }
+  if (profile === "eslint") {
+    return DEFAULT_ESLINT_TIMEOUT_MS;
+  }
   return profile === "gopls" ? DEFAULT_GOPLS_TIMEOUT_MS : DEFAULT_CLANGD_TIMEOUT_MS;
 }
 
@@ -1179,6 +1278,9 @@ function diagnosticBinaryForProfile(profile: RunnableDiagnosticProfileId): strin
   }
   if (profile === "pyright") {
     return "pyright";
+  }
+  if (profile === "eslint") {
+    return "eslint";
   }
   return profile === "gopls" ? "gopls" : "clangd";
 }
@@ -1194,6 +1296,9 @@ function diagnosticMissingMessage(profile: RunnableDiagnosticProfileId): string 
   if (profile === "pyright") {
     return "pyright is not installed or not on PATH. Install Pyright locally in this project or make an existing pyright binary available on PATH; ORX will not install it for you.";
   }
+  if (profile === "eslint") {
+    return "eslint is not installed or not on PATH. Install ESLint locally in this project or make an existing eslint binary available on PATH; ORX will not install it for you.";
+  }
   if (profile === "gopls") {
     return "gopls is not installed or not on PATH. Install gopls locally for this project or make an existing gopls binary available on PATH; ORX will not install it for you.";
   }
@@ -1207,6 +1312,9 @@ function discoveryTimeoutForProfile(profile: RunnableDiagnosticProfileId): numbe
   if (profile === "pyright") {
     return PYRIGHT_DISCOVERY_TIMEOUT_MS;
   }
+  if (profile === "eslint") {
+    return ESLINT_DISCOVERY_TIMEOUT_MS;
+  }
   return profile === "gopls" ? GOPLS_DISCOVERY_TIMEOUT_MS : CLANGD_DISCOVERY_TIMEOUT_MS;
 }
 
@@ -1216,6 +1324,9 @@ function discoveryBytesForProfile(profile: RunnableDiagnosticProfileId): number 
   }
   if (profile === "pyright") {
     return PYRIGHT_DISCOVERY_BYTES;
+  }
+  if (profile === "eslint") {
+    return ESLINT_DISCOVERY_BYTES;
   }
   return profile === "gopls" ? GOPLS_DISCOVERY_BYTES : CLANGD_DISCOVERY_BYTES;
 }
@@ -1240,6 +1351,10 @@ function normalizeClangdSeverity(value: unknown): ParsedTypeScriptDiagnostic["se
   return "message";
 }
 
+function normalizeEslintSeverity(value: unknown): ParsedTypeScriptDiagnostic["severity"] {
+  return value === 1 ? "warning" : "error";
+}
+
 function missingProjectMessageForProfile(profile: RunnableDiagnosticProfileId): string {
   if (profile === "gopls") {
     return "gopls diagnostics require --project <local-go-file>; gopls check accepts file arguments.";
@@ -1262,6 +1377,10 @@ function isClangdProjectPath(value: string): boolean {
 
 function toOneBasedNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.trunc(value) + 1 : 1;
+}
+
+function toPositiveOneBasedNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.trunc(value) : 1;
 }
 
 function formatDiagnosticFile(value: unknown, root: string): string {

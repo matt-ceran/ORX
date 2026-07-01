@@ -581,12 +581,13 @@ const DIAGNOSTIC_PROFILE_COMPLETIONS = [
   "typescript",
   "typescript-language-server",
   "pyright",
+  "eslint",
   "rust-analyzer",
   "gopls",
   "clangd",
   "scip-typescript",
 ] as const;
-const RUNNABLE_DIAGNOSTIC_PROFILE_COMPLETIONS = ["typescript", "pyright", "gopls", "clangd"] as const;
+const RUNNABLE_DIAGNOSTIC_PROFILE_COMPLETIONS = ["typescript", "pyright", "eslint", "gopls", "clangd"] as const;
 const DIAGNOSTIC_READINESS_OPTION_COMPLETIONS = ["--json"] as const;
 const DIAGNOSTIC_RUN_OPTION_COMPLETIONS = ["--project", "--json"] as const;
 const SKILL_SUBCOMMAND_COMPLETIONS = ["list", "status", "activate"] as const;

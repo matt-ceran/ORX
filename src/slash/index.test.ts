@@ -130,7 +130,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
   assert.match(output, /\/scanners \[list \[--json\]\|inspect <profile> \[--json\]\|run semgrep <path> --config <local-config-path> \[--json\]\]/);
   assert.match(output, /\/scan semgrep <path> --config <local-config-path> \[--json\]/);
-  assert.match(output, /\/diagnostics \[list \[--json\]\|inspect <profile> \[--json\]\|run <typescript\|pyright\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
+  assert.match(output, /\/diagnostics \[list \[--json\]\|inspect <profile> \[--json\]\|run <typescript\|pyright\|eslint\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/refs <query>/);
   assert.match(output, /\/imports \[query\]/);
@@ -347,6 +347,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/diagnostics show pyright --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run t"), [["typescript "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run p"), [["pyright "], "p"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics run e"), [["eslint "], "e"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run g"), [["gopls "], "g"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run c"), [["clangd "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/diag run typescript --p"), [["--project "], "--p"]);
@@ -817,12 +818,14 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     mkdirSync(join(cwd, "node_modules", ".bin"), { recursive: true });
     writeFileSync(join(cwd, "src", "app.ts"), "const value: string = 1;\n");
     writeFileSync(join(cwd, "src", "app.py"), "value: str = 1\n");
+    writeFileSync(join(cwd, "src", "app.js"), "console.log(missing);\n");
     writeFileSync(join(cwd, "src", "main.go"), "package main\nfunc main() {}\n");
     writeFileSync(join(cwd, "src", "main.cpp"), "int main() { return missing_symbol; }\n");
     writeFileSync(join(cwd, "src", "notes.txt"), "not a clangd source\n");
     writeFileSync(join(cwd, "tsconfig.json"), "{\"compilerOptions\":{\"strict\":true},\"include\":[\"src\"]}\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "tsc"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "pyright"), "#!/usr/bin/env node\n");
+    writeFileSync(join(cwd, "node_modules", ".bin", "eslint"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "gopls"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "clangd"), "#!/usr/bin/env node\n");
 
@@ -831,6 +834,7 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.match(list.stdout(), /Local diagnostics profiles/);
     assert.match(list.stdout(), /id=typescript state=runnable/);
     assert.match(list.stdout(), /id=pyright state=runnable/);
+    assert.match(list.stdout(), /id=eslint state=runnable/);
     assert.match(list.stdout(), /id=gopls state=runnable/);
     assert.match(list.stdout(), /id=clangd state=runnable/);
 
@@ -842,6 +846,7 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.equal(profileReport.network, "none_for_list_or_inspect");
     const profileEntries = profileReport.profiles as Array<{ id: string; state: string }>;
     assert.equal(profileEntries.find((profile) => profile.id === "typescript")?.state, "runnable");
+    assert.equal(profileEntries.find((profile) => profile.id === "eslint")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "rust-analyzer")?.state, "catalog_only");
     assert.equal(listJson.stderr(), "");
 
@@ -855,13 +860,26 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.match(inspectPyright.stdout(), /Local diagnostics profile: pyright/);
     assert.match(inspectPyright.stdout(), /command_shape: pyright --outputjson --project <project-file-or-directory>/);
 
-    const inspectJson = createSlashHarness({ cwd });
-    assert.equal(await handleSlashCommand("/diagnostics inspect pyright --json", inspectJson.context), "continue");
-    const inspectReport = JSON.parse(inspectJson.stdout());
-    assert.equal(inspectReport.surface, "orx.local_diagnostics_profile");
-    assert.equal(inspectReport.profile.id, "pyright");
-    assert.equal(inspectReport.profile.details.command_shape, "pyright --outputjson --project <project-file-or-directory>");
-    assert.equal(inspectJson.stderr(), "");
+    const inspectEslint = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics inspect eslint", inspectEslint.context), "continue");
+    assert.match(inspectEslint.stdout(), /Local diagnostics profile: eslint/);
+    assert.match(inspectEslint.stdout(), /command_shape: eslint --format json <file-or-directory>/);
+
+    const inspectPyrightJson = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics inspect pyright --json", inspectPyrightJson.context), "continue");
+    const pyrightInspectReport = JSON.parse(inspectPyrightJson.stdout());
+    assert.equal(pyrightInspectReport.surface, "orx.local_diagnostics_profile");
+    assert.equal(pyrightInspectReport.profile.id, "pyright");
+    assert.equal(pyrightInspectReport.profile.details.command_shape, "pyright --outputjson --project <project-file-or-directory>");
+    assert.equal(inspectPyrightJson.stderr(), "");
+
+    const inspectEslintJson = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics inspect eslint --json", inspectEslintJson.context), "continue");
+    const eslintInspectReport = JSON.parse(inspectEslintJson.stdout());
+    assert.equal(eslintInspectReport.surface, "orx.local_diagnostics_profile");
+    assert.equal(eslintInspectReport.profile.id, "eslint");
+    assert.equal(eslintInspectReport.profile.details.command_shape, "eslint --format json <file-or-directory>");
+    assert.equal(inspectEslintJson.stderr(), "");
 
     const inspectGopls = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics inspect gopls", inspectGopls.context), "continue");
@@ -916,6 +934,33 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
             ],
             summary: { filesAnalyzed: 1, errorCount: 1, warningCount: 0, informationCount: 0, timeInSec: 0.1 },
           }),
+          stderr: "Authorization: Bearer should-redact\n",
+        });
+      }
+      if (String(options.command).includes("eslint")) {
+        return mockProcessResult(options, {
+          exitCode: 1,
+          stdout: JSON.stringify([
+            {
+              filePath: join(cwd, "src", "app.js"),
+              messages: [
+                {
+                  ruleId: "no-undef",
+                  severity: 2,
+                  message: "'missing' is not defined. access_token=abcd1234",
+                  line: 1,
+                  column: 13,
+                },
+                {
+                  ruleId: "no-console",
+                  severity: 1,
+                  message: "Unexpected console statement.",
+                  line: 1,
+                  column: 1,
+                },
+              ],
+            },
+          ]),
           stderr: "Authorization: Bearer should-redact\n",
         });
       }
@@ -1007,6 +1052,38 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
       "--project",
       "config",
     ]);
+
+    const eslint = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(
+      await handleSlashCommand("/diagnostics run eslint --project src/app.js", eslint.context),
+      "continue",
+    );
+    assert.equal(eslint.stdout(), "");
+    assert.match(eslint.stderr(), /Local diagnostics run/);
+    assert.match(eslint.stderr(), /profile: eslint/);
+    assert.match(eslint.stderr(), /status: failed/);
+    assert.match(eslint.stderr(), /binary_source: local_node_modules/);
+    assert.match(eslint.stderr(), /parsed_diagnostics: 2/);
+    assert.match(eslint.stderr(), /src\/app\.js:1:13 error no-undef 'missing' is not defined\. access_token=\[redacted\]/);
+    assert.match(eslint.stderr(), /src\/app\.js:1:1 warning no-console Unexpected console statement\./);
+    assert.match(eslint.stderr(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(eslint.stderr(), /abcd1234|should-redact/);
+    assert.match(tscCalls.at(-1)?.command ?? "", /node_modules\/\.bin\/eslint$/);
+    assert.deepEqual(tscCalls.at(-1)?.args, ["--format", "json", "src/app.js"]);
+    assert.equal(tscCalls.at(-1)?.shell, false);
+    assert.equal(tscCalls.at(-1)?.inheritEnv, false);
+
+    const eslintJson = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(await handleSlashCommand("/diag run eslint --json", eslintJson.context), "continue");
+    const eslintReport = JSON.parse(eslintJson.stdout());
+    assert.equal(eslintReport.surface, "orx.local_diagnostics");
+    assert.equal(eslintReport.profile, "eslint");
+    assert.deepEqual(eslintReport.command.args, ["--format", "json", "."]);
+    assert.equal(eslintReport.diagnostics[0].code, "no-undef");
+    assert.equal(eslintReport.diagnostics[0].severity, "error");
+    assert.equal(eslintReport.diagnostics[1].severity, "warning");
+    assert.doesNotMatch(eslintJson.stdout(), /abcd1234|should-redact/);
+    assert.equal(eslintJson.stderr(), "");
 
     const gopls = createSlashHarness({ cwd, diagnosticsRunner });
     assert.equal(await handleSlashCommand("/diagnostics run gopls --project src/main.go", gopls.context), "continue");

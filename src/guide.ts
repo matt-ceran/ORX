@@ -51,6 +51,7 @@ export function renderOperatorGuide(report: DoctorReport): string {
     "  - orx ast-grep '<pattern>' src --lang ts",
     "  - orx diagnostics run typescript",
     "  - orx diagnostics run pyright",
+    "  - orx diagnostics run eslint",
     "  - orx diagnostics run gopls --project src/main.go",
     "  - orx diagnostics run clangd --project src/main.cpp",
     "mcp_setup:",
