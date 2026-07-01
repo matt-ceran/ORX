@@ -104,6 +104,16 @@ Current files:
 
 ## Latest Work
 
+Added exact no-install npx framework report support:
+
+- Package-script JSON report handling now treats only exact no-prefix `npx --no-install <runner>` final runner shapes as safe framework runners, where `<runner>` is exactly `jest`, `vitest`, `playwright`, `playwright-core`, or `@playwright/test`.
+- These exact no-install npx scripts can use the same private temporary JSON report capture, declared JSON output-file reads, and fixed local config-declared JSON output-file reads already used for direct Jest/Vitest/Playwright scripts. The existing boundaries remain: no installs, no network, no model-tool exposure changes, no config execution, no declared report mutation/deletion, and stale/out-of-cwd/symlink/oversized reports stay ignored.
+- Plain `npx`, path-like `npx`, path-like runners, env/cross-env-prefixed npx, separator forms, duplicate or non-lowercase `--no-install`, other npx options, custom wrappers, custom reporters, and unsafe multi-step/post-step shapes stay on stdout/stderr fallback.
+- Verification: `node --import tsx --test src/testing/test-adapters.test.ts`, `npm run typecheck`, `npm run build`, `node --test dist/testing/test-adapters.test.js`, `git diff --check`, full `npm test` with 541 tests, `npm run verify:release`, and independent read-only verifier `019f1e07-3e9c-7100-86bd-ab0b2b3b2642` after tightening path, separator, duplicate option, env-prefix, and raw lowercase option boundary findings.
+- Next likely work after this slice remains another bounded optional completion slice such as LSP/SCIP diagnostics/references, semantic tree-sitter refs/dependency depth, non-JSON/custom reporter parsing, or scanner adapters only after a deterministic no-network/no-auth local command shape is proven.
+
+Previous latest work:
+
 Added scanner readiness JSON output:
 
 - `orx scanners --json`, `orx scanners list --json`, `orx scanners status --json`, `orx scanners inspect <profile> --json`, `orx scanners show <profile> --json`, and matching `/scanners` forms now render ORX-owned structured readiness JSON for scanner catalog/profile metadata.

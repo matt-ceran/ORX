@@ -6481,20 +6481,61 @@ function finalSegmentSupportsDefaultJsonReportArgs(tokens: string[], framework: 
 
 function findFinalSegmentCommandIndex(tokens: string[]): number | undefined {
   let index = 0;
+  let skippedPrefix = false;
   while (index < tokens.length) {
     const rawToken = stripShellQuotes(tokens[index] ?? "");
     const token = normalizeScriptToken(rawToken);
     if (isShellEnvironmentAssignment(rawToken)) {
+      skippedPrefix = true;
       index += 1;
       continue;
     }
     if (token === "env" || token === "cross-env" || token === "cross-env-shell") {
+      skippedPrefix = true;
       index += 1;
       continue;
+    }
+    if (!skippedPrefix && rawToken === "npx") {
+      const npxCommandIndex = findNoInstallNpxCommandIndex(tokens, index + 1);
+      if (npxCommandIndex !== undefined) {
+        return npxCommandIndex;
+      }
     }
     return index;
   }
   return undefined;
+}
+
+function findNoInstallNpxCommandIndex(tokens: string[], startIndex: number): number | undefined {
+  let index = startIndex;
+  let sawNoInstall = false;
+  while (index < tokens.length) {
+    const rawToken = stripShellQuotes(tokens[index] ?? "");
+    const token = normalizeScriptToken(rawToken);
+    if (rawToken === "--") {
+      return undefined;
+    }
+    if (rawToken === "--no-install") {
+      if (sawNoInstall) {
+        return undefined;
+      }
+      sawNoInstall = true;
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("-")) {
+      return undefined;
+    }
+    break;
+  }
+  return sawNoInstall && index < tokens.length && isExactNoInstallNpxFrameworkCommand(tokens[index] ?? "")
+    ? index
+    : undefined;
+}
+
+function isExactNoInstallNpxFrameworkCommand(rawToken: string): boolean {
+  const token = stripShellQuotes(rawToken);
+  return token === "jest" || token === "vitest" || token === "playwright" || token === "playwright-core" || token === "@playwright/test";
 }
 
 function isShellEnvironmentAssignment(token: string): boolean {

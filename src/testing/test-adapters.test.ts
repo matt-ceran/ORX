@@ -4439,6 +4439,14 @@ test("requests private structured JSON report files for safe package script fram
       JSON.stringify({
         scripts: {
           "test:jest-default": "jest",
+          "test:jest-npx-default": "npx --no-install jest",
+          "test:path-npx-default": "./scripts/npx --no-install jest",
+          "test:npx-path-jest-default": "npx --no-install ./scripts/jest",
+          "test:npx-separator-jest-default": "npx --no-install -- jest",
+          "test:npx-duplicate-no-install-jest-default": "npx --no-install --no-install jest",
+          "test:npx-uppercase-no-install-jest-default": "npx --NO-INSTALL jest",
+          "test:env-assignment-npx-default": "CI=1 npx --no-install jest",
+          "test:env-command-npx-default": "env npx --no-install jest",
           "test:vitest-default": "vitest run",
           "test:playwright-default": "playwright test",
           "test:react-default": "react-scripts test",
@@ -4449,9 +4457,11 @@ test("requests private structured JSON report files for safe package script fram
           "test:vitest-json": "vitest --reporter=json",
           "test:playwright-json": "playwright test --reporter=json",
           "test:jest-existing-output": "jest --json --outputFile=already.json",
+          "test:jest-plain-npx-existing-output": "npx jest --json --outputFile=npx-plain.json",
           "test:custom-jest-existing-output": "node ./fake-json-reporter.mjs jest --json --outputFile=custom-runner.json",
           "test:jest-pre-output": "node ./fake-json-reporter.mjs jest --json --outputFile=prep.json && jest --json",
           "test:vitest-separate-output": "vitest run --reporter=json --outputFile separate.json",
+          "test:vitest-npx-existing-output": "npx --no-install vitest run --reporter=json --outputFile=npx-vitest.json",
           "test:vitest-json-after-json-pre-step": "node ./json-pre-step.mjs --json && vitest run --reporter=json --outputFile=pre-json-vitest.json",
           "test:playwright-existing-output": "PLAYWRIGHT_JSON_OUTPUT_FILE=playwright-existing.json playwright test --reporter=json",
           "test:jest-stale-output": "jest --json --outputFile=stale.json",
@@ -4463,10 +4473,17 @@ test("requests private structured JSON report files for safe package script fram
     );
     const binDir = join(cwd, "node_modules", ".bin");
     mkdirSync(binDir, { recursive: true });
-    for (const binName of ["jest", "vitest", "playwright", "react-scripts"]) {
+    for (const binName of ["jest", "vitest", "playwright", "react-scripts", "npx"]) {
       const binPath = join(binDir, binName);
       writeFileSync(binPath, "#!/usr/bin/env node\nimport '../../fake-json-reporter.mjs';\n");
       chmodSync(binPath, 0o755);
+    }
+    const scriptDir = join(cwd, "scripts");
+    mkdirSync(scriptDir, { recursive: true });
+    for (const scriptName of ["npx", "jest"]) {
+      const scriptPath = join(scriptDir, scriptName);
+      writeFileSync(scriptPath, "#!/usr/bin/env node\nimport '../fake-json-reporter.mjs';\n");
+      chmodSync(scriptPath, 0o755);
     }
     writeFileSync(
       join(cwd, "fake-json-reporter.mjs"),
@@ -4475,8 +4492,14 @@ test("requests private structured JSON report files for safe package script fram
         "import { basename } from 'node:path';",
         "const binName = basename(process.argv[1] ?? '');",
         "const knownBins = new Set(['jest', 'vitest', 'playwright', 'react-scripts']);",
-        "const framework = knownBins.has(binName) ? binName : process.argv[2];",
-        "const args = process.argv.slice(2);",
+        "const rawArgs = process.argv.slice(2);",
+        "const npxCommandIndex = binName === 'npx' ? rawArgs.findIndex((arg) => arg !== '--no-install' && arg !== '--') : -1;",
+        "const framework = knownBins.has(binName)",
+        "  ? binName",
+        "  : binName === 'npx' && npxCommandIndex >= 0",
+        "    ? basename(rawArgs[npxCommandIndex] ?? '')",
+        "    : process.argv[2];",
+        "const args = binName === 'npx' && npxCommandIndex >= 0 ? rawArgs.slice(npxCommandIndex + 1) : rawArgs;",
         "const reporterValues = [];",
         "for (const [index, arg] of args.entries()) {",
         "  if (arg === '--reporter' || arg === '--reporters') reporterValues.push(args[index + 1] ?? '');",
@@ -4540,6 +4563,76 @@ test("requests private structured JSON report files for safe package script fram
     const defaultJestOutputFileArg = defaultJestResult.args.find((arg) => arg.startsWith("--outputFile="));
     assert.ok(defaultJestOutputFileArg);
     assert.equal(existsSync(defaultJestOutputFileArg.slice("--outputFile=".length)), false);
+
+    const npxDefaultJestResult = await runTestTarget({ cwd, targetId: "script:test:jest-npx-default" });
+    assert.equal(npxDefaultJestResult.ok, true);
+    assert.equal(npxDefaultJestResult.report?.source, "jest-json");
+    assert.equal(npxDefaultJestResult.report?.total, 5);
+    assert.ok(npxDefaultJestResult.args.includes("--json"));
+    const npxDefaultJestOutputFileArg = npxDefaultJestResult.args.find((arg) => arg.startsWith("--outputFile="));
+    assert.ok(npxDefaultJestOutputFileArg);
+    assert.equal(existsSync(npxDefaultJestOutputFileArg.slice("--outputFile=".length)), false);
+
+    const pathNpxDefaultJestResult = await runTestTarget({ cwd, targetId: "script:test:path-npx-default" });
+    assert.equal(pathNpxDefaultJestResult.ok, true);
+    assert.equal(pathNpxDefaultJestResult.report?.source, "jest");
+    assert.equal(pathNpxDefaultJestResult.report?.total, 99);
+    assert.equal(pathNpxDefaultJestResult.args.includes("--json"), false);
+    assert.equal(pathNpxDefaultJestResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+
+    const npxPathJestResult = await runTestTarget({ cwd, targetId: "script:test:npx-path-jest-default" });
+    assert.equal(npxPathJestResult.ok, true);
+    assert.equal(npxPathJestResult.report?.source, "jest");
+    assert.equal(npxPathJestResult.report?.total, 99);
+    assert.equal(npxPathJestResult.args.includes("--json"), false);
+    assert.equal(npxPathJestResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+
+    const npxSeparatorJestResult = await runTestTarget({ cwd, targetId: "script:test:npx-separator-jest-default" });
+    assert.equal(npxSeparatorJestResult.ok, true);
+    assert.equal(npxSeparatorJestResult.report?.source, "jest");
+    assert.equal(npxSeparatorJestResult.report?.total, 99);
+    assert.equal(npxSeparatorJestResult.args.includes("--json"), false);
+    assert.equal(npxSeparatorJestResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+
+    const npxDuplicateNoInstallJestResult = await runTestTarget({
+      cwd,
+      targetId: "script:test:npx-duplicate-no-install-jest-default",
+    });
+    assert.equal(npxDuplicateNoInstallJestResult.ok, true);
+    assert.equal(npxDuplicateNoInstallJestResult.report?.source, "jest");
+    assert.equal(npxDuplicateNoInstallJestResult.report?.total, 99);
+    assert.equal(npxDuplicateNoInstallJestResult.args.includes("--json"), false);
+    assert.equal(npxDuplicateNoInstallJestResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+
+    const npxUppercaseNoInstallJestResult = await runTestTarget({
+      cwd,
+      targetId: "script:test:npx-uppercase-no-install-jest-default",
+    });
+    assert.equal(npxUppercaseNoInstallJestResult.ok, true);
+    assert.equal(npxUppercaseNoInstallJestResult.report?.source, "jest");
+    assert.equal(npxUppercaseNoInstallJestResult.report?.total, 99);
+    assert.equal(npxUppercaseNoInstallJestResult.args.includes("--json"), false);
+    assert.equal(npxUppercaseNoInstallJestResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+
+    const envAssignmentNpxJestResult = await runTestTarget({
+      cwd,
+      targetId: "script:test:env-assignment-npx-default",
+    });
+    assert.equal(envAssignmentNpxJestResult.ok, true);
+    assert.equal(envAssignmentNpxJestResult.report?.source, "jest");
+    assert.equal(envAssignmentNpxJestResult.report?.total, 99);
+    assert.equal(envAssignmentNpxJestResult.args.includes("--json"), false);
+    assert.equal(envAssignmentNpxJestResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+
+    const envCommandNpxJestResult = await runTestTarget({
+      cwd,
+      targetId: "script:test:env-command-npx-default",
+    });
+    assert.equal(envCommandNpxJestResult.ok, true);
+    assert.equal(envCommandNpxJestResult.report?.source, "jest");
+    assert.equal(envCommandNpxJestResult.report?.total, 99);
+    assert.equal(envCommandNpxJestResult.args.includes("--json"), false);
+    assert.equal(envCommandNpxJestResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
 
     const defaultVitestResult = await runTestTarget({ cwd, targetId: "script:test:vitest-default" });
     assert.equal(defaultVitestResult.ok, true);
@@ -4674,6 +4767,15 @@ test("requests private structured JSON report files for safe package script fram
     assert.equal(existingOutputResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
     assert.equal(existsSync(join(cwd, "already.json")), true);
 
+    const plainNpxExistingOutputResult = await runTestTarget({
+      cwd,
+      targetId: "script:test:jest-plain-npx-existing-output",
+    });
+    assert.equal(plainNpxExistingOutputResult.ok, true);
+    assert.equal(plainNpxExistingOutputResult.report?.source, "jest");
+    assert.equal(plainNpxExistingOutputResult.report?.total, 99);
+    assert.equal(existsSync(join(cwd, "npx-plain.json")), true);
+
     const existingOutputReporterOverrideResult = await runTestTarget({
       cwd,
       targetId: "script:test:jest-existing-output",
@@ -4704,6 +4806,13 @@ test("requests private structured JSON report files for safe package script fram
     assert.equal(separateOutputResult.report?.total, 5);
     assert.equal(separateOutputResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
     assert.equal(existsSync(join(cwd, "separate.json")), true);
+
+    const npxExistingOutputResult = await runTestTarget({ cwd, targetId: "script:test:vitest-npx-existing-output" });
+    assert.equal(npxExistingOutputResult.ok, true);
+    assert.equal(npxExistingOutputResult.report?.source, "vitest-json");
+    assert.equal(npxExistingOutputResult.report?.total, 5);
+    assert.equal(npxExistingOutputResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+    assert.equal(existsSync(join(cwd, "npx-vitest.json")), true);
 
     const vitestJsonAfterJsonPreStepResult = await runTestTarget({
       cwd,
@@ -4911,6 +5020,63 @@ test("reads config-declared JSON report files only for direct framework scripts"
     }
     rmSync(cwd, { recursive: true, force: true });
     rmSync(outsideReportDir, { recursive: true, force: true });
+  }
+});
+
+test("reads config-declared JSON report files for exact no-install npx framework scripts", async () => {
+  const cwd = createTempDir();
+  try {
+    writeFileSync(
+      join(cwd, "package.json"),
+      JSON.stringify({
+        scripts: {
+          "test:jest-config-npx": "npx --no-install jest",
+          "test:jest-config-plain-npx": "npx jest",
+        },
+      }),
+    );
+    writeFileSync(
+      join(cwd, "jest.config.js"),
+      "module.exports = { json: true, outputFile: 'reports/npx-config.json' };\n",
+    );
+    const binDir = join(cwd, "node_modules", ".bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "jest");
+    writeFileSync(binPath, "#!/usr/bin/env node\nimport '../../fake-config-reporter.mjs';\n");
+    chmodSync(binPath, 0o755);
+    writeFileSync(
+      join(cwd, "fake-config-reporter.mjs"),
+      [
+        "import { mkdirSync, writeFileSync } from 'node:fs';",
+        "mkdirSync('reports', { recursive: true });",
+        "writeFileSync('reports/npx-config.json', JSON.stringify({",
+        "  numTotalTests: 5,",
+        "  numPassedTests: 4,",
+        "  numFailedTests: 1,",
+        "  numPendingTests: 0,",
+        "  numTodoTests: 0,",
+        "  numTotalTestSuites: 2,",
+        "  duration: 789,",
+        "}));",
+        "console.log('Tests: 99 passed, 99 total');",
+        "",
+      ].join("\n"),
+    );
+
+    const npxConfigResult = await runTestTarget({ cwd, targetId: "script:test:jest-config-npx" });
+    assert.equal(npxConfigResult.ok, true);
+    assert.equal(npxConfigResult.report?.source, "jest-json");
+    assert.equal(npxConfigResult.report?.total, 5);
+    assert.equal(npxConfigResult.args.includes("--json"), false);
+    assert.equal(npxConfigResult.args.some((arg) => arg.startsWith("--outputFile=")), false);
+    assert.equal(existsSync(join(cwd, "reports", "npx-config.json")), true);
+
+    const plainNpxConfigResult = await runTestTarget({ cwd, targetId: "script:test:jest-config-plain-npx" });
+    assert.equal(plainNpxConfigResult.ok, true);
+    assert.equal(plainNpxConfigResult.report?.source, "jest");
+    assert.equal(plainNpxConfigResult.report?.total, 99);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
