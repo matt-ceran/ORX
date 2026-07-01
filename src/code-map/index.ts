@@ -216,6 +216,11 @@ export interface CodeCallEdge {
   lines: number[];
 }
 
+export interface CodeJsonArgs {
+  value?: string;
+  json: boolean;
+}
+
 interface ExtractedExportSymbol {
   name: string;
   line: number;
@@ -561,8 +566,36 @@ export function renderCodeMap(map: CodeMap): string {
     }
   }
 
-  lines.push("  usage: orx code map [path]");
+  lines.push("  usage: orx code map [path] [--json]");
   return lines.join("\n");
+}
+
+export function renderCodeMapJson(map: CodeMap): string {
+  return JSON.stringify({
+    schema_version: 1,
+    surface: "orx.code_map",
+    operator_only: true,
+    model_tool: "none",
+    execution: "local_filesystem_scan_only",
+    network: "none",
+    root: sanitizeInline(map.root),
+    scanned_files: map.scannedFiles,
+    source_file_count: map.sourceFiles.length,
+    truncated: map.truncated,
+    language_counts: map.languageCounts.map((entry) => ({
+      language: sanitizeInline(entry.language),
+      files: entry.files,
+    })),
+    key_files: map.keyFiles.map(sanitizeInline),
+    entrypoints: map.entrypoints.map((entrypoint) => ({
+      kind: entrypoint.kind,
+      label: sanitizeInline(entrypoint.label),
+      path: sanitizeInline(entrypoint.path),
+    })),
+    source_files: map.sourceFiles.map(codeMapSourceFileJson),
+    omission_count: map.omissions.length,
+    omissions: map.omissions.map(codeMapOmissionJson),
+  }, null, 2);
 }
 
 export function createCodeSymbolIndex(options: CodeSymbolIndexOptions = {}): CodeSymbolIndex {
@@ -640,8 +673,28 @@ export function renderCodeSymbols(index: CodeSymbolIndex): string {
     }
   }
 
-  lines.push("  usage: orx code symbols [query]");
+  lines.push("  usage: orx code symbols [query] [--json]");
   return lines.join("\n");
+}
+
+export function renderCodeSymbolsJson(index: CodeSymbolIndex): string {
+  return JSON.stringify({
+    schema_version: 1,
+    surface: "orx.code_symbols",
+    operator_only: true,
+    model_tool: "none",
+    execution: "local_filesystem_scan_only",
+    network: "none",
+    root: sanitizeInline(index.root),
+    query: index.query ? sanitizeInline(index.query) : null,
+    symbol_count: index.totalSymbols,
+    returned_symbol_count: index.symbols.length,
+    omitted_symbol_count: index.omittedSymbols,
+    truncated: index.truncated,
+    symbols: index.symbols.map(codeMapSymbolJson),
+    omission_count: index.omissions.length,
+    omissions: index.omissions.map(codeMapOmissionJson),
+  }, null, 2);
 }
 
 export function createCodeReferenceIndex(options: CodeReferenceIndexOptions = {}): CodeReferenceIndex {
@@ -741,8 +794,36 @@ export function renderCodeReferences(index: CodeReferenceIndex): string {
     }
   }
 
-  lines.push("  usage: orx code refs <query>");
+  lines.push("  usage: orx code refs <query> [--json]");
   return lines.join("\n");
+}
+
+export function renderCodeReferencesJson(index: CodeReferenceIndex): string {
+  return JSON.stringify({
+    schema_version: 1,
+    surface: "orx.code_refs",
+    operator_only: true,
+    model_tool: "none",
+    execution: "local_filesystem_scan_only",
+    network: "none",
+    semantic_resolution: false,
+    root: sanitizeInline(index.root),
+    query: index.query ? sanitizeInline(index.query) : null,
+    reference_count: index.totalReferences,
+    returned_reference_count: index.references.length,
+    omitted_reference_count: index.omittedReferences,
+    truncated: index.truncated,
+    references: index.references.map((reference) => ({
+      query: sanitizeInline(reference.query),
+      path: sanitizeInline(reference.path),
+      language: sanitizeInline(reference.language),
+      line: reference.line,
+      column: reference.column,
+      excerpt: sanitizeInline(reference.excerpt),
+    })),
+    omission_count: index.omissions.length,
+    omissions: index.omissions.map(codeMapOmissionJson),
+  }, null, 2);
 }
 
 export function createCodeImportGraph(options: CodeImportGraphOptions = {}): CodeImportGraph {
@@ -856,8 +937,41 @@ export function renderCodeImportGraph(graph: CodeImportGraph): string {
     }
   }
 
-  lines.push("  usage: orx code imports [query]");
+  lines.push("  usage: orx code imports [query] [--json]");
   return lines.join("\n");
+}
+
+export function renderCodeImportGraphJson(graph: CodeImportGraph): string {
+  return JSON.stringify({
+    schema_version: 1,
+    surface: "orx.code_imports",
+    operator_only: true,
+    model_tool: "none",
+    execution: "local_filesystem_scan_only",
+    network: "none",
+    dependency_resolution: "local_relative_only",
+    root: sanitizeInline(graph.root),
+    query: graph.query ? sanitizeInline(graph.query) : null,
+    edge_count: graph.totalEdges,
+    returned_edge_count: graph.edges.length,
+    omitted_edge_count: graph.omittedEdges,
+    truncated: graph.truncated,
+    summary: {
+      files_with_imports: graph.filesWithImports,
+      local_edges: graph.localEdges,
+      external_imports: graph.externalImports,
+      unresolved_local_imports: graph.unresolvedLocalImports,
+    },
+    edges: graph.edges.map((edge) => ({
+      from: sanitizeInline(edge.from),
+      to: edge.to ? sanitizeInline(edge.to) : null,
+      specifier: sanitizeInline(edge.specifier),
+      kind: edge.kind,
+      language: sanitizeInline(edge.language),
+    })),
+    omission_count: graph.omissions.length,
+    omissions: graph.omissions.map(codeMapOmissionJson),
+  }, null, 2);
 }
 
 export function createCodeCallGraph(options: CodeCallGraphOptions = {}): CodeCallGraph {
@@ -1060,8 +1174,109 @@ export function renderCodeCallGraph(graph: CodeCallGraph): string {
     }
   }
 
-  lines.push("  usage: orx code calls [query]");
+  lines.push("  usage: orx code calls [query] [--json]");
   return lines.join("\n");
+}
+
+export function renderCodeCallGraphJson(graph: CodeCallGraph): string {
+  return JSON.stringify({
+    schema_version: 1,
+    surface: "orx.code_calls",
+    operator_only: true,
+    model_tool: "none",
+    execution: "local_filesystem_scan_only",
+    network: "none",
+    mode: "conservative_lexical_javascript_typescript_scan",
+    ast_backed: false,
+    semantic_resolution: false,
+    root: sanitizeInline(graph.root),
+    query: graph.query ? sanitizeInline(graph.query) : null,
+    definition_count: graph.totalDefinitions,
+    returned_definition_count: graph.definitions.length,
+    omitted_definition_count: graph.omittedDefinitions,
+    edge_count: graph.totalEdges,
+    returned_edge_count: graph.edges.length,
+    omitted_edge_count: graph.omittedEdges,
+    truncated: graph.truncated,
+    summary: {
+      call_sites: graph.totalCallSites,
+      files_with_call_edges: graph.filesWithCallEdges,
+      ambiguous_edges: graph.ambiguousEdges,
+    },
+    definitions: graph.definitions.map((definition) => ({
+      name: sanitizeInline(definition.name),
+      kind: definition.kind,
+      path: sanitizeInline(definition.path),
+      language: sanitizeInline(definition.language),
+      line: definition.line,
+    })),
+    edges: graph.edges.map((edge) => ({
+      from_name: sanitizeInline(edge.fromName),
+      from_path: sanitizeInline(edge.fromPath),
+      from_line: edge.fromLine,
+      to_name: sanitizeInline(edge.toName),
+      to_path: edge.toPath ? sanitizeInline(edge.toPath) : null,
+      to_line: edge.toLine ?? null,
+      candidate_count: edge.candidateCount,
+      kind: edge.kind,
+      language: sanitizeInline(edge.language),
+      call_count: edge.callCount,
+      lines: edge.lines,
+    })),
+    omission_count: graph.omissions.length,
+    omissions: graph.omissions.map(codeMapOmissionJson),
+  }, null, 2);
+}
+
+export function parseCodeJsonArgs(args: string[]): CodeJsonArgs {
+  const valueArgs: string[] = [];
+  let json = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (arg === "--") {
+      valueArgs.push(...args.slice(index + 1));
+      break;
+    }
+    if (arg === "--json") {
+      json = true;
+      continue;
+    }
+    valueArgs.push(arg);
+  }
+  const value = valueArgs.join(" ").trim();
+  return {
+    value: value || undefined,
+    json,
+  };
+}
+
+function codeMapSourceFileJson(file: CodeMapSourceFile): Record<string, unknown> {
+  return {
+    path: sanitizeInline(file.path),
+    language: sanitizeInline(file.language),
+    bytes: file.bytes,
+    exports: file.exports.map(sanitizeInline),
+    imports: file.imports.map(sanitizeInline),
+    imports_truncated: file.importsTruncated,
+    symbols: file.symbols.map(codeMapSymbolJson),
+  };
+}
+
+function codeMapSymbolJson(symbol: CodeMapSymbol): Record<string, unknown> {
+  return {
+    name: sanitizeInline(symbol.name),
+    kind: symbol.kind,
+    path: sanitizeInline(symbol.path),
+    language: sanitizeInline(symbol.language),
+    line: symbol.line,
+  };
+}
+
+function codeMapOmissionJson(omission: CodeMapOmission): Record<string, unknown> {
+  return {
+    reason: sanitizeInline(omission.reason),
+    path: omission.path ? sanitizeInline(omission.path) : undefined,
+  };
 }
 
 function recordFile(

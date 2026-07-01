@@ -90,7 +90,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.match(output, /\/profile \[list\|save <id> \[options\]\|use\|inspect\|delete\]\s+Manage saved local config profiles/);
   assert.match(output, /\/history \[search <query>\|clear\]\s+Search or clear local prompt history/);
   assert.match(output, /\/tests \[list \[--json\]\|status \[--json\]\|run \[target-id\] \[--json\] \[-- args\.\.\.\]\]\s+Discover or run native test targets \(aliases: \/test\)/);
-  assert.match(output, /\/map \[path\]\s+Render a bounded local repository code map/);
+  assert.match(output, /\/map \[path\] \[--json\]\s+Render a bounded local repository code map/);
   assert.match(output, /\/model <id-or-search>\s+Resolve and switch OpenRouter model \(aliases: \/m\)/);
   assert.match(output, /\/quit\s+Leave chat \(aliases: \/q, \/exit\)/);
   assert.doesNotMatch(output, /Advanced chat commands:/);
@@ -132,7 +132,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/scan <semgrep\|trivy> <path> \[--config <local-config-path>\] \[--json\]/);
   assert.match(output, /\/diagnostics \[list \[--json\]\|status \[--json\]\|inspect <profile> \[--json\]\|show <profile> \[--json\]\|run <typescript\|pyright\|eslint\|ruff\|mypy\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
   assert.match(output, /\/symbols \[query\]/);
-  assert.match(output, /\/refs <query>/);
+  assert.match(output, /\/refs <query> \[--json\]/);
   assert.match(output, /\/imports \[query\]/);
   assert.match(output, /\/calls \[query\]/);
   assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\]\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
@@ -317,6 +317,10 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/tests list --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/tests status --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/tests run --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/code --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/code map --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/map --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/refs --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/code m"), [["map "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/code s"), [["symbols "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/code c"), [["calls "], "c"]);
@@ -405,10 +409,24 @@ test("map slash command renders a local code map", () => {
     assert.match(harness.stdout(), /exports="start"/);
     assert.equal(harness.stderr(), "");
 
+    const mapJson = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/code --json", mapJson.context), "continue");
+    const mapJsonReport = JSON.parse(mapJson.stdout());
+    assert.equal(mapJsonReport.surface, "orx.code_map");
+    assert.equal(mapJsonReport.source_file_count, 3);
+    assert.ok(mapJsonReport.source_files.some((file: { path: string }) => file.path === "src/index.ts"));
+    assert.equal(mapJson.stderr(), "");
+
     const scoped = createSlashHarness({ cwd });
     assert.equal(handleSlashCommand("/code map src", scoped.context), "continue");
     assert.match(scoped.stdout(), /source_files: 3/);
     assert.match(scoped.stdout(), /root: .*src/);
+
+    const scopedJson = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/map src --json", scopedJson.context), "continue");
+    const scopedJsonReport = JSON.parse(scopedJson.stdout());
+    assert.equal(scopedJsonReport.surface, "orx.code_map");
+    assert.equal(scopedJsonReport.source_file_count, 3);
 
     const symbols = createSlashHarness({ cwd });
     assert.equal(handleSlashCommand("/code symbols start", symbols.context), "continue");
@@ -421,6 +439,13 @@ test("map slash command renders a local code map", () => {
     assert.equal(handleSlashCommand("/symbols start", symbolAlias.context), "continue");
     assert.match(symbolAlias.stdout(), /Code Symbols/);
     assert.match(symbolAlias.stdout(), /name="start"/);
+
+    const symbolsJson = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/symbols start --json", symbolsJson.context), "continue");
+    const symbolsJsonReport = JSON.parse(symbolsJson.stdout());
+    assert.equal(symbolsJsonReport.surface, "orx.code_symbols");
+    assert.equal(symbolsJsonReport.query, "start");
+    assert.equal(symbolsJsonReport.symbols[0].name, "start");
 
     const refs = createSlashHarness({ cwd });
     assert.equal(handleSlashCommand("/code refs start", refs.context), "continue");
@@ -435,10 +460,23 @@ test("map slash command renders a local code map", () => {
     assert.match(refsAlias.stdout(), /Code References/);
     assert.match(refsAlias.stdout(), /query: "start"/);
 
+    const refsJson = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/code refs start --json", refsJson.context), "continue");
+    const refsJsonReport = JSON.parse(refsJson.stdout());
+    assert.equal(refsJsonReport.surface, "orx.code_refs");
+    assert.equal(refsJsonReport.query, "start");
+    assert.ok(refsJsonReport.references.some((reference: { path: string }) => reference.path === "src/index.ts"));
+
+    const refsLiteralJsonQuery = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/refs -- --json", refsLiteralJsonQuery.context), "continue");
+    assert.match(refsLiteralJsonQuery.stdout(), /Code References/);
+    assert.match(refsLiteralJsonQuery.stdout(), /query: "--json"/);
+    assert.doesNotMatch(refsLiteralJsonQuery.stdout(), /"surface": "orx\.code_refs"/);
+
     const missingRefs = createSlashHarness({ cwd });
     assert.equal(handleSlashCommand("/code refs", missingRefs.context), "continue");
     assert.equal(missingRefs.stdout(), "");
-    assert.match(missingRefs.stderr(), /Usage: \/code refs <query>/);
+    assert.match(missingRefs.stderr(), /Usage: \/code refs <query> \[--json\]/);
 
     const imports = createSlashHarness({ cwd });
     assert.equal(handleSlashCommand("/code imports", imports.context), "continue");
@@ -453,6 +491,13 @@ test("map slash command renders a local code map", () => {
     assert.match(importsAlias.stdout(), /query: "feature"/);
     assert.match(importsAlias.stdout(), /imports: 1/);
 
+    const importsJson = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/imports feature --json", importsJson.context), "continue");
+    const importsJsonReport = JSON.parse(importsJson.stdout());
+    assert.equal(importsJsonReport.surface, "orx.code_imports");
+    assert.equal(importsJsonReport.query, "feature");
+    assert.equal(importsJsonReport.summary.local_edges, 1);
+
     const calls = createSlashHarness({ cwd });
     assert.equal(handleSlashCommand("/code calls start", calls.context), "continue");
     assert.match(calls.stdout(), /Code Call Graph/);
@@ -466,6 +511,14 @@ test("map slash command renders a local code map", () => {
     assert.match(callsAlias.stdout(), /Code Call Graph/);
     assert.match(callsAlias.stdout(), /query: "feature"/);
     assert.match(callsAlias.stdout(), /to="feature"/);
+
+    const callsJson = createSlashHarness({ cwd });
+    assert.equal(handleSlashCommand("/code calls start --json", callsJson.context), "continue");
+    const callsJsonReport = JSON.parse(callsJson.stdout());
+    assert.equal(callsJsonReport.surface, "orx.code_calls");
+    assert.equal(callsJsonReport.query, "start");
+    assert.equal(callsJsonReport.ast_backed, false);
+    assert.ok(callsJsonReport.edges.some((edge: { to_name: string }) => edge.to_name === "start"));
 
     const callGraphAlias = createSlashHarness({ cwd });
     assert.equal(handleSlashCommand("/call-graph", callGraphAlias.context), "continue");

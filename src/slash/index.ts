@@ -23,14 +23,20 @@ import {
   createCodeImportGraph,
   createCodeReferenceIndex,
   createCodeSymbolIndex,
+  parseCodeJsonArgs,
   parseCodeAstGrepArgText,
   parseCodeTreeSitterArgText,
   renderCodeMap,
+  renderCodeMapJson,
   renderCodeAstGrepResult,
   renderCodeCallGraph,
+  renderCodeCallGraphJson,
   renderCodeImportGraph,
+  renderCodeImportGraphJson,
   renderCodeReferences,
+  renderCodeReferencesJson,
   renderCodeSymbols,
+  renderCodeSymbolsJson,
   renderCodeTreeSitterResult,
   runCodeAstGrep,
   runCodeTreeSitter,
@@ -575,6 +581,7 @@ const TEST_READINESS_OPTION_COMPLETIONS = ["--json"] as const;
 const TEST_RUN_OPTION_COMPLETIONS = ["--json"] as const;
 const SLASH_TESTS_USAGE = "/tests [list [--json]|status [--json]|run [target-id] [--json] [-- args...]]";
 const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls", "ast-grep", "tree-sitter", "outline"] as const;
+const CODE_JSON_OPTION_COMPLETIONS = ["--json"] as const;
 const TREE_SITTER_MODE_COMPLETIONS = ["parse", "outline", "imports", "refs", "calls", "repo-files", "repo-outline", "repo-symbols", "repo-refs", "repo-calls", "repo-imports", "repo-deps"] as const;
 const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "run"] as const;
 const SCANNER_PROFILE_COMPLETIONS = ["semgrep", "snyk", "socket", "osv-scanner", "codeql", "trivy"] as const;
@@ -837,15 +844,14 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/map": {
-    usage: "/map [path]",
+    usage: "/map [path] [--json]",
     description: "Render a bounded local repository code map",
     group: "Workspace",
     tier: "common",
     handler: (command, context): SlashResult => {
-      writeLine(
-        context.io.stdout,
-        renderCodeMap(createCodeMap({ cwd: context.io.cwd, targetPath: command.argText || undefined })),
-      );
+      const parsed = parseCodeJsonArgs(command.args);
+      const map = createCodeMap({ cwd: context.io.cwd, targetPath: parsed.value });
+      writeLine(context.io.stdout, parsed.json ? renderCodeMapJson(map) : renderCodeMap(map));
       return "continue";
     },
   },
@@ -856,59 +862,39 @@ const COMMANDS: Record<string, SlashDefinition> = {
     tier: "advanced",
     handler: (command, context): SlashResult => {
       const subcommand = command.args[0]?.toLowerCase() ?? "map";
-      if (subcommand === "map") {
-        writeLine(
-          context.io.stdout,
-          renderCodeMap(createCodeMap({
-            cwd: context.io.cwd,
-            targetPath: command.args.slice(1).join(" ").trim() || undefined,
-          })),
-        );
+      if (subcommand === "map" || subcommand === "--json") {
+        const parsed = parseCodeJsonArgs(subcommand === "--json" ? command.args : command.args.slice(1));
+        const map = createCodeMap({ cwd: context.io.cwd, targetPath: parsed.value });
+        writeLine(context.io.stdout, parsed.json ? renderCodeMapJson(map) : renderCodeMap(map));
         return "continue";
       }
       if (subcommand === "symbols" || subcommand === "symbol") {
-        writeLine(
-          context.io.stdout,
-          renderCodeSymbols(createCodeSymbolIndex({
-            cwd: context.io.cwd,
-            query: command.args.slice(1).join(" ").trim() || undefined,
-          })),
-        );
+        const parsed = parseCodeJsonArgs(command.args.slice(1));
+        const index = createCodeSymbolIndex({ cwd: context.io.cwd, query: parsed.value });
+        writeLine(context.io.stdout, parsed.json ? renderCodeSymbolsJson(index) : renderCodeSymbols(index));
         return "continue";
       }
       if (subcommand === "refs" || subcommand === "references") {
-        const query = command.args.slice(1).join(" ").trim();
+        const parsed = parseCodeJsonArgs(command.args.slice(1));
+        const query = parsed.value ?? "";
         if (!query) {
-          writeLine(context.io.stderr, "Usage: /code refs <query>");
+          writeLine(context.io.stderr, "Usage: /code refs <query> [--json]");
         } else {
-          writeLine(
-            context.io.stdout,
-            renderCodeReferences(createCodeReferenceIndex({
-              cwd: context.io.cwd,
-              query,
-            })),
-          );
+          const index = createCodeReferenceIndex({ cwd: context.io.cwd, query });
+          writeLine(context.io.stdout, parsed.json ? renderCodeReferencesJson(index) : renderCodeReferences(index));
         }
         return "continue";
       }
       if (subcommand === "imports" || subcommand === "import-graph" || subcommand === "graph") {
-        writeLine(
-          context.io.stdout,
-          renderCodeImportGraph(createCodeImportGraph({
-            cwd: context.io.cwd,
-            query: command.args.slice(1).join(" ").trim() || undefined,
-          })),
-        );
+        const parsed = parseCodeJsonArgs(command.args.slice(1));
+        const graph = createCodeImportGraph({ cwd: context.io.cwd, query: parsed.value });
+        writeLine(context.io.stdout, parsed.json ? renderCodeImportGraphJson(graph) : renderCodeImportGraph(graph));
         return "continue";
       }
       if (subcommand === "calls" || subcommand === "call-graph" || subcommand === "callgraph") {
-        writeLine(
-          context.io.stdout,
-          renderCodeCallGraph(createCodeCallGraph({
-            cwd: context.io.cwd,
-            query: command.args.slice(1).join(" ").trim() || undefined,
-          })),
-        );
+        const parsed = parseCodeJsonArgs(command.args.slice(1));
+        const graph = createCodeCallGraph({ cwd: context.io.cwd, query: parsed.value });
+        writeLine(context.io.stdout, parsed.json ? renderCodeCallGraphJson(graph) : renderCodeCallGraph(graph));
         return "continue";
       }
       if (subcommand === "ast-grep" || subcommand === "astgrep" || subcommand === "sg") {
@@ -995,74 +981,58 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/symbols": {
-    usage: "/symbols [query]",
+    usage: "/symbols [query] [--json]",
     description: "Render local exported symbols",
     group: "Workspace",
     tier: "advanced",
     handler: (command, context): SlashResult => {
-      writeLine(
-        context.io.stdout,
-        renderCodeSymbols(createCodeSymbolIndex({
-          cwd: context.io.cwd,
-          query: command.argText || undefined,
-        })),
-      );
+      const parsed = parseCodeJsonArgs(command.args);
+      const index = createCodeSymbolIndex({ cwd: context.io.cwd, query: parsed.value });
+      writeLine(context.io.stdout, parsed.json ? renderCodeSymbolsJson(index) : renderCodeSymbols(index));
       return "continue";
     },
   },
   "/refs": {
-    usage: "/refs <query>",
+    usage: "/refs <query> [--json]",
     description: "Render local code references",
     group: "Workspace",
     tier: "advanced",
     aliases: ["/references"],
     handler: (command, context): SlashResult => {
-      const query = command.argText.trim();
+      const parsed = parseCodeJsonArgs(command.args);
+      const query = parsed.value ?? "";
       if (!query) {
-        writeLine(context.io.stderr, "Usage: /refs <query>");
+        writeLine(context.io.stderr, "Usage: /refs <query> [--json]");
       } else {
-        writeLine(
-          context.io.stdout,
-          renderCodeReferences(createCodeReferenceIndex({
-            cwd: context.io.cwd,
-            query,
-          })),
-        );
+        const index = createCodeReferenceIndex({ cwd: context.io.cwd, query });
+        writeLine(context.io.stdout, parsed.json ? renderCodeReferencesJson(index) : renderCodeReferences(index));
       }
       return "continue";
     },
   },
   "/imports": {
-    usage: "/imports [query]",
+    usage: "/imports [query] [--json]",
     description: "Render local import graph edges",
     group: "Workspace",
     tier: "advanced",
     aliases: ["/import-graph"],
     handler: (command, context): SlashResult => {
-      writeLine(
-        context.io.stdout,
-        renderCodeImportGraph(createCodeImportGraph({
-          cwd: context.io.cwd,
-          query: command.argText || undefined,
-        })),
-      );
+      const parsed = parseCodeJsonArgs(command.args);
+      const graph = createCodeImportGraph({ cwd: context.io.cwd, query: parsed.value });
+      writeLine(context.io.stdout, parsed.json ? renderCodeImportGraphJson(graph) : renderCodeImportGraph(graph));
       return "continue";
     },
   },
   "/calls": {
-    usage: "/calls [query]",
+    usage: "/calls [query] [--json]",
     description: "Render local call graph edges",
     group: "Workspace",
     tier: "advanced",
     aliases: ["/call-graph"],
     handler: (command, context): SlashResult => {
-      writeLine(
-        context.io.stdout,
-        renderCodeCallGraph(createCodeCallGraph({
-          cwd: context.io.cwd,
-          query: command.argText || undefined,
-        })),
-      );
+      const parsed = parseCodeJsonArgs(command.args);
+      const graph = createCodeCallGraph({ cwd: context.io.cwd, query: parsed.value });
+      writeLine(context.io.stdout, parsed.json ? renderCodeCallGraphJson(graph) : renderCodeCallGraph(graph));
       return "continue";
     },
   },
@@ -1969,11 +1939,23 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       return [];
     case "/code":
       if (argIndex === 0) {
-        return [...CODE_SUBCOMMAND_COMPLETIONS];
+        return [...CODE_SUBCOMMAND_COMPLETIONS, ...CODE_JSON_OPTION_COMPLETIONS];
+      }
+      if (["map", "symbols", "symbol", "refs", "references", "imports", "import-graph", "graph", "calls", "call-graph", "callgraph"].includes(firstArg) && !completedArgs.includes("--")) {
+        return [...CODE_JSON_OPTION_COMPLETIONS];
       }
       return (firstArg === "tree-sitter" || firstArg === "treesitter" || firstArg === "ts-ast") && argIndex === 1
         ? [...TREE_SITTER_MODE_COMPLETIONS]
         : [];
+    case "/map":
+    case "/symbols":
+    case "/refs":
+    case "/references":
+    case "/imports":
+    case "/import-graph":
+    case "/calls":
+    case "/call-graph":
+      return !completedArgs.includes("--") ? [...CODE_JSON_OPTION_COMPLETIONS] : [];
     case "/tree-sitter":
     case "/treesitter":
       return argIndex === 0 ? [...TREE_SITTER_MODE_COMPLETIONS] : [];

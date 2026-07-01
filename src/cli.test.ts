@@ -1544,10 +1544,24 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.match(mapped.stdout(), /exports="start"/);
     assert.equal(mapped.stderr(), "");
 
+    const mappedJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "code", "--json"], {}, mappedJson.io), 0);
+    const mappedJsonReport = JSON.parse(mappedJson.stdout());
+    assert.equal(mappedJsonReport.surface, "orx.code_map");
+    assert.equal(mappedJsonReport.source_file_count, 3);
+    assert.ok(mappedJsonReport.source_files.some((file: { path: string }) => file.path === "src/index.ts"));
+    assert.equal(mappedJson.stderr(), "");
+
     const alias = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "map", "src"], {}, alias.io), 0);
     assert.match(alias.stdout(), /root: .*src/);
     assert.match(alias.stdout(), /source_files: 3/);
+
+    const aliasJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "map", "src", "--json"], {}, aliasJson.io), 0);
+    const aliasJsonReport = JSON.parse(aliasJson.stdout());
+    assert.equal(aliasJsonReport.surface, "orx.code_map");
+    assert.equal(aliasJsonReport.source_file_count, 3);
 
     const symbols = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "code", "symbols", "start"], {}, symbols.io), 0);
@@ -1562,6 +1576,13 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.match(symbolAlias.stdout(), /Code Symbols/);
     assert.match(symbolAlias.stdout(), /name="start"/);
 
+    const symbolsJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "symbols", "start", "--json"], {}, symbolsJson.io), 0);
+    const symbolsJsonReport = JSON.parse(symbolsJson.stdout());
+    assert.equal(symbolsJsonReport.surface, "orx.code_symbols");
+    assert.equal(symbolsJsonReport.query, "start");
+    assert.equal(symbolsJsonReport.symbols[0].name, "start");
+
     const refs = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "code", "refs", "start"], {}, refs.io), 0);
     assert.match(refs.stdout(), /Code References/);
@@ -1575,10 +1596,23 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.match(refsAlias.stdout(), /Code References/);
     assert.match(refsAlias.stdout(), /query: "start"/);
 
+    const refsJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "code", "refs", "start", "--json"], {}, refsJson.io), 0);
+    const refsJsonReport = JSON.parse(refsJson.stdout());
+    assert.equal(refsJsonReport.surface, "orx.code_refs");
+    assert.equal(refsJsonReport.query, "start");
+    assert.ok(refsJsonReport.references.some((reference: { path: string }) => reference.path === "src/index.ts"));
+
+    const refsLiteralJsonQuery = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "code", "refs", "--", "--json"], {}, refsLiteralJsonQuery.io), 0);
+    assert.match(refsLiteralJsonQuery.stdout(), /Code References/);
+    assert.match(refsLiteralJsonQuery.stdout(), /query: "--json"/);
+    assert.doesNotMatch(refsLiteralJsonQuery.stdout(), /"surface": "orx\.code_refs"/);
+
     const missingRefs = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "code", "refs"], {}, missingRefs.io), 1);
     assert.equal(missingRefs.stdout(), "");
-    assert.match(missingRefs.stderr(), /Usage: orx code refs <query>/);
+    assert.match(missingRefs.stderr(), /Usage: orx code refs <query> \[--json\]/);
 
     const imports = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "code", "imports"], {}, imports.io), 0);
@@ -1594,6 +1628,13 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.match(importAlias.stdout(), /imports: 1/);
     assert.match(importAlias.stdout(), /to="src\/feature\/index\.ts"/);
 
+    const importsJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "imports", "feature", "--json"], {}, importsJson.io), 0);
+    const importsJsonReport = JSON.parse(importsJson.stdout());
+    assert.equal(importsJsonReport.surface, "orx.code_imports");
+    assert.equal(importsJsonReport.query, "feature");
+    assert.equal(importsJsonReport.summary.local_edges, 1);
+
     const calls = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "code", "calls", "start"], {}, calls.io), 0);
     assert.match(calls.stdout(), /Code Call Graph/);
@@ -1608,6 +1649,14 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.match(callsAlias.stdout(), /Code Call Graph/);
     assert.match(callsAlias.stdout(), /query: "feature"/);
     assert.match(callsAlias.stdout(), /to="feature"/);
+
+    const callsJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "code", "calls", "start", "--json"], {}, callsJson.io), 0);
+    const callsJsonReport = JSON.parse(callsJson.stdout());
+    assert.equal(callsJsonReport.surface, "orx.code_calls");
+    assert.equal(callsJsonReport.query, "start");
+    assert.equal(callsJsonReport.ast_backed, false);
+    assert.ok(callsJsonReport.edges.some((edge: { to_name: string }) => edge.to_name === "start"));
 
     const callGraphAlias = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "call-graph"], {}, callGraphAlias.io), 0);

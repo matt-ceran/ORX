@@ -20,14 +20,20 @@ import {
   createCodeImportGraph,
   createCodeReferenceIndex,
   createCodeSymbolIndex,
+  parseCodeJsonArgs,
   parseCodeAstGrepArgs,
   parseCodeTreeSitterArgs,
   renderCodeMap,
+  renderCodeMapJson,
   renderCodeAstGrepResult,
   renderCodeCallGraph,
+  renderCodeCallGraphJson,
   renderCodeImportGraph,
+  renderCodeImportGraphJson,
   renderCodeReferences,
+  renderCodeReferencesJson,
   renderCodeSymbols,
+  renderCodeSymbolsJson,
   renderCodeTreeSitterResult,
   runCodeAstGrep,
   runCodeTreeSitter,
@@ -1100,8 +1106,8 @@ function runCodeCommand(args: string[], io: CliIo): number {
     writeLine(io.stdout, CLI_NAMESPACE_USAGES.code);
     return 0;
   }
-  if (subcommand === "map") {
-    return runCodeMapCommand(args.slice(1), io);
+  if (subcommand === "map" || subcommand === "--json") {
+    return runCodeMapCommand(subcommand === "--json" ? args : args.slice(1), io);
   }
   if (subcommand === "symbols" || subcommand === "symbol") {
     return runCodeSymbolsCommand(args.slice(1), io);
@@ -1133,36 +1139,42 @@ function runCodeCommand(args: string[], io: CliIo): number {
 }
 
 function runCodeMapCommand(args: string[], io: CliIo): number {
-  const targetPath = args.join(" ").trim() || undefined;
-  writeLine(io.stdout, renderCodeMap(createCodeMap({ cwd: io.cwd, targetPath })));
+  const parsed = parseCodeJsonArgs(args);
+  const map = createCodeMap({ cwd: io.cwd, targetPath: parsed.value });
+  writeLine(io.stdout, parsed.json ? renderCodeMapJson(map) : renderCodeMap(map));
   return 0;
 }
 
 function runCodeSymbolsCommand(args: string[], io: CliIo): number {
-  const query = args.join(" ").trim() || undefined;
-  writeLine(io.stdout, renderCodeSymbols(createCodeSymbolIndex({ cwd: io.cwd, query })));
+  const parsed = parseCodeJsonArgs(args);
+  const index = createCodeSymbolIndex({ cwd: io.cwd, query: parsed.value });
+  writeLine(io.stdout, parsed.json ? renderCodeSymbolsJson(index) : renderCodeSymbols(index));
   return 0;
 }
 
 function runCodeReferencesCommand(args: string[], io: CliIo): number {
-  const query = args.join(" ").trim();
+  const parsed = parseCodeJsonArgs(args);
+  const query = parsed.value ?? "";
   if (!query) {
-    writeLine(io.stderr, "Usage: orx code refs <query>");
+    writeLine(io.stderr, "Usage: orx code refs <query> [--json]");
     return 1;
   }
-  writeLine(io.stdout, renderCodeReferences(createCodeReferenceIndex({ cwd: io.cwd, query })));
+  const index = createCodeReferenceIndex({ cwd: io.cwd, query });
+  writeLine(io.stdout, parsed.json ? renderCodeReferencesJson(index) : renderCodeReferences(index));
   return 0;
 }
 
 function runCodeImportGraphCommand(args: string[], io: CliIo): number {
-  const query = args.join(" ").trim() || undefined;
-  writeLine(io.stdout, renderCodeImportGraph(createCodeImportGraph({ cwd: io.cwd, query })));
+  const parsed = parseCodeJsonArgs(args);
+  const graph = createCodeImportGraph({ cwd: io.cwd, query: parsed.value });
+  writeLine(io.stdout, parsed.json ? renderCodeImportGraphJson(graph) : renderCodeImportGraph(graph));
   return 0;
 }
 
 function runCodeCallGraphCommand(args: string[], io: CliIo): number {
-  const query = args.join(" ").trim() || undefined;
-  writeLine(io.stdout, renderCodeCallGraph(createCodeCallGraph({ cwd: io.cwd, query })));
+  const parsed = parseCodeJsonArgs(args);
+  const graph = createCodeCallGraph({ cwd: io.cwd, query: parsed.value });
+  writeLine(io.stdout, parsed.json ? renderCodeCallGraphJson(graph) : renderCodeCallGraph(graph));
   return 0;
 }
 

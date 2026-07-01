@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createCodeMap,
+  parseCodeJsonArgs,
   parseCodeAstGrepArgs,
   parseCodeTreeSitterArgs,
   createCodeCallGraph,
@@ -13,10 +14,15 @@ import {
   createCodeSymbolIndex,
   renderCodeAstGrepResult,
   renderCodeMap,
+  renderCodeMapJson,
   renderCodeCallGraph,
+  renderCodeCallGraphJson,
   renderCodeImportGraph,
+  renderCodeImportGraphJson,
   renderCodeReferences,
+  renderCodeReferencesJson,
   renderCodeSymbols,
+  renderCodeSymbolsJson,
   renderCodeTreeSitterResult,
   runCodeAstGrep,
   runCodeTreeSitter,
@@ -140,6 +146,19 @@ test("code map discovers languages entrypoints exports and imports", () => {
     assert.match(rendered, /TypeScript: 6/);
     assert.match(rendered, /exports="renamedHelper,run"/);
     assert.match(rendered, /imports="\.\/util\.js,node:fs"/);
+    const mapJson = JSON.parse(renderCodeMapJson(map)) as {
+      surface: string;
+      source_file_count: number;
+      language_counts: Array<{ language: string; files: number }>;
+      source_files: Array<{ path: string; imports: string[] }>;
+    };
+    assert.equal(mapJson.surface, "orx.code_map");
+    assert.equal(mapJson.source_file_count, 6);
+    assert.deepEqual(mapJson.language_counts.find((entry) => entry.language === "TypeScript"), {
+      language: "TypeScript",
+      files: 6,
+    });
+    assert.ok(mapJson.source_files.some((file) => file.path === "src/index.ts" && file.imports.includes("./util.js")));
 
     const symbolIndex = createCodeSymbolIndex({ cwd, query: "Literal" });
     assert.equal(symbolIndex.totalSymbols, 1);
@@ -150,6 +169,18 @@ test("code map discovers languages entrypoints exports and imports", () => {
     assert.match(renderedSymbols, /name="realLiteralExport"/);
     assert.match(renderedSymbols, /path="src\/literals\.ts"/);
     assert.match(renderedSymbols, /line=9/);
+    const symbolsJson = JSON.parse(renderCodeSymbolsJson(symbolIndex)) as {
+      surface: string;
+      query: string;
+      symbol_count: number;
+      symbols: Array<{ name: string; path: string; line: number }>;
+    };
+    assert.equal(symbolsJson.surface, "orx.code_symbols");
+    assert.equal(symbolsJson.query, "Literal");
+    assert.equal(symbolsJson.symbol_count, 1);
+    assert.equal(symbolsJson.symbols[0]?.name, "realLiteralExport");
+    assert.equal(symbolsJson.symbols[0]?.path, "src/literals.ts");
+    assert.equal(symbolsJson.symbols[0]?.line, 9);
 
     const limitedSymbols = renderCodeSymbols(createCodeSymbolIndex({ cwd, maxSymbols: 1 }));
     assert.match(limitedSymbols, /symbols: 8/);
@@ -179,6 +210,18 @@ test("code map discovers languages entrypoints exports and imports", () => {
     assert.match(renderedReferences, /path="src\/literals\.ts"/);
     assert.match(renderedReferences, /line=9/);
     assert.match(renderedReferences, /excerpt="export const realLiteralExport = true;"/);
+    const referencesJson = JSON.parse(renderCodeReferencesJson(createCodeReferenceIndex({ cwd, query: "realLiteralExport" }))) as {
+      surface: string;
+      query: string;
+      reference_count: number;
+      references: Array<{ path: string; line: number; excerpt: string }>;
+    };
+    assert.equal(referencesJson.surface, "orx.code_refs");
+    assert.equal(referencesJson.query, "realLiteralExport");
+    assert.equal(referencesJson.reference_count, 1);
+    assert.equal(referencesJson.references[0]?.path, "src/literals.ts");
+    assert.equal(referencesJson.references[0]?.line, 9);
+    assert.equal(referencesJson.references[0]?.excerpt, "export const realLiteralExport = true;");
 
     const importGraph = createCodeImportGraph({ cwd });
     assert.equal(importGraph.totalEdges, 3);
@@ -212,6 +255,25 @@ test("code map discovers languages entrypoints exports and imports", () => {
     assert.match(renderedGraph, /from="src\/feature-user\.ts" to="src\/feature\/index\.ts"/);
     assert.match(renderedGraph, /specifier="\.\/util\.js"/);
     assert.match(renderedGraph, /to="external" specifier="node:fs"/);
+    const importsJson = JSON.parse(renderCodeImportGraphJson(importGraph)) as {
+      surface: string;
+      edge_count: number;
+      summary: { local_edges: number; external_imports: number };
+      edges: Array<{ from: string; to: string | null; specifier: string; kind: string }>;
+    };
+    assert.equal(importsJson.surface, "orx.code_imports");
+    assert.equal(importsJson.edge_count, 3);
+    assert.equal(importsJson.summary.local_edges, 2);
+    assert.equal(importsJson.summary.external_imports, 1);
+    assert.ok(importsJson.edges.some((edge) =>
+      edge.from === "src/index.ts" &&
+      edge.to === "src/util.ts" &&
+      edge.specifier === "./util.js" &&
+      edge.kind === "local"));
+
+    assert.deepEqual(parseCodeJsonArgs(["src", "--json"]), { value: "src", json: true });
+    assert.deepEqual(parseCodeJsonArgs(["--json", "renderCode"]), { value: "renderCode", json: true });
+    assert.deepEqual(parseCodeJsonArgs(["--", "--json"]), { value: "--json", json: false });
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -347,7 +409,28 @@ test("call graph discovers local definitions and conservative call edges", () =>
     assert.match(rendered, /call_sites: 4/);
     assert.match(rendered, /from="start" from_path="src\/index\.ts" from_line=2 to="helper" to_path="src\/util\.ts"/);
     assert.match(rendered, /calls=1 lines="3"/);
-    assert.match(rendered, /usage: orx code calls \[query\]/);
+    assert.match(rendered, /usage: orx code calls \[query\] \[--json\]/);
+    const callsJson = JSON.parse(renderCodeCallGraphJson(graph)) as {
+      surface: string;
+      mode: string;
+      ast_backed: boolean;
+      semantic_resolution: boolean;
+      edge_count: number;
+      summary: { call_sites: number; ambiguous_edges: number };
+      edges: Array<{ from_name: string; to_name: string; to_path: string | null; lines: number[] }>;
+    };
+    assert.equal(callsJson.surface, "orx.code_calls");
+    assert.equal(callsJson.mode, "conservative_lexical_javascript_typescript_scan");
+    assert.equal(callsJson.ast_backed, false);
+    assert.equal(callsJson.semantic_resolution, false);
+    assert.equal(callsJson.edge_count, 4);
+    assert.equal(callsJson.summary.call_sites, 4);
+    assert.equal(callsJson.summary.ambiguous_edges, 0);
+    assert.ok(callsJson.edges.some((edge) =>
+      edge.from_name === "start" &&
+      edge.to_name === "helper" &&
+      edge.to_path === "src/util.ts" &&
+      edge.lines.includes(3)));
 
     const renderedLimited = renderCodeCallGraph(limited);
     assert.match(renderedLimited, /3 more call edges omitted/);
