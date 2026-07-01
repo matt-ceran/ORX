@@ -3169,6 +3169,84 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Ok:                2",
+        "Expected Fail:     1",
+        "Fail:              1",
+        "Unexpected Pass:   1",
+        "Skipped:           1",
+        "Ignored:           1",
+        "Timeout:           1",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "meson",
+      total: 8,
+      passed: 3,
+      failed: 3,
+      skipped: 2,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "Summary of Failures:",
+        "",
+        "Ok:                1",
+        "Fail:              0",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "meson",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Ok:                one",
+        "Fail:              0",
+        "Tests: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Ok:                1",
+        "Tests: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "Ok:                1",
+        "Ok:                2",
+        "Fail:              0",
+        "ℹ tests 3",
+        "ℹ pass 3",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
     parseTestReportSummary(createTarget("unknown"), "Executed 3 tests, with 1 failure (1 unexpected) in 0.123 (0.124) seconds"),
     {
       framework: "unknown",
