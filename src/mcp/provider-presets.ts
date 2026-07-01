@@ -201,6 +201,26 @@ export const MCP_PROVIDER_PRESETS: McpProviderPreset[] = [
     tags: ["gitlab", "repo", "issues", "merge-requests", "read-only", "auth"],
   },
   {
+    id: "gitlab-ci-write",
+    name: "GitLab CI write-capable",
+    profileId: "gitlab-ci-write",
+    url: "https://gitlab.com/api/v4/mcp",
+    authRequired: true,
+    riskLevel: "high",
+    writeCapable: true,
+    tools: [
+      {
+        name: "manage_pipeline",
+        risk: "destructive",
+        authRequired: true,
+        billable: false,
+      },
+    ],
+    notes:
+      "GitLab hosted MCP beta endpoint for CI/CD pipeline management. The manage_pipeline tool can create, cancel, retry, delete, and update pipeline metadata, so ORX marks it destructive and requires explicit grants before calls.",
+    tags: ["gitlab", "ci", "pipelines", "write-capable", "destructive", "auth"],
+  },
+  {
     id: "sentry-readonly",
     name: "Sentry read-only",
     profileId: "sentry-readonly",

@@ -344,6 +344,7 @@ test("MCP provider presets install local user catalog profiles", () => {
     assert.match(rendered, /id=figma/);
     assert.match(rendered, /id=github-readonly/);
     assert.match(rendered, /id=github-write/);
+    assert.match(rendered, /id=gitlab-ci-write/);
     assert.match(rendered, /id=gitlab-readonly/);
     assert.match(rendered, /id=microsoft-learn/);
     assert.match(rendered, /id=sentry-readonly/);
@@ -446,6 +447,27 @@ test("MCP provider presets install local user catalog profiles", () => {
     assert.equal(gitlabProfile.riskLevel, "medium");
     assert.equal(gitlabProfile.writeCapable, false);
     assert.equal(gitlabProfile.tools.length, 0);
+
+    const gitlabCiResult = installMcpProviderPreset("gitlab-ci-write", {
+      profileCatalogPath,
+    });
+    assert.equal(gitlabCiResult.ok, true);
+    assert.equal(gitlabCiResult.profileId, "user:gitlab-ci-write");
+    assert.equal(gitlabCiResult.toolCount, 1);
+
+    const loadedWithGitLabCi = loadUserMcpProfileCatalog({ profileCatalogPath });
+    const gitlabCiProfile = loadedWithGitLabCi.profiles.find(
+      (profile) => profile.id === "user:gitlab-ci-write",
+    );
+    assert.ok(gitlabCiProfile);
+    assert.equal(gitlabCiProfile.transport.url, "https://gitlab.com/api/v4/mcp");
+    assert.equal(gitlabCiProfile.authRequired, true);
+    assert.equal(gitlabCiProfile.riskLevel, "high");
+    assert.equal(gitlabCiProfile.writeCapable, true);
+    assert.deepEqual(
+      gitlabCiProfile.tools.map((tool) => `${tool.name}:${tool.risk}:${tool.authRequired}:${tool.billable}`),
+      ["manage_pipeline:destructive:true:false"],
+    );
 
     const githubWriteResult = installMcpProviderPreset("github-write", {
       profileCatalogPath,
@@ -2687,6 +2709,22 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
     assert.match(gitlabSetup, /provider_warning: GitLab documents the MCP server as beta/);
     assert.match(gitlabSetup, /network_calls: none/);
     assert.doesNotMatch(gitlabSetup, /mcp-secret-token/);
+
+    assert.equal(installMcpProviderPreset("gitlab-ci-write", { profileCatalogPath }).ok, true);
+    const gitlabCiReport = getMcpProfileAuthReport("user:gitlab-ci-write", {
+      cwd,
+      env,
+      profileCatalogPath,
+    });
+    assert.ok(gitlabCiReport);
+    const gitlabCiSetup = renderMcpProfileAuthSetup(gitlabCiReport);
+
+    assert.match(gitlabCiSetup, /provider_auth: gitlab/);
+    assert.match(gitlabCiSetup, /setup_url: https:\/\/docs\.gitlab\.com\/user\/gitlab_duo\/model_context_protocol\/mcp_server\//);
+    assert.match(gitlabCiSetup, /scope_hint: high-risk\/write-capable: approve only the projects and CI\/CD pipeline permissions/);
+    assert.match(gitlabCiSetup, /provider_warning: GitLab documents the MCP server as beta; ORX keeps write\/destructive tools denied until explicit grants/);
+    assert.match(gitlabCiSetup, /network_calls: none/);
+    assert.doesNotMatch(gitlabCiSetup, /mcp-secret-token/);
 
     assert.equal(installMcpProviderPreset("figma", { profileCatalogPath }).ok, true);
     const figmaReport = getMcpProfileAuthReport("user:figma", {

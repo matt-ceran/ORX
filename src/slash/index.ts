@@ -531,6 +531,7 @@ const MCP_PROVIDER_PRESET_COMPLETIONS = [
   "figma",
   "github-readonly",
   "github-write",
+  "gitlab-ci-write",
   "gitlab-readonly",
   "microsoft-learn",
   "sentry-readonly",

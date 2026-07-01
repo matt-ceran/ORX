@@ -263,12 +263,15 @@ function getMcpProviderAuthGuidance(profile: McpProfile): McpProviderAuthGuidanc
       credentialSource:
         "GitLab hosted MCP uses OAuth/provider authorization for GitLab project access.",
       credentialLifetime: "provider managed",
-      scopeHint:
-        "approve read-only repository/project scopes only; do not approve CI, write, or admin scopes for read-only ORX profiles",
+      scopeHint: profile.writeCapable
+        ? "high-risk/write-capable: approve only the projects and CI/CD pipeline permissions intentionally needed"
+        : "approve read-only repository/project scopes only; do not approve CI, write, or admin scopes for read-only ORX profiles",
       setupUrl: "https://docs.gitlab.com/user/gitlab_duo/model_context_protocol/mcp_server/",
       orxSupport:
         "complete provider OAuth externally; ORX stores only bearer-compatible credentials in profile env vars or opted-in macOS Keychain",
-      warning: "GitLab documents the MCP server as beta; review remote tool metadata before importing tools",
+      warning: profile.writeCapable
+        ? "GitLab documents the MCP server as beta; ORX keeps write/destructive tools denied until explicit grants"
+        : "GitLab documents the MCP server as beta; review remote tool metadata before importing tools",
     };
   }
 

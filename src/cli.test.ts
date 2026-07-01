@@ -3617,6 +3617,7 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(listed.stdout(), /id=figma/);
     assert.match(listed.stdout(), /id=github-readonly/);
     assert.match(listed.stdout(), /id=github-write/);
+    assert.match(listed.stdout(), /id=gitlab-ci-write/);
     assert.match(listed.stdout(), /id=gitlab-readonly/);
     assert.match(listed.stdout(), /id=microsoft-learn/);
     assert.match(listed.stdout(), /id=sentry-readonly/);
@@ -3672,6 +3673,18 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(gitlabInspect.stdout(), /static_tools: 0/);
     assert.match(gitlabInspect.stdout(), /remote_tool_review:/);
 
+    const gitlabCiInspect = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "presets", "inspect", "gitlab-ci-write"], env, gitlabCiInspect.io),
+      0,
+    );
+    assert.match(gitlabCiInspect.stdout(), /MCP Provider Preset: gitlab-ci-write/);
+    assert.match(gitlabCiInspect.stdout(), /url: https:\/\/gitlab\.com\/api\/v4\/mcp/);
+    assert.match(gitlabCiInspect.stdout(), /risk_level: high/);
+    assert.match(gitlabCiInspect.stdout(), /write_capable: yes/);
+    assert.match(gitlabCiInspect.stdout(), /static_tools: 1/);
+    assert.match(gitlabCiInspect.stdout(), /manage_pipeline risk=destructive auth=yes billable=no/);
+
     const cloudflareInspect = createIo({ cwd });
     assert.equal(
       await runCli(["node", "cli", "mcp", "presets", "inspect", "cloudflare-api"], env, cloudflareInspect.io),
@@ -3709,6 +3722,17 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(gitlabPlan.stdout(), /network_calls: none/);
     assert.match(gitlabPlan.stdout(), /data_state_writes: none/);
     assert.match(gitlabPlan.stdout(), /orx mcp add-preset gitlab-readonly/);
+
+    const gitlabCiPlan = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "plan", "gitlab-ci-write"], env, gitlabCiPlan.io), 0);
+    assert.match(gitlabCiPlan.stdout(), /MCP setup plan: gitlab-ci-write/);
+    assert.match(gitlabCiPlan.stdout(), /status: preset_available/);
+    assert.match(gitlabCiPlan.stdout(), /profile: user:gitlab-ci-write/);
+    assert.match(gitlabCiPlan.stdout(), /risk_level: high/);
+    assert.match(gitlabCiPlan.stdout(), /write_capable: yes/);
+    assert.match(gitlabCiPlan.stdout(), /network_calls: none/);
+    assert.match(gitlabCiPlan.stdout(), /data_state_writes: none/);
+    assert.match(gitlabCiPlan.stdout(), /orx mcp add-preset gitlab-ci-write/);
 
     const githubWritePlan = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "plan", "github-write"], env, githubWritePlan.io), 0);

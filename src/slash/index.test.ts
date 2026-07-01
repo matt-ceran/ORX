@@ -258,13 +258,13 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mcp m"), [["model "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp p"), [["plan ", "presets "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan c"), [["cloudflare-api ", "cloudflare-docs ", "context7 "], "c"]);
-  assert.deepEqual(completeSlashCommandLine("/mcp plan git"), [["github-readonly ", "github-write ", "gitlab-readonly "], "git"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp plan git"), [["github-readonly ", "github-write ", "gitlab-ci-write ", "gitlab-readonly "], "git"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan source"), [["sourcegraph-github-readonly "], "source"]);
   assert.deepEqual(completeSlashCommandLine("/mcp model e"), [["enable "], "e"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets i"), [["inspect ", "info "], "i"]);
-  assert.deepEqual(completeSlashCommandLine("/mcp presets inspect g"), [["github-readonly ", "github-write ", "gitlab-readonly "], "g"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets inspect g"), [["github-readonly ", "github-write ", "gitlab-ci-write ", "gitlab-readonly "], "g"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect github-w"), [["github-write "], "github-w"]);
-  assert.deepEqual(completeSlashCommandLine("/mcp presets inspect gitl"), [["gitlab-readonly "], "gitl"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets inspect gitl"), [["gitlab-ci-write ", "gitlab-readonly "], "gitl"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets show m"), [["microsoft-learn "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect s"), [["sentry-readonly ", "sourcegraph-github-readonly "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect source"), [["sourcegraph-github-readonly "], "source"]);
@@ -4490,6 +4490,7 @@ test("mcp slash commands install provider presets", async () => {
     assert.match(harness.stdout(), /id=browser/);
     assert.match(harness.stdout(), /id=figma/);
     assert.match(harness.stdout(), /id=github-write/);
+    assert.match(harness.stdout(), /id=gitlab-ci-write/);
     assert.match(harness.stdout(), /id=gitlab-readonly/);
     assert.match(harness.stdout(), /id=sentry-readonly/);
     assert.match(harness.stdout(), /id=sourcegraph-github-readonly/);
@@ -4532,6 +4533,14 @@ test("mcp slash commands install provider presets", async () => {
     assert.match(harness.stdout(), /static_tools: 0/);
     assert.match(harness.stdout(), /remote_tool_review:/);
 
+    assert.equal(await handleSlashCommand("/mcp presets gitlab-ci-write", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP Provider Preset: gitlab-ci-write/);
+    assert.match(harness.stdout(), /url: https:\/\/gitlab\.com\/api\/v4\/mcp/);
+    assert.match(harness.stdout(), /risk_level: high/);
+    assert.match(harness.stdout(), /write_capable: yes/);
+    assert.match(harness.stdout(), /static_tools: 1/);
+    assert.match(harness.stdout(), /manage_pipeline risk=destructive auth=yes billable=no/);
+
     assert.equal(await handleSlashCommand("/mcp plan microsoft-learn", harness.context), "continue");
     assert.match(harness.stdout(), /MCP setup plan: microsoft-learn/);
     assert.match(harness.stdout(), /status: preset_available/);
@@ -4546,6 +4555,16 @@ test("mcp slash commands install provider presets", async () => {
     assert.match(harness.stdout(), /network_calls: none/);
     assert.match(harness.stdout(), /data_state_writes: none/);
     assert.match(harness.stdout(), /orx mcp add-preset gitlab-readonly/);
+
+    assert.equal(await handleSlashCommand("/mcp plan gitlab-ci-write", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP setup plan: gitlab-ci-write/);
+    assert.match(harness.stdout(), /status: preset_available/);
+    assert.match(harness.stdout(), /profile: user:gitlab-ci-write/);
+    assert.match(harness.stdout(), /risk_level: high/);
+    assert.match(harness.stdout(), /write_capable: yes/);
+    assert.match(harness.stdout(), /network_calls: none/);
+    assert.match(harness.stdout(), /data_state_writes: none/);
+    assert.match(harness.stdout(), /orx mcp add-preset gitlab-ci-write/);
 
     assert.equal(await handleSlashCommand("/mcp plan github-write", harness.context), "continue");
     assert.match(harness.stdout(), /MCP setup plan: github-write/);
