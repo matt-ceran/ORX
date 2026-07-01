@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "go" | "rspec" | "minitest" | "karma" | "unittest" | "junit-text" | "phpunit" | "dotnet" | "ctest" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "go" | "rspec" | "minitest" | "karma" | "bun" | "unittest" | "junit-text" | "phpunit" | "dotnet" | "ctest" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -706,11 +706,11 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     unknown: parseGenericReportSummary,
   };
   if (framework === "node") {
-    return [parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseGenericReportSummary];
+    return [parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary]
-    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
+    ? [parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary]
+    : [parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseDotnetReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -1221,6 +1221,86 @@ function parseKarmaReportSummary(text: string, framework: TestFramework): TestRe
   return hasReportCounts(report) ? report : undefined;
 }
 
+function parseBunReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+  let counts:
+    | {
+        total: number;
+        passed: number;
+        failed: number;
+        files?: number;
+        durationMs?: number;
+      }
+    | undefined;
+  let pending: { passed?: number; failed?: number } | undefined;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+
+    const pass = parseBunCountLine(line, "pass");
+    if (pass !== undefined) {
+      pending = { passed: pass };
+      continue;
+    }
+    const fail = parseBunCountLine(line, "fail");
+    if (fail !== undefined) {
+      pending = {
+        ...pending,
+        failed: fail,
+      };
+      continue;
+    }
+    if (looksLikeMalformedBunCountLine(line)) {
+      pending = undefined;
+      counts = undefined;
+      continue;
+    }
+    const candidate = parseBunRanLine(line);
+    if (candidate) {
+      if (pending?.passed === undefined || pending.failed === undefined || pending.passed + pending.failed !== candidate.total) {
+        counts = undefined;
+        pending = undefined;
+        continue;
+      }
+      counts = {
+        total: candidate.total,
+        passed: pending.passed,
+        failed: pending.failed,
+        files: candidate.files,
+        durationMs: candidate.durationMs,
+      };
+      pending = undefined;
+      continue;
+    }
+    if (/^Ran\s+\d+\s+tests?\b/.test(line)) {
+      pending = undefined;
+      counts = undefined;
+      continue;
+    }
+    if (pending && !/^\d+\s+expect\(\)\s+calls$/.test(line)) {
+      pending = undefined;
+    }
+  }
+  if (pending?.passed !== undefined || pending?.failed !== undefined) {
+    counts = undefined;
+  }
+  if (!counts) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "bun",
+  };
+  assignNumber(report, "total", counts.total);
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "files", counts.files);
+  assignNumber(report, "durationMs", counts.durationMs);
+  return hasReportCounts(report) ? report : undefined;
+}
+
 function parsePythonUnittestReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
   let run:
     | {
@@ -1702,6 +1782,73 @@ function parseKarmaStatusLine(line: string): {
     failed,
     skipped,
   };
+}
+
+function parseBunRanLine(line: string): {
+  total: number;
+  files?: number;
+  durationMs?: number;
+} | undefined {
+  let match = /^Ran\s+(\d+)\s+tests?\s+in\s+(\d+(?:\.\d+)?)(ms|s)$/.exec(line);
+  if (match) {
+    const total = Number.parseInt(match[1] ?? "", 10);
+    const durationMs = parseBunDurationMs(match[2] ?? "", match[3] ?? "");
+    if (!Number.isInteger(total) || total < 0 || durationMs === undefined) {
+      return undefined;
+    }
+    return {
+      total,
+      durationMs,
+    };
+  }
+
+  match = /^Ran\s+(\d+)\s+tests?\s+across\s+(\d+)\s+files?\.(?:\s+(\d+)\s+total)?\s+\[(\d+(?:\.\d+)?)(ms|s)\]$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const total = Number.parseInt(match[1] ?? "", 10);
+  const files = Number.parseInt(match[2] ?? "", 10);
+  const optionalTotal = match[3] === undefined ? undefined : Number.parseInt(match[3], 10);
+  const durationMs = parseBunDurationMs(match[4] ?? "", match[5] ?? "");
+  if (
+    ![total, files].every((value) => Number.isInteger(value) && value >= 0) ||
+    (optionalTotal !== undefined && (!Number.isInteger(optionalTotal) || optionalTotal !== total)) ||
+    durationMs === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    total,
+    files,
+    durationMs,
+  };
+}
+
+function parseBunCountLine(line: string, label: "pass" | "fail"): number | undefined {
+  const match = new RegExp(`^(\\d+)\\s+${label}$`).exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const value = Number.parseInt(match[1] ?? "", 10);
+  return Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+function looksLikeMalformedBunCountLine(line: string): boolean {
+  return /^\d+\s+(?:passes?|fails?|passed|failed)\b/.test(line) && parseBunCountLine(line, "pass") === undefined && parseBunCountLine(line, "fail") === undefined;
+}
+
+function parseBunDurationMs(valueText: string, unit: string): number | undefined {
+  const value = Number.parseFloat(valueText);
+  if (!Number.isFinite(value) || value < 0) {
+    return undefined;
+  }
+  if (unit === "ms") {
+    return Math.round(value * 1000) / 1000;
+  }
+  if (unit === "s") {
+    return Math.round(value * 1000 * 1000) / 1000;
+  }
+  return undefined;
 }
 
 function parseXctestStatusLine(line: string): {

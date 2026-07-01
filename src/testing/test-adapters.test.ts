@@ -643,6 +643,156 @@ test("parses common framework report summaries", () => {
     parseTestReportSummary(
       createTarget("unknown"),
       [
+        "4 pass",
+        "0 fail",
+        "4 expect() calls",
+        "Ran 4 tests in 1.44ms",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "bun",
+      total: 4,
+      passed: 4,
+      failed: 0,
+      durationMs: 1.44,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "2 pass",
+        "1 fail",
+        "Ran 3 tests across 2 files. [50.00ms]",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "bun",
+      total: 3,
+      passed: 2,
+      failed: 1,
+      files: 2,
+      durationMs: 50,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "1 pass",
+        "0 fail",
+        "Ran 1 test across 1 file. 1 total [125.00ms]",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "bun",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      files: 1,
+      durationMs: 125,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 pass",
+        "0 fail",
+        "Ran 1 test in 0.001s",
+        "2 pass",
+        "0 fail",
+        "Ran 2 tests in 2ms",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "bun",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      durationMs: 2,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "4 pass\n0 fail\nRan 5 tests in 1ms"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "4 pass\nRan 4 tests in 1ms"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "4 pass\n0 fail\nRan 4 tests in 1ms after cleanup"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "4 ok\n0 fail\nRan 4 tests in 1ms"), undefined);
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 pass",
+        "0 fail",
+        "Ran 1 test in 1ms",
+        "2 pass",
+        "Ran 2 tests in 2ms",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 pass",
+        "0 fail",
+        "Ran 1 test in 1ms",
+        "2 passes",
+        "0 fails",
+        "Ran 2 tests in 2ms",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 pass",
+        "0 fail",
+        "Ran 1 test in 1ms",
+        "2 pass",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 pass",
+        "0 fail",
+        "Ran 1 test in 1ms",
+        "2 pass",
+        "0 fail",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "2 pass",
+        "1 fail",
+        "Ran 3 tests across 2 files. 99 total [50ms]",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
         "----------------------------------------------------------------------",
         "Ran 4 tests in 0.012s",
         "",

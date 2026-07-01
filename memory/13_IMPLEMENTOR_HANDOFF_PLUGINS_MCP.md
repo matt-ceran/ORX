@@ -208,11 +208,13 @@ Current status as of 2026-07-01: first native test adapter, framework-aware test
 
 Karma-style summary parsing note: exact already-captured `TOTAL:` lines such as `TOTAL: 1 FAILED, 2 SUCCESS, 1 SKIPPED` now render `source=karma` counts through the same stdout/stderr fallback path, without reporter flags, report files, installs, network, or new model-tool exposure.
 
+Bun-style summary parsing note: exact already-captured default-console lines such as `4 pass`, `0 fail`, and `Ran 4 tests in 1.44ms` or `Ran 3 tests across 2 files. [50.00ms]` now render `source=bun` counts through the same stdout/stderr fallback path, without reporter flags, report files, installs, network, or new model-tool exposure.
+
 gopls diagnostics note: the runnable gopls adapter requires `--project <local-go-file>`, probes PATH with `gopls version`, and runs `gopls check <go-file>` against a regular cwd-confined `.go` file; there is no default directory target.
 
 Implement native or profile-scoped integrations:
 
-- Extend test adapters beyond direct Node JUnit, captured TAP/Mocha/pytest/Cargo/Go/RSpec/Minitest/Karma/Python-unittest/JUnit-text/PHPUnit/dotnet/CTest/XCTest-style summaries, and current JSON report package-script temp files, declared JSON output files, and config-declared JSON output files: cover additional non-JSON/custom reporters and wrapper commands only if this can be done without weakening execution/output bounds.
+- Extend test adapters beyond direct Node JUnit, captured TAP/Mocha/pytest/Cargo/Go/RSpec/Minitest/Karma/Bun/Python-unittest/JUnit-text/PHPUnit/dotnet/CTest/XCTest-style summaries, and current JSON report package-script temp files, declared JSON output files, and config-declared JSON output files: cover additional non-JSON/custom reporters and wrapper commands only if this can be done without weakening execution/output bounds.
 - tree-sitter-backed repo maps beyond the current repo-outline preview, semantic references, and package/semantic dependency-resolved call/dependency graphs beyond the current dependency-free overview/reference/import/call indexes and optional single-file tree-sitter import/ref/call plus bounded repo-outline/repo-ref/repo-call/repo-import/local-relative-repo-dep extraction.
 - ast-grep syntax-aware search and codemod previews. Status: implemented as optional local `sg`/`ast-grep` operator commands without autonomous edits or model exposure.
 - Extend diagnostics beyond the current TypeScript/Pyright/gopls CLI adapters with LSP/SCIP bridges for diagnostics, references, hover, and go-to-definition.
