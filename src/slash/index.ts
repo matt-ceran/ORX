@@ -588,10 +588,11 @@ const TREE_SITTER_MODE_COMPLETIONS = ["parse", "outline", "imports", "refs", "ca
 const TREE_SITTER_OPTION_COMPLETIONS = ["--json"] as const;
 const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "run"] as const;
 const SCANNER_PROFILE_COMPLETIONS = ["semgrep", "snyk", "socket", "osv-scanner", "codeql", "trivy"] as const;
-const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep", "trivy"] as const;
+const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep", "trivy", "codeql"] as const;
 const SCANNER_READINESS_OPTION_COMPLETIONS = ["--json"] as const;
 const SCANNER_RUN_OPTION_COMPLETIONS = ["--config", "--json"] as const;
 const TRIVY_SCANNER_RUN_OPTION_COMPLETIONS = ["--json"] as const;
+const CODEQL_SCANNER_RUN_OPTION_COMPLETIONS = ["--query", "--json"] as const;
 const DIAGNOSTICS_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "run"] as const;
 const DIAGNOSTIC_PROFILE_COMPLETIONS = [
   "typescript",
@@ -1987,9 +1988,14 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
         return [...RUNNABLE_SCANNER_PROFILE_COMPLETIONS];
       }
       if (firstArg === "run" && argIndex >= 3) {
-        return completedArgs[1]?.toLowerCase() === "trivy"
-          ? [...TRIVY_SCANNER_RUN_OPTION_COMPLETIONS]
-          : [...SCANNER_RUN_OPTION_COMPLETIONS];
+        const scanner = completedArgs[1]?.toLowerCase();
+        if (scanner === "trivy") {
+          return [...TRIVY_SCANNER_RUN_OPTION_COMPLETIONS];
+        }
+        if (scanner === "codeql") {
+          return [...CODEQL_SCANNER_RUN_OPTION_COMPLETIONS];
+        }
+        return [...SCANNER_RUN_OPTION_COMPLETIONS];
       }
       return [];
     case "/scan":
@@ -1997,7 +2003,13 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
         return [...RUNNABLE_SCANNER_PROFILE_COMPLETIONS];
       }
       if (argIndex >= 2) {
-        return firstArg === "trivy" ? [...TRIVY_SCANNER_RUN_OPTION_COMPLETIONS] : [...SCANNER_RUN_OPTION_COMPLETIONS];
+        if (firstArg === "trivy") {
+          return [...TRIVY_SCANNER_RUN_OPTION_COMPLETIONS];
+        }
+        if (firstArg === "codeql") {
+          return [...CODEQL_SCANNER_RUN_OPTION_COMPLETIONS];
+        }
+        return [...SCANNER_RUN_OPTION_COMPLETIONS];
       }
       return [];
     case "/diagnostics":

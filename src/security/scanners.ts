@@ -1,17 +1,19 @@
-import { existsSync, lstatSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import { closeSync, existsSync, lstatSync, mkdtempSync, openSync, readSync, realpathSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { redactSecrets } from "../mcp/audit.js";
 import { runProcess, type RunProcessOptions, type RunProcessResult } from "../tools/process.js";
+import { truncateText } from "../tools/truncation.js";
 import type { TextTruncation } from "../tools/types.js";
 
 export const SCANNERS_USAGE =
-  "Usage: orx scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <semgrep|trivy> <path> [--config <local-config-path>] [--json]]";
+  "Usage: orx scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]]";
 export const SCAN_USAGE =
-  "Usage: orx scan <semgrep|trivy> <path> [--config <local-config-path>] [--json]";
+  "Usage: orx scan <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]";
 export const SLASH_SCANNERS_USAGE =
-  "Usage: /scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <semgrep|trivy> <path> [--config <local-config-path>] [--json]]";
+  "Usage: /scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]]";
 export const SLASH_SCAN_USAGE =
-  "Usage: /scan <semgrep|trivy> <path> [--config <local-config-path>] [--json]";
+  "Usage: /scan <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]";
 
 export type ScannerProfileId =
   | "semgrep"
@@ -35,6 +37,7 @@ export interface ScannerRunArgs {
   profile: ScannerProfileId;
   targetPath: string;
   configPath?: string;
+  queryPath?: string;
   json: boolean;
 }
 
@@ -67,6 +70,7 @@ export interface ScannerRunResult {
   root: string;
   targetPath: string;
   configPath?: string;
+  queryPath?: string;
   json: boolean;
   command?: string;
   args: string[];
@@ -127,11 +131,11 @@ const SCANNER_PROFILES: ScannerProfile[] = [
   {
     id: "codeql",
     label: "CodeQL",
-    state: "catalog_only",
+    state: "runnable",
     binary: "codeql",
-    summary: "Catalog/readiness placeholder for future local CodeQL database/query workflows.",
-    runSupport: "not runnable in this slice",
-    networkBoundary: "no no-network/no-auth command selection is enabled yet",
+    summary: "Local CodeQL database analysis using an already-installed CodeQL CLI, existing local database, and local query or suite path.",
+    runSupport: "runnable only through `run codeql <database-dir> --query <local-query-or-suite> [--json]`",
+    networkBoundary: "database analysis uses local database/query paths, strips auth env, and passes --no-download; database creation and remote pack resolution are not enabled",
   },
   {
     id: "trivy",
@@ -247,6 +251,16 @@ function scannerProfileJsonDetails(profile: ScannerProfile): Record<string, stri
       run: "orx scanners run trivy <path> [--json]",
     };
   }
+  if (profile.id === "codeql") {
+    return {
+      database_required: "local CodeQL database directory under cwd",
+      query_required: "local .ql query, .qls suite, or query directory under cwd via --query",
+      command_shape: "codeql database analyze --format=sarifv2.1.0 --output=<orx-temp-sarif> --no-download --no-sarif-add-file-contents --no-sarif-add-snippets --sarif-include-query-help=never --no-print-diagnostics-summary --no-print-metrics-summary --threads=0 -- <database-dir> <query-path>",
+      rejected_inputs: "pack names, URLs, dash-prefixed operands, symlink escapes, secrets, control characters, and --config",
+      output: "bounded and redacted; run --json passes redacted bounded SARIF JSON from the ORX temp output file on success",
+      run: "orx scanners run codeql <database-dir> --query <local-query-or-suite> [--json]",
+    };
+  }
   return undefined;
 }
 
@@ -280,6 +294,16 @@ export function renderScannerProfileInspect(profile: ScannerProfile): string {
       "  rejected_options: --config, URLs, dash-prefixed values, symlink escapes, secrets, and control characters",
       "  output: bounded and redacted; --json passes redacted bounded Trivy JSON stdout only on success",
       "  run: orx scanners run trivy <path> [--json]",
+    );
+  }
+  if (profile.id === "codeql") {
+    lines.push(
+      "  database_required: local CodeQL database directory under cwd",
+      "  query_required: local .ql query, .qls suite, or query directory under cwd via --query",
+      "  command_shape: codeql database analyze --format=sarifv2.1.0 --output=<orx-temp-sarif> --no-download --no-sarif-add-file-contents --no-sarif-add-snippets --sarif-include-query-help=never --no-print-diagnostics-summary --no-print-metrics-summary --threads=0 -- <database-dir> <query-path>",
+      "  rejected_inputs: pack names, URLs, dash-prefixed operands, symlink escapes, secrets, control characters, and --config",
+      "  output: bounded and redacted; --json passes redacted bounded SARIF JSON from the ORX temp output file on success",
+      "  run: orx scanners run codeql <database-dir> --query <local-query-or-suite> [--json]",
     );
   }
 
@@ -329,6 +353,8 @@ export function parseScannerRunArgs(
   const positional: string[] = [];
   let configPath: string | undefined;
   let configProvided = false;
+  let queryPath: string | undefined;
+  let queryProvided = false;
   let json = false;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -356,6 +382,21 @@ export function parseScannerRunArgs(
       configPath = arg.slice("--config=".length);
       continue;
     }
+    if (arg === "--query") {
+      const value = args[index + 1];
+      if (value === undefined) {
+        return { ok: false, message: `${usage}\nMissing value for --query.` };
+      }
+      queryProvided = true;
+      queryPath = value;
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--query=")) {
+      queryProvided = true;
+      queryPath = arg.slice("--query=".length);
+      continue;
+    }
     if (arg.startsWith("-")) {
       return { ok: false, message: `${usage}\nUnknown scanner option: ${sanitizeInline(arg)}` };
     }
@@ -374,7 +415,7 @@ export function parseScannerRunArgs(
   if (!PROFILE_IDS.has(profile)) {
     return { ok: false, message: renderMissingScannerProfile(profile) };
   }
-  if (profile !== "semgrep" && profile !== "trivy") {
+  if (profile !== "semgrep" && profile !== "trivy" && profile !== "codeql") {
     return {
       ok: false,
       message: `Scanner profile ${profile} is catalog/readiness-only in this slice; no run path is enabled.`,
@@ -390,12 +431,31 @@ export function parseScannerRunArgs(
       message: `${usage}\nTrivy secret scans do not accept --config; ORX does not load Trivy config files in this profile.`,
     };
   }
+  if (profile === "codeql" && configProvided) {
+    return {
+      ok: false,
+      message: `${usage}\nCodeQL database analysis does not accept --config; use --query <local-query-or-suite> for a local query path.`,
+    };
+  }
+  if (profile !== "codeql" && queryProvided) {
+    return {
+      ok: false,
+      message: `${usage}\nOnly the CodeQL scanner profile accepts --query.`,
+    };
+  }
   if (profile === "semgrep" && (!configProvided || !configPath)) {
     return { ok: false, message: `${usage}\nMissing required --config <local-config-path>.` };
+  }
+  if (profile === "codeql" && (!queryProvided || !queryPath)) {
+    return { ok: false, message: `${usage}\nMissing required --query <local-query-or-suite>.` };
   }
   const configError = configPath ? validateScannerValue("config", configPath, MAX_SCANNER_PATH_LENGTH) : undefined;
   if (configError) {
     return { ok: false, message: `${usage}\n${configError}` };
+  }
+  const queryError = queryPath ? validateScannerValue("query", queryPath, MAX_SCANNER_PATH_LENGTH) : undefined;
+  if (queryError) {
+    return { ok: false, message: `${usage}\n${queryError}` };
   }
   if (configPath && isRegistrySemgrepConfig(configPath)) {
     return {
@@ -410,6 +470,7 @@ export function parseScannerRunArgs(
       profile,
       targetPath,
       configPath,
+      queryPath,
       json,
     },
   };
@@ -431,7 +492,7 @@ export async function runSecurityScanner(options: RunSecurityScannerOptions): Pr
   const runner = options.runner ?? runProcess;
   const emptyText = emptyScannerText();
 
-  if (options.profile !== "semgrep" && options.profile !== "trivy") {
+  if (options.profile !== "semgrep" && options.profile !== "trivy" && options.profile !== "codeql") {
     return {
       ok: false,
       status: "invalid_arguments",
@@ -439,6 +500,7 @@ export async function runSecurityScanner(options: RunSecurityScannerOptions): Pr
       root,
       targetPath: options.targetPath,
       configPath: options.configPath,
+      queryPath: options.queryPath,
       json: options.json,
       args: [],
       timedOut: false,
@@ -446,11 +508,15 @@ export async function runSecurityScanner(options: RunSecurityScannerOptions): Pr
       stderr: "",
       stdoutTruncation: emptyText.truncation,
       stderrTruncation: emptyText.truncation,
-      message: "Only the semgrep and trivy scanner profiles are runnable in this slice.",
+      message: "Only the semgrep, trivy, and codeql scanner profiles are runnable in this slice.",
     };
   }
 
-  const target = resolveScannerPath(root, options.targetPath, "path", { mustExist: true, mustBeFileOrDirectory: true });
+  const target = resolveScannerPath(root, options.targetPath, "path", {
+    mustExist: true,
+    mustBeFileOrDirectory: options.profile !== "codeql",
+    mustBeDirectory: options.profile === "codeql",
+  });
   if (!target.ok) {
     return invalidScannerRun(options, root, target.message);
   }
@@ -459,6 +525,12 @@ export async function runSecurityScanner(options: RunSecurityScannerOptions): Pr
     : undefined;
   if (config && !config.ok) {
     return invalidScannerRun(options, root, config.message);
+  }
+  const query = options.profile === "codeql"
+    ? resolveScannerPath(root, options.queryPath ?? "", "query", { mustExist: true, mustBeFileOrDirectory: true })
+    : undefined;
+  if (query && !query.ok) {
+    return invalidScannerRun(options, root, query.message);
   }
 
   const command = await resolveScannerCommand(options.profile, root, env, runner);
@@ -470,6 +542,7 @@ export async function runSecurityScanner(options: RunSecurityScannerOptions): Pr
       root,
       targetPath: target.displayPath,
       configPath: config?.displayPath,
+      queryPath: query?.displayPath,
       json: options.json,
       args: [],
       timedOut: false,
@@ -479,6 +552,20 @@ export async function runSecurityScanner(options: RunSecurityScannerOptions): Pr
       stderrTruncation: emptyText.truncation,
       message: command.message,
     };
+  }
+
+  if (options.profile === "codeql") {
+    return runCodeqlScanner({
+      options,
+      root,
+      env,
+      runner,
+      maxBytes,
+      timeoutMs,
+      target,
+      query: query!,
+      command: "codeql",
+    });
   }
 
   const spawnArgs = options.profile === "semgrep"
@@ -505,6 +592,7 @@ export async function runSecurityScanner(options: RunSecurityScannerOptions): Pr
     root,
     targetPath: target.displayPath,
     configPath: config?.displayPath,
+    queryPath: query?.displayPath,
     json: options.json,
     command: command.command,
     args: spawnArgs,
@@ -539,6 +627,9 @@ export function renderScannerRunResult(result: ScannerRunResult, usage = SCANNER
   ];
   if (result.configPath) {
     lines.splice(5, 0, `  config: ${sanitizeInline(result.configPath)}`);
+  }
+  if (result.queryPath) {
+    lines.splice(result.configPath ? 6 : 5, 0, `  query: ${sanitizeInline(result.queryPath)}`);
   }
   if (result.commandLine) {
     lines.push(`  command: ${result.commandLine}`);
@@ -602,15 +693,169 @@ function buildTrivyArgs(targetPath: string): string[] {
   ];
 }
 
+function buildCodeqlArgs(databasePath: string, queryPath: string, outputPath: string): string[] {
+  return [
+    "database",
+    "analyze",
+    "--format=sarifv2.1.0",
+    `--output=${outputPath}`,
+    "--no-download",
+    "--no-sarif-add-file-contents",
+    "--no-sarif-add-snippets",
+    "--sarif-include-query-help=never",
+    "--no-print-diagnostics-summary",
+    "--no-print-metrics-summary",
+    "--threads=0",
+    "--",
+    databasePath,
+    queryPath,
+  ];
+}
+
+interface RunCodeqlScannerInternalOptions {
+  options: RunSecurityScannerOptions;
+  root: string;
+  env: NodeJS.ProcessEnv;
+  runner: ScannerProcessRunner;
+  maxBytes: number;
+  timeoutMs: number;
+  target: ResolvedScannerPath;
+  query: ResolvedScannerPath;
+  command: "codeql";
+}
+
+async function runCodeqlScanner(context: RunCodeqlScannerInternalOptions): Promise<ScannerRunResult> {
+  const tempDir = mkdtempSync(join(tmpdir(), "orx-codeql-sarif-"));
+  const outputPath = join(tempDir, "results.sarif");
+  const spawnArgs = buildCodeqlArgs(context.target.arg, context.query.arg, outputPath);
+
+  try {
+    const result = await context.runner({
+      command: context.command,
+      args: spawnArgs,
+      cwd: context.root,
+      env: context.env,
+      inheritEnv: false,
+      shell: false,
+      timeoutMs: context.timeoutMs,
+      maxBytes: context.maxBytes,
+    });
+    let stdout = context.options.json ? sanitizeJsonProcessOutput(result.stdout) : sanitizeProcessOutput(result.stdout);
+    let stdoutTruncation = result.stdoutTruncation;
+    let status = classifySemgrepRun(result);
+    let message = result.error ? sanitizeInline(result.error.message) : undefined;
+
+    if (!result.timedOut && !result.error && result.exitCode === 0) {
+      if (safeIsFile(outputPath)) {
+        const sarif = readBoundedTextFile(outputPath, context.maxBytes);
+        const rendered = context.options.json
+          ? sanitizeJsonProcessOutput(sarif.text)
+          : renderCodeqlSarifSummary(sarif.text, sarif.truncation.truncated);
+        const truncated = truncateText(rendered, { maxBytes: context.maxBytes });
+        stdout = truncated.text;
+        stdoutTruncation = mergeSourceTruncation(truncated.truncation, sarif.truncation);
+      } else {
+        status = "process_error";
+        message = "CodeQL did not produce the expected SARIF output file.";
+      }
+    }
+
+    return {
+      ok: status === "ok",
+      status,
+      profile: "codeql",
+      root: context.root,
+      targetPath: context.target.displayPath,
+      queryPath: context.query.displayPath,
+      json: context.options.json,
+      command: context.command,
+      args: spawnArgs,
+      commandLine: formatCommandLine(context.command, spawnArgs),
+      exitCode: result.exitCode,
+      signal: result.signal,
+      timedOut: result.timedOut,
+      durationMs: result.durationMs,
+      stdout,
+      stderr: sanitizeProcessOutput(result.stderr),
+      stdoutTruncation,
+      stderrTruncation: result.stderrTruncation,
+      message,
+    };
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function readBoundedTextFile(filePath: string, maxBytes: number): { text: string; truncation: TextTruncation } {
+  const stats = statSync(filePath);
+  const readLimit = Math.min(stats.size, Math.max(0, maxBytes + 4));
+  const buffer = Buffer.alloc(readLimit);
+  let bytesRead = 0;
+
+  if (readLimit > 0) {
+    const fd = openSync(filePath, "r");
+    try {
+      while (bytesRead < readLimit) {
+        const next = readSync(fd, buffer, bytesRead, readLimit - bytesRead, bytesRead);
+        if (next === 0) {
+          break;
+        }
+        bytesRead += next;
+      }
+    } finally {
+      closeSync(fd);
+    }
+  }
+
+  const truncated = truncateText(buffer.subarray(0, bytesRead).toString("utf8"), { maxBytes });
+  const originalLines = Math.max(
+    truncated.truncation.originalLines + (stats.size > bytesRead ? 1 : 0),
+    truncated.truncation.returnedLines,
+  );
+  return {
+    text: truncated.text,
+    truncation: {
+      truncated: truncated.truncation.truncated || stats.size > truncated.truncation.returnedBytes,
+      originalBytes: stats.size,
+      returnedBytes: truncated.truncation.returnedBytes,
+      originalLines,
+      returnedLines: truncated.truncation.returnedLines,
+      omittedBytes: Math.max(0, stats.size - truncated.truncation.returnedBytes),
+      omittedLines: Math.max(0, originalLines - truncated.truncation.returnedLines),
+    },
+  };
+}
+
+function mergeSourceTruncation(rendered: TextTruncation, source: TextTruncation): TextTruncation {
+  if (!source.truncated) {
+    return rendered;
+  }
+  const originalBytes = Math.max(rendered.originalBytes, source.originalBytes);
+  const originalLines = Math.max(rendered.originalLines, source.originalLines);
+  return {
+    truncated: true,
+    originalBytes,
+    returnedBytes: rendered.returnedBytes,
+    originalLines,
+    returnedLines: rendered.returnedLines,
+    omittedBytes: Math.max(0, originalBytes - rendered.returnedBytes),
+    omittedLines: Math.max(0, originalLines - rendered.returnedLines),
+  };
+}
+
 async function resolveScannerCommand(
-  profile: "semgrep" | "trivy",
+  profile: "semgrep" | "trivy" | "codeql",
   cwd: string,
   env: NodeJS.ProcessEnv,
   runner: ScannerProcessRunner,
-): Promise<{ ok: true; command: "semgrep" | "trivy" } | { ok: false; message: string }> {
-  return profile === "semgrep"
-    ? resolveSemgrepCommand(cwd, env, runner)
-    : resolveTrivyCommand(cwd, env, runner);
+): Promise<{ ok: true; command: "semgrep" | "trivy" | "codeql" } | { ok: false; message: string }> {
+  if (profile === "semgrep") {
+    return resolveSemgrepCommand(cwd, env, runner);
+  }
+  if (profile === "trivy") {
+    return resolveTrivyCommand(cwd, env, runner);
+  }
+  return resolveCodeqlCommand(cwd, env, runner);
 }
 
 async function resolveSemgrepCommand(
@@ -667,11 +912,38 @@ async function resolveTrivyCommand(
   };
 }
 
+async function resolveCodeqlCommand(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  runner: ScannerProcessRunner,
+): Promise<{ ok: true; command: "codeql" } | { ok: false; message: string }> {
+  const result = await runner({
+    command: "codeql",
+    args: ["--version"],
+    cwd,
+    env,
+    inheritEnv: false,
+    shell: false,
+    timeoutMs: SCANNER_DISCOVERY_TIMEOUT_MS,
+    maxBytes: SCANNER_DISCOVERY_BYTES,
+  });
+  if (result.exitCode === 0) {
+    return { ok: true, command: "codeql" };
+  }
+  if (result.error && isCommandMissingError(result.error)) {
+    return { ok: false, message: scannerMissingMessage("codeql") };
+  }
+  return {
+    ok: false,
+    message: `CodeQL was found but did not respond to --version successfully. ${scannerMissingMessage("codeql")}`,
+  };
+}
+
 function resolveScannerPath(
   cwd: string,
   value: string,
-  label: "path" | "config",
-  options: { mustExist: boolean; mustBeFile?: boolean; mustBeFileOrDirectory?: boolean },
+  label: "path" | "config" | "query",
+  options: { mustExist: boolean; mustBeFile?: boolean; mustBeDirectory?: boolean; mustBeFileOrDirectory?: boolean },
 ): { ok: true } & ResolvedScannerPath | { ok: false; message: string } {
   const validation = validateScannerValue(label, value, MAX_SCANNER_PATH_LENGTH);
   if (validation) {
@@ -701,6 +973,12 @@ function resolveScannerPath(
     const filePath = realResolved ?? resolved;
     if (!safeIsFile(filePath)) {
       return { ok: false, message: `${label} must be a regular local file.` };
+    }
+  }
+  if (options.mustBeDirectory) {
+    const directoryPath = realResolved ?? resolved;
+    if (!safeIsDirectory(directoryPath)) {
+      return { ok: false, message: `${label} must be a regular local directory.` };
     }
   }
   if (options.mustBeFileOrDirectory) {
@@ -825,6 +1103,7 @@ function invalidScannerRun(
     root,
     targetPath: options.targetPath,
     configPath: options.configPath,
+    queryPath: options.queryPath,
     json: options.json,
     args: [],
     timedOut: false,
@@ -915,6 +1194,34 @@ function sanitizeJsonProcessOutput(value: string): string {
   }
 }
 
+function renderCodeqlSarifSummary(value: string, sourceTruncated = false): string {
+  if (sourceTruncated) {
+    return [
+      "CodeQL SARIF summary",
+      "runs: unavailable (SARIF output exceeded ORX output byte limit)",
+      "results: unavailable (SARIF output exceeded ORX output byte limit)",
+      "rules: unavailable (SARIF output exceeded ORX output byte limit)",
+    ].join("\n") + "\n";
+  }
+  try {
+    const parsed = JSON.parse(value) as { runs?: Array<{ results?: unknown[]; tool?: { driver?: { rules?: unknown[] } } }> };
+    const runs = Array.isArray(parsed.runs) ? parsed.runs : [];
+    const results = runs.reduce((sum, run) => sum + (Array.isArray(run.results) ? run.results.length : 0), 0);
+    const rules = runs.reduce(
+      (sum, run) => sum + (Array.isArray(run.tool?.driver?.rules) ? run.tool.driver.rules.length : 0),
+      0,
+    );
+    return [
+      "CodeQL SARIF summary",
+      `runs: ${runs.length}`,
+      `results: ${results}`,
+      `rules: ${rules}`,
+    ].join("\n") + "\n";
+  } catch {
+    return sanitizeProcessOutput(value);
+  }
+}
+
 function redactScannerJson(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => redactScannerJson(item));
@@ -956,6 +1263,9 @@ function formatCommandLine(command: string, args: string[]): string {
 }
 
 function scannerMissingMessage(profile: ScannerProfileId): string {
+  if (profile === "codeql") {
+    return "CodeQL is not installed or not on PATH. Install the CodeQL CLI yourself, ensure `codeql` is available locally, and rerun with an explicit local database directory plus --query path under the current working directory.";
+  }
   if (profile === "trivy") {
     return "Trivy is not installed or not on PATH. Install Trivy yourself, ensure `trivy` is available locally, and rerun with an explicit local target path under the current working directory.";
   }
