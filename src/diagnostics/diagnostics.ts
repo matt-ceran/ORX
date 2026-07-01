@@ -6,19 +6,20 @@ import { runProcess, type RunProcessOptions, type RunProcessResult } from "../to
 import type { TextTruncation } from "../tools/types.js";
 
 export const DIAGNOSTICS_USAGE =
-  "Usage: orx diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: orx diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const DIAG_USAGE =
-  "Usage: orx diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: orx diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAGNOSTICS_USAGE =
-  "Usage: /diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: /diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAG_USAGE =
-  "Usage: /diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: /diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|gopls|clangd> [--project <local-project-path>] [--json]]";
 
 export type DiagnosticProfileId =
   | "typescript"
   | "typescript-language-server"
   | "pyright"
   | "eslint"
+  | "ruff"
   | "rust-analyzer"
   | "gopls"
   | "clangd"
@@ -34,7 +35,7 @@ export interface DiagnosticProfile {
   networkBoundary: string;
 }
 
-export type RunnableDiagnosticProfileId = "typescript" | "pyright" | "eslint" | "gopls" | "clangd";
+export type RunnableDiagnosticProfileId = "typescript" | "pyright" | "eslint" | "ruff" | "gopls" | "clangd";
 
 export interface LocalDiagnosticsArgs {
   profile: RunnableDiagnosticProfileId;
@@ -85,7 +86,7 @@ export interface LocalDiagnosticsResult {
   projectPath: string;
   json: boolean;
   command?: string;
-  commandSource?: "local_node_modules" | "path";
+  commandSource?: "local_node_modules" | "local_venv" | "path";
   args: string[];
   commandLine?: string;
   exitCode?: number | null;
@@ -110,7 +111,7 @@ interface ResolvedDiagnosticPath {
 interface ResolvedDiagnosticCommand {
   ok: true;
   command: string;
-  source: "local_node_modules" | "path";
+  source: "local_node_modules" | "local_venv" | "path";
   displayCommand: string;
 }
 
@@ -152,6 +153,15 @@ const DIAGNOSTIC_PROFILES: DiagnosticProfile[] = [
     networkBoundary: "no installs, package-manager calls, MCP calls, network calls, or model exposure by command selection",
   },
   {
+    id: "ruff",
+    label: "Ruff",
+    state: "runnable",
+    binary: "ruff",
+    summary: "Local Python lint diagnostics using an already-installed Ruff binary.",
+    runSupport: "runnable only through `run ruff [--project <local-file-or-directory>] [--json]`",
+    networkBoundary: "no installs, package-manager calls, MCP calls, network calls, or model exposure by command selection",
+  },
+  {
     id: "rust-analyzer",
     label: "rust-analyzer",
     state: "catalog_only",
@@ -190,21 +200,24 @@ const DIAGNOSTIC_PROFILES: DiagnosticProfile[] = [
 ];
 
 const PROFILE_IDS = new Set<DiagnosticProfileId>(DIAGNOSTIC_PROFILES.map((profile) => profile.id));
-const RUNNABLE_PROFILE_IDS = new Set<RunnableDiagnosticProfileId>(["typescript", "pyright", "eslint", "gopls", "clangd"]);
+const RUNNABLE_PROFILE_IDS = new Set<RunnableDiagnosticProfileId>(["typescript", "pyright", "eslint", "ruff", "gopls", "clangd"]);
 const DEFAULT_TYPESCRIPT_TIMEOUT_MS = 120_000;
 const DEFAULT_PYRIGHT_TIMEOUT_MS = 120_000;
 const DEFAULT_ESLINT_TIMEOUT_MS = 120_000;
+const DEFAULT_RUFF_TIMEOUT_MS = 120_000;
 const DEFAULT_GOPLS_TIMEOUT_MS = 120_000;
 const DEFAULT_CLANGD_TIMEOUT_MS = 120_000;
 const DEFAULT_DIAGNOSTIC_OUTPUT_BYTES = 128 * 1024;
 const TSC_DISCOVERY_TIMEOUT_MS = 5_000;
 const PYRIGHT_DISCOVERY_TIMEOUT_MS = 5_000;
 const ESLINT_DISCOVERY_TIMEOUT_MS = 5_000;
+const RUFF_DISCOVERY_TIMEOUT_MS = 5_000;
 const GOPLS_DISCOVERY_TIMEOUT_MS = 5_000;
 const CLANGD_DISCOVERY_TIMEOUT_MS = 5_000;
 const TSC_DISCOVERY_BYTES = 8 * 1024;
 const PYRIGHT_DISCOVERY_BYTES = 8 * 1024;
 const ESLINT_DISCOVERY_BYTES = 8 * 1024;
+const RUFF_DISCOVERY_BYTES = 8 * 1024;
 const GOPLS_DISCOVERY_BYTES = 8 * 1024;
 const CLANGD_DISCOVERY_BYTES = 8 * 1024;
 const MAX_DIAGNOSTIC_PATH_LENGTH = 4096;
@@ -330,6 +343,17 @@ function diagnosticProfileJsonDetails(profile: DiagnosticProfile): Record<string
       run: "orx diagnostics run eslint [--project <local-file-or-directory>] [--json]",
     };
   }
+  if (profile.id === "ruff") {
+    return {
+      default_project: ". under cwd",
+      command_shape: "ruff check --output-format json --no-cache <file-or-directory>",
+      binary_preference: "cwd/node_modules/.bin/ruff, then cwd/.venv/bin/ruff or cwd/venv/bin/ruff, before PATH ruff",
+      project_guard: "local regular file or directory under cwd; symlink realpath must remain under cwd",
+      rejected_projects: "URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
+      output: "bounded and redacted; --json emits ORX-owned structured JSON with parsed Ruff diagnostics",
+      run: "orx diagnostics run ruff [--project <local-file-or-directory>] [--json]",
+    };
+  }
   if (profile.id === "gopls") {
     return {
       default_project: "none; --project <local-go-file> is required",
@@ -401,6 +425,17 @@ export function renderDiagnosticProfileInspect(profile: DiagnosticProfile): stri
       "  rejected_projects: URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
       "  output: bounded and redacted; --json emits ORX-owned structured JSON with parsed ESLint messages",
       "  run: orx diagnostics run eslint [--project <local-file-or-directory>] [--json]",
+    );
+  }
+  if (profile.id === "ruff") {
+    lines.push(
+      "  default_project: . under cwd",
+      "  command_shape: ruff check --output-format json --no-cache <file-or-directory>",
+      "  binary_preference: cwd/node_modules/.bin/ruff, then cwd/.venv/bin/ruff or cwd/venv/bin/ruff, before PATH ruff",
+      "  project_guard: local regular file or directory under cwd; symlink realpath must remain under cwd",
+      "  rejected_projects: URLs, registry/package-like values, dash-prefixed values, symlink escapes, secrets, and control characters",
+      "  output: bounded and redacted; --json emits ORX-owned structured JSON with parsed Ruff diagnostics",
+      "  run: orx diagnostics run ruff [--project <local-file-or-directory>] [--json]",
     );
   }
   if (profile.id === "gopls") {
@@ -779,6 +814,9 @@ function resolveProjectPath(
   if (profile === "eslint" && !safeIsFile(realResolved) && !safeIsDirectory(realResolved)) {
     return { ok: false, message: "project must be a regular local file or directory." };
   }
+  if (profile === "ruff" && !safeIsFile(realResolved) && !safeIsDirectory(realResolved)) {
+    return { ok: false, message: "project must be a regular local file or directory." };
+  }
 
   const relativePath = relative(cwd, resolved).split(/[\\/]/g).join("/") || ".";
   if (profile === "gopls") {
@@ -881,6 +919,33 @@ function resolveLocalDiagnosticCommand(
       source: "local_node_modules",
     };
   }
+  if (profile === "ruff") {
+    const venvCandidates = process.platform === "win32"
+      ? [".venv/Scripts/ruff.exe", "venv/Scripts/ruff.exe", ".venv/Scripts/ruff.cmd", "venv/Scripts/ruff.cmd"]
+      : [".venv/bin/ruff", "venv/bin/ruff"];
+    for (const candidate of venvCandidates) {
+      const absolute = resolve(cwd, candidate);
+      if (!existsSync(absolute)) {
+        continue;
+      }
+      const real = safeRealpath(absolute);
+      if (!real) {
+        return { ok: false, message: `Local ${candidate} exists but could not be resolved.` };
+      }
+      if (!isPathInside(root, real)) {
+        return { ok: false, message: `Local ${candidate} resolves outside the current working directory.` };
+      }
+      if (!safeIsFile(real)) {
+        return { ok: false, message: `Local ${candidate} must resolve to a regular file.` };
+      }
+      return {
+        ok: true,
+        command: absolute,
+        displayCommand: candidate,
+        source: "local_venv",
+      };
+    }
+  }
   return { ok: false };
 }
 
@@ -898,6 +963,9 @@ function validateProjectPathValue(value: string, profile: RunnableDiagnosticProf
     }
     if (profile === "eslint") {
       return "project must be a local ESLint file or directory, not a package, registry, or launcher value.";
+    }
+    if (profile === "ruff") {
+      return "project must be a local Ruff file or directory, not a package, registry, or launcher value.";
     }
     if (profile === "gopls") {
       return "project must be a local Go file, not a package, registry, or launcher value.";
@@ -1096,6 +1164,9 @@ function parseDiagnosticsForProfile(
   if (profile === "eslint") {
     return parseEslintDiagnostics(stdout, root);
   }
+  if (profile === "ruff") {
+    return parseRuffDiagnostics(stdout, root);
+  }
   if (profile === "gopls") {
     return parseGoplsDiagnostics(`${stdout}\n${stderr}`, root);
   }
@@ -1143,6 +1214,47 @@ function parseEslintDiagnostics(output: string, root: string): ParsedTypeScriptD
         seen.add(key);
         diagnostics.push(diagnostic);
       }
+    }
+  }
+  return diagnostics;
+}
+
+function parseRuffDiagnostics(output: string, root: string): ParsedTypeScriptDiagnostic[] {
+  const trimmed = output.trim();
+  if (!trimmed) {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  const diagnostics: ParsedTypeScriptDiagnostic[] = [];
+  const seen = new Set<string>();
+  for (const entry of parsed) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    const location = isRecord(entry.location) ? entry.location : undefined;
+    const diagnostic = {
+      file: formatDiagnosticFile(entry.filename, root),
+      line: toPositiveOneBasedNumber(location?.row),
+      column: toPositiveOneBasedNumber(location?.column),
+      severity: "error" as const,
+      code: typeof entry.code === "string" && entry.code.trim()
+        ? sanitizeInline(entry.code)
+        : "ruff",
+      message: typeof entry.message === "string" ? sanitizeInline(entry.message) : "[redacted]",
+    };
+    const key = JSON.stringify(diagnostic);
+    if (!seen.has(key)) {
+      seen.add(key);
+      diagnostics.push(diagnostic);
     }
   }
   return diagnostics;
@@ -1240,6 +1352,9 @@ function buildDiagnosticCommandArgs(profile: RunnableDiagnosticProfileId, projec
   if (profile === "eslint") {
     return ["--format", "json", projectArg];
   }
+  if (profile === "ruff") {
+    return ["check", "--output-format", "json", "--no-cache", projectArg];
+  }
   if (profile === "gopls") {
     return ["check", projectArg];
   }
@@ -1256,6 +1371,9 @@ function defaultProjectPathForProfile(profile: RunnableDiagnosticProfileId): str
   if (profile === "eslint") {
     return ".";
   }
+  if (profile === "ruff") {
+    return ".";
+  }
   return undefined;
 }
 
@@ -1269,6 +1387,9 @@ function defaultTimeoutForProfile(profile: RunnableDiagnosticProfileId): number 
   if (profile === "eslint") {
     return DEFAULT_ESLINT_TIMEOUT_MS;
   }
+  if (profile === "ruff") {
+    return DEFAULT_RUFF_TIMEOUT_MS;
+  }
   return profile === "gopls" ? DEFAULT_GOPLS_TIMEOUT_MS : DEFAULT_CLANGD_TIMEOUT_MS;
 }
 
@@ -1281,6 +1402,9 @@ function diagnosticBinaryForProfile(profile: RunnableDiagnosticProfileId): strin
   }
   if (profile === "eslint") {
     return "eslint";
+  }
+  if (profile === "ruff") {
+    return "ruff";
   }
   return profile === "gopls" ? "gopls" : "clangd";
 }
@@ -1299,6 +1423,9 @@ function diagnosticMissingMessage(profile: RunnableDiagnosticProfileId): string 
   if (profile === "eslint") {
     return "eslint is not installed or not on PATH. Install ESLint locally in this project or make an existing eslint binary available on PATH; ORX will not install it for you.";
   }
+  if (profile === "ruff") {
+    return "ruff is not installed or not on PATH. Install Ruff locally in this project, project virtualenv, or make an existing ruff binary available on PATH; ORX will not install it for you.";
+  }
   if (profile === "gopls") {
     return "gopls is not installed or not on PATH. Install gopls locally for this project or make an existing gopls binary available on PATH; ORX will not install it for you.";
   }
@@ -1315,6 +1442,9 @@ function discoveryTimeoutForProfile(profile: RunnableDiagnosticProfileId): numbe
   if (profile === "eslint") {
     return ESLINT_DISCOVERY_TIMEOUT_MS;
   }
+  if (profile === "ruff") {
+    return RUFF_DISCOVERY_TIMEOUT_MS;
+  }
   return profile === "gopls" ? GOPLS_DISCOVERY_TIMEOUT_MS : CLANGD_DISCOVERY_TIMEOUT_MS;
 }
 
@@ -1327,6 +1457,9 @@ function discoveryBytesForProfile(profile: RunnableDiagnosticProfileId): number 
   }
   if (profile === "eslint") {
     return ESLINT_DISCOVERY_BYTES;
+  }
+  if (profile === "ruff") {
+    return RUFF_DISCOVERY_BYTES;
   }
   return profile === "gopls" ? GOPLS_DISCOVERY_BYTES : CLANGD_DISCOVERY_BYTES;
 }

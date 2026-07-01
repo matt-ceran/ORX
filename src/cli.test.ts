@@ -2085,6 +2085,7 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     mkdirSync(join(cwd, "src"), { recursive: true });
     mkdirSync(join(cwd, "config"), { recursive: true });
     mkdirSync(join(cwd, "node_modules", ".bin"), { recursive: true });
+    mkdirSync(join(cwd, ".venv", "bin"), { recursive: true });
     writeFileSync(join(cwd, "src", "app.ts"), "const value: string = 1;\n");
     writeFileSync(join(cwd, "src", "app.py"), "value: str = 1\n");
     writeFileSync(join(cwd, "src", "app.js"), "console.log(missing);\n");
@@ -2097,6 +2098,7 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     writeFileSync(join(cwd, "node_modules", ".bin", "eslint"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "gopls"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "clangd"), "#!/usr/bin/env node\n");
+    writeFileSync(join(cwd, ".venv", "bin", "ruff"), "#!/usr/bin/env python\n");
 
     const list = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diagnostics", "list"], {}, list.io), 0);
@@ -2104,6 +2106,7 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.match(list.stdout(), /id=typescript state=runnable/);
     assert.match(list.stdout(), /id=pyright state=runnable/);
     assert.match(list.stdout(), /id=eslint state=runnable/);
+    assert.match(list.stdout(), /id=ruff state=runnable/);
     assert.match(list.stdout(), /id=gopls state=runnable/);
     assert.match(list.stdout(), /id=clangd state=runnable/);
 
@@ -2116,6 +2119,7 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     const profileEntries = profileReport.profiles as Array<{ id: string; state: string }>;
     assert.equal(profileEntries.find((profile) => profile.id === "typescript")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "eslint")?.state, "runnable");
+    assert.equal(profileEntries.find((profile) => profile.id === "ruff")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "rust-analyzer")?.state, "catalog_only");
     assert.equal(listJson.stderr(), "");
 
@@ -2134,6 +2138,11 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.match(inspectEslint.stdout(), /Local diagnostics profile: eslint/);
     assert.match(inspectEslint.stdout(), /command_shape: eslint --format json <file-or-directory>/);
 
+    const inspectRuff = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "ruff"], {}, inspectRuff.io), 0);
+    assert.match(inspectRuff.stdout(), /Local diagnostics profile: ruff/);
+    assert.match(inspectRuff.stdout(), /command_shape: ruff check --output-format json --no-cache <file-or-directory>/);
+
     const inspectPyrightJson = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "pyright", "--json"], {}, inspectPyrightJson.io), 0);
     const pyrightInspectReport = JSON.parse(inspectPyrightJson.stdout());
@@ -2149,6 +2158,14 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.equal(eslintInspectReport.profile.id, "eslint");
     assert.equal(eslintInspectReport.profile.details.command_shape, "eslint --format json <file-or-directory>");
     assert.equal(inspectEslintJson.stderr(), "");
+
+    const inspectRuffJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "inspect", "ruff", "--json"], {}, inspectRuffJson.io), 0);
+    const ruffInspectReport = JSON.parse(inspectRuffJson.stdout());
+    assert.equal(ruffInspectReport.surface, "orx.local_diagnostics_profile");
+    assert.equal(ruffInspectReport.profile.id, "ruff");
+    assert.equal(ruffInspectReport.profile.details.command_shape, "ruff check --output-format json --no-cache <file-or-directory>");
+    assert.equal(inspectRuffJson.stderr(), "");
 
     const inspectGopls = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diag", "inspect", "gopls"], {}, inspectGopls.io), 0);
@@ -2230,6 +2247,21 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
                   column: 1,
                 },
               ],
+            },
+          ]),
+          stderr: "Authorization: Bearer should-redact\n",
+        });
+      }
+      if (String(options.command).includes("ruff")) {
+        return mockProcessResult(options, {
+          exitCode: 1,
+          stdout: JSON.stringify([
+            {
+              filename: join(cwd, "src", "app.py"),
+              code: "F401",
+              message: "unused import access_token=abcd1234",
+              location: { row: 1, column: 8 },
+              end_location: { row: 1, column: 14 },
             },
           ]),
           stderr: "Authorization: Bearer should-redact\n",
@@ -2367,6 +2399,38 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.equal(eslintReport.diagnostics[1].severity, "warning");
     assert.doesNotMatch(eslintJson.stdout(), /abcd1234|should-redact/);
     assert.equal(eslintJson.stderr(), "");
+
+    const ruff = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "run", "ruff", "--project", "src/app.py"], {}, ruff.io),
+      1,
+    );
+    assert.equal(ruff.stdout(), "");
+    assert.match(ruff.stderr(), /Local diagnostics run/);
+    assert.match(ruff.stderr(), /profile: ruff/);
+    assert.match(ruff.stderr(), /status: failed/);
+    assert.match(ruff.stderr(), /binary_source: local_venv/);
+    assert.match(ruff.stderr(), /parsed_diagnostics: 1/);
+    assert.match(ruff.stderr(), /src\/app\.py:1:8 error F401 unused import access_token=\[redacted\]/);
+    assert.match(ruff.stderr(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(ruff.stderr(), /abcd1234|should-redact/);
+    assert.match(tscCalls.at(-1)?.command ?? "", /\.venv\/bin\/ruff$/);
+    assert.deepEqual(tscCalls.at(-1)?.args, ["check", "--output-format", "json", "--no-cache", "src/app.py"]);
+    assert.equal(tscCalls.at(-1)?.shell, false);
+    assert.equal(tscCalls.at(-1)?.inheritEnv, false);
+
+    const ruffJson = createIo({ cwd, diagnosticsRunner });
+    assert.equal(await runCli(["node", "cli", "diag", "run", "ruff", "--json"], {}, ruffJson.io), 1);
+    const ruffReport = JSON.parse(ruffJson.stdout());
+    assert.equal(ruffReport.surface, "orx.local_diagnostics");
+    assert.equal(ruffReport.profile, "ruff");
+    assert.equal(ruffReport.command.shell, false);
+    assert.deepEqual(ruffReport.command.args, ["check", "--output-format", "json", "--no-cache", "."]);
+    assert.equal(ruffReport.command.binary_source, "local_venv");
+    assert.equal(ruffReport.diagnostics[0].code, "F401");
+    assert.equal(ruffReport.diagnostics[0].file, "src/app.py");
+    assert.doesNotMatch(ruffJson.stdout(), /abcd1234|should-redact/);
+    assert.equal(ruffJson.stderr(), "");
 
     const gopls = createIo({ cwd, diagnosticsRunner });
     assert.equal(
@@ -2519,6 +2583,35 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
       rmSync(pathOnlyClangdCwd, { recursive: true, force: true });
     }
 
+    const pathOnlyRuffCwd = createTempDir();
+    try {
+      writeFileSync(join(pathOnlyRuffCwd, "app.py"), "import os\n");
+      const pathCalls: Array<Parameters<DiagnosticsProcessRunner>[0]> = [];
+      const pathOnly = createIo({
+        cwd: pathOnlyRuffCwd,
+        diagnosticsRunner: async (options) => {
+          pathCalls.push(options);
+          if (String(options.command) === "ruff" && options.args?.join(" ") === "--version") {
+            return mockProcessResult(options, { exitCode: 0, stdout: "ruff 0.12.0\n" });
+          }
+          return mockProcessResult(options, { exitCode: 0, stdout: "[]\n" });
+        },
+      });
+      assert.equal(
+        await runCli(["node", "cli", "diagnostics", "run", "ruff", "--project", "app.py"], { PATH: "/usr/bin" }, pathOnly.io),
+        0,
+      );
+      assert.deepEqual(pathCalls.map((call) => call.args), [
+        ["--version"],
+        ["check", "--output-format", "json", "--no-cache", "app.py"],
+      ]);
+      assert.equal(pathCalls[0]?.command, "ruff");
+      assert.equal(pathCalls[1]?.command, "ruff");
+      assert.match(pathOnly.stdout(), /binary_source: path/);
+    } finally {
+      rmSync(pathOnlyRuffCwd, { recursive: true, force: true });
+    }
+
     const beforeUnsafeCalls = tscCalls.length;
     const catalogOnly = createIo({ cwd, diagnosticsRunner });
     assert.equal(await runCli(["node", "cli", "diagnostics", "run", "rust-analyzer"], {}, catalogOnly.io), 1);
@@ -2541,6 +2634,14 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.match(unsafeRegistryProject.stderr(), /not a package, registry, or launcher value/);
     assert.equal(tscCalls.length, beforeUnsafeCalls);
 
+    const unsafeRuffProject = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "run", "ruff", "--project", "https://example.com/app.py"], {}, unsafeRuffProject.io),
+      1,
+    );
+    assert.match(unsafeRuffProject.stderr(), /not a URL/);
+    assert.equal(tscCalls.length, beforeUnsafeCalls);
+
     const outside = createTempDir();
     writeFileSync(join(outside, "tsconfig.json"), "{}\n");
     symlinkSync(join(outside, "tsconfig.json"), join(cwd, "outside-tsconfig.json"));
@@ -2550,6 +2651,15 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
       1,
     );
     assert.match(unsafeSymlink.stderr(), /project resolves outside the current working directory/);
+    writeFileSync(join(outside, "app.py"), "import os\n");
+    symlinkSync(join(outside, "app.py"), join(cwd, "outside-app.py"));
+    const unsafeRuffSymlink = createIo({ cwd, diagnosticsRunner });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "run", "ruff", "--project", "outside-app.py"], {}, unsafeRuffSymlink.io),
+      1,
+    );
+    assert.match(unsafeRuffSymlink.stderr(), /project resolves outside the current working directory/);
+    assert.equal(tscCalls.length, beforeUnsafeCalls);
     rmSync(outside, { recursive: true, force: true });
 
     const toolNames = getNativeToolDefinitions().map((tool) => tool.function.name).sort();

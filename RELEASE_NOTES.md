@@ -54,7 +54,7 @@ npm run pack:dry-run
 - OpenRouter interaction: `orx` / `orx chat`, `orx ask`, `orx models`, `orx credits`, `orx generation`, exact model ids, `openrouter/auto`, `openrouter/fusion`, Fusion presets, streaming metadata, and cost/token summaries when OpenRouter returns them.
 - Config/local UX: `orx config show|path|set`, profiles, themes, prompt history, TTY status/composer polish, multiline input, command discovery, and slash-command completion.
 - Local coding tools: file/search/shell/diff/patch model tools, native `run_tests`, `orx tests` with discovery-only JSON target listings and structured report summaries, code maps, symbols, refs, imports, lexical call graphs, and optional local ast-grep previews.
-- Explicit operator integrations: TypeScript/Pyright/ESLint/gopls/clangd diagnostics, Semgrep and Trivy-secret scanner profiles, MCP preset/profile management, guarded MCP calls/model grants, plugin scaffold/validate/install/review, trusted plugin bins/hooks, skills/prompts/rules, and policy-gated delegation.
+- Explicit operator integrations: TypeScript/Pyright/ESLint/Ruff/gopls/clangd diagnostics, Semgrep and Trivy-secret scanner profiles, MCP preset/profile management, guarded MCP calls/model grants, plugin scaffold/validate/install/review, trusted plugin bins/hooks, skills/prompts/rules, and policy-gated delegation.
 - Automation: `npm run verify:release`, `npm run verify:global-install`, and `npm run pack:dry-run`.
 
 ## Security and boundary notes
@@ -74,6 +74,6 @@ OpenRouter remains the normal inference path. Credentials are detected from envi
 - Broader test report integrations for additional non-JSON/custom reporters or wrapper commands beyond the current direct Node, captured TAP/Mocha/pytest/Cargo/Cucumber/testthat/GoogleTest/Catch2/Deno/ExUnit/Gradle/JUnit-Platform/TestNG/NUnit/Go/RSpec/Minitest/Karma/Bun/Python-unittest/JUnit-text/PHPUnit/dotnet-xUnit/CTest/XCTest-style summaries, declared/config JSON output, existing JSON reporter, exact default Jest/Vitest/Playwright runner paths, and exact no-install npx framework runner paths.
 - Sourcegraph/GitHub/GitLab read-only profiles with the same explicit operator boundaries as existing MCP/plugin surfaces.
 - Managed OAuth/device/browser credential flows for MCP providers beyond bearer env vars and opt-in macOS Keychain support.
-- Additional scanner/diagnostics profiles beyond the current Semgrep, Trivy-secret, and TypeScript/Pyright/ESLint/gopls/clangd set only after deterministic no-network/no-auth command shapes are proven.
+- Additional scanner/diagnostics profiles beyond the current Semgrep, Trivy-secret, and TypeScript/Pyright/ESLint/Ruff/gopls/clangd set only after deterministic no-network/no-auth command shapes are proven.
 - Further TTY editor polish if script-safe fallback behavior remains intact.
 - Publishing automation/tagging/signing, if ORX moves from local checkout installs to a public npm release process.

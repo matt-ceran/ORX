@@ -52,6 +52,7 @@ export function renderOperatorGuide(report: DoctorReport): string {
     "  - orx diagnostics run typescript",
     "  - orx diagnostics run pyright",
     "  - orx diagnostics run eslint",
+    "  - orx diagnostics run ruff",
     "  - orx diagnostics run gopls --project src/main.go",
     "  - orx diagnostics run clangd --project src/main.cpp",
     "  - orx scanners run trivy src",

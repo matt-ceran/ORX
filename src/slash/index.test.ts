@@ -130,7 +130,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
   assert.match(output, /\/scanners \[list \[--json\]\|inspect <profile> \[--json\]\|run <semgrep\|trivy> <path> \[--config <local-config-path>\] \[--json\]\]/);
   assert.match(output, /\/scan <semgrep\|trivy> <path> \[--config <local-config-path>\] \[--json\]/);
-  assert.match(output, /\/diagnostics \[list \[--json\]\|inspect <profile> \[--json\]\|run <typescript\|pyright\|eslint\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
+  assert.match(output, /\/diagnostics \[list \[--json\]\|inspect <profile> \[--json\]\|run <typescript\|pyright\|eslint\|ruff\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/refs <query>/);
   assert.match(output, /\/imports \[query\]/);
@@ -352,6 +352,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/diagnostics run t"), [["typescript "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run p"), [["pyright "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run e"), [["eslint "], "e"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics run r"), [["ruff "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run g"), [["gopls "], "g"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run c"), [["clangd "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/diag run typescript --p"), [["--project "], "--p"]);
@@ -903,6 +904,7 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     mkdirSync(join(cwd, "src"), { recursive: true });
     mkdirSync(join(cwd, "config"), { recursive: true });
     mkdirSync(join(cwd, "node_modules", ".bin"), { recursive: true });
+    mkdirSync(join(cwd, ".venv", "bin"), { recursive: true });
     writeFileSync(join(cwd, "src", "app.ts"), "const value: string = 1;\n");
     writeFileSync(join(cwd, "src", "app.py"), "value: str = 1\n");
     writeFileSync(join(cwd, "src", "app.js"), "console.log(missing);\n");
@@ -915,6 +917,7 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     writeFileSync(join(cwd, "node_modules", ".bin", "eslint"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "gopls"), "#!/usr/bin/env node\n");
     writeFileSync(join(cwd, "node_modules", ".bin", "clangd"), "#!/usr/bin/env node\n");
+    writeFileSync(join(cwd, ".venv", "bin", "ruff"), "#!/usr/bin/env python\n");
 
     const list = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics", list.context), "continue");
@@ -922,6 +925,7 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.match(list.stdout(), /id=typescript state=runnable/);
     assert.match(list.stdout(), /id=pyright state=runnable/);
     assert.match(list.stdout(), /id=eslint state=runnable/);
+    assert.match(list.stdout(), /id=ruff state=runnable/);
     assert.match(list.stdout(), /id=gopls state=runnable/);
     assert.match(list.stdout(), /id=clangd state=runnable/);
 
@@ -934,6 +938,7 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     const profileEntries = profileReport.profiles as Array<{ id: string; state: string }>;
     assert.equal(profileEntries.find((profile) => profile.id === "typescript")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "eslint")?.state, "runnable");
+    assert.equal(profileEntries.find((profile) => profile.id === "ruff")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "rust-analyzer")?.state, "catalog_only");
     assert.equal(listJson.stderr(), "");
 
@@ -952,6 +957,11 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.match(inspectEslint.stdout(), /Local diagnostics profile: eslint/);
     assert.match(inspectEslint.stdout(), /command_shape: eslint --format json <file-or-directory>/);
 
+    const inspectRuff = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics inspect ruff", inspectRuff.context), "continue");
+    assert.match(inspectRuff.stdout(), /Local diagnostics profile: ruff/);
+    assert.match(inspectRuff.stdout(), /command_shape: ruff check --output-format json --no-cache <file-or-directory>/);
+
     const inspectPyrightJson = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics inspect pyright --json", inspectPyrightJson.context), "continue");
     const pyrightInspectReport = JSON.parse(inspectPyrightJson.stdout());
@@ -967,6 +977,14 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.equal(eslintInspectReport.profile.id, "eslint");
     assert.equal(eslintInspectReport.profile.details.command_shape, "eslint --format json <file-or-directory>");
     assert.equal(inspectEslintJson.stderr(), "");
+
+    const inspectRuffJson = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics inspect ruff --json", inspectRuffJson.context), "continue");
+    const ruffInspectReport = JSON.parse(inspectRuffJson.stdout());
+    assert.equal(ruffInspectReport.surface, "orx.local_diagnostics_profile");
+    assert.equal(ruffInspectReport.profile.id, "ruff");
+    assert.equal(ruffInspectReport.profile.details.command_shape, "ruff check --output-format json --no-cache <file-or-directory>");
+    assert.equal(inspectRuffJson.stderr(), "");
 
     const inspectGopls = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics inspect gopls", inspectGopls.context), "continue");
@@ -1046,6 +1064,21 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
                   column: 1,
                 },
               ],
+            },
+          ]),
+          stderr: "Authorization: Bearer should-redact\n",
+        });
+      }
+      if (String(options.command).includes("ruff")) {
+        return mockProcessResult(options, {
+          exitCode: 1,
+          stdout: JSON.stringify([
+            {
+              filename: join(cwd, "src", "app.py"),
+              code: "F401",
+              message: "unused import access_token=abcd1234",
+              location: { row: 1, column: 8 },
+              end_location: { row: 1, column: 14 },
             },
           ]),
           stderr: "Authorization: Bearer should-redact\n",
@@ -1171,6 +1204,34 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.equal(eslintReport.diagnostics[1].severity, "warning");
     assert.doesNotMatch(eslintJson.stdout(), /abcd1234|should-redact/);
     assert.equal(eslintJson.stderr(), "");
+
+    const ruff = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(await handleSlashCommand("/diagnostics run ruff --project src/app.py", ruff.context), "continue");
+    assert.equal(ruff.stdout(), "");
+    assert.match(ruff.stderr(), /Local diagnostics run/);
+    assert.match(ruff.stderr(), /profile: ruff/);
+    assert.match(ruff.stderr(), /status: failed/);
+    assert.match(ruff.stderr(), /binary_source: local_venv/);
+    assert.match(ruff.stderr(), /parsed_diagnostics: 1/);
+    assert.match(ruff.stderr(), /src\/app\.py:1:8 error F401 unused import access_token=\[redacted\]/);
+    assert.match(ruff.stderr(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(ruff.stderr(), /abcd1234|should-redact/);
+    assert.match(tscCalls.at(-1)?.command ?? "", /\.venv\/bin\/ruff$/);
+    assert.deepEqual(tscCalls.at(-1)?.args, ["check", "--output-format", "json", "--no-cache", "src/app.py"]);
+    assert.equal(tscCalls.at(-1)?.shell, false);
+    assert.equal(tscCalls.at(-1)?.inheritEnv, false);
+
+    const ruffJson = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(await handleSlashCommand("/diag run ruff --json", ruffJson.context), "continue");
+    const ruffReport = JSON.parse(ruffJson.stdout());
+    assert.equal(ruffReport.surface, "orx.local_diagnostics");
+    assert.equal(ruffReport.profile, "ruff");
+    assert.deepEqual(ruffReport.command.args, ["check", "--output-format", "json", "--no-cache", "."]);
+    assert.equal(ruffReport.command.binary_source, "local_venv");
+    assert.equal(ruffReport.diagnostics[0].code, "F401");
+    assert.equal(ruffReport.diagnostics[0].file, "src/app.py");
+    assert.doesNotMatch(ruffJson.stdout(), /abcd1234|should-redact/);
+    assert.equal(ruffJson.stderr(), "");
 
     const gopls = createSlashHarness({ cwd, diagnosticsRunner });
     assert.equal(await handleSlashCommand("/diagnostics run gopls --project src/main.go", gopls.context), "continue");
@@ -1309,6 +1370,36 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
       rmSync(pathOnlyClangdCwd, { recursive: true, force: true });
     }
 
+    const pathOnlyRuffCwd = mkdtempSync(join(tmpdir(), "orx-slash-diagnostics-path-ruff-"));
+    try {
+      writeFileSync(join(pathOnlyRuffCwd, "app.py"), "import os\n");
+      const pathCalls: RunProcessOptions[] = [];
+      const pathOnly = createSlashHarness({
+        cwd: pathOnlyRuffCwd,
+        env: { PATH: "/usr/bin" },
+        diagnosticsRunner: async (options) => {
+          pathCalls.push(options);
+          if (String(options.command) === "ruff" && options.args?.join(" ") === "--version") {
+            return mockProcessResult(options, { exitCode: 0, stdout: "ruff 0.12.0\n" });
+          }
+          return mockProcessResult(options, { exitCode: 0, stdout: "[]\n" });
+        },
+      });
+      assert.equal(
+        await handleSlashCommand("/diagnostics run ruff --project app.py", pathOnly.context),
+        "continue",
+      );
+      assert.deepEqual(pathCalls.map((call) => call.args), [
+        ["--version"],
+        ["check", "--output-format", "json", "--no-cache", "app.py"],
+      ]);
+      assert.equal(pathCalls[0]?.command, "ruff");
+      assert.equal(pathCalls[1]?.command, "ruff");
+      assert.match(pathOnly.stdout(), /binary_source: path/);
+    } finally {
+      rmSync(pathOnlyRuffCwd, { recursive: true, force: true });
+    }
+
     const beforeUnsafeCalls = tscCalls.length;
     const catalogOnly = createSlashHarness({ cwd, diagnosticsRunner });
     assert.equal(await handleSlashCommand("/diagnostics run rust-analyzer", catalogOnly.context), "continue");
@@ -1323,6 +1414,14 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.match(unsafeProject.stderr(), /not a URL/);
     assert.equal(tscCalls.length, beforeUnsafeCalls);
 
+    const unsafeRuffProject = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(
+      await handleSlashCommand("/diagnostics run ruff --project https://example.com/app.py", unsafeRuffProject.context),
+      "continue",
+    );
+    assert.match(unsafeRuffProject.stderr(), /not a URL/);
+    assert.equal(tscCalls.length, beforeUnsafeCalls);
+
     const outside = mkdtempSync(join(tmpdir(), "orx-slash-diagnostics-outside-"));
     writeFileSync(join(outside, "tsconfig.json"), "{}\n");
     symlinkSync(join(outside, "tsconfig.json"), join(cwd, "outside-tsconfig.json"));
@@ -1332,6 +1431,15 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
       "continue",
     );
     assert.match(unsafeSymlink.stderr(), /project resolves outside the current working directory/);
+    writeFileSync(join(outside, "app.py"), "import os\n");
+    symlinkSync(join(outside, "app.py"), join(cwd, "outside-app.py"));
+    const unsafeRuffSymlink = createSlashHarness({ cwd, diagnosticsRunner });
+    assert.equal(
+      await handleSlashCommand("/diagnostics run ruff --project outside-app.py", unsafeRuffSymlink.context),
+      "continue",
+    );
+    assert.match(unsafeRuffSymlink.stderr(), /project resolves outside the current working directory/);
+    assert.equal(tscCalls.length, beforeUnsafeCalls);
     rmSync(outside, { recursive: true, force: true });
   } finally {
     rmSync(cwd, { recursive: true, force: true });
