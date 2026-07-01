@@ -275,8 +275,10 @@ import {
 } from "../terminal/render.js";
 import {
   discoverTestTargets,
+  parseTestReadinessJsonFlag,
   renderTestRunResult,
   renderTestTargets,
+  renderTestTargetsJson,
   runTestTarget,
 } from "../testing/index.js";
 import {
@@ -565,6 +567,8 @@ const PLUGIN_COMMAND_SUBCOMMAND_COMPLETIONS = ["list", "status"] as const;
 const BIN_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untrust", "run"] as const;
 const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
+const TEST_READINESS_OPTION_COMPLETIONS = ["--json"] as const;
+const SLASH_TESTS_USAGE = "/tests [list [--json]|status [--json]|run [target-id] [-- args...]]";
 const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls", "ast-grep", "tree-sitter", "outline"] as const;
 const TREE_SITTER_MODE_COMPLETIONS = ["parse", "outline", "imports", "refs", "calls", "repo-outline", "repo-refs", "repo-calls", "repo-imports", "repo-deps"] as const;
 const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "run"] as const;
@@ -813,7 +817,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/tests": {
-    usage: "/tests [list|run <target-id>]",
+    usage: SLASH_TESTS_USAGE,
     description: "Discover or run native test targets",
     group: "Workspace",
     tier: "common",
@@ -1944,7 +1948,13 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
     case "/hooks":
       return argIndex === 0 ? [...HOOK_SUBCOMMAND_COMPLETIONS] : [];
     case "/tests":
-      return argIndex === 0 ? [...TEST_SUBCOMMAND_COMPLETIONS] : [];
+      if (argIndex === 0) {
+        return [...TEST_SUBCOMMAND_COMPLETIONS, ...TEST_READINESS_OPTION_COMPLETIONS];
+      }
+      if ((firstArg === "list" || firstArg === "status") && argIndex === 1) {
+        return [...TEST_READINESS_OPTION_COMPLETIONS];
+      }
+      return [];
     case "/code":
       if (argIndex === 0) {
         return [...CODE_SUBCOMMAND_COMPLETIONS];
@@ -2679,10 +2689,23 @@ function stripFirstSlashArg(argText: string): string {
 }
 
 async function handleTestsCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
-  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+  const firstArg = command.args[0]?.toLowerCase();
+  const subcommand = firstArg === "--json" ? "list" : firstArg ?? "list";
 
   if (subcommand === "list" || subcommand === "status") {
-    writeLine(context.io.stdout, renderTestTargets(discoverTestTargets(context.io.cwd)));
+    const jsonFlag = parseTestReadinessJsonFlag(
+      firstArg === "list" || firstArg === "status" ? command.args.slice(1) : command.args,
+      `Usage: ${SLASH_TESTS_USAGE}`,
+    );
+    if (!jsonFlag.ok) {
+      writeLine(context.io.stderr, jsonFlag.message);
+      return;
+    }
+    const discovery = discoverTestTargets(context.io.cwd);
+    writeLine(
+      context.io.stdout,
+      jsonFlag.json ? renderTestTargetsJson(discovery) : renderTestTargets(discovery),
+    );
     return;
   }
 
@@ -2697,7 +2720,7 @@ async function handleTestsCommand(command: SlashCommand, context: SlashCommandCo
     return;
   }
 
-  writeLine(context.io.stderr, "Usage: /tests [list|run [target-id] [-- args...]]");
+  writeLine(context.io.stderr, `Usage: ${SLASH_TESTS_USAGE}`);
 }
 
 function parseTestRunArgs(args: string[]): { targetId?: string; extraArgs: string[] } {

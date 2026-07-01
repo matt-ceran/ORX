@@ -249,8 +249,10 @@ import { GUIDE_USAGE, renderOperatorGuide } from "./guide.js";
 import { formatStatus } from "./status.js";
 import {
   discoverTestTargets,
+  parseTestReadinessJsonFlag,
   renderTestRunResult,
   renderTestTargets,
+  renderTestTargetsJson,
   runTestTarget,
 } from "./testing/index.js";
 import { runChat } from "./tui/chat.js";
@@ -306,7 +308,7 @@ const CLI_NAMESPACE_USAGES = {
   plugins: "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|doctor|audit|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
   bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
-  tests: "Usage: orx tests [list|run [target-id] [-- args...]]",
+  tests: "Usage: orx tests [list [--json]|status [--json]|run [target-id] [-- args...]]",
   code: "Usage: orx code [map|symbols|refs|imports|calls|ast-grep|tree-sitter|outline] [query-or-path]",
   scanners: SCANNERS_USAGE,
   scan: SCAN_USAGE,
@@ -1049,7 +1051,8 @@ async function runGenerationCommand(args: string[], apiKey: string, io: CliIo): 
 }
 
 async function runTestsCommand(args: string[], io: CliIo): Promise<number> {
-  const subcommand = args[0]?.toLowerCase() ?? "list";
+  const firstArg = args[0]?.toLowerCase();
+  const subcommand = firstArg === "--json" ? "list" : firstArg ?? "list";
 
   if (isNamespaceHelp(args)) {
     writeLine(io.stdout, CLI_NAMESPACE_USAGES.tests);
@@ -1057,7 +1060,16 @@ async function runTestsCommand(args: string[], io: CliIo): Promise<number> {
   }
 
   if (subcommand === "list" || subcommand === "status") {
-    writeLine(io.stdout, renderTestTargets(discoverTestTargets(io.cwd)));
+    const jsonFlag = parseTestReadinessJsonFlag(
+      firstArg === "list" || firstArg === "status" ? args.slice(1) : args,
+      CLI_NAMESPACE_USAGES.tests,
+    );
+    if (!jsonFlag.ok) {
+      writeLine(io.stderr, jsonFlag.message);
+      return 1;
+    }
+    const discovery = discoverTestTargets(io.cwd);
+    writeLine(io.stdout, jsonFlag.json ? renderTestTargetsJson(discovery) : renderTestTargets(discovery));
     return 0;
   }
 

@@ -1440,6 +1440,38 @@ test("cli tests commands list and run package scripts without an API key", async
     assert.match(listed.stdout(), /framework=unknown/);
     assert.equal(listed.stderr(), "");
 
+    const listJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "tests", "--json"], {}, listJson.io), 0);
+    const listReport = JSON.parse(listJson.stdout());
+    assert.equal(listReport.schema_version, 1);
+    assert.equal(listReport.surface, "orx.test_targets");
+    assert.equal(listReport.operator_only, true);
+    assert.equal(listReport.execution, "none_for_list_or_status");
+    assert.equal(listReport.network, "none_for_list_or_status");
+    assert.equal(listReport.report_files, "not_read_by_list_or_status");
+    assert.equal(listReport.target_count, 2);
+    assert.equal(listReport.default_target_id, "script:test");
+    assert.equal(listReport.framework_counts.unknown, 2);
+    assert.deepEqual(
+      listReport.targets.map((target: { id: string }) => target.id),
+      ["script:test", "script:test:unit"],
+    );
+    assert.deepEqual(listReport.targets[0].command, ["npm", "run", "test"]);
+    assert.equal(listJson.stderr(), "");
+
+    const statusJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "test", "status", "--json"], {}, statusJson.io), 0);
+    assert.equal(JSON.parse(statusJson.stdout()).surface, "orx.test_targets");
+    assert.equal(statusJson.stderr(), "");
+
+    const badListArg = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "tests", "list", "script:test"], {}, badListArg.io), 1);
+    assert.match(badListArg.stderr(), /Usage: orx tests \[list \[--json\]\|status \[--json\]\|run/);
+
+    const badListOption = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "tests", "status", "--xml"], {}, badListOption.io), 1);
+    assert.match(badListOption.stderr(), /Unknown tests option: --xml/);
+
     const ran = createIo({ cwd });
     assert.equal(
       await runCli(["node", "cli", "tests", "run", "script:test:unit", "--", "--flag"], {}, ran.io),

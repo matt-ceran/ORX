@@ -89,7 +89,7 @@ test("help shows concise grouped common commands by default", () => {
   assert.match(output, /\/auth \[status\|setup\|env\|init\|env-file\]\s+Inspect or initialize core OpenRouter auth setup/);
   assert.match(output, /\/profile \[list\|save <id> \[options\]\|use\|inspect\|delete\]\s+Manage saved local config profiles/);
   assert.match(output, /\/history \[search <query>\|clear\]\s+Search or clear local prompt history/);
-  assert.match(output, /\/tests \[list\|run <target-id>\]\s+Discover or run native test targets \(aliases: \/test\)/);
+  assert.match(output, /\/tests \[list \[--json\]\|status \[--json\]\|run \[target-id\] \[-- args\.\.\.\]\]\s+Discover or run native test targets \(aliases: \/test\)/);
   assert.match(output, /\/map \[path\]\s+Render a bounded local repository code map/);
   assert.match(output, /\/model <id-or-search>\s+Resolve and switch OpenRouter model \(aliases: \/m\)/);
   assert.match(output, /\/quit\s+Leave chat \(aliases: \/q, \/exit\)/);
@@ -125,7 +125,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/orchestrator \[status\|plan\|openrouter <model>\|clear\]/);
   assert.match(output, /\/delegate \[help\|status\|plan\|add\|remove\|clear\|team\|policy\]/);
   assert.match(output, /\/delegates \[list\|status\|plan\|policy\|teams\|save\|use\|inspect\|delete\]/);
-  assert.match(output, /\/tests \[list\|run <target-id>\]/);
+  assert.match(output, /\/tests \[list \[--json\]\|status \[--json\]\|run \[target-id\] \[-- args\.\.\.\]\]/);
   assert.match(output, /\/code \[map\|symbols\|refs\|imports\|calls\|ast-grep\|tree-sitter\|outline\]/);
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
   assert.match(output, /\/scanners \[list \[--json\]\|inspect <profile> \[--json\]\|run semgrep <path> --config <local-config-path> \[--json\]\]/);
@@ -309,7 +309,10 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/bins r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/hooks t"), [["trust "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/hooks r"), [["run "], "r"]);
+  assert.deepEqual(completeSlashCommandLine("/tests --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/tests r"), [["run "], "r"]);
+  assert.deepEqual(completeSlashCommandLine("/tests list --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/tests status --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/code m"), [["map "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/code s"), [["symbols "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/code c"), [["calls "], "c"]);
@@ -1193,6 +1196,40 @@ test("tests slash command lists and runs package scripts", async () => {
     assert.match(harness.stdout(), /Test Targets/);
     assert.match(harness.stdout(), /id=script:test:unit/);
     assert.match(harness.stdout(), /framework=unknown/);
+
+    const listJson = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/tests --json", listJson.context), "continue");
+    const listReport = JSON.parse(listJson.stdout());
+    assert.equal(listReport.schema_version, 1);
+    assert.equal(listReport.surface, "orx.test_targets");
+    assert.equal(listReport.operator_only, true);
+    assert.equal(listReport.execution, "none_for_list_or_status");
+    assert.equal(listReport.network, "none_for_list_or_status");
+    assert.equal(listReport.report_files, "not_read_by_list_or_status");
+    assert.equal(listReport.target_count, 2);
+    assert.equal(listReport.default_target_id, "script:test");
+    assert.equal(listReport.framework_counts.unknown, 2);
+    assert.deepEqual(
+      listReport.targets.map((target: { id: string }) => target.id),
+      ["script:test", "script:test:unit"],
+    );
+    assert.deepEqual(listReport.targets[0].command, ["npm", "run", "test"]);
+    assert.equal(listJson.stderr(), "");
+
+    const statusJson = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/test status --json", statusJson.context), "continue");
+    assert.equal(JSON.parse(statusJson.stdout()).surface, "orx.test_targets");
+    assert.equal(statusJson.stderr(), "");
+
+    const badListArg = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/tests list script:test", badListArg.context), "continue");
+    assert.match(badListArg.stderr(), /Usage: \/tests \[list \[--json\]\|status \[--json\]\|run/);
+    assert.equal(badListArg.stdout(), "");
+
+    const badListOption = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/tests status --xml", badListOption.context), "continue");
+    assert.match(badListOption.stderr(), /Unknown tests option: --xml/);
+    assert.equal(badListOption.stdout(), "");
 
     assert.equal(
       await handleSlashCommand("/test run script:test:unit -- --flag", harness.context),

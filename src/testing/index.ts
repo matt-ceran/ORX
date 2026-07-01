@@ -297,6 +297,72 @@ export function renderTestTargets(discovery: TestDiscovery): string {
   return lines.join("\n");
 }
 
+export function renderTestTargetsJson(discovery: TestDiscovery): string {
+  return JSON.stringify({
+    schema_version: 1,
+    surface: "orx.test_targets",
+    operator_only: true,
+    model_tool: "run_tests_separate_from_list",
+    execution: "none_for_list_or_status",
+    network: "none_for_list_or_status",
+    report_files: "not_read_by_list_or_status",
+    target_count: discovery.targets.length,
+    default_target_id: discovery.defaultTargetId ?? null,
+    truncated: discovery.truncated,
+    framework_counts: countTestFrameworks(discovery.targets),
+    targets: discovery.targets.map(testTargetJson),
+    omission_count: discovery.omissions.length,
+    omissions_truncated: discovery.omissions.length > 10,
+    omitted_omission_count: Math.max(0, discovery.omissions.length - 10),
+    omissions: discovery.omissions.slice(0, 10).map(testTargetOmissionJson),
+    usage: "orx tests run [target-id] [-- args...]",
+  }, null, 2);
+}
+
+function testTargetJson(target: TestTarget): Record<string, unknown> {
+  return {
+    id: target.id,
+    kind: target.kind,
+    framework: target.framework,
+    label: target.label,
+    package_manager: target.packageManager,
+    script_name: target.scriptName,
+    reporter: target.reporter,
+    reporter_declared: target.reporterDeclared,
+    json_reporter: target.jsonReporter,
+    report_output_file: target.reportOutputFile,
+    report_args_forwardable: target.reportArgsForwardable,
+    default_report_args_forwardable: target.defaultReportArgsForwardable,
+    config_json_reporter: target.configJsonReporter,
+    file_count: target.fileCount,
+    command: [target.command, ...target.args].map(sanitizeRenderedToken),
+  };
+}
+
+function testTargetOmissionJson(omission: TestTargetOmission): Record<string, string | undefined> {
+  return {
+    reason: omission.reason,
+    path: omission.path ? sanitizeRenderedToken(omission.path) : undefined,
+  };
+}
+
+export function parseTestReadinessJsonFlag(
+  args: string[],
+  usage: string,
+): { ok: true; json: boolean } | { ok: false; message: string } {
+  if (args.length === 0) {
+    return { ok: true, json: false };
+  }
+  if (args.length === 1 && args[0] === "--json") {
+    return { ok: true, json: true };
+  }
+  const option = args.find((arg) => arg.startsWith("-"));
+  if (option) {
+    return { ok: false, message: `${usage}\nUnknown tests option: ${sanitizeRenderedToken(option)}` };
+  }
+  return { ok: false, message: usage };
+}
+
 export function renderTestRunResult(result: TestRunResult): string {
   const lines = [
     `Test run: ${result.target?.id ?? "unknown"}`,

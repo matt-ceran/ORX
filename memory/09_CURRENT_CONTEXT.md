@@ -104,6 +104,16 @@ Current files:
 
 ## Latest Work
 
+Added tests readiness JSON output:
+
+- `orx tests --json`, `orx tests list --json`, `orx tests status --json`, and matching `/tests` / `/test` list/status forms now render ORX-owned structured discovery JSON for native test targets.
+- This only serializes existing discovery metadata: no `tests run` behavior changes, no test execution for list/status, no binary probing, no report-file reads, no installs, no network calls, and no model-tool exposure changes. JSON includes `schema_version`, `surface`, explicit operator/model/execution/network/report-file boundary fields, target/default/framework counts, bounded target metadata, bounded omissions, and the run usage string.
+- Top-level `--json` maps to list, list/status accept only `--json`, extra readiness operands and unknown readiness options reject with usage, and slash completion/help now covers `--json` while preserving `run [target-id] [-- args...]` passthrough documentation.
+- Verification: `node --import tsx --test src/cli.test.ts src/slash/index.test.ts`, `npm run typecheck`, `npm run build`, `node --test dist/cli.test.js dist/slash/index.test.js`, direct built CLI JSON/invalid-operand smokes, `git diff --check`, full `npm test` with 541 tests, `npm run verify:release`, and independent read-only verifier `019f1e24-5f86-7142-8c83-7b0eb3eb90c0`. The verifier found a low slash help/docs passthrough wording regression, which was fixed before the final focused checks and release verifier rerun.
+- Next likely work after this slice remains another bounded optional completion slice such as LSP/SCIP diagnostics/references, semantic tree-sitter refs/dependency depth, non-JSON/custom reporter parsing, or scanner adapters only after a deterministic no-network/no-auth local command shape is proven.
+
+Previous latest work:
+
 Added exact no-install npx framework report support:
 
 - Package-script JSON report handling now treats only exact no-prefix `npx --no-install <runner>` final runner shapes as safe framework runners, where `<runner>` is exactly `jest`, `vitest`, `playwright`, `playwright-core`, or `@playwright/test`.
