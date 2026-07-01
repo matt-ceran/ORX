@@ -5884,11 +5884,13 @@ function startsLikeTestngXmlReport(text: string): boolean {
 }
 
 function looksLikeWholeNunitXmlReport(text: string): boolean {
-  return matchWholeXmlRootName(stripXmlDeclaration(text).trim()) === "test-run";
+  const rootName = matchWholeXmlRootName(stripXmlDeclaration(text).trim());
+  return rootName === "test-run" || rootName === "test-results";
 }
 
 function startsLikeNunitXmlReport(text: string): boolean {
-  return matchFirstXmlRootName(stripXmlDeclaration(text).trim()) === "test-run";
+  const rootName = matchFirstXmlRootName(stripXmlDeclaration(text).trim());
+  return rootName === "test-run" || rootName === "test-results";
 }
 
 function stripXmlDeclaration(text: string): string {
@@ -6390,6 +6392,25 @@ function parseNunitXmlCounts(text: string):
       durationMs?: number;
     }
   | undefined {
+  const rootName = matchWholeXmlRootName(stripXmlDeclaration(text).trim());
+  if (rootName === "test-results") {
+    return parseNunit2XmlCounts(text);
+  }
+  if (rootName !== "test-run") {
+    return undefined;
+  }
+  return parseNunit3XmlCounts(text);
+}
+
+function parseNunit3XmlCounts(text: string):
+  | {
+      total: number;
+      passed: number;
+      failed: number;
+      skipped: number;
+      durationMs?: number;
+    }
+  | undefined {
   const rootTags = collectXmlStartTagAttributes(text, "test-run");
   if (!rootTags || rootTags.length !== 1) {
     return undefined;
@@ -6433,6 +6454,61 @@ function parseNunitXmlCounts(text: string):
     failed,
     skipped: skippedTotal,
     durationMs: seconds === undefined ? undefined : Math.round(seconds * 1000 * 1000) / 1000,
+  };
+}
+
+function parseNunit2XmlCounts(text: string):
+  | {
+      total: number;
+      passed: number;
+      failed: number;
+      skipped: number;
+    }
+  | undefined {
+  const rootTags = collectXmlStartTagAttributes(text, "test-results");
+  if (!rootTags || rootTags.length !== 1) {
+    return undefined;
+  }
+
+  const rootAttributes = rootTags[0];
+  const total = matchXmlIntegerAttribute(rootAttributes, "total");
+  const errors = matchXmlIntegerAttribute(rootAttributes, "errors");
+  const failures = matchXmlIntegerAttribute(rootAttributes, "failures");
+  const notRun = matchXmlIntegerAttribute(rootAttributes, "not-run");
+  const inconclusive = matchXmlIntegerAttribute(rootAttributes, "inconclusive");
+  const ignored = matchXmlIntegerAttribute(rootAttributes, "ignored");
+  const skipped = matchXmlIntegerAttribute(rootAttributes, "skipped");
+  const invalid = matchXmlIntegerAttribute(rootAttributes, "invalid");
+  if (
+    total === undefined ||
+    errors === undefined ||
+    failures === undefined ||
+    notRun === undefined ||
+    inconclusive === undefined ||
+    ignored === undefined ||
+    skipped === undefined ||
+    invalid === undefined
+  ) {
+    return undefined;
+  }
+
+  const failed = errors + failures;
+  const skippedTotal = notRun;
+  const notRunComponents = inconclusive + ignored + skipped + invalid;
+  const passed = total - failed - skippedTotal;
+  if (
+    ![failed, notRunComponents, passed].every(Number.isSafeInteger) ||
+    notRunComponents !== notRun ||
+    passed < 0
+  ) {
+    return undefined;
+  }
+
+  return {
+    total,
+    passed,
+    failed,
+    skipped: skippedTotal,
   };
 }
 

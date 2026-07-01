@@ -4577,6 +4577,26 @@ test("parses captured NUnit XML reports before text fallback", () => {
     parseTestReportSummary(
       createTarget("unknown"),
       [
+        '<test-results total="5" errors="1" failures="1" not-run="2" inconclusive="1" ignored="1" skipped="0" invalid="0">',
+        '  <test-suite type="Assembly" name="Example.Tests"/>',
+        "</test-results>",
+      ].join("\n"),
+      "Test Summary: 99 passed, 99 total",
+    ),
+    {
+      framework: "unknown",
+      source: "nunit-xml",
+      total: 5,
+      passed: 1,
+      failed: 2,
+      skipped: 2,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
         "debug before xml",
         '<test-run testcasecount="1" total="1" passed="1" failed="0"></test-run>',
         "Test Summary: 1 passed, 1 total",
@@ -4628,6 +4648,52 @@ test("parses captured NUnit XML reports before text fallback", () => {
         createTarget("unknown"),
         `<test-run testcasecount="1" total="1" passed="1" failed="0" ${attribute}="oops"></test-run>`,
         "Test Summary: 1 passed, 1 total",
+      ),
+      undefined,
+    );
+  }
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<test-results total="5" errors="1" failures="1" not-run="1" inconclusive="1" ignored="1" skipped="0" invalid="0"></test-results>',
+      "Test Summary: 5 passed, 5 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<test-results total="5" errors="1" failures="oops" not-run="2" inconclusive="1" ignored="1" skipped="0" invalid="0"></test-results>',
+      "Test Summary: 5 passed, 5 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<test-results total="1" errors="1" failures="1" not-run="0" inconclusive="0" ignored="0" skipped="0" invalid="0"></test-results>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  for (const attribute of ["total", "errors", "failures", "not-run", "inconclusive", "ignored", "skipped", "invalid"]) {
+    const attributes = new Map([
+      ["total", "5"],
+      ["errors", "1"],
+      ["failures", "1"],
+      ["not-run", "2"],
+      ["inconclusive", "1"],
+      ["ignored", "1"],
+      ["skipped", "0"],
+      ["invalid", "0"],
+    ]);
+    attributes.delete(attribute);
+    const renderedAttributes = Array.from(attributes, ([key, value]) => `${key}="${value}"`).join(" ");
+    assert.equal(
+      parseTestReportSummary(
+        createTarget("unknown"),
+        `<test-results ${renderedAttributes}></test-results>`,
+        "Test Summary: 5 passed, 5 total",
       ),
       undefined,
     );

@@ -105,6 +105,17 @@ Current files:
 
 ## Latest Work
 
+Extended captured NUnit XML report parsing to NUnit 2:
+
+- The `source=nunit-xml` parser now also recognizes bounded already-captured whole-object NUnit 2 XML reporter output rooted at `<test-results>`, validates strict root aggregate `total`, `errors`, `failures`, `not-run`, `inconclusive`, `ignored`, `skipped`, and `invalid` attributes, maps `failed = errors + failures`, maps `skipped = not-run`, derives passed from the remaining total, and requires the not-run component counts to agree.
+- Existing NUnit 3 `<test-run>` XML behavior is preserved. Malformed NUnit 2-shaped XML, including not-run component mismatches, malformed numeric attributes, impossible totals, or incomplete whole-root XML, is treated as invalid structured report data and does not fall through to looser text summaries.
+- This slice does not add reporter flags, report files, installs, invocation changes, network calls, subprocess shape changes, model-tool exposure changes, or broader wrapper/custom-reporter support.
+- README, release notes, command memory, architecture/tooling notes, backlog, and integration handoff already document the broader NUnit XML captured-output surface; backlog and handoff now specify NUnit 2/3 coverage.
+- Verification: focused source `node --import tsx --test src/testing/test-adapters.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`, full `npm test` with 543 tests, `npm run verify:release`, and independent verifier `019f1eb6-1cd4-7bb1-bfa7-456607ab2499` passed. The verifier also ran focused source and built tests, typecheck, diff-check, and direct parser probes; missing required NUnit 2 root attributes now have explicit regression coverage.
+- Next likely work after this slice remains another bounded optional completion slice such as LSP/SCIP diagnostics/references, semantic tree-sitter refs/dependency depth, additional non-JSON/custom reporter parsing, Sourcegraph/GitHub read-only profiles, or scanner adapters/additional Trivy modes only after deterministic no-network/no-auth local command shapes are proven.
+
+Previous latest work:
+
 Added captured NUnit XML report parsing:
 
 - The test report parser now recognizes bounded already-captured whole-object NUnit 3 XML reporter output rooted at `<test-run>`, validates strict root aggregate `total`, `passed`, `failed`, optional `warnings`, optional `inconclusive`, optional `skipped`, optional `testcasecount`, and optional seconds `duration` attributes, then renders compact `source=nunit-xml` counts in `orx tests run`, `/tests run`, and model-visible `run_tests` summaries.
