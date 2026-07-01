@@ -597,6 +597,95 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "3 tests completed, 1 failed, 1 skipped"),
+    {
+      framework: "unknown",
+      source: "gradle",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "1 test completed, 0 failed"),
+    {
+      framework: "unknown",
+      source: "gradle",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "2 tests completed, 0 failed"),
+    {
+      framework: "node",
+      source: "gradle",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 test completed, 0 failed",
+        "2 tests completed, 1 failed",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "gradle",
+      total: 2,
+      passed: 1,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 tests completed, 3 failed"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 tests completed, 0 failed, 3 skipped"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 tests completed, 0 failed after cleanup"), undefined);
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 test completed, 0 failed",
+        "2 tests completed, 0 failed after cleanup",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "2 tests completed, 3 failed",
+        "Tests: 2 failed, 2 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "2 tests completed, 3 failed",
+        "ℹ tests 2",
+        "ℹ fail 2",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
     parseTestReportSummary(
       createTarget("unknown"),
       [
