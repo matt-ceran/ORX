@@ -105,6 +105,17 @@ Current files:
 
 ## Latest Work
 
+Added captured RSpec JSON report parsing:
+
+- The test report parser now recognizes bounded already-captured whole-object RSpec JSON reporter output with `summary.example_count`, `summary.failure_count`, `summary.pending_count`, optional numeric `summary.errors_outside_of_examples_count`, numeric seconds `summary.duration`, and matching `examples[].status` values, then renders compact `source=rspec-json` counts in `orx tests run`, `/tests run`, and model-visible `run_tests` summaries.
+- Outside-example RSpec errors are counted as additional failures and additional total tests. Malformed RSpec-shaped JSON, including invalid present outside-error counts or missing/mismatched example statuses, is treated as invalid structured report data and does not fall through to looser text summaries.
+- This slice does not add reporter flags, report files, installs, invocation changes, network calls, subprocess shape changes, model-tool exposure changes, or broader wrapper/custom-reporter support.
+- README, release notes, command memory, architecture/tooling notes, backlog, and integration handoff now document RSpec JSON parsing as already-captured output only.
+- Verification: focused source `node --import tsx --test src/testing/test-adapters.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`, direct malformed/valid outside-error probes, and independent verifier `019f1e9b-7b56-7430-bead-3bd990722f86` recheck passed.
+- Next likely work after this slice remains another bounded optional completion slice such as LSP/SCIP diagnostics/references, semantic tree-sitter refs/dependency depth, additional non-JSON/custom reporter parsing, Sourcegraph/GitHub read-only profiles, or scanner adapters/additional Trivy modes only after deterministic no-network/no-auth local command shapes are proven.
+
+Previous latest work:
+
 Added captured Mocha JSON report parsing:
 
 - The test report parser now recognizes bounded already-captured whole-object Mocha JSON reporter output with consistent `stats.tests`, `stats.passes`, `stats.failures`, `stats.pending`, matching top-level `tests`/`passes`/`failures`/`pending` arrays, optional `stats.suites`, and optional `stats.duration`, then renders compact `source=mocha-json` counts in `orx tests run`, `/tests run`, and model-visible `run_tests` summaries.

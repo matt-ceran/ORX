@@ -3888,6 +3888,21 @@ test("parses structured framework JSON reports before stdout fallback", () => {
     failures: [{ title: "fails" }],
     pending: [{ title: "pending" }],
   });
+  const rspecJson = JSON.stringify({
+    summary: {
+      duration: 0.123,
+      example_count: 4,
+      failure_count: 1,
+      pending_count: 1,
+      errors_outside_of_examples_count: 0,
+    },
+    examples: [
+      { description: "passes", status: "passed" },
+      { description: "also passes", status: "passed" },
+      { description: "fails", status: "failed" },
+      { description: "is pending", status: "pending" },
+    ],
+  });
 
   assert.deepEqual(
     parseTestReportSummary(createTarget("jest"), jestJson, "Tests: 99 passed, 99 total"),
@@ -4000,6 +4015,95 @@ test("parses structured framework JSON reports before stdout fallback", () => {
     ),
     undefined,
   );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), rspecJson, "Test Summary: 99 passed, 99 total"),
+    {
+      framework: "unknown",
+      source: "rspec-json",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+      durationMs: 123,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), rspecJson),
+    {
+      framework: "node",
+      source: "rspec-json",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+      durationMs: 123,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      JSON.stringify({
+        summary: {
+          duration: 0.123,
+          example_count: 1,
+          failure_count: 0,
+          pending_count: 0,
+          errors_outside_of_examples_count: 1,
+        },
+        examples: [{ status: "passed" }],
+      }),
+      "Test Summary: 2 passed, 2 total",
+    ),
+    {
+      framework: "unknown",
+      source: "rspec-json",
+      total: 2,
+      passed: 1,
+      failed: 1,
+      skipped: 0,
+      durationMs: 123,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      JSON.stringify({
+        summary: {
+          duration: 0.123,
+          example_count: 1,
+          failure_count: 0,
+          pending_count: 0,
+          errors_outside_of_examples_count: 0,
+        },
+        examples: [{ description: "no status" }],
+      }),
+    ),
+    undefined,
+  );
+
+  for (const errorsOutsideOfExamplesCount of ["1", -1, 1.5]) {
+    assert.equal(
+      parseTestReportSummary(
+        createTarget("unknown"),
+        JSON.stringify({
+          summary: {
+            duration: 0.123,
+            example_count: 1,
+            failure_count: 0,
+            pending_count: 0,
+            errors_outside_of_examples_count: errorsOutsideOfExamplesCount,
+          },
+          examples: [{ status: "passed" }],
+        }),
+        "Test Summary: 2 passed, 2 total",
+      ),
+      undefined,
+    );
+  }
 
   assert.deepEqual(
     parseTestReportSummary(createTarget("unknown"), jestJson),

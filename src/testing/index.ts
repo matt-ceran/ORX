@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "teamcity" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json" | "mocha-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "teamcity" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json" | "mocha-json" | "rspec-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -409,9 +409,15 @@ export function parseTestReportSummary(
   }
 
   const text = limitReportText(`${stdout}\n${stderr}`);
-  const jsonReport =
-    parseFrameworkJsonReportSummary(limitReportText(stdout), target.framework) ??
-    parseFrameworkJsonReportSummary(limitReportText(stderr), target.framework);
+  const stdoutJsonReport = parseFrameworkJsonReportSummary(limitReportText(stdout), target.framework);
+  if (stdoutJsonReport === INVALID_TEST_REPORT) {
+    return undefined;
+  }
+  const stderrJsonReport = parseFrameworkJsonReportSummary(limitReportText(stderr), target.framework);
+  if (stderrJsonReport === INVALID_TEST_REPORT) {
+    return undefined;
+  }
+  const jsonReport = stdoutJsonReport ?? stderrJsonReport;
   if (jsonReport && hasReportCounts(jsonReport)) {
     return jsonReport;
   }
@@ -450,7 +456,8 @@ export function parseStructuredTestReportSummary(
     return parseNodeJunitReportSummary(limitReportText(reportText), target.framework);
   }
   if (target.kind === "package-script" && isFrameworkJsonReportTarget(target)) {
-    return parseFrameworkJsonReportSummary(limitReportText(reportText), target.framework);
+    const report = parseFrameworkJsonReportSummary(limitReportText(reportText), target.framework);
+    return report === INVALID_TEST_REPORT ? undefined : report;
   }
   return undefined;
 }
@@ -815,7 +822,10 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     : [...crossFrameworkParsers, parsers[framework], parseTapReportSummary, parseCypressReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDartReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoJsonReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseTastyReportSummary, parseZigReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
 }
 
-function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
+function parseFrameworkJsonReportSummary(
+  text: string,
+  framework: TestFramework,
+): TestReportSummary | InvalidTestReport | undefined {
   const value = parseJsonObjectReport(text);
   if (!value) {
     return undefined;
@@ -823,22 +833,27 @@ function parseFrameworkJsonReportSummary(text: string, framework: TestFramework)
 
   if (framework === "jest") {
     return parseJestLikeJsonReportSummary(value, framework, "jest-json") ??
-      parseMochaJsonReportSummary(value, framework);
+      parseMochaJsonReportSummary(value, framework) ??
+      parseRspecJsonReportSummary(value, framework);
   }
   if (framework === "vitest") {
     return parseJestLikeJsonReportSummary(value, framework, "vitest-json") ??
-      parseMochaJsonReportSummary(value, framework);
+      parseMochaJsonReportSummary(value, framework) ??
+      parseRspecJsonReportSummary(value, framework);
   }
   if (framework === "playwright") {
     return parsePlaywrightJsonReportSummary(value, framework) ??
-      parseMochaJsonReportSummary(value, framework);
+      parseMochaJsonReportSummary(value, framework) ??
+      parseRspecJsonReportSummary(value, framework);
   }
   if (framework === "unknown") {
     return parseJestLikeJsonReportSummary(value, framework, "jest-json") ??
       parsePlaywrightJsonReportSummary(value, framework) ??
-      parseMochaJsonReportSummary(value, framework);
+      parseMochaJsonReportSummary(value, framework) ??
+      parseRspecJsonReportSummary(value, framework);
   }
-  return parseMochaJsonReportSummary(value, framework);
+  return parseMochaJsonReportSummary(value, framework) ??
+    parseRspecJsonReportSummary(value, framework);
 }
 
 function parseJsonObjectReport(text: string): Record<string, unknown> | undefined {
@@ -964,6 +979,85 @@ function jsonArrayLength(value: Record<string, unknown>, key: string): number | 
   return Array.isArray(raw) ? raw.length : undefined;
 }
 
+function parseRspecJsonReportSummary(
+  value: Record<string, unknown>,
+  framework: TestFramework,
+): TestReportSummary | InvalidTestReport | undefined {
+  const summary = value.summary;
+  const examples = value.examples;
+  if (!isPlainObject(summary) || !Array.isArray(examples)) {
+    return summary === undefined && examples === undefined ? undefined : INVALID_TEST_REPORT;
+  }
+
+  const exampleTotal = jsonCountNumber(summary, "example_count");
+  const failedExamples = jsonCountNumber(summary, "failure_count");
+  const skipped = jsonCountNumber(summary, "pending_count");
+  const outsideErrorCount = summary.errors_outside_of_examples_count;
+  const errorsOutsideExamples =
+    outsideErrorCount === undefined ? 0 : jsonCountNumber(summary, "errors_outside_of_examples_count");
+  if (exampleTotal === undefined || failedExamples === undefined || skipped === undefined) {
+    return INVALID_TEST_REPORT;
+  }
+  if (errorsOutsideExamples === undefined) {
+    return INVALID_TEST_REPORT;
+  }
+  if (failedExamples + skipped > exampleTotal || examples.length !== exampleTotal) {
+    return INVALID_TEST_REPORT;
+  }
+
+  const exampleCounts = countRspecJsonExampleStatuses(examples);
+  if (!exampleCounts) {
+    return INVALID_TEST_REPORT;
+  }
+  const passed = exampleTotal - failedExamples - skipped;
+  if (exampleCounts.passed !== passed || exampleCounts.failed !== failedExamples || exampleCounts.skipped !== skipped) {
+    return INVALID_TEST_REPORT;
+  }
+  const failed = failedExamples + errorsOutsideExamples;
+  const total = exampleTotal + errorsOutsideExamples;
+
+  const report: TestReportSummary = {
+    framework,
+    source: "rspec-json",
+  };
+  assignNumber(report, "total", total);
+  assignNumber(report, "passed", passed);
+  assignNumber(report, "failed", failed);
+  assignNumber(report, "skipped", skipped);
+  assignNumber(report, "durationMs", jsonSecondsDurationMs(summary, "duration"));
+  return hasReportCounts(report) ? report : undefined;
+}
+
+function countRspecJsonExampleStatuses(
+  examples: unknown[],
+): { passed: number; failed: number; skipped: number } | undefined {
+  const counts = {
+    passed: 0,
+    failed: 0,
+    skipped: 0,
+  };
+  for (const example of examples) {
+    if (!isPlainObject(example) || typeof example.status !== "string") {
+      return undefined;
+    }
+    const status = example.status.toLowerCase();
+    if (status === "passed") {
+      counts.passed += 1;
+      continue;
+    }
+    if (status === "failed") {
+      counts.failed += 1;
+      continue;
+    }
+    if (status === "pending") {
+      counts.skipped += 1;
+      continue;
+    }
+    return undefined;
+  }
+  return counts;
+}
+
 function jsonCountNumber(value: Record<string, unknown>, key: string): number | undefined {
   const raw = value[key];
   if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0 || !Number.isInteger(raw)) {
@@ -978,6 +1072,13 @@ function jsonDurationNumber(value: Record<string, unknown>, key: string): number
     return undefined;
   }
   return raw;
+}
+
+function jsonSecondsDurationMs(value: Record<string, unknown>, key: string): number | undefined {
+  const raw = value[key];
+  return typeof raw === "number" && Number.isFinite(raw) && raw >= 0
+    ? parseSecondsDurationMs(String(raw))
+    : undefined;
 }
 
 function parseNodeReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
