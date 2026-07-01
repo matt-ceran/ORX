@@ -68,7 +68,9 @@ orx code symbols
 orx code calls
 orx code outline src/cli.ts
 orx scanners list
+orx scanners list --json
 orx scanners inspect semgrep
+orx scanners inspect semgrep --json
 orx diagnostics list
 orx diagnostics list --json
 orx diagnostics inspect typescript

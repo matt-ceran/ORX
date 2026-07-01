@@ -232,10 +232,14 @@ import {
   SCAN_USAGE,
   SCANNERS_USAGE,
   findScannerProfile,
+  parseScannerReadinessJsonFlag,
   parseScannerRunArgs,
   renderMissingScannerProfile,
+  renderScannerInspectUsage,
   renderScannerProfileInspect,
+  renderScannerProfileInspectJson,
   renderScannerProfiles,
+  renderScannerProfilesJson,
   renderScannerRunResult,
   runSemgrepScanner,
   type ScannerProcessRunner,
@@ -1198,7 +1202,8 @@ function runCodeTreeSitterCommand(
 }
 
 async function runScannersCommand(args: string[], io: CliIo, env: NodeJS.ProcessEnv): Promise<number> {
-  const subcommand = args[0]?.toLowerCase() ?? "list";
+  const firstArg = args[0]?.toLowerCase();
+  const subcommand = firstArg === "--json" ? "list" : firstArg ?? "list";
 
   if (isNamespaceHelp(args)) {
     writeLine(io.stdout, SCANNERS_USAGE);
@@ -1206,14 +1211,23 @@ async function runScannersCommand(args: string[], io: CliIo, env: NodeJS.Process
   }
 
   if (subcommand === "list" || subcommand === "status") {
-    writeLine(io.stdout, renderScannerProfiles());
+    const jsonFlag = parseScannerReadinessJsonFlag(
+      firstArg === "list" || firstArg === "status" ? args.slice(1) : args,
+      SCANNERS_USAGE,
+    );
+    if (!jsonFlag.ok) {
+      writeLine(io.stderr, jsonFlag.message);
+      return 1;
+    }
+    writeLine(io.stdout, jsonFlag.json ? renderScannerProfilesJson() : renderScannerProfiles());
     return 0;
   }
 
   if (subcommand === "inspect" || subcommand === "show") {
     const profileId = args[1];
-    if (!profileId || args.length !== 2) {
-      writeLine(io.stderr, "Usage: orx scanners inspect <profile>");
+    const jsonFlag = parseScannerReadinessJsonFlag(args.slice(2), SCANNERS_USAGE);
+    if (!profileId || !jsonFlag.ok) {
+      writeLine(io.stderr, renderScannerInspectUsage(SCANNERS_USAGE));
       return 1;
     }
     const profile = findScannerProfile(profileId);
@@ -1221,7 +1235,10 @@ async function runScannersCommand(args: string[], io: CliIo, env: NodeJS.Process
       writeLine(io.stderr, renderMissingScannerProfile(profileId));
       return 1;
     }
-    writeLine(io.stdout, renderScannerProfileInspect(profile));
+    writeLine(
+      io.stdout,
+      jsonFlag.json ? renderScannerProfileInspectJson(profile) : renderScannerProfileInspect(profile),
+    );
     return 0;
   }
 

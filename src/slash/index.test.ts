@@ -128,7 +128,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/tests \[list\|run <target-id>\]/);
   assert.match(output, /\/code \[map\|symbols\|refs\|imports\|calls\|ast-grep\|tree-sitter\|outline\]/);
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
-  assert.match(output, /\/scanners \[list\|inspect <profile>\|run semgrep <path> --config <local-config-path> \[--json\]\]/);
+  assert.match(output, /\/scanners \[list \[--json\]\|inspect <profile> \[--json\]\|run semgrep <path> --config <local-config-path> \[--json\]\]/);
   assert.match(output, /\/scan semgrep <path> --config <local-config-path> \[--json\]/);
   assert.match(output, /\/diagnostics \[list \[--json\]\|inspect <profile> \[--json\]\|run <typescript\|pyright\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
   assert.match(output, /\/symbols \[query\]/);
@@ -323,8 +323,13 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/tree-sitter i"), [["imports "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/tree-sitter r"), [["refs ", "repo-outline ", "repo-refs ", "repo-calls ", "repo-imports ", "repo-deps "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/tree-sitter c"), [["calls "], "c"]);
+  assert.deepEqual(completeSlashCommandLine("/scanners --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/scanners s"), [["status ", "show "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/scanners r"), [["run "], "r"]);
+  assert.deepEqual(completeSlashCommandLine("/scanners list --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/scanners status --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/scanners inspect s"), [["semgrep ", "snyk ", "socket "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/scanners show semgrep --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/scanners run s"), [["semgrep "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/scanners run semgrep src --c"), [["--config "], "--c"]);
   assert.deepEqual(completeSlashCommandLine("/scan s"), [["semgrep "], "s"]);
@@ -664,14 +669,37 @@ test("scanner slash commands list, inspect, and run Semgrep with a mocked local 
     assert.match(list.stdout(), /id=semgrep state=runnable/);
     assert.match(list.stdout(), /id=trivy state=catalog_only/);
 
+    const listJson = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/scanners --json", listJson.context), "continue");
+    const profileReport = JSON.parse(listJson.stdout());
+    assert.equal(profileReport.surface, "orx.security_scanner_profiles");
+    assert.equal(profileReport.model_tool, "not_exposed");
+    assert.equal(profileReport.network, "none_for_list_or_inspect");
+    const profileEntries = profileReport.profiles as Array<{ id: string; state: string }>;
+    assert.equal(profileEntries.find((profile) => profile.id === "semgrep")?.state, "runnable");
+    assert.equal(profileEntries.find((profile) => profile.id === "trivy")?.state, "catalog_only");
+    assert.equal(listJson.stderr(), "");
+
     const inspect = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/scanners inspect semgrep", inspect.context), "continue");
     assert.match(inspect.stdout(), /Security scanner profile: semgrep/);
     assert.match(inspect.stdout(), /config_required: local file under cwd via --config/);
 
+    const inspectJson = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/scanners inspect semgrep --json", inspectJson.context), "continue");
+    const inspectReport = JSON.parse(inspectJson.stdout());
+    assert.equal(inspectReport.surface, "orx.security_scanner_profile");
+    assert.equal(inspectReport.profile.id, "semgrep");
+    assert.equal(inspectReport.profile.details.config_required, "local file under cwd via --config");
+    assert.equal(inspectJson.stderr(), "");
+
     const inspectCatalogOnly = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/scanners inspect snyk", inspectCatalogOnly.context), "continue");
     assert.match(inspectCatalogOnly.stdout(), /state: catalog_only/);
+
+    const listExtra = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/scanners list extra", listExtra.context), "continue");
+    assert.match(listExtra.stderr(), /^Usage: \/scanners/);
 
     const semgrepCalls: RunProcessOptions[] = [];
     const scannerRunner: ScannerProcessRunner = async (options) => {

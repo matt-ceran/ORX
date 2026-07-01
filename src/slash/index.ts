@@ -288,10 +288,14 @@ import {
   SLASH_SCAN_USAGE,
   SLASH_SCANNERS_USAGE,
   findScannerProfile,
+  parseScannerReadinessJsonFlag,
   parseScannerRunArgText,
   renderMissingScannerProfile,
+  renderScannerInspectUsage,
   renderScannerProfileInspect,
+  renderScannerProfileInspectJson,
   renderScannerProfiles,
+  renderScannerProfilesJson,
   renderScannerRunResult,
   runSemgrepScanner,
   type ScannerProcessRunner,
@@ -563,9 +567,10 @@ const HOOK_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "trust", "untr
 const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
 const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls", "ast-grep", "tree-sitter", "outline"] as const;
 const TREE_SITTER_MODE_COMPLETIONS = ["parse", "outline", "imports", "refs", "calls", "repo-outline", "repo-refs", "repo-calls", "repo-imports", "repo-deps"] as const;
-const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "inspect", "run"] as const;
+const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "run"] as const;
 const SCANNER_PROFILE_COMPLETIONS = ["semgrep", "snyk", "socket", "osv-scanner", "codeql", "trivy"] as const;
 const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep"] as const;
+const SCANNER_READINESS_OPTION_COMPLETIONS = ["--json"] as const;
 const SCANNER_RUN_OPTION_COMPLETIONS = ["--config", "--json"] as const;
 const DIAGNOSTICS_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "run"] as const;
 const DIAGNOSTIC_PROFILE_COMPLETIONS = [
@@ -1952,10 +1957,16 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       return argIndex === 0 ? [...TREE_SITTER_MODE_COMPLETIONS] : [];
     case "/scanners":
       if (argIndex === 0) {
-        return [...SCANNER_SUBCOMMAND_COMPLETIONS];
+        return [...SCANNER_SUBCOMMAND_COMPLETIONS, ...SCANNER_READINESS_OPTION_COMPLETIONS];
       }
-      if (firstArg === "inspect" && argIndex === 1) {
+      if ((firstArg === "list" || firstArg === "status") && argIndex === 1) {
+        return [...SCANNER_READINESS_OPTION_COMPLETIONS];
+      }
+      if ((firstArg === "inspect" || firstArg === "show") && argIndex === 1) {
         return [...SCANNER_PROFILE_COMPLETIONS];
+      }
+      if ((firstArg === "inspect" || firstArg === "show") && argIndex === 2) {
+        return [...SCANNER_READINESS_OPTION_COMPLETIONS];
       }
       if (firstArg === "run" && argIndex === 1) {
         return [...RUNNABLE_SCANNER_PROFILE_COMPLETIONS];
@@ -2511,17 +2522,27 @@ function handleTreeSitterCommandText(
 }
 
 async function handleScannersCommand(command: SlashCommand, context: SlashCommandContext): Promise<void> {
-  const subcommand = command.args[0]?.toLowerCase() ?? "list";
+  const firstArg = command.args[0]?.toLowerCase();
+  const subcommand = firstArg === "--json" ? "list" : firstArg ?? "list";
 
   if (subcommand === "list" || subcommand === "status") {
-    writeLine(context.io.stdout, renderScannerProfiles());
+    const jsonFlag = parseScannerReadinessJsonFlag(
+      firstArg === "list" || firstArg === "status" ? command.args.slice(1) : command.args,
+      SLASH_SCANNERS_USAGE,
+    );
+    if (!jsonFlag.ok) {
+      writeLine(context.io.stderr, jsonFlag.message);
+      return;
+    }
+    writeLine(context.io.stdout, jsonFlag.json ? renderScannerProfilesJson() : renderScannerProfiles());
     return;
   }
 
   if (subcommand === "inspect" || subcommand === "show") {
     const profileId = command.args[1];
-    if (!profileId || command.args.length !== 2) {
-      writeLine(context.io.stderr, "Usage: /scanners inspect <profile>");
+    const jsonFlag = parseScannerReadinessJsonFlag(command.args.slice(2), SLASH_SCANNERS_USAGE);
+    if (!profileId || !jsonFlag.ok) {
+      writeLine(context.io.stderr, renderScannerInspectUsage(SLASH_SCANNERS_USAGE));
       return;
     }
     const profile = findScannerProfile(profileId);
@@ -2529,7 +2550,10 @@ async function handleScannersCommand(command: SlashCommand, context: SlashComman
       writeLine(context.io.stderr, renderMissingScannerProfile(profileId));
       return;
     }
-    writeLine(context.io.stdout, renderScannerProfileInspect(profile));
+    writeLine(
+      context.io.stdout,
+      jsonFlag.json ? renderScannerProfileInspectJson(profile) : renderScannerProfileInspect(profile),
+    );
     return;
   }
 

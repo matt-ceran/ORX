@@ -5,11 +5,11 @@ import { runProcess, type RunProcessOptions, type RunProcessResult } from "../to
 import type { TextTruncation } from "../tools/types.js";
 
 export const SCANNERS_USAGE =
-  "Usage: orx scanners [list|inspect <profile>|run semgrep <path> --config <local-config-path> [--json]]";
+  "Usage: orx scanners [list [--json]|inspect <profile> [--json]|run semgrep <path> --config <local-config-path> [--json]]";
 export const SCAN_USAGE =
   "Usage: orx scan semgrep <path> --config <local-config-path> [--json]";
 export const SLASH_SCANNERS_USAGE =
-  "Usage: /scanners [list|inspect <profile>|run semgrep <path> --config <local-config-path> [--json]]";
+  "Usage: /scanners [list [--json]|inspect <profile> [--json]|run semgrep <path> --config <local-config-path> [--json]]";
 export const SLASH_SCAN_USAGE =
   "Usage: /scan semgrep <path> --config <local-config-path> [--json]";
 
@@ -198,6 +198,46 @@ export function renderScannerProfiles(profiles = listScannerProfiles()): string 
   return lines.join("\n");
 }
 
+export function renderScannerProfilesJson(profiles = listScannerProfiles()): string {
+  return JSON.stringify({
+    schema_version: 1,
+    surface: "orx.security_scanner_profiles",
+    operator_only: true,
+    model_tool: "not_exposed",
+    execution: "explicit_operator_only",
+    network: "none_for_list_or_inspect",
+    profiles: profiles.map(scannerProfileJson),
+  }, null, 2);
+}
+
+function scannerProfileJson(profile: ScannerProfile): Record<string, unknown> {
+  return {
+    id: profile.id,
+    label: profile.label,
+    state: profile.state,
+    binary: profile.binary,
+    summary: profile.summary,
+    run_support: profile.runSupport,
+    install_behavior: "not_managed_by_orx",
+    network_boundary: profile.networkBoundary,
+    execution: "explicit_operator_only",
+    model_tool: "not_exposed",
+    details: scannerProfileJsonDetails(profile),
+  };
+}
+
+function scannerProfileJsonDetails(profile: ScannerProfile): Record<string, string> | undefined {
+  if (profile.id === "semgrep") {
+    return {
+      config_required: "local file under cwd via --config",
+      rejected_configs: "URLs, registry configs such as auto or p/default, dash-prefixed values, symlink escapes, secrets, and control characters",
+      output: "bounded and redacted; run --json passes redacted bounded Semgrep stdout only on success",
+      run: "orx scanners run semgrep <path> --config <local-config-path> [--json]",
+    };
+  }
+  return undefined;
+}
+
 export function renderScannerProfileInspect(profile: ScannerProfile): string {
   const lines = [
     `Security scanner profile: ${profile.id}`,
@@ -224,8 +264,40 @@ export function renderScannerProfileInspect(profile: ScannerProfile): string {
   return lines.join("\n");
 }
 
+export function renderScannerProfileInspectJson(profile: ScannerProfile): string {
+  return JSON.stringify({
+    schema_version: 1,
+    surface: "orx.security_scanner_profile",
+    profile: scannerProfileJson(profile),
+  }, null, 2);
+}
+
 export function renderMissingScannerProfile(profileId: string): string {
   return `Unknown scanner profile: ${sanitizeInline(profileId)}. Available profiles: ${SCANNER_PROFILES.map((profile) => profile.id).join(", ")}.`;
+}
+
+export function renderScannerInspectUsage(usage: string): string {
+  return usage.replace(
+    /\[list(?: \[--json\])?\|inspect <profile>(?: \[--json\])?\|run .+$/,
+    "inspect <profile> [--json]",
+  );
+}
+
+export function parseScannerReadinessJsonFlag(
+  args: string[],
+  usage: string,
+): { ok: true; json: boolean } | { ok: false; message: string } {
+  if (args.length === 0) {
+    return { ok: true, json: false };
+  }
+  if (args.length === 1 && args[0] === "--json") {
+    return { ok: true, json: true };
+  }
+  const option = args.find((arg) => arg.startsWith("-"));
+  if (option) {
+    return { ok: false, message: `${usage}\nUnknown scanner option: ${sanitizeInline(option)}` };
+  }
+  return { ok: false, message: usage };
 }
 
 export function parseScannerRunArgs(

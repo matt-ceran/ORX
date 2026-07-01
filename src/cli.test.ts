@@ -1808,14 +1808,37 @@ test("cli scanner commands list, inspect, and run semgrep with a mocked local bi
     assert.match(list.stdout(), /id=semgrep state=runnable/);
     assert.match(list.stdout(), /id=snyk state=catalog_only/);
 
+    const listJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "scanners", "--json"], {}, listJson.io), 0);
+    const profileReport = JSON.parse(listJson.stdout());
+    assert.equal(profileReport.surface, "orx.security_scanner_profiles");
+    assert.equal(profileReport.model_tool, "not_exposed");
+    assert.equal(profileReport.network, "none_for_list_or_inspect");
+    const profileEntries = profileReport.profiles as Array<{ id: string; state: string }>;
+    assert.equal(profileEntries.find((profile) => profile.id === "semgrep")?.state, "runnable");
+    assert.equal(profileEntries.find((profile) => profile.id === "trivy")?.state, "catalog_only");
+    assert.equal(listJson.stderr(), "");
+
     const inspect = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "scanners", "inspect", "semgrep"], {}, inspect.io), 0);
     assert.match(inspect.stdout(), /Security scanner profile: semgrep/);
     assert.match(inspect.stdout(), /config_required: local file under cwd via --config/);
 
+    const inspectJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "scanners", "inspect", "semgrep", "--json"], {}, inspectJson.io), 0);
+    const inspectReport = JSON.parse(inspectJson.stdout());
+    assert.equal(inspectReport.surface, "orx.security_scanner_profile");
+    assert.equal(inspectReport.profile.id, "semgrep");
+    assert.equal(inspectReport.profile.details.config_required, "local file under cwd via --config");
+    assert.equal(inspectJson.stderr(), "");
+
     const inspectCatalogOnly = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "scanners", "inspect", "trivy"], {}, inspectCatalogOnly.io), 0);
     assert.match(inspectCatalogOnly.stdout(), /state: catalog_only/);
+
+    const listExtra = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "scanners", "list", "extra"], {}, listExtra.io), 1);
+    assert.match(listExtra.stderr(), /^Usage: orx scanners/);
 
     const semgrepCalls: Array<Parameters<ScannerProcessRunner>[0]> = [];
     const scannerRunner: ScannerProcessRunner = async (options) => {

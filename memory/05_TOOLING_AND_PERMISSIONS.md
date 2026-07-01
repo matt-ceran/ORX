@@ -99,10 +99,10 @@ The code-map adapter is local-only, no-key, and not model-autonomous. It reads b
 Implemented under `src/security/`:
 
 - scanner profile catalog for Semgrep, Snyk, Socket, OSV-Scanner, CodeQL, and Trivy
-- explicit operator commands `orx scanners list`, `orx scanners inspect <profile>`, `orx scanners run semgrep <path> --config <local-config-path> [--json]`, `orx scan semgrep ...`, `/scanners ...`, and `/scan ...`
+- explicit operator commands `orx scanners list [--json]`, `orx scanners inspect <profile> [--json]`, `orx scanners run semgrep <path> --config <local-config-path> [--json]`, `orx scan semgrep ...`, `/scanners ...`, and `/scan ...`
 - runnable Semgrep adapter only when a local `semgrep` binary is already installed and an explicit local config file under cwd is provided
 
-The scanner adapter is local-only, no-key, and not model-autonomous. ORX never installs Semgrep, never uses Semgrep registry/URL configs, never forwards ORX/OpenRouter/Brave/API token-like env values, and never exposes scanners as model tools. Semgrep runs use shell-disabled process execution, `--metrics off`, cwd-confined target/config path guards with symlink realpath checks, dash-prefixed operand rejection, secret/control-character argument rejection, and bounded/redacted stdout/stderr. Snyk, Socket, OSV-Scanner, CodeQL, and Trivy remain catalog/readiness-only until a no-network/no-auth local command shape is proven.
+The scanner adapter is local-only, no-key, and not model-autonomous. ORX never installs Semgrep, never uses Semgrep registry/URL configs, never forwards ORX/OpenRouter/Brave/API token-like env values, and never exposes scanners as model tools. List/status and inspect/show readiness surfaces can render ORX-owned structured JSON without process execution or binary probing. Semgrep runs use shell-disabled process execution, `--metrics off`, cwd-confined target/config path guards with symlink realpath checks, dash-prefixed operand rejection, secret/control-character argument rejection, and bounded/redacted stdout/stderr. Snyk, Socket, OSV-Scanner, CodeQL, and Trivy remain catalog/readiness-only until a no-network/no-auth local command shape is proven.
 
 Implemented under `src/diagnostics/`:
 
