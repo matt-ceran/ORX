@@ -343,6 +343,7 @@ test("MCP provider presets install local user catalog profiles", () => {
     assert.match(rendered, /id=context7/);
     assert.match(rendered, /id=figma/);
     assert.match(rendered, /id=github-readonly/);
+    assert.match(rendered, /id=github-write/);
     assert.match(rendered, /id=gitlab-readonly/);
     assert.match(rendered, /id=microsoft-learn/);
     assert.match(rendered, /id=sentry-readonly/);
@@ -445,6 +446,24 @@ test("MCP provider presets install local user catalog profiles", () => {
     assert.equal(gitlabProfile.riskLevel, "medium");
     assert.equal(gitlabProfile.writeCapable, false);
     assert.equal(gitlabProfile.tools.length, 0);
+
+    const githubWriteResult = installMcpProviderPreset("github-write", {
+      profileCatalogPath,
+    });
+    assert.equal(githubWriteResult.ok, true);
+    assert.equal(githubWriteResult.profileId, "user:github-write");
+    assert.equal(githubWriteResult.toolCount, 0);
+
+    const loadedWithGithubWrite = loadUserMcpProfileCatalog({ profileCatalogPath });
+    const githubWriteProfile = loadedWithGithubWrite.profiles.find(
+      (profile) => profile.id === "user:github-write",
+    );
+    assert.ok(githubWriteProfile);
+    assert.equal(githubWriteProfile.transport.url, "https://api.githubcopilot.com/mcp/");
+    assert.equal(githubWriteProfile.authRequired, true);
+    assert.equal(githubWriteProfile.riskLevel, "high");
+    assert.equal(githubWriteProfile.writeCapable, true);
+    assert.equal(githubWriteProfile.tools.length, 0);
 
     const unknown = installMcpProviderPreset("missing", { profileCatalogPath });
     assert.equal(unknown.ok, false);
@@ -2619,8 +2638,24 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
     const githubSetup = renderMcpProfileAuthSetup(githubReport);
 
     assert.match(githubSetup, /provider_auth: github/);
-    assert.match(githubSetup, /setup_url: https:\/\/docs\.github\.com\/en\/copilot\/how-tos\/provide-context\/use-mcp-in-your-ide\/extend-copilot-chat-with-mcp/);
+    assert.match(githubSetup, /setup_url: https:\/\/docs\.github\.com\/en\/copilot\/how-tos\/provide-context\/use-mcp-in-your-ide\/set-up-the-github-mcp-server/);
     assert.match(githubSetup, /scope_hint: approve only read-only repository scopes/);
+
+    assert.equal(installMcpProviderPreset("github-write", { profileCatalogPath }).ok, true);
+    const githubWriteReport = getMcpProfileAuthReport("user:github-write", {
+      cwd,
+      env,
+      profileCatalogPath,
+    });
+    assert.ok(githubWriteReport);
+    const githubWriteSetup = renderMcpProfileAuthSetup(githubWriteReport);
+
+    assert.match(githubWriteSetup, /provider_auth: github/);
+    assert.match(githubWriteSetup, /setup_url: https:\/\/docs\.github\.com\/en\/copilot\/how-tos\/provide-context\/use-mcp-in-your-ide\/set-up-the-github-mcp-server/);
+    assert.match(githubWriteSetup, /scope_hint: high-risk\/write-capable: approve only the repositories/);
+    assert.match(githubWriteSetup, /provider_warning: this profile is write-capable/);
+    assert.match(githubWriteSetup, /network_calls: none/);
+    assert.doesNotMatch(githubWriteSetup, /mcp-secret-token/);
 
     assert.equal(installMcpProviderPreset("sourcegraph-github-readonly", { profileCatalogPath }).ok, true);
     const sourcegraphReport = getMcpProfileAuthReport("user:sourcegraph-github-readonly", {

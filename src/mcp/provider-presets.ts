@@ -176,6 +176,19 @@ export const MCP_PROVIDER_PRESETS: McpProviderPreset[] = [
     tags: ["github", "repo", "read-only", "auth"],
   },
   {
+    id: "github-write",
+    name: "GitHub write-capable",
+    profileId: "github-write",
+    url: "https://api.githubcopilot.com/mcp/",
+    authRequired: true,
+    riskLevel: "high",
+    writeCapable: true,
+    tools: [],
+    notes:
+      "GitHub hosted MCP read/write endpoint. Auth is required; approve only intentionally scoped access and manually declare reviewed tools with the correct risk.",
+    tags: ["github", "repo", "issues", "pull-requests", "write-capable", "auth"],
+  },
+  {
     id: "gitlab-readonly",
     name: "GitLab read-only",
     profileId: "gitlab-readonly",

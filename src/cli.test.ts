@@ -3474,6 +3474,7 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(listed.stdout(), /id=context7/);
     assert.match(listed.stdout(), /id=figma/);
     assert.match(listed.stdout(), /id=github-readonly/);
+    assert.match(listed.stdout(), /id=github-write/);
     assert.match(listed.stdout(), /id=gitlab-readonly/);
     assert.match(listed.stdout(), /id=microsoft-learn/);
     assert.match(listed.stdout(), /id=sentry-readonly/);
@@ -3495,6 +3496,15 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(shorthandInspect.stdout(), /MCP Provider Preset: github-readonly/);
     assert.match(shorthandInspect.stdout(), /tools: none/);
     assert.match(shorthandInspect.stdout(), /remote_tool_review:/);
+
+    const githubWriteInspect = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "presets", "github-write"], env, githubWriteInspect.io), 0);
+    assert.match(githubWriteInspect.stdout(), /MCP Provider Preset: github-write/);
+    assert.match(githubWriteInspect.stdout(), /url: https:\/\/api\.githubcopilot\.com\/mcp\//);
+    assert.match(githubWriteInspect.stdout(), /risk_level: high/);
+    assert.match(githubWriteInspect.stdout(), /write_capable: yes/);
+    assert.match(githubWriteInspect.stdout(), /static_tools: 0/);
+    assert.match(githubWriteInspect.stdout(), /remote_tool_review:/);
 
     const sourcegraphInspect = createIo({ cwd });
     assert.equal(
@@ -3557,6 +3567,17 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(gitlabPlan.stdout(), /network_calls: none/);
     assert.match(gitlabPlan.stdout(), /data_state_writes: none/);
     assert.match(gitlabPlan.stdout(), /orx mcp add-preset gitlab-readonly/);
+
+    const githubWritePlan = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "plan", "github-write"], env, githubWritePlan.io), 0);
+    assert.match(githubWritePlan.stdout(), /MCP setup plan: github-write/);
+    assert.match(githubWritePlan.stdout(), /status: preset_available/);
+    assert.match(githubWritePlan.stdout(), /profile: user:github-write/);
+    assert.match(githubWritePlan.stdout(), /risk_level: high/);
+    assert.match(githubWritePlan.stdout(), /write_capable: yes/);
+    assert.match(githubWritePlan.stdout(), /network_calls: none/);
+    assert.match(githubWritePlan.stdout(), /data_state_writes: none/);
+    assert.match(githubWritePlan.stdout(), /orx mcp add-preset github-write/);
 
     const pluginList = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "catalog"], env, pluginList.io), 0);

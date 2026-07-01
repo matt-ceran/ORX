@@ -242,13 +242,18 @@ function getMcpProviderAuthGuidance(profile: McpProfile): McpProviderAuthGuidanc
     return {
       provider: "github",
       credentialSource:
-        "GitHub remote MCP uses provider OAuth; local stdio GitHub MCP commonly uses GITHUB_PERSONAL_ACCESS_TOKEN.",
+        "GitHub remote MCP uses provider OAuth or bearer/PAT material scoped to the approved GitHub access.",
       credentialLifetime: "provider managed",
-      scopeHint: "approve only read-only repository scopes for read-only ORX profiles",
+      scopeHint: profile.writeCapable
+        ? "high-risk/write-capable: approve only the repositories, organizations, and write scopes intentionally needed"
+        : "approve only read-only repository scopes for read-only ORX profiles",
       setupUrl:
-        "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/extend-copilot-chat-with-mcp",
+        "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/set-up-the-github-mcp-server",
       orxSupport:
         "remote OAuth must be completed with the provider; use ORX bearer env or Keychain only when you already have compatible bearer material",
+      warning: profile.writeCapable
+        ? "this profile is write-capable; ORX keeps write/destructive tools denied until explicit grants"
+        : undefined,
     };
   }
 
