@@ -3873,6 +3873,21 @@ test("parses structured framework JSON reports before stdout fallback", () => {
       duration: 4500,
     },
   });
+  const mochaJson = JSON.stringify({
+    stats: {
+      suites: 2,
+      tests: 4,
+      passes: 2,
+      failures: 1,
+      pending: 1,
+      duration: 37,
+    },
+    suites: [{ title: "root" }, { title: "nested" }],
+    tests: [{ title: "passes" }, { title: "also passes" }, { title: "fails" }, { title: "pending" }],
+    passes: [{ title: "passes" }, { title: "also passes" }],
+    failures: [{ title: "fails" }],
+    pending: [{ title: "pending" }],
+  });
 
   assert.deepEqual(
     parseTestReportSummary(createTarget("jest"), jestJson, "Tests: 99 passed, 99 total"),
@@ -3916,6 +3931,74 @@ test("parses structured framework JSON reports before stdout fallback", () => {
       flaky: 1,
       durationMs: 4500,
     },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), mochaJson, "Test Summary: 99 passed, 99 total"),
+    {
+      framework: "unknown",
+      source: "mocha-json",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+      suites: 2,
+      durationMs: 37,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("jest"), mochaJson),
+    {
+      framework: "jest",
+      source: "mocha-json",
+      total: 4,
+      passed: 2,
+      failed: 1,
+      skipped: 1,
+      suites: 2,
+      durationMs: 37,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      JSON.stringify({
+        stats: {
+          tests: 4,
+          passes: 4,
+          failures: 0,
+          pending: 1,
+        },
+        tests: [{}, {}, {}, {}],
+        passes: [{}, {}, {}, {}],
+        failures: [],
+        pending: [{}],
+      }),
+      "Test Summary: 2 passed, 2 total",
+    ),
+    {
+      framework: "unknown",
+      source: "generic",
+      total: 2,
+      passed: 2,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      JSON.stringify({
+        stats: {
+          tests: 1,
+          passes: 1,
+          failures: 0,
+          pending: 0,
+        },
+      }),
+    ),
+    undefined,
   );
 
   assert.deepEqual(

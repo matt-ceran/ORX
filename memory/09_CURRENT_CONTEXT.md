@@ -105,6 +105,17 @@ Current files:
 
 ## Latest Work
 
+Added captured Mocha JSON report parsing:
+
+- The test report parser now recognizes bounded already-captured whole-object Mocha JSON reporter output with consistent `stats.tests`, `stats.passes`, `stats.failures`, `stats.pending`, matching top-level `tests`/`passes`/`failures`/`pending` arrays, optional `stats.suites`, and optional `stats.duration`, then renders compact `source=mocha-json` counts in `orx tests run`, `/tests run`, and model-visible `run_tests` summaries.
+- The parser runs in the existing captured structured JSON phase before text summary fallback, accepts Mocha JSON regardless of the inferred package-script framework when the whole object shape is valid, falls back to existing bounded stdout/stderr summary parsing for count-inconsistent Mocha-looking JSON, and rejects incomplete Mocha JSON without treating it as a valid report.
+- This slice does not add reporter flags, report files, installs, invocation changes, network calls, subprocess shape changes, model-tool exposure changes, or broader wrapper/custom-reporter support.
+- README, release notes, command memory, architecture/tooling notes, backlog, and integration handoff now document Mocha JSON parsing as already-captured output only.
+- Verification: focused source `node --import tsx --test src/testing/test-adapters.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`, full `npm test` with 541 tests, `npm run verify:release`, and independent read-only verifier `019f1e92-6e8b-74e0-8346-99446263b388` passed. The verifier also ran full source tests and found no issues.
+- Next likely work after this slice remains another bounded optional completion slice such as LSP/SCIP diagnostics/references, semantic tree-sitter refs/dependency depth, additional non-JSON/custom reporter parsing, Sourcegraph/GitHub read-only profiles, or scanner adapters/additional Trivy modes only after deterministic no-network/no-auth local command shapes are proven.
+
+Previous latest work:
+
 Added runnable Mypy diagnostics profile:
 
 - Promoted `mypy` into the guarded local diagnostics runner set. `orx diagnostics run mypy [--project <local-file-or-directory>] [--json]`, `orx diag run mypy ...`, `/diagnostics run mypy ...`, and `/diag run mypy ...` use an already-installed project-local, cwd virtualenv, or PATH `mypy`.

@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "teamcity" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "teamcity" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json" | "mocha-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -822,19 +822,23 @@ function parseFrameworkJsonReportSummary(text: string, framework: TestFramework)
   }
 
   if (framework === "jest") {
-    return parseJestLikeJsonReportSummary(value, framework, "jest-json");
+    return parseJestLikeJsonReportSummary(value, framework, "jest-json") ??
+      parseMochaJsonReportSummary(value, framework);
   }
   if (framework === "vitest") {
-    return parseJestLikeJsonReportSummary(value, framework, "vitest-json");
+    return parseJestLikeJsonReportSummary(value, framework, "vitest-json") ??
+      parseMochaJsonReportSummary(value, framework);
   }
   if (framework === "playwright") {
-    return parsePlaywrightJsonReportSummary(value, framework);
+    return parsePlaywrightJsonReportSummary(value, framework) ??
+      parseMochaJsonReportSummary(value, framework);
   }
   if (framework === "unknown") {
     return parseJestLikeJsonReportSummary(value, framework, "jest-json") ??
-      parsePlaywrightJsonReportSummary(value, framework);
+      parsePlaywrightJsonReportSummary(value, framework) ??
+      parseMochaJsonReportSummary(value, framework);
   }
-  return undefined;
+  return parseMochaJsonReportSummary(value, framework);
 }
 
 function parseJsonObjectReport(text: string): Record<string, unknown> | undefined {
@@ -911,6 +915,53 @@ function parsePlaywrightJsonReportSummary(
   assignNumber(report, "durationMs", jsonDurationNumber(stats, "duration"));
 
   return hasReportCounts(report) ? report : undefined;
+}
+
+function parseMochaJsonReportSummary(
+  value: Record<string, unknown>,
+  framework: TestFramework,
+): TestReportSummary | undefined {
+  const stats = value.stats;
+  if (!isPlainObject(stats)) {
+    return undefined;
+  }
+
+  const total = jsonCountNumber(stats, "tests");
+  const passed = jsonCountNumber(stats, "passes");
+  const failed = jsonCountNumber(stats, "failures");
+  const skipped = jsonCountNumber(stats, "pending");
+  if (total === undefined || passed === undefined || failed === undefined || skipped === undefined) {
+    return undefined;
+  }
+  if (passed + failed + skipped !== total) {
+    return undefined;
+  }
+
+  if (
+    jsonArrayLength(value, "tests") !== total ||
+    jsonArrayLength(value, "passes") !== passed ||
+    jsonArrayLength(value, "failures") !== failed ||
+    jsonArrayLength(value, "pending") !== skipped
+  ) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "mocha-json",
+  };
+  assignNumber(report, "total", total);
+  assignNumber(report, "passed", passed);
+  assignNumber(report, "failed", failed);
+  assignNumber(report, "skipped", skipped);
+  assignNumber(report, "suites", jsonCountNumber(stats, "suites"));
+  assignNumber(report, "durationMs", jsonDurationNumber(stats, "duration"));
+  return hasReportCounts(report) ? report : undefined;
+}
+
+function jsonArrayLength(value: Record<string, unknown>, key: string): number | undefined {
+  const raw = value[key];
+  return Array.isArray(raw) ? raw.length : undefined;
 }
 
 function jsonCountNumber(value: Record<string, unknown>, key: string): number | undefined {
