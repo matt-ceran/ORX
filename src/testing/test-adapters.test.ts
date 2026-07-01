@@ -875,6 +875,84 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "[ FAIL 1 | WARN 0 | SKIP 2 | PASS 5 ]"),
+    {
+      framework: "unknown",
+      source: "testthat",
+      total: 8,
+      passed: 5,
+      failed: 1,
+      skipped: 2,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "[ FAIL 0 | WARN 2 | SKIP 1 | PASS 3 ]"),
+    {
+      framework: "node",
+      source: "testthat",
+      total: 4,
+      passed: 3,
+      failed: 0,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "[ FAIL 0 | WARN 0 | SKIP 0 | PASS 1 ]",
+        "[ FAIL 2 | WARN 1 | SKIP 1 | PASS 4 ]",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "testthat",
+      total: 7,
+      passed: 4,
+      failed: 2,
+      skipped: 1,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "[ FAIL 0 | SKIP 0 | PASS 2 ]"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "[ PASS 2 | WARN 0 | SKIP 0 | FAIL 0 ]"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "[ FAIL 0 | WARN 0 | SKIP 0 | PASS 2 | TODO 1 ]"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "[ FAIL 0 | WARN 0 | SKIP 0 | PASS 2 ] after cleanup"), undefined);
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "[ FAIL 0 | WARN 0 | SKIP 0 | PASS 2 | TODO 1 ]",
+        "Tests: 2 failed, 2 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "[ TODO 1 | FAIL 0 | WARN 0 | SKIP 0 | PASS 2 ]",
+        "Tests: 2 failed, 2 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "[ FAIL 0 | WARN 0 | SKIP 0 | PASS 2 ] after cleanup",
+        "ℹ tests 2",
+        "ℹ pass 2",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
     parseTestReportSummary(
       createTarget("unknown"),
       [
