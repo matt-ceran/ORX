@@ -498,6 +498,93 @@ test("parses common framework report summaries", () => {
     parseTestReportSummary(
       createTarget("unknown"),
       [
+        "Finished in 0.123456s, 24.3000 runs/s, 48.6000 assertions/s.",
+        "3 runs, 6 assertions, 1 failures, 1 errors, 1 skips",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "minitest",
+      total: 3,
+      passed: 0,
+      failed: 2,
+      skipped: 1,
+      durationMs: 123.456,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "1 runs, 1 assertions, 0 failures, 0 errors, 0 skips"),
+    {
+      framework: "unknown",
+      source: "minitest",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "2 runs, 2 assertions, 0 failures, 0 errors, 0 skips"),
+    {
+      framework: "node",
+      source: "minitest",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "1 runs, 1 assertions, 0 failures, 0 errors, 0 skips",
+        "2 runs, 2 assertions, 1 failures, 0 errors, 0 skips",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "minitest",
+      total: 2,
+      passed: 1,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "2 runs, 2 assertions, 2 failures, 1 errors, 0 skips"),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(createTarget("unknown"), "2 runs, 2 assertions, 0 failures, 0 errors, 0 skips after cleanup"),
+    undefined,
+  );
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "Finished in 0.123s after cleanup",
+        "1 runs, 1 assertions, 0 failures, 0 errors, 0 skips",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "minitest",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
         "----------------------------------------------------------------------",
         "Ran 4 tests in 0.012s",
         "",
