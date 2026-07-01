@@ -35,6 +35,7 @@ import {
   renderCodeSymbols,
   renderCodeSymbolsJson,
   renderCodeTreeSitterResult,
+  renderCodeTreeSitterResultJson,
   runCodeAstGrep,
   runCodeTreeSitter,
   type AstGrepRunner,
@@ -1226,7 +1227,7 @@ function runCodeTreeSitterCommand(
   });
   writeLine(
     result.ok ? io.stdout : io.stderr,
-    renderCodeTreeSitterResult(result, usage),
+    parsed.args.json ? renderCodeTreeSitterResultJson(result) : renderCodeTreeSitterResult(result, usage),
   );
   return result.ok ? 0 : 1;
 }

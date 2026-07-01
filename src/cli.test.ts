@@ -1802,6 +1802,26 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.match(treeSitterRepoFiles.stdout(), /- src\/index\.ts/);
     assert.equal(treeSitterCalls.length, 0);
 
+    const treeSitterRepoFilesJson = createIo({ cwd, treeSitterRunner });
+    assert.equal(
+      await runCli(["node", "cli", "code", "tree-sitter", "repo-files", "src/index.ts", "--json"], {}, treeSitterRepoFilesJson.io),
+      0,
+    );
+    const repoFilesJson = JSON.parse(treeSitterRepoFilesJson.stdout()) as {
+      surface: string;
+      mode: string;
+      execution: string;
+      ast_backed: boolean;
+      repo_files: { files_scanned: number; files: string[] };
+    };
+    assert.equal(repoFilesJson.surface, "orx.code_tree_sitter");
+    assert.equal(repoFilesJson.mode, "repo-files");
+    assert.equal(repoFilesJson.execution, "local_filesystem_scan_only");
+    assert.equal(repoFilesJson.ast_backed, false);
+    assert.equal(repoFilesJson.repo_files.files_scanned, 1);
+    assert.deepEqual(repoFilesJson.repo_files.files, ["src/index.ts"]);
+    assert.equal(treeSitterCalls.length, 0);
+
     const treeSitterOutline = createIo({ cwd, treeSitterRunner });
     assert.equal(
       await runCli(["node", "cli", "code", "tree-sitter", "outline", "src/index.ts"], {}, treeSitterOutline.io),
@@ -1927,6 +1947,23 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.equal(await runCli(["node", "cli", "outline", "src/index.ts"], {}, outlineAlias.io), 0);
     assert.match(outlineAlias.stdout(), /Code tree-sitter outline/);
     assert.match(outlineAlias.stdout(), /raw_parse: use tree-sitter parse mode/);
+
+    const outlineAliasJson = createIo({ cwd, treeSitterRunner });
+    assert.equal(await runCli(["node", "cli", "outline", "src/index.ts", "--json"], {}, outlineAliasJson.io), 0);
+    const outlineJson = JSON.parse(outlineAliasJson.stdout()) as {
+      surface: string;
+      mode: string;
+      execution: string;
+      ast_backed: boolean;
+      semantic_resolution: boolean;
+      outline: { total_entries: number };
+    };
+    assert.equal(outlineJson.surface, "orx.code_tree_sitter");
+    assert.equal(outlineJson.mode, "outline");
+    assert.equal(outlineJson.execution, "local_tree_sitter_cli");
+    assert.equal(outlineJson.ast_backed, true);
+    assert.equal(outlineJson.semantic_resolution, false);
+    assert.equal(outlineJson.outline.total_entries, 2);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

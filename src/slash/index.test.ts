@@ -330,10 +330,14 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/code tree-sitter i"), [["imports "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/code tree-sitter r"), [["refs ", "repo-files ", "repo-outline ", "repo-symbols ", "repo-refs ", "repo-calls ", "repo-imports ", "repo-deps "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/code tree-sitter c"), [["calls "], "c"]);
+  assert.deepEqual(completeSlashCommandLine("/code tree-sitter --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/code tree-sitter repo-files src --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/tree-sitter p"), [["parse "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/tree-sitter i"), [["imports "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/tree-sitter r"), [["refs ", "repo-files ", "repo-outline ", "repo-symbols ", "repo-refs ", "repo-calls ", "repo-imports ", "repo-deps "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/tree-sitter c"), [["calls "], "c"]);
+  assert.deepEqual(completeSlashCommandLine("/tree-sitter repo-files src --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/outline src --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/scanners --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/scanners s"), [["status ", "show "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/scanners r"), [["run "], "r"]);
@@ -646,6 +650,23 @@ test("map slash command renders a local code map", () => {
     assert.match(treeSitterRepoFiles.stdout(), /- src\/index\.ts/);
     assert.equal(treeSitterCalls.length, 0);
 
+    const treeSitterRepoFilesJson = createSlashHarness({ cwd, treeSitterRunner });
+    assert.equal(handleSlashCommand("/code tree-sitter repo-files src/index.ts --json", treeSitterRepoFilesJson.context), "continue");
+    const repoFilesJson = JSON.parse(treeSitterRepoFilesJson.stdout()) as {
+      surface: string;
+      mode: string;
+      execution: string;
+      ast_backed: boolean;
+      repo_files: { files_scanned: number; files: string[] };
+    };
+    assert.equal(repoFilesJson.surface, "orx.code_tree_sitter");
+    assert.equal(repoFilesJson.mode, "repo-files");
+    assert.equal(repoFilesJson.execution, "local_filesystem_scan_only");
+    assert.equal(repoFilesJson.ast_backed, false);
+    assert.equal(repoFilesJson.repo_files.files_scanned, 1);
+    assert.deepEqual(repoFilesJson.repo_files.files, ["src/index.ts"]);
+    assert.equal(treeSitterCalls.length, 0);
+
     const treeSitterOutline = createSlashHarness({ cwd, treeSitterRunner });
     assert.equal(handleSlashCommand("/code tree-sitter outline src/index.ts", treeSitterOutline.context), "continue");
     assert.match(treeSitterOutline.stdout(), /Code tree-sitter outline/);
@@ -738,6 +759,23 @@ test("map slash command renders a local code map", () => {
     assert.equal(handleSlashCommand("/outline src/index.ts", outlineAlias.context), "continue");
     assert.match(outlineAlias.stdout(), /Code tree-sitter outline/);
     assert.match(outlineAlias.stdout(), /raw_parse: use tree-sitter parse mode/);
+
+    const outlineAliasJson = createSlashHarness({ cwd, treeSitterRunner });
+    assert.equal(handleSlashCommand("/outline src/index.ts --json", outlineAliasJson.context), "continue");
+    const outlineJson = JSON.parse(outlineAliasJson.stdout()) as {
+      surface: string;
+      mode: string;
+      execution: string;
+      ast_backed: boolean;
+      semantic_resolution: boolean;
+      outline: { total_entries: number };
+    };
+    assert.equal(outlineJson.surface, "orx.code_tree_sitter");
+    assert.equal(outlineJson.mode, "outline");
+    assert.equal(outlineJson.execution, "local_tree_sitter_cli");
+    assert.equal(outlineJson.ast_backed, true);
+    assert.equal(outlineJson.semantic_resolution, false);
+    assert.equal(outlineJson.outline.total_entries, 2);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

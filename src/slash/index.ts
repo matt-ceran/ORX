@@ -38,6 +38,7 @@ import {
   renderCodeSymbols,
   renderCodeSymbolsJson,
   renderCodeTreeSitterResult,
+  renderCodeTreeSitterResultJson,
   runCodeAstGrep,
   runCodeTreeSitter,
   type AstGrepRunner,
@@ -583,6 +584,7 @@ const SLASH_TESTS_USAGE = "/tests [list [--json]|status [--json]|run [target-id]
 const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls", "ast-grep", "tree-sitter", "outline"] as const;
 const CODE_JSON_OPTION_COMPLETIONS = ["--json"] as const;
 const TREE_SITTER_MODE_COMPLETIONS = ["parse", "outline", "imports", "refs", "calls", "repo-files", "repo-outline", "repo-symbols", "repo-refs", "repo-calls", "repo-imports", "repo-deps"] as const;
+const TREE_SITTER_OPTION_COMPLETIONS = ["--json"] as const;
 const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "run"] as const;
 const SCANNER_PROFILE_COMPLETIONS = ["semgrep", "snyk", "socket", "osv-scanner", "codeql", "trivy"] as const;
 const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep", "trivy"] as const;
@@ -926,7 +928,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/tree-sitter": {
-    usage: "/tree-sitter [parse|outline|imports|refs|calls|repo-files|repo-outline|repo-symbols|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]",
+    usage: "/tree-sitter [parse|outline|imports|refs|calls|repo-files|repo-outline|repo-symbols|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path] [--json]",
     description: "Run optional local tree-sitter AST parse, outline, import, refs, call, repo-file, repo-outline, repo-symbol, repo-ref, repo-call, repo-import, or repo-dependency extraction",
     group: "Workspace",
     tier: "advanced",
@@ -937,7 +939,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/outline": {
-    usage: "/outline <file>",
+    usage: "/outline <file> [--json]",
     description: "Run an optional local tree-sitter AST outline",
     group: "Workspace",
     tier: "advanced",
@@ -1941,12 +1943,15 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       if (argIndex === 0) {
         return [...CODE_SUBCOMMAND_COMPLETIONS, ...CODE_JSON_OPTION_COMPLETIONS];
       }
-      if (["map", "symbols", "symbol", "refs", "references", "imports", "import-graph", "graph", "calls", "call-graph", "callgraph"].includes(firstArg) && !completedArgs.includes("--")) {
+      if (["map", "symbols", "symbol", "refs", "references", "imports", "import-graph", "graph", "calls", "call-graph", "callgraph", "outline", "ast-outline"].includes(firstArg) && !completedArgs.includes("--")) {
         return [...CODE_JSON_OPTION_COMPLETIONS];
       }
-      return (firstArg === "tree-sitter" || firstArg === "treesitter" || firstArg === "ts-ast") && argIndex === 1
-        ? [...TREE_SITTER_MODE_COMPLETIONS]
-        : [];
+      if (firstArg === "tree-sitter" || firstArg === "treesitter" || firstArg === "ts-ast") {
+        return argIndex === 1
+          ? [...TREE_SITTER_MODE_COMPLETIONS, ...TREE_SITTER_OPTION_COMPLETIONS]
+          : !completedArgs.includes("--") ? [...TREE_SITTER_OPTION_COMPLETIONS] : [];
+      }
+      return [];
     case "/map":
     case "/symbols":
     case "/refs":
@@ -1958,7 +1963,12 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       return !completedArgs.includes("--") ? [...CODE_JSON_OPTION_COMPLETIONS] : [];
     case "/tree-sitter":
     case "/treesitter":
-      return argIndex === 0 ? [...TREE_SITTER_MODE_COMPLETIONS] : [];
+      if (argIndex === 0) {
+        return [...TREE_SITTER_MODE_COMPLETIONS, ...TREE_SITTER_OPTION_COMPLETIONS];
+      }
+      return !completedArgs.includes("--") ? [...TREE_SITTER_OPTION_COMPLETIONS] : [];
+    case "/outline":
+      return argIndex > 0 && !completedArgs.includes("--") ? [...TREE_SITTER_OPTION_COMPLETIONS] : [];
     case "/scanners":
       if (argIndex === 0) {
         return [...SCANNER_SUBCOMMAND_COMPLETIONS, ...SCANNER_READINESS_OPTION_COMPLETIONS];
@@ -2523,7 +2533,7 @@ function handleTreeSitterCommandText(
   });
   writeLine(
     result.ok ? context.io.stdout : context.io.stderr,
-    renderCodeTreeSitterResult(result, usage),
+    parsed.args.json ? renderCodeTreeSitterResultJson(result) : renderCodeTreeSitterResult(result, usage),
   );
 }
 

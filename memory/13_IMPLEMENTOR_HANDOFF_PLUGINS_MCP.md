@@ -222,6 +222,8 @@ Later 2026-07-01 test run JSON update: `orx tests run [target-id] --json` and `/
 
 Later 2026-07-01 dependency-free code-intelligence JSON update: `orx code map|symbols|refs|imports|calls ... --json`, top-level `orx map|symbols|refs|imports|calls|call-graph ... --json`, and matching slash aliases now emit ORX-owned structured metadata for the same bounded local no-key scans; `--json` after `--` remains query/path text and lexical call output remains explicitly non-AST/non-semantic.
 
+Later 2026-07-01 tree-sitter JSON update: optional tree-sitter parse/outline/import/ref/call/repo-file/repo-outline/repo-symbol/repo-ref/repo-call/repo-import/repo-dep commands now accept `--json` on CLI and slash aliases, emitting ORX-owned structured metadata for the same bounded local result objects with explicit no-network/no-mutation/no-model-tool labels. `repo-files --json` remains filesystem inventory only and does not invoke or require `tree-sitter`.
+
 Karma-style summary parsing note: exact already-captured `TOTAL:` lines such as `TOTAL: 1 FAILED, 2 SUCCESS, 1 SKIPPED` now render `source=karma` counts through the same stdout/stderr fallback path, without reporter flags, report files, installs, network, or new model-tool exposure.
 
 Bun-style summary parsing note: exact already-captured default-console lines such as `4 pass`, `0 fail`, and `Ran 4 tests in 1.44ms` or `Ran 3 tests across 2 files. [50.00ms]` now render `source=bun` counts through the same stdout/stderr fallback path, without reporter flags, report files, installs, network, or new model-tool exposure.

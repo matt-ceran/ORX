@@ -24,6 +24,7 @@ import {
   renderCodeSymbols,
   renderCodeSymbolsJson,
   renderCodeTreeSitterResult,
+  renderCodeTreeSitterResultJson,
   runCodeAstGrep,
   runCodeTreeSitter,
   type AstGrepRunner,
@@ -758,6 +759,16 @@ test("tree-sitter adapter runs bounded optional AST parse and keeps lexical fall
     if (!parsed.ok) {
       assert.fail(parsed.message);
     }
+    const jsonParsed = parseCodeTreeSitterArgs(["outline", "src/index.ts", "--json"]);
+    if (!jsonParsed.ok) {
+      assert.fail(jsonParsed.message);
+    }
+    assert.equal(jsonParsed.args.json, true);
+    const literalJsonParsed = parseCodeTreeSitterArgs(["--", "--json"]);
+    assert.equal(literalJsonParsed.ok, false);
+    if (!literalJsonParsed.ok) {
+      assert.match(literalJsonParsed.message, /file must not start with a dash/);
+    }
     const result = runCodeTreeSitter({
       ...parsed.args,
       cwd,
@@ -810,6 +821,27 @@ test("tree-sitter adapter runs bounded optional AST parse and keeps lexical fall
     assert.match(renderedOutline, /kind="variable_declarator" name="value" line=2 column=7/);
     assert.match(renderedOutline, /kind="class_declaration" name="Example" line=3 column=1/);
     assert.match(renderedOutline, /raw_parse: use tree-sitter parse mode for the full AST/);
+    const outlineJson = JSON.parse(renderCodeTreeSitterResultJson(outline)) as {
+      surface: string;
+      execution: string;
+      network: string;
+      mutation: string;
+      model_tool: string;
+      mode: string;
+      ast_backed: boolean;
+      semantic_resolution: boolean;
+      outline: { total_entries: number; entries: Array<{ kind: string; name?: string }> };
+    };
+    assert.equal(outlineJson.surface, "orx.code_tree_sitter");
+    assert.equal(outlineJson.execution, "local_tree_sitter_cli");
+    assert.equal(outlineJson.network, "none");
+    assert.equal(outlineJson.mutation, "none");
+    assert.equal(outlineJson.model_tool, "none");
+    assert.equal(outlineJson.mode, "outline");
+    assert.equal(outlineJson.ast_backed, true);
+    assert.equal(outlineJson.semantic_resolution, false);
+    assert.equal(outlineJson.outline.total_entries, 5);
+    assert.ok(outlineJson.outline.entries.some((entry) => entry.kind === "function_declaration" && entry.name === "start"));
 
     const callsParsed = parseCodeTreeSitterArgs(["calls", "src/index.ts"]);
     if (!callsParsed.ok) {
@@ -1175,6 +1207,19 @@ test("tree-sitter repo outline scans bounded source files without semantic symbo
     assert.match(renderedFiles, /- src\/index\.ts/);
     assert.match(renderedFiles, /parse: use repo-outline, repo-symbols, repo-refs, repo-calls, repo-imports, or repo-deps/);
     assert.doesNotMatch(renderedFiles, /node_modules/);
+    const repoFilesJson = JSON.parse(renderCodeTreeSitterResultJson(filesResult)) as {
+      surface: string;
+      execution: string;
+      ast_backed: boolean;
+      mode: string;
+      repo_files: { files_scanned: number; files: string[] };
+    };
+    assert.equal(repoFilesJson.surface, "orx.code_tree_sitter");
+    assert.equal(repoFilesJson.execution, "local_filesystem_scan_only");
+    assert.equal(repoFilesJson.ast_backed, false);
+    assert.equal(repoFilesJson.mode, "repo-files");
+    assert.equal(repoFilesJson.repo_files.files_scanned, 2);
+    assert.deepEqual(repoFilesJson.repo_files.files, ["src/index.ts", "src/util.ts"]);
 
     const parsed = parseCodeTreeSitterArgs(["repo-outline", "src"]);
     if (!parsed.ok) {

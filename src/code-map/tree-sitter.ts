@@ -5,15 +5,16 @@ import { redactSecrets } from "../mcp/audit.js";
 import { truncateText } from "../tools/truncation.js";
 import type { TextTruncation } from "../tools/types.js";
 
-export const CODE_TREE_SITTER_USAGE = "Usage: orx code tree-sitter [parse|outline|imports|refs|calls|repo-files|repo-outline|repo-symbols|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]";
-export const CODE_TREE_SITTER_OUTLINE_USAGE = "Usage: orx code outline <file>";
-export const SLASH_CODE_TREE_SITTER_USAGE = "Usage: /code tree-sitter [parse|outline|imports|refs|calls|repo-files|repo-outline|repo-symbols|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]";
-export const SLASH_CODE_TREE_SITTER_OUTLINE_USAGE = "Usage: /code outline <file>";
+export const CODE_TREE_SITTER_USAGE = "Usage: orx code tree-sitter [parse|outline|imports|refs|calls|repo-files|repo-outline|repo-symbols|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path] [--json]";
+export const CODE_TREE_SITTER_OUTLINE_USAGE = "Usage: orx code outline <file> [--json]";
+export const SLASH_CODE_TREE_SITTER_USAGE = "Usage: /code tree-sitter [parse|outline|imports|refs|calls|repo-files|repo-outline|repo-symbols|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path] [--json]";
+export const SLASH_CODE_TREE_SITTER_OUTLINE_USAGE = "Usage: /code outline <file> [--json]";
 
 export interface CodeTreeSitterArgs {
   targetPath: string;
   mode?: CodeTreeSitterMode;
   query?: string;
+  json?: boolean;
 }
 
 export type CodeTreeSitterMode =
@@ -440,11 +441,16 @@ export function parseCodeTreeSitterArgs(
   options: { defaultMode?: CodeTreeSitterMode } = {},
 ): CodeTreeSitterParseResult {
   const positional: string[] = [];
+  let json = false;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index] ?? "";
     if (arg === "--") {
       positional.push(...args.slice(index + 1));
       break;
+    }
+    if (arg === "--json") {
+      json = true;
+      continue;
     }
     if (arg.startsWith("-")) {
       return { ok: false, message: `${usage}\nUnknown tree-sitter option: ${sanitizeInline(arg)}` };
@@ -500,7 +506,7 @@ export function parseCodeTreeSitterArgs(
       return { ok: false, message: `${usage}\n${queryMessage}` };
     }
   }
-  return { ok: true, args: { targetPath, mode, ...(mode === "refs" || isRepoRefs ? { query: query.trim() } : {}) } };
+  return { ok: true, args: { targetPath, mode, ...(mode === "refs" || isRepoRefs ? { query: query.trim() } : {}), json } };
 }
 
 export function parseCodeTreeSitterArgText(
@@ -1623,6 +1629,317 @@ export function renderCodeTreeSitterResult(
   lines.push(`  fallback: lexical code-map, symbols, refs, imports, and calls remain available without tree-sitter`);
   lines.push(`  usage: ${usage.replace(/^Usage:\s*/, "")}`);
   return lines.join("\n");
+}
+
+export function renderCodeTreeSitterResultJson(result: CodeTreeSitterResult): string {
+  return JSON.stringify(removeUndefinedJsonFields({
+    schema_version: 1,
+    surface: "orx.code_tree_sitter",
+    operator_only: true,
+    model_tool: "none",
+    execution: result.mode === "repo-files" ? "local_filesystem_scan_only" : "local_tree_sitter_cli",
+    network: "none",
+    mutation: "none",
+    shell: false,
+    optional_dependency: result.mode === "repo-files" ? "none" : "tree-sitter",
+    ast_backed: result.mode !== "repo-files",
+    semantic_resolution: false,
+    dependency_resolution: result.mode === "repo-deps"
+      ? "bounded_local_relative_and_safe_tsconfig_jsconfig_paths_only"
+      : "none",
+    ok: result.ok,
+    status: result.status,
+    mode: result.mode,
+    query: result.query ? sanitizeInline(result.query) : undefined,
+    root: sanitizeInline(result.root),
+    target_path: sanitizeInline(result.targetPath),
+    command: result.command ? sanitizeInline(result.command) : undefined,
+    args: result.args.map(sanitizeInline),
+    command_line: result.commandLine ? sanitizeInline(result.commandLine) : undefined,
+    process: {
+      exit_code: result.exitCode ?? null,
+      signal: result.signal ? sanitizeInline(result.signal) : null,
+      timed_out: result.timedOut,
+      duration_ms: result.durationMs,
+    },
+    stdout: result.stdout,
+    stderr: result.stderr,
+    stdout_truncation: truncationJson(result.stdoutTruncation),
+    stderr_truncation: truncationJson(result.stderrTruncation),
+    message: result.message ? sanitizeInline(result.message) : undefined,
+    outline: result.outline ? treeSitterOutlineJson(result.outline) : undefined,
+    repo_files: result.repoFiles ? treeSitterRepoFilesJson(result.repoFiles) : undefined,
+    repo_outline: result.repoOutline ? treeSitterRepoOutlineJson(result.repoOutline) : undefined,
+    imports: result.imports ? treeSitterImportsJson(result.imports) : undefined,
+    repo_imports: result.repoImports ? treeSitterRepoImportsJson(result.repoImports) : undefined,
+    repo_dependencies: result.repoDependencies ? treeSitterRepoDependenciesJson(result.repoDependencies) : undefined,
+    references: result.references ? treeSitterReferencesJson(result.references) : undefined,
+    repo_references: result.repoReferences ? treeSitterRepoReferencesJson(result.repoReferences) : undefined,
+    calls: result.calls ? treeSitterCallsJson(result.calls) : undefined,
+    repo_calls: result.repoCalls ? treeSitterRepoCallsJson(result.repoCalls) : undefined,
+  }), null, 2);
+}
+
+function truncationJson(truncation: TextTruncation): Record<string, unknown> {
+  return {
+    truncated: truncation.truncated,
+    original_bytes: truncation.originalBytes,
+    returned_bytes: truncation.returnedBytes,
+    original_lines: truncation.originalLines,
+    returned_lines: truncation.returnedLines,
+    omitted_bytes: truncation.omittedBytes,
+    omitted_lines: truncation.omittedLines,
+  };
+}
+
+function treeSitterOutlineJson(outline: CodeTreeSitterOutline): Record<string, unknown> {
+  return {
+    total_entries: outline.totalEntries,
+    returned_entries: outline.entries.length,
+    omitted_entries: outline.omittedEntries,
+    truncated: outline.truncated,
+    warnings: outline.warnings.map(sanitizeInline),
+    entries: outline.entries.map(treeSitterOutlineEntryJson),
+  };
+}
+
+function treeSitterRepoFilesJson(repoFiles: CodeTreeSitterRepoFiles): Record<string, unknown> {
+  return {
+    target_path: sanitizeInline(repoFiles.targetPath),
+    files_scanned: repoFiles.filesScanned,
+    returned_files: repoFiles.files.length,
+    omitted_files: repoFiles.omittedFiles,
+    truncated: repoFiles.truncated,
+    warnings: repoFiles.warnings.map(sanitizeInline),
+    files: repoFiles.files.map(sanitizeInline),
+    omissions: repoFiles.omissions.map(treeSitterRepoOmissionJson),
+  };
+}
+
+function treeSitterRepoOutlineJson(repoOutline: CodeTreeSitterRepoOutline): Record<string, unknown> {
+  return {
+    target_path: sanitizeInline(repoOutline.targetPath),
+    total_entries: repoOutline.totalEntries,
+    returned_entries: repoOutline.entries.length,
+    omitted_entries: repoOutline.omittedEntries,
+    files_scanned: repoOutline.filesScanned,
+    files_with_outline: repoOutline.filesWithOutline,
+    omitted_files: repoOutline.omittedFiles,
+    failed_files: repoOutline.failedFiles,
+    timed_out_files: repoOutline.timedOutFiles,
+    truncated: repoOutline.truncated,
+    warnings: repoOutline.warnings.map(sanitizeInline),
+    entries: repoOutline.entries.map(treeSitterRepoOutlineEntryJson),
+    omissions: repoOutline.omissions.map(treeSitterRepoOmissionJson),
+  };
+}
+
+function treeSitterImportsJson(imports: CodeTreeSitterImports): Record<string, unknown> {
+  return {
+    total_edges: imports.totalEdges,
+    returned_edges: imports.edges.length,
+    omitted_edges: imports.omittedEdges,
+    truncated: imports.truncated,
+    warnings: imports.warnings.map(sanitizeInline),
+    edges: imports.edges.map(treeSitterImportEdgeJson),
+  };
+}
+
+function treeSitterRepoImportsJson(repoImports: CodeTreeSitterRepoImports): Record<string, unknown> {
+  return {
+    target_path: sanitizeInline(repoImports.targetPath),
+    total_edges: repoImports.totalEdges,
+    returned_edges: repoImports.edges.length,
+    omitted_edges: repoImports.omittedEdges,
+    files_scanned: repoImports.filesScanned,
+    files_with_imports: repoImports.filesWithImports,
+    omitted_files: repoImports.omittedFiles,
+    failed_files: repoImports.failedFiles,
+    timed_out_files: repoImports.timedOutFiles,
+    truncated: repoImports.truncated,
+    warnings: repoImports.warnings.map(sanitizeInline),
+    edges: repoImports.edges.map(treeSitterRepoImportEdgeJson),
+    omissions: repoImports.omissions.map(treeSitterRepoOmissionJson),
+  };
+}
+
+function treeSitterRepoDependenciesJson(repoDependencies: CodeTreeSitterRepoDependencies): Record<string, unknown> {
+  return {
+    target_path: sanitizeInline(repoDependencies.targetPath),
+    total_edges: repoDependencies.totalEdges,
+    returned_edges: repoDependencies.edges.length,
+    omitted_edges: repoDependencies.omittedEdges,
+    files_scanned: repoDependencies.filesScanned,
+    files_with_dependencies: repoDependencies.filesWithDependencies,
+    local_dependencies: repoDependencies.localDependencies,
+    external_imports: repoDependencies.externalImports,
+    unresolved_local_imports: repoDependencies.unresolvedLocalImports,
+    omitted_files: repoDependencies.omittedFiles,
+    failed_files: repoDependencies.failedFiles,
+    timed_out_files: repoDependencies.timedOutFiles,
+    truncated: repoDependencies.truncated,
+    warnings: repoDependencies.warnings.map(sanitizeInline),
+    edges: repoDependencies.edges.map(treeSitterRepoDependencyEdgeJson),
+    omissions: repoDependencies.omissions.map(treeSitterRepoOmissionJson),
+  };
+}
+
+function treeSitterReferencesJson(references: CodeTreeSitterReferences): Record<string, unknown> {
+  return {
+    query: sanitizeInline(references.query),
+    total_matches: references.totalMatches,
+    returned_matches: references.matches.length,
+    omitted_matches: references.omittedMatches,
+    truncated: references.truncated,
+    warnings: references.warnings.map(sanitizeInline),
+    matches: references.matches.map(treeSitterReferenceMatchJson),
+  };
+}
+
+function treeSitterRepoReferencesJson(repoReferences: CodeTreeSitterRepoReferences): Record<string, unknown> {
+  return {
+    query: sanitizeInline(repoReferences.query),
+    target_path: sanitizeInline(repoReferences.targetPath),
+    total_matches: repoReferences.totalMatches,
+    returned_matches: repoReferences.matches.length,
+    omitted_matches: repoReferences.omittedMatches,
+    files_scanned: repoReferences.filesScanned,
+    files_with_matches: repoReferences.filesWithMatches,
+    omitted_files: repoReferences.omittedFiles,
+    failed_files: repoReferences.failedFiles,
+    timed_out_files: repoReferences.timedOutFiles,
+    truncated: repoReferences.truncated,
+    warnings: repoReferences.warnings.map(sanitizeInline),
+    matches: repoReferences.matches.map(treeSitterRepoReferenceMatchJson),
+    omissions: repoReferences.omissions.map(treeSitterRepoOmissionJson),
+  };
+}
+
+function treeSitterCallsJson(calls: CodeTreeSitterCalls): Record<string, unknown> {
+  return {
+    total_edges: calls.totalEdges,
+    returned_edges: calls.edges.length,
+    omitted_edges: calls.omittedEdges,
+    truncated: calls.truncated,
+    warnings: calls.warnings.map(sanitizeInline),
+    edges: calls.edges.map(treeSitterCallEdgeJson),
+  };
+}
+
+function treeSitterRepoCallsJson(repoCalls: CodeTreeSitterRepoCalls): Record<string, unknown> {
+  return {
+    target_path: sanitizeInline(repoCalls.targetPath),
+    total_edges: repoCalls.totalEdges,
+    returned_edges: repoCalls.edges.length,
+    omitted_edges: repoCalls.omittedEdges,
+    files_scanned: repoCalls.filesScanned,
+    files_with_calls: repoCalls.filesWithCalls,
+    omitted_files: repoCalls.omittedFiles,
+    failed_files: repoCalls.failedFiles,
+    timed_out_files: repoCalls.timedOutFiles,
+    truncated: repoCalls.truncated,
+    warnings: repoCalls.warnings.map(sanitizeInline),
+    edges: repoCalls.edges.map(treeSitterRepoCallEdgeJson),
+    omissions: repoCalls.omissions.map(treeSitterRepoOmissionJson),
+  };
+}
+
+function treeSitterOutlineEntryJson(entry: CodeTreeSitterOutlineEntry): Record<string, unknown> {
+  return {
+    kind: sanitizeInline(entry.kind),
+    name: entry.name ? sanitizeInline(entry.name) : undefined,
+    line: entry.line,
+    column: entry.column,
+    depth: entry.depth,
+  };
+}
+
+function treeSitterRepoOutlineEntryJson(entry: CodeTreeSitterRepoOutlineEntry): Record<string, unknown> {
+  return {
+    path: sanitizeInline(entry.path),
+    ...treeSitterOutlineEntryJson(entry),
+  };
+}
+
+function treeSitterImportEdgeJson(edge: CodeTreeSitterImportEdge): Record<string, unknown> {
+  return {
+    kind: edge.kind,
+    source: edge.source ? sanitizeInline(edge.source) : undefined,
+    line: edge.line,
+    column: edge.column,
+    depth: edge.depth,
+  };
+}
+
+function treeSitterRepoImportEdgeJson(edge: CodeTreeSitterRepoImportEdge): Record<string, unknown> {
+  return {
+    path: sanitizeInline(edge.path),
+    ...treeSitterImportEdgeJson(edge),
+  };
+}
+
+function treeSitterRepoDependencyEdgeJson(edge: CodeTreeSitterRepoDependencyEdge): Record<string, unknown> {
+  return {
+    ...treeSitterRepoImportEdgeJson(edge),
+    to: edge.to ? sanitizeInline(edge.to) : undefined,
+    resolution: edge.resolution,
+    resolution_detail: edge.resolutionDetail,
+  };
+}
+
+function treeSitterReferenceMatchJson(match: CodeTreeSitterReferenceMatch): Record<string, unknown> {
+  return {
+    name: sanitizeInline(match.name),
+    kind: sanitizeInline(match.kind),
+    role: sanitizeInline(match.role),
+    line: match.line,
+    column: match.column,
+    depth: match.depth,
+  };
+}
+
+function treeSitterRepoReferenceMatchJson(match: CodeTreeSitterRepoReferenceMatch): Record<string, unknown> {
+  return {
+    path: sanitizeInline(match.path),
+    ...treeSitterReferenceMatchJson(match),
+  };
+}
+
+function treeSitterCallEdgeJson(edge: CodeTreeSitterCallEdge): Record<string, unknown> {
+  return {
+    caller: edge.caller ? treeSitterOutlineEntryJson(edge.caller) : null,
+    callee: edge.callee ? sanitizeInline(edge.callee) : undefined,
+    line: edge.line,
+    column: edge.column,
+    depth: edge.depth,
+  };
+}
+
+function treeSitterRepoCallEdgeJson(edge: CodeTreeSitterRepoCallEdge): Record<string, unknown> {
+  return {
+    path: sanitizeInline(edge.path),
+    ...treeSitterCallEdgeJson(edge),
+  };
+}
+
+function treeSitterRepoOmissionJson(omission: CodeTreeSitterRepoOmission): Record<string, unknown> {
+  return {
+    path: omission.path ? sanitizeInline(omission.path) : undefined,
+    reason: sanitizeInline(omission.reason),
+  };
+}
+
+function removeUndefinedJsonFields(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(removeUndefinedJsonFields);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entryValue]) => entryValue !== undefined)
+    .map(([key, entryValue]) => [key, removeUndefinedJsonFields(entryValue)] as const);
+  return Object.fromEntries(entries);
 }
 
 function renderCodeTreeSitterRepoFilesResult(

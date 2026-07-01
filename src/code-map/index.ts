@@ -26,6 +26,7 @@ export {
   parseCodeTreeSitterArgs,
   parseCodeTreeSitterArgText,
   renderCodeTreeSitterResult,
+  renderCodeTreeSitterResultJson,
   runCodeTreeSitter,
   type CodeTreeSitterArgs,
   type CodeTreeSitterImports,
