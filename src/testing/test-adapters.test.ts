@@ -1184,6 +1184,124 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "6 scenarios (1 passed, 3 failed, 1 undefined, 1 pending)",
+        "23 steps (16 passed, 3 failed, 1 undefined, 1 pending, 2 skipped)",
+        "0m0.02s (18.50Mb)",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "behat",
+      total: 6,
+      passed: 1,
+      failed: 3,
+      skipped: 0,
+      todo: 2,
+      durationMs: 20,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "2 scenarios (2 passed)",
+        "6 steps (6 passed)",
+        "1m2.34s (22.25Mb)",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "behat",
+      total: 2,
+      passed: 2,
+      failed: 0,
+      skipped: 0,
+      todo: 0,
+      durationMs: 62340,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "3 scenarios (1 failed, 2 passed)",
+        "9 steps (7 passed, 1 failed, 1 skipped)",
+        "0m0.02s",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "cucumber",
+      total: 3,
+      passed: 2,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "3 scenarios (1 failed, 1 passed, 1 ambiguous)",
+        "9 steps (7 passed, 1 failed, 1 ambiguous)",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "cucumber",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "2 scenarios (1 passed, 2 failed)",
+        "6 steps (4 passed, 2 failed)",
+        "0m0.02s (18.50Mb)",
+        "Tests: 3 failed, 3 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "2 scenarios (1 passed, 1 failed)",
+        "6 steps (4 passed, 1 failed)",
+        "0m0.02s (18.50Mb)",
+        "Tests: 2 failed, 2 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "2 scenarios (1 passed, 1 failed)",
+        "6 steps (4 passed, 1 failed, 1 skipped)",
+        "0m0.02s (18.50Mb) after cleanup",
+        "ℹ tests 2",
+        "ℹ fail 1",
+        "ℹ pass 1",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
     parseTestReportSummary(createTarget("unknown"), "[ FAIL 1 | WARN 0 | SKIP 2 | PASS 5 ]"),
     {
       framework: "unknown",

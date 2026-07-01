@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "cucumber" | "testthat" | "gtest" | "catch2" | "deno" | "exunit" | "gradle" | "junit-platform" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "rspec" | "minitest" | "karma" | "bun" | "unittest" | "junit-text" | "pest" | "phpunit" | "dotnet" | "ctest" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "cucumber" | "behat" | "testthat" | "gtest" | "catch2" | "deno" | "exunit" | "gradle" | "junit-platform" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "rspec" | "minitest" | "karma" | "bun" | "unittest" | "junit-text" | "pest" | "phpunit" | "dotnet" | "ctest" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -706,11 +706,11 @@ function orderedReportParsers(framework: TestFramework): ReportParser[] {
     unknown: parseGenericReportSummary,
   };
   if (framework === "node") {
-    return [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseCucumberReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseDenoReportSummary, parseGenericReportSummary];
+    return [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseCucumberReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parseTapReportSummary, parseNodeReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parseDenoReportSummary, parseGenericReportSummary];
   }
   return framework === "unknown"
-    ? [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseCucumberReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary]
-    : [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseCucumberReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
+    ? [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseCucumberReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parseJestReportSummary, parseVitestReportSummary, parseTapReportSummary, parseNodeReportSummary, parsePlaywrightReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary]
+    : [parseExunitReportSummary, parseGradleReportSummary, parseJunitPlatformReportSummary, parseTestngReportSummary, parseNunitReportSummary, parseRobotReportSummary, parseJasmineReportSummary, parsePestReportSummary, parseDotnetReportSummary, parseBehatReportSummary, parseCucumberReportSummary, parseTestthatReportSummary, parseGtestReportSummary, parseCatch2ReportSummary, parsers[framework], parseTapReportSummary, parseMochaReportSummary, parsePytestReportSummary, parseDenoReportSummary, parseCargoReportSummary, parseGoTestReportSummary, parseRspecReportSummary, parseMinitestReportSummary, parseKarmaReportSummary, parseBunReportSummary, parsePythonUnittestReportSummary, parseJunitTextReportSummary, parsePhpunitReportSummary, parseCtestReportSummary, parseXctestReportSummary, parseGenericReportSummary];
 }
 
 function parseFrameworkJsonReportSummary(text: string, framework: TestFramework): TestReportSummary | undefined {
@@ -1425,6 +1425,102 @@ function parseCucumberReportSummary(text: string, framework: TestFramework): Tes
   assignNumber(report, "passed", counts.passed);
   assignNumber(report, "failed", counts.failed);
   assignNumber(report, "skipped", counts.skipped);
+  return hasReportCounts(report) ? report : undefined;
+}
+
+function parseBehatReportSummary(text: string, framework: TestFramework): TestReportSummary | InvalidTestReport | undefined {
+  let scenarioCounts:
+    | {
+        total: number;
+        passed: number;
+        failed: number;
+        skipped: number;
+        todo: number;
+      }
+    | undefined;
+  let stepCounts:
+    | {
+        total: number;
+        passed: number;
+        failed: number;
+        skipped: number;
+        todo: number;
+      }
+    | undefined;
+  let counts:
+    | {
+        total: number;
+        passed: number;
+        failed: number;
+        skipped: number;
+        todo: number;
+        durationMs: number;
+      }
+    | undefined;
+  let malformedFooter = false;
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const scenarioCandidate = parseBehatCounterLine(line, "scenarios");
+    if (scenarioCandidate) {
+      scenarioCounts = scenarioCandidate;
+      stepCounts = undefined;
+      continue;
+    }
+    if (looksLikeBehatCounterLine(line, "scenarios")) {
+      malformedFooter = true;
+      scenarioCounts = undefined;
+      stepCounts = undefined;
+      continue;
+    }
+
+    const stepCandidate = parseBehatCounterLine(line, "steps");
+    if (stepCandidate) {
+      stepCounts = stepCandidate;
+      continue;
+    }
+    if (looksLikeBehatCounterLine(line, "steps")) {
+      malformedFooter = true;
+      stepCounts = undefined;
+      continue;
+    }
+
+    const durationMs = parseBehatTimerLine(line);
+    if (durationMs !== undefined) {
+      if (!scenarioCounts || !stepCounts || malformedFooter) {
+        return INVALID_TEST_REPORT;
+      }
+      counts = {
+        ...scenarioCounts,
+        durationMs,
+      };
+      scenarioCounts = undefined;
+      stepCounts = undefined;
+      malformedFooter = false;
+      continue;
+    }
+    if (looksLikeBehatTimerLine(line)) {
+      if (scenarioCounts || stepCounts || malformedFooter) {
+        return INVALID_TEST_REPORT;
+      }
+      continue;
+    }
+  }
+
+  if (!counts) {
+    return undefined;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "behat",
+  };
+  assignNumber(report, "total", counts.total);
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
+  assignNumber(report, "todo", counts.todo);
+  assignNumber(report, "durationMs", counts.durationMs);
   return hasReportCounts(report) ? report : undefined;
 }
 
@@ -3079,6 +3175,83 @@ function parseCucumberScenarioStatusLine(line: string): {
 
 function looksLikeCucumberScenarioStatusLine(line: string): boolean {
   return /^\d+\s+scenarios?\b/.test(line);
+}
+
+function parseBehatCounterLine(line: string, kind: "scenarios" | "steps"): {
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  todo: number;
+} | undefined {
+  const noun = kind === "scenarios" ? "scenarios?" : "steps?";
+  const match = new RegExp(`^(\\d+)\\s+${noun}\\s+\\(([^)]+)\\)$`).exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const total = Number.parseInt(match[1] ?? "", 10);
+  if (!Number.isInteger(total) || total <= 0) {
+    return undefined;
+  }
+
+  const counts = {
+    passed: 0,
+    failed: 0,
+    skipped: 0,
+    todo: 0,
+  };
+  const seenLabels = new Set<string>();
+  for (const part of (match[2] ?? "").split(",")) {
+    const partMatch = /^\s*(\d+)\s+(passed|failed|skipped|pending|undefined)\s*$/.exec(part);
+    if (!partMatch) {
+      return undefined;
+    }
+    const value = Number.parseInt(partMatch[1] ?? "", 10);
+    const label = partMatch[2] ?? "";
+    if (!Number.isInteger(value) || value < 0 || seenLabels.has(label)) {
+      return undefined;
+    }
+    seenLabels.add(label);
+    if (label === "passed") {
+      counts.passed += value;
+    } else if (label === "failed") {
+      counts.failed += value;
+    } else if (label === "skipped") {
+      counts.skipped += value;
+    } else {
+      counts.todo += value;
+    }
+  }
+  if (counts.passed + counts.failed + counts.skipped + counts.todo !== total) {
+    return undefined;
+  }
+
+  return {
+    total,
+    ...counts,
+  };
+}
+
+function looksLikeBehatCounterLine(line: string, kind: "scenarios" | "steps"): boolean {
+  const noun = kind === "scenarios" ? "scenarios?" : "steps?";
+  return new RegExp(`^\\d+\\s+${noun}\\b`).test(line);
+}
+
+function parseBehatTimerLine(line: string): number | undefined {
+  const match = /^(\d+)m(\d+(?:\.\d+)?)s\s+\(\d+(?:\.\d+)?(?:B|Kb|Mb|Gb|Tb)\)$/.exec(line);
+  if (!match) {
+    return undefined;
+  }
+  const minutes = Number.parseInt(match[1] ?? "", 10);
+  const seconds = Number.parseFloat(match[2] ?? "");
+  if (!Number.isInteger(minutes) || minutes < 0 || !Number.isFinite(seconds) || seconds < 0) {
+    return undefined;
+  }
+  return Math.round((minutes * 60 + seconds) * 1000);
+}
+
+function looksLikeBehatTimerLine(line: string): boolean {
+  return /^\d+m\d+(?:\.\d+)?s\s+\(/.test(line);
 }
 
 function parseTestthatStatusLine(line: string): {
