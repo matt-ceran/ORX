@@ -6,13 +6,13 @@ import { runProcess, type RunProcessOptions, type RunProcessResult } from "../to
 import type { TextTruncation } from "../tools/types.js";
 
 export const DIAGNOSTICS_USAGE =
-  "Usage: orx diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: orx diagnostics [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const DIAG_USAGE =
-  "Usage: orx diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: orx diag [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAGNOSTICS_USAGE =
-  "Usage: /diagnostics [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: /diagnostics [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAG_USAGE =
-  "Usage: /diag [list [--json]|inspect <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: /diag [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
 
 export type DiagnosticProfileId =
   | "typescript"
@@ -514,8 +514,8 @@ export function renderMissingDiagnosticProfile(profileId: string): string {
 
 export function renderDiagnosticInspectUsage(usage: string): string {
   return usage.replace(
-    /\[list(?: \[--json\])?\|inspect <profile>(?: \[--json\])?\|run .+$/,
-    "inspect <profile> [--json]",
+    /\[list(?: \[--json\])?\|status(?: \[--json\])?\|inspect <profile>(?: \[--json\])?\|show <profile>(?: \[--json\])?\|run .+$/,
+    "[inspect|show] <profile> [--json]",
   );
 }
 

@@ -99,7 +99,7 @@ The code-map adapter is local-only, no-key, and not model-autonomous. It reads b
 Implemented under `src/security/`:
 
 - scanner profile catalog for Semgrep, Snyk, Socket, OSV-Scanner, CodeQL, and Trivy
-- explicit operator commands `orx scanners list [--json]`, `orx scanners inspect <profile> [--json]`, `orx scanners run <semgrep|trivy> <path> [--config <local-config-path>] [--json]`, `orx scan <semgrep|trivy> ...`, `/scanners ...`, and `/scan ...`
+- explicit operator commands `orx scanners list|status [--json]`, `orx scanners inspect|show <profile> [--json]`, `orx scanners run <semgrep|trivy> <path> [--config <local-config-path>] [--json]`, `orx scan <semgrep|trivy> ...`, `/scanners ...`, and `/scan ...`
 - runnable Semgrep adapter only when a local `semgrep` binary is already installed and an explicit local config file under cwd is provided
 - runnable Trivy adapter only when a local `trivy` binary is already installed; it runs filesystem secret scanning only and rejects `--config`
 
@@ -108,7 +108,7 @@ The scanner adapter is local-only, no-key, and not model-autonomous. ORX never i
 Implemented under `src/diagnostics/`:
 
 - diagnostics profile catalog for TypeScript, TypeScript Language Server, Pyright, ESLint, Ruff, Mypy, rust-analyzer, gopls, clangd, and SCIP TypeScript
-- explicit operator commands `orx diagnostics list [--json]`, `orx diagnostics inspect <profile> [--json]`, `orx diagnostics run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]`, `orx diag ...`, `/diagnostics ...`, and `/diag ...`
+- explicit operator commands `orx diagnostics list|status [--json]`, `orx diagnostics inspect|show <profile> [--json]`, `orx diagnostics run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]`, `orx diag ...`, `/diagnostics ...`, and `/diag ...`
 - runnable TypeScript adapter only when an already-installed local or PATH `tsc` binary is available
 - runnable Pyright adapter only when an already-installed local or PATH `pyright` binary is available
 - runnable ESLint adapter only when an already-installed local or PATH `eslint` binary is available

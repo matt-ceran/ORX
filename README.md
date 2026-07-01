@@ -69,12 +69,15 @@ orx code symbols
 orx code calls
 orx code outline src/cli.ts
 orx scanners list
+orx scanners status --json
 orx scanners list --json
 orx scanners inspect semgrep
 orx scanners inspect semgrep --json
 orx scanners inspect trivy
+orx scanners show trivy --json
 orx scanners run trivy src
 orx diagnostics list
+orx diagnostics status --json
 orx diagnostics list --json
 orx diagnostics inspect typescript
 orx diagnostics inspect typescript --json
@@ -176,7 +179,9 @@ orx code tree-sitter repo-deps src
 orx tree-sitter outline src/cli.ts
 orx tree-sitter src/cli.ts
 orx diagnostics list
+orx diagnostics status --json
 orx diagnostics inspect typescript
+orx diagnostics show typescript --json
 orx diagnostics run typescript
 orx diag run typescript --json
 orx diagnostics inspect pyright
@@ -198,8 +203,10 @@ orx diagnostics inspect clangd
 orx diagnostics run clangd --project src/main.cpp
 orx diag run clangd --project src/main.cpp --json
 orx scanners list
+orx scanners status --json
 orx scanners inspect semgrep
 orx scanners inspect trivy
+orx scanners show trivy --json
 orx scanners run semgrep src --config semgrep.yml
 orx scan semgrep src --config semgrep.yml --json
 orx scanners run trivy src
@@ -215,7 +222,9 @@ Local diagnostics profiles are explicit operator commands, not model tools:
 
 ```sh
 orx diagnostics list
+orx diagnostics status --json
 orx diagnostics inspect typescript
+orx diagnostics show typescript --json
 orx diagnostics run typescript
 orx diag run typescript --json
 orx diagnostics inspect pyright
@@ -241,8 +250,10 @@ Local security scanner profiles are explicit operator commands, not model tools:
 
 ```sh
 orx scanners list
+orx scanners status --json
 orx scanners inspect semgrep
 orx scanners inspect trivy
+orx scanners show trivy --json
 orx scanners run semgrep src --config semgrep.yml
 orx scan semgrep src --config semgrep.yml --json
 orx scanners run trivy src
@@ -503,10 +514,10 @@ The chat UI keeps in-session message history for the current process, streams as
 /ast-grep <pattern> [path] [--lang <lang>]
 /tree-sitter [parse|outline|imports|refs|calls|repo-outline|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]
 /outline <file>
-/scanners [list|inspect <profile>|run <semgrep|trivy> <path> [--config <local-config-path>] [--json]]
+/scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <semgrep|trivy> <path> [--config <local-config-path>] [--json]]
 /scan <semgrep|trivy> <path> [--config <local-config-path>] [--json]
-/diagnostics [list|inspect <profile>|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]
-/diag [list|inspect <profile>|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]
+/diagnostics [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]
+/diag [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]
 /plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold|validate|inspect|register|install|enable|disable]
 /plugin [list|status]
 /bins [list|inspect|trust|untrust|run]

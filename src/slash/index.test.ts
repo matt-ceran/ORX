@@ -128,9 +128,9 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/tests \[list \[--json\]\|status \[--json\]\|run \[target-id\] \[-- args\.\.\.\]\]/);
   assert.match(output, /\/code \[map\|symbols\|refs\|imports\|calls\|ast-grep\|tree-sitter\|outline\]/);
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
-  assert.match(output, /\/scanners \[list \[--json\]\|inspect <profile> \[--json\]\|run <semgrep\|trivy> <path> \[--config <local-config-path>\] \[--json\]\]/);
+  assert.match(output, /\/scanners \[list \[--json\]\|status \[--json\]\|inspect <profile> \[--json\]\|show <profile> \[--json\]\|run <semgrep\|trivy> <path> \[--config <local-config-path>\] \[--json\]\]/);
   assert.match(output, /\/scan <semgrep\|trivy> <path> \[--config <local-config-path>\] \[--json\]/);
-  assert.match(output, /\/diagnostics \[list \[--json\]\|inspect <profile> \[--json\]\|run <typescript\|pyright\|eslint\|ruff\|mypy\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
+  assert.match(output, /\/diagnostics \[list \[--json\]\|status \[--json\]\|inspect <profile> \[--json\]\|show <profile> \[--json\]\|run <typescript\|pyright\|eslint\|ruff\|mypy\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/refs <query>/);
   assert.match(output, /\/imports \[query\]/);
@@ -1020,7 +1020,7 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
 
     const inspectUsage = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diag inspect", inspectUsage.context), "continue");
-    assert.match(inspectUsage.stderr(), /^Usage: \/diag inspect <profile>/);
+    assert.match(inspectUsage.stderr(), /^Usage: \/diag \[inspect\|show\] <profile>/);
 
     const listExtra = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diagnostics list extra", listExtra.context), "continue");

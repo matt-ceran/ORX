@@ -2202,7 +2202,7 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
 
     const inspectUsage = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diag", "inspect"], {}, inspectUsage.io), 1);
-    assert.match(inspectUsage.stderr(), /^Usage: orx diag inspect <profile>/);
+    assert.match(inspectUsage.stderr(), /^Usage: orx diag \[inspect\|show\] <profile>/);
 
     const listExtra = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diagnostics", "list", "extra"], {}, listExtra.io), 1);

@@ -5,11 +5,11 @@ import { runProcess, type RunProcessOptions, type RunProcessResult } from "../to
 import type { TextTruncation } from "../tools/types.js";
 
 export const SCANNERS_USAGE =
-  "Usage: orx scanners [list [--json]|inspect <profile> [--json]|run <semgrep|trivy> <path> [--config <local-config-path>] [--json]]";
+  "Usage: orx scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <semgrep|trivy> <path> [--config <local-config-path>] [--json]]";
 export const SCAN_USAGE =
   "Usage: orx scan <semgrep|trivy> <path> [--config <local-config-path>] [--json]";
 export const SLASH_SCANNERS_USAGE =
-  "Usage: /scanners [list [--json]|inspect <profile> [--json]|run <semgrep|trivy> <path> [--config <local-config-path>] [--json]]";
+  "Usage: /scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <semgrep|trivy> <path> [--config <local-config-path>] [--json]]";
 export const SLASH_SCAN_USAGE =
   "Usage: /scan <semgrep|trivy> <path> [--config <local-config-path>] [--json]";
 
@@ -300,8 +300,8 @@ export function renderMissingScannerProfile(profileId: string): string {
 
 export function renderScannerInspectUsage(usage: string): string {
   return usage.replace(
-    /\[list(?: \[--json\])?\|inspect <profile>(?: \[--json\])?\|run .+$/,
-    "inspect <profile> [--json]",
+    /\[list(?: \[--json\])?\|status(?: \[--json\])?\|inspect <profile>(?: \[--json\])?\|show <profile>(?: \[--json\])?\|run .+$/,
+    "[inspect|show] <profile> [--json]",
   );
 }
 
