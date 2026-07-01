@@ -572,7 +572,7 @@ const TEST_SUBCOMMAND_COMPLETIONS = ["list", "status", "run"] as const;
 const TEST_READINESS_OPTION_COMPLETIONS = ["--json"] as const;
 const SLASH_TESTS_USAGE = "/tests [list [--json]|status [--json]|run [target-id] [-- args...]]";
 const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls", "ast-grep", "tree-sitter", "outline"] as const;
-const TREE_SITTER_MODE_COMPLETIONS = ["parse", "outline", "imports", "refs", "calls", "repo-outline", "repo-refs", "repo-calls", "repo-imports", "repo-deps"] as const;
+const TREE_SITTER_MODE_COMPLETIONS = ["parse", "outline", "imports", "refs", "calls", "repo-outline", "repo-symbols", "repo-refs", "repo-calls", "repo-imports", "repo-deps"] as const;
 const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "run"] as const;
 const SCANNER_PROFILE_COMPLETIONS = ["semgrep", "snyk", "socket", "osv-scanner", "codeql", "trivy"] as const;
 const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep", "trivy"] as const;
@@ -937,8 +937,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/tree-sitter": {
-    usage: "/tree-sitter [parse|outline|imports|refs|calls|repo-outline|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]",
-    description: "Run optional local tree-sitter AST parse, outline, import, refs, call, repo-outline, repo-ref, repo-call, repo-import, or repo-dependency extraction",
+    usage: "/tree-sitter [parse|outline|imports|refs|calls|repo-outline|repo-symbols|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]",
+    description: "Run optional local tree-sitter AST parse, outline, import, refs, call, repo-outline, repo-symbol, repo-ref, repo-call, repo-import, or repo-dependency extraction",
     group: "Workspace",
     tier: "advanced",
     aliases: ["/treesitter"],
@@ -2520,7 +2520,7 @@ function handleTreeSitterCommandText(
   argText: string,
   context: SlashCommandContext,
   usage: string,
-  options: { defaultMode?: "parse" | "outline" | "imports" | "refs" | "calls" | "repo-outline" | "repo-refs" | "repo-calls" | "repo-imports" | "repo-deps" } = {},
+  options: { defaultMode?: "parse" | "outline" | "imports" | "refs" | "calls" | "repo-outline" | "repo-symbols" | "repo-refs" | "repo-calls" | "repo-imports" | "repo-deps" } = {},
 ): void {
   const parsed = parseCodeTreeSitterArgText(argText, usage, { defaultMode: options.defaultMode });
   if (!parsed.ok) {

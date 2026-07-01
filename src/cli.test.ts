@@ -1735,12 +1735,30 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.match(treeSitterRepoOutline.stdout(), /files_scanned: 1/);
     assert.match(treeSitterRepoOutline.stdout(), /path="src\/index\.ts" kind="function_declaration" name="start" line=3 column=8/);
 
+    const treeSitterRepoSymbols = createIo({ cwd, treeSitterRunner });
+    assert.equal(
+      await runCli(["node", "cli", "code", "tree-sitter", "repo-symbols", "src/index.ts"], {}, treeSitterRepoSymbols.io),
+      0,
+    );
+    assert.match(treeSitterRepoSymbols.stdout(), /Code tree-sitter repo symbols/);
+    assert.match(treeSitterRepoSymbols.stdout(), /not semantic symbol resolution/);
+    assert.match(treeSitterRepoSymbols.stdout(), /files_scanned: 1/);
+    assert.match(treeSitterRepoSymbols.stdout(), /symbols: 2/);
+    assert.match(treeSitterRepoSymbols.stdout(), /path="src\/index\.ts" kind="function_declaration" name="start" line=3 column=8/);
+
     const treeSitterRepoOutlineAlias = createIo({ cwd, treeSitterRunner });
     assert.equal(
       await runCli(["node", "cli", "tree-sitter", "repo-outline", "src/index.ts"], {}, treeSitterRepoOutlineAlias.io),
       0,
     );
     assert.match(treeSitterRepoOutlineAlias.stdout(), /Code tree-sitter repo outline/);
+
+    const treeSitterRepoSymbolsAlias = createIo({ cwd, treeSitterRunner });
+    assert.equal(
+      await runCli(["node", "cli", "tree-sitter", "repo-symbols", "src/index.ts"], {}, treeSitterRepoSymbolsAlias.io),
+      0,
+    );
+    assert.match(treeSitterRepoSymbolsAlias.stdout(), /Code tree-sitter repo symbols/);
 
     const treeSitterAstCalls = createIo({ cwd, treeSitterRunner });
     assert.equal(

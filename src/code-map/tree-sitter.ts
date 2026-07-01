@@ -5,9 +5,9 @@ import { redactSecrets } from "../mcp/audit.js";
 import { truncateText } from "../tools/truncation.js";
 import type { TextTruncation } from "../tools/types.js";
 
-export const CODE_TREE_SITTER_USAGE = "Usage: orx code tree-sitter [parse|outline|imports|refs|calls|repo-outline|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]";
+export const CODE_TREE_SITTER_USAGE = "Usage: orx code tree-sitter [parse|outline|imports|refs|calls|repo-outline|repo-symbols|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]";
 export const CODE_TREE_SITTER_OUTLINE_USAGE = "Usage: orx code outline <file>";
-export const SLASH_CODE_TREE_SITTER_USAGE = "Usage: /code tree-sitter [parse|outline|imports|refs|calls|repo-outline|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]";
+export const SLASH_CODE_TREE_SITTER_USAGE = "Usage: /code tree-sitter [parse|outline|imports|refs|calls|repo-outline|repo-symbols|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path]";
 export const SLASH_CODE_TREE_SITTER_OUTLINE_USAGE = "Usage: /code outline <file>";
 
 export interface CodeTreeSitterArgs {
@@ -23,6 +23,7 @@ export type CodeTreeSitterMode =
   | "refs"
   | "calls"
   | "repo-outline"
+  | "repo-symbols"
   | "repo-refs"
   | "repo-calls"
   | "repo-imports"
@@ -444,11 +445,12 @@ export function parseCodeTreeSitterArgs(
   const hasExplicitMode = explicitMode !== undefined;
   const mode = hasExplicitMode ? explicitMode : options.defaultMode ?? "parse";
   const isRepoOutline = mode === "repo-outline";
+  const isRepoSymbols = mode === "repo-symbols";
   const isRepoRefs = mode === "repo-refs";
   const isRepoCalls = mode === "repo-calls";
   const isRepoImports = mode === "repo-imports";
   const isRepoDeps = mode === "repo-deps";
-  const isRepoNoQuery = isRepoOutline || isRepoCalls || isRepoImports || isRepoDeps;
+  const isRepoNoQuery = isRepoOutline || isRepoSymbols || isRepoCalls || isRepoImports || isRepoDeps;
   const targetPath = isRepoRefs
     ? hasExplicitMode ? positional[2] ?? "." : positional[1] ?? "."
     : isRepoNoQuery
@@ -543,8 +545,9 @@ export function runCodeTreeSitter(options: RunCodeTreeSitterOptions): CodeTreeSi
     });
   }
 
-  if (mode === "repo-outline") {
+  if (mode === "repo-outline" || mode === "repo-symbols") {
     return runCodeTreeSitterRepoOutline({
+      mode,
       root,
       targetPath: options.targetPath,
       env,
@@ -699,6 +702,7 @@ export function runCodeTreeSitter(options: RunCodeTreeSitterOptions): CodeTreeSi
 }
 
 function runCodeTreeSitterRepoOutline(options: {
+  mode?: "repo-outline" | "repo-symbols";
   root: string;
   targetPath: string;
   env: NodeJS.ProcessEnv;
@@ -707,12 +711,13 @@ function runCodeTreeSitterRepoOutline(options: {
   timeoutMs: number;
   emptyText: { text: string; truncation: TextTruncation };
 }): CodeTreeSitterResult {
+  const mode = options.mode ?? "repo-outline";
   const target = resolveTreeSitterRepoTarget(options.root, options.targetPath);
   if (!target.ok) {
     return {
       ok: false,
       status: "invalid_arguments",
-      mode: "repo-outline",
+      mode,
       root: options.root,
       targetPath: options.targetPath,
       args: [],
@@ -730,7 +735,7 @@ function runCodeTreeSitterRepoOutline(options: {
     return {
       ok: false,
       status: "tool_missing",
-      mode: "repo-outline",
+      mode,
       root: options.root,
       targetPath: target.displayPath,
       args: [],
@@ -801,7 +806,7 @@ function runCodeTreeSitterRepoOutline(options: {
   }
 
   if (discovered.files.length === 0) {
-    warnings.push("no source files found for bounded tree-sitter repo outline");
+    warnings.push(`no source files found for bounded tree-sitter ${mode === "repo-symbols" ? "repo symbols" : "repo outline"}`);
   }
   if (discovered.truncated) {
     warnings.push("tree-sitter repo file scan hit bounds; later files were omitted");
@@ -817,7 +822,7 @@ function runCodeTreeSitterRepoOutline(options: {
   return {
     ok: true,
     status: "ok",
-    mode: "repo-outline",
+    mode,
     root: options.root,
     targetPath: target.displayPath,
     command: TREE_SITTER_COMMAND,
@@ -1469,6 +1474,9 @@ export function renderCodeTreeSitterResult(
   if (result.mode === "repo-outline") {
     return renderCodeTreeSitterRepoOutlineResult(result, usage);
   }
+  if (result.mode === "repo-symbols") {
+    return renderCodeTreeSitterRepoSymbolsResult(result, usage);
+  }
   if (result.mode === "imports") {
     return renderCodeTreeSitterImportsResult(result, usage);
   }
@@ -1647,6 +1655,80 @@ function renderCodeTreeSitterRepoOutlineResult(
     }
     if (repoOutline.omittedEntries > 0) {
       lines.push(`    - ${repoOutline.omittedEntries} more AST outline entries omitted`);
+    }
+  }
+
+  if (repoOutline && repoOutline.omissions.length > 0) {
+    lines.push("  omissions:");
+    for (const omission of repoOutline.omissions.slice(0, 12)) {
+      lines.push(formatRepoOmission(omission));
+    }
+    if (repoOutline.omissions.length > 12) {
+      lines.push(`    - ${repoOutline.omissions.length - 12} more omissions omitted`);
+    }
+  }
+
+  if (repoOutline && repoOutline.warnings.length > 0) {
+    lines.push("  warnings:");
+    for (const warning of repoOutline.warnings) {
+      lines.push(`    - ${sanitizeInline(warning)}`);
+    }
+  }
+
+  lines.push("  stderr:");
+  lines.push(...indentOutput(result.stderr));
+  if (result.stderrTruncation.truncated) {
+    lines.push(`    - stderr truncated: ${result.stderrTruncation.omittedBytes}B omitted`);
+  }
+
+  lines.push("  raw_parse: use tree-sitter parse mode for a single-file raw AST");
+  lines.push("  fallback: lexical code-map and symbols remain available without tree-sitter");
+  lines.push(`  usage: ${usage.replace(/^Usage:\s*/, "")}`);
+  return lines.join("\n");
+}
+
+function renderCodeTreeSitterRepoSymbolsResult(
+  result: CodeTreeSitterResult,
+  usage: string,
+): string {
+  const lines = [
+    "Code tree-sitter repo symbols",
+    `  status: ${result.status}`,
+    `  root: ${sanitizeInline(result.root)}`,
+    `  path: ${sanitizeInline(result.targetPath)}`,
+    "  mode: AST-backed bounded repo symbol previews via optional tree-sitter CLI (not semantic symbol resolution)",
+    "  mutation: none",
+  ];
+  if (result.commandLine) {
+    lines.push(`  command: ${result.commandLine}`);
+  }
+  if (result.durationMs !== undefined) {
+    lines.push(`  duration_ms: ${result.durationMs}`);
+  }
+  if (result.status === "tool_missing") {
+    lines.push(`  setup: ${treeSitterMissingMessage()}`);
+  }
+  if (result.message && result.status !== "tool_missing") {
+    lines.push(`  message: ${sanitizeInline(result.message)}`);
+  }
+
+  const repoOutline = result.repoOutline;
+  lines.push(`  files_scanned: ${repoOutline?.filesScanned ?? 0}`);
+  lines.push(`  files_with_symbols: ${repoOutline?.filesWithOutline ?? 0}`);
+  lines.push(`  symbols: ${repoOutline?.totalEntries ?? 0}${repoOutline?.truncated ? " (truncated)" : ""}`);
+  if (repoOutline && repoOutline.omittedFiles > 0) {
+    lines.push(`  omitted_files: ${repoOutline.omittedFiles}`);
+  }
+
+  lines.push("  symbols:");
+  if (!repoOutline || repoOutline.entries.length === 0) {
+    lines.push("    - none");
+  } else {
+    for (const entry of repoOutline.entries) {
+      lines.push(formatRepoOutlineEntry(entry));
+    }
+    if (repoOutline.omittedEntries > 0) {
+      lines.push(`    - ${repoOutline.omittedEntries} more AST symbol entries omitted`);
     }
   }
 
@@ -2987,6 +3069,7 @@ function normalizeTreeSitterMode(value: string | undefined): CodeTreeSitterMode 
     value === "refs" ||
     value === "calls" ||
     value === "repo-outline" ||
+    value === "repo-symbols" ||
     value === "repo-refs" ||
     value === "repo-calls" ||
     value === "repo-imports" ||
@@ -2999,6 +3082,9 @@ function normalizeTreeSitterMode(value: string | undefined): CodeTreeSitterMode 
   }
   if (value === "repo-outlines" || value === "outlines-all" || value === "outline-all") {
     return "repo-outline";
+  }
+  if (value === "repo-symbol" || value === "symbols-all" || value === "repo-symbol-index" || value === "symbols-index") {
+    return "repo-symbols";
   }
   if (value === "repo-ref" || value === "repo-references" || value === "refs-all" || value === "references-all") {
     return "repo-refs";

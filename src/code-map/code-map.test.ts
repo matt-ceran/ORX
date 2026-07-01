@@ -1111,6 +1111,26 @@ test("tree-sitter repo outline scans bounded source files without semantic symbo
     assert.match(rendered, /path="src\/util\.ts" kind="variable_declarator" name="helper" line=1 column=14/);
     assert.doesNotMatch(rendered, /node_modules/);
 
+    const symbolsParsed = parseCodeTreeSitterArgs(["repo-symbols", "src"]);
+    if (!symbolsParsed.ok) {
+      assert.fail(symbolsParsed.message);
+    }
+    const symbolsResult = runCodeTreeSitter({
+      ...symbolsParsed.args,
+      cwd,
+      runner,
+    });
+    assert.equal(symbolsResult.ok, true);
+    assert.equal(symbolsResult.mode, "repo-symbols");
+    assert.equal(symbolsResult.repoOutline?.filesScanned, 2);
+    assert.equal(symbolsResult.repoOutline?.totalEntries, 3);
+    const renderedSymbols = renderCodeTreeSitterResult(symbolsResult);
+    assert.match(renderedSymbols, /Code tree-sitter repo symbols/);
+    assert.match(renderedSymbols, /not semantic symbol resolution/);
+    assert.match(renderedSymbols, /files_with_symbols: 2/);
+    assert.match(renderedSymbols, /symbols: 3/);
+    assert.match(renderedSymbols, /path="src\/index\.ts" kind="class_declaration" name="Worker" line=2 column=8/);
+
     const defaultTarget = parseCodeTreeSitterArgs(["repo-outline"]);
     assert.equal(defaultTarget.ok, true);
     if (defaultTarget.ok) {
@@ -1123,6 +1143,13 @@ test("tree-sitter repo outline scans bounded source files without semantic symbo
     if (aliasTarget.ok) {
       assert.equal(aliasTarget.args.targetPath, "src");
       assert.equal(aliasTarget.args.mode, "repo-outline");
+    }
+
+    const symbolAliasTarget = parseCodeTreeSitterArgs(["symbols-all", "src"]);
+    assert.equal(symbolAliasTarget.ok, true);
+    if (symbolAliasTarget.ok) {
+      assert.equal(symbolAliasTarget.args.targetPath, "src");
+      assert.equal(symbolAliasTarget.args.mode, "repo-symbols");
     }
 
     const invalidTarget = runCodeTreeSitter({
