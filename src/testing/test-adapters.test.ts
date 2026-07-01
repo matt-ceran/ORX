@@ -1035,6 +1035,76 @@ test("parses common framework report summaries", () => {
   );
 
   assert.deepEqual(
+    parseTestReportSummary(createTarget("unknown"), "1 spec, 0 failures"),
+    {
+      framework: "unknown",
+      source: "jasmine",
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(createTarget("node"), "3 specs, 1 failure, 1 pending spec"),
+    {
+      framework: "node",
+      source: "jasmine",
+      total: 3,
+      passed: 1,
+      failed: 1,
+      skipped: 1,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "2 specs, 0 failures",
+        "4 specs, 1 failure, 2 pending specs",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "jasmine",
+      total: 4,
+      passed: 1,
+      failed: 1,
+      skipped: 2,
+    },
+  );
+
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "0 specs, 0 failures"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 specs, 3 failures"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 specs, 1 failure after cleanup"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 specs, 1 failed"), undefined);
+  assert.equal(parseTestReportSummary(createTarget("unknown"), "2 specs, 0 failures, 3 pending specs"), undefined);
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "2 specs, 3 failures",
+        "Test Summary: 3 passed, 3 total",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "2 specs, 1 failure after cleanup",
+        "ℹ tests 2",
+        "ℹ fail 1",
+        "ℹ pass 1",
+      ].join("\n"),
+    ),
+    undefined,
+  );
+
+  assert.deepEqual(
     parseTestReportSummary(createTarget("unknown"), "3 scenarios (1 failed, 2 passed)"),
     {
       framework: "unknown",
