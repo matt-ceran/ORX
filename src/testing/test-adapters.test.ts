@@ -4708,6 +4708,116 @@ test("parses captured NUnit XML reports before text fallback", () => {
   );
 });
 
+test("parses captured xUnit XML reports before text fallback", () => {
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        "<assemblies>",
+        '  <assembly name="Example.Tests" total="4" passed="2" failed="1" skipped="1" time="0.125" errors="0"/>',
+        '  <assembly name="Other.Tests" total="1" passed="1" failed="0" skipped="0" time="0.250" errors="1"/>',
+        "</assemblies>",
+      ].join("\n"),
+      "Test Summary: 99 passed, 99 total",
+    ),
+    {
+      framework: "unknown",
+      source: "xunit-xml",
+      total: 6,
+      passed: 3,
+      failed: 2,
+      skipped: 1,
+      durationMs: 375,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("node"),
+      [
+        "<assemblies>",
+        '  <assembly name="Example.Tests" total="3" passed="2" failed="1" skipped="0"/>',
+        "</assemblies>",
+      ].join("\n"),
+    ),
+    {
+      framework: "node",
+      source: "xunit-xml",
+      total: 3,
+      passed: 2,
+      failed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.deepEqual(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      [
+        "debug before xml",
+        '<assemblies><assembly total="1" passed="1" failed="0" skipped="0"/></assemblies>',
+        "Test Summary: 1 passed, 1 total",
+      ].join("\n"),
+    ),
+    {
+      framework: "unknown",
+      source: "generic",
+      total: 1,
+      passed: 1,
+    },
+  );
+
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<assemblies><assembly total="1" passed="2" failed="0" skipped="0"/></assemblies>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<assemblies><assembly total="1" passed="1" failed="oops" skipped="0"/></assemblies>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<assemblies><assembly total="1" passed="1" failed="0" skipped="0" errors="oops"/></assemblies>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<assemblies><assembly total="1" passed="1" failed="0" skipped="0" time="oops"/></assemblies>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      "<assemblies></assemblies>",
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTestReportSummary(
+      createTarget("unknown"),
+      '<assemblies><assembly total="1" passed="1" failed="0" skipped="0"/></assembly>',
+      "Test Summary: 1 passed, 1 total",
+    ),
+    undefined,
+  );
+});
+
 test("parses captured TeamCity service messages before text fallback", () => {
   assert.deepEqual(
     parseTestReportSummary(

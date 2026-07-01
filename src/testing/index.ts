@@ -72,7 +72,7 @@ export interface TestRunResult {
 
 export interface TestReportSummary {
   framework: TestFramework;
-  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "testng-xml" | "nunit-xml" | "teamcity" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json" | "mocha-json" | "rspec-json";
+  source: TestFramework | "generic" | "tap" | "mocha" | "pytest" | "cargo" | "nextest" | "cucumber" | "behat" | "behave" | "testthat" | "gtest" | "catch2" | "deno" | "dart" | "exunit" | "gradle" | "junit-platform" | "scalatest" | "testng" | "nunit" | "robot" | "jasmine" | "go" | "go-json" | "cypress" | "rspec" | "minitest" | "karma" | "bun" | "tasty" | "zig" | "unittest" | "junit-text" | "junit-xml" | "testng-xml" | "nunit-xml" | "xunit-xml" | "teamcity" | "pest" | "phpunit" | "dotnet" | "ctest" | "meson" | "unity" | "lit" | "bazel" | "xctest" | "node-junit" | "jest-json" | "vitest-json" | "playwright-json" | "mocha-json" | "rspec-json";
   total?: number;
   passed?: number;
   failed?: number;
@@ -1201,7 +1201,8 @@ function parseCapturedXmlReportSummary(
 ): TestReportSummary | InvalidTestReport | undefined {
   return parseCapturedJunitXmlReportSummary(text, framework) ??
     parseCapturedTestngXmlReportSummary(text, framework) ??
-    parseCapturedNunitXmlReportSummary(text, framework);
+    parseCapturedNunitXmlReportSummary(text, framework) ??
+    parseCapturedXunitXmlReportSummary(text, framework);
 }
 
 function parseCapturedTestngXmlReportSummary(
@@ -1260,6 +1261,38 @@ function parseCapturedNunitXmlReportSummary(
   const report: TestReportSummary = {
     framework,
     source: "nunit-xml",
+  };
+  assignNumber(report, "total", counts.total);
+  assignNumber(report, "passed", counts.passed);
+  assignNumber(report, "failed", counts.failed);
+  assignNumber(report, "skipped", counts.skipped);
+  assignNumber(report, "durationMs", counts.durationMs);
+  return hasReportCounts(report) ? report : undefined;
+}
+
+function parseCapturedXunitXmlReportSummary(
+  text: string,
+  framework: TestFramework,
+): TestReportSummary | InvalidTestReport | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (!looksLikeWholeXunitXmlReport(trimmed)) {
+    if (startsLikeXunitXmlReport(trimmed)) {
+      return INVALID_TEST_REPORT;
+    }
+    return undefined;
+  }
+
+  const counts = parseXunitXmlCounts(trimmed);
+  if (!counts) {
+    return INVALID_TEST_REPORT;
+  }
+
+  const report: TestReportSummary = {
+    framework,
+    source: "xunit-xml",
   };
   assignNumber(report, "total", counts.total);
   assignNumber(report, "passed", counts.passed);
@@ -5893,6 +5926,14 @@ function startsLikeNunitXmlReport(text: string): boolean {
   return rootName === "test-run" || rootName === "test-results";
 }
 
+function looksLikeWholeXunitXmlReport(text: string): boolean {
+  return matchWholeXmlRootName(stripXmlDeclaration(text).trim()) === "assemblies";
+}
+
+function startsLikeXunitXmlReport(text: string): boolean {
+  return matchFirstXmlRootName(stripXmlDeclaration(text).trim()) === "assemblies";
+}
+
 function stripXmlDeclaration(text: string): string {
   return text.replace(/^\s*<\?xml\b[^>]*\?>\s*/i, "");
 }
@@ -6509,6 +6550,92 @@ function parseNunit2XmlCounts(text: string):
     passed,
     failed,
     skipped: skippedTotal,
+  };
+}
+
+function parseXunitXmlCounts(text: string):
+  | {
+      total: number;
+      passed: number;
+      failed: number;
+      skipped: number;
+      durationMs?: number;
+    }
+  | undefined {
+  const assemblyTags = collectXmlStartTagAttributes(text, "assembly");
+  if (!assemblyTags || assemblyTags.length === 0) {
+    return undefined;
+  }
+
+  let total = 0;
+  let passed = 0;
+  let failed = 0;
+  let skipped = 0;
+  let durationMs = 0;
+  let hasDuration = false;
+  for (const tag of assemblyTags) {
+    const counts = parseXunitXmlAssemblyAttributes(tag);
+    if (!counts) {
+      return undefined;
+    }
+    total += counts.total;
+    passed += counts.passed;
+    failed += counts.failed;
+    skipped += counts.skipped;
+    if (counts.durationMs !== undefined) {
+      durationMs += counts.durationMs;
+      hasDuration = true;
+    }
+  }
+
+  if (![total, passed, failed, skipped].every(Number.isSafeInteger)) {
+    return undefined;
+  }
+
+  return {
+    total,
+    passed,
+    failed,
+    skipped,
+    durationMs: hasDuration ? Math.round(durationMs * 1000) / 1000 : undefined,
+  };
+}
+
+function parseXunitXmlAssemblyAttributes(attributes: string):
+  | {
+      total: number;
+      passed: number;
+      failed: number;
+      skipped: number;
+      durationMs?: number;
+    }
+  | undefined {
+  const total = matchXmlIntegerAttribute(attributes, "total");
+  const passed = matchXmlIntegerAttribute(attributes, "passed");
+  const failed = matchXmlIntegerAttribute(attributes, "failed");
+  const skipped = matchXmlIntegerAttribute(attributes, "skipped");
+  const errors = matchOptionalXmlIntegerAttribute(attributes, "errors", 0);
+  const seconds = matchOptionalXmlDecimalAttribute(attributes, "time");
+  if (
+    total === undefined ||
+    passed === undefined ||
+    failed === undefined ||
+    skipped === undefined ||
+    errors === null ||
+    seconds === null
+  ) {
+    return undefined;
+  }
+  if (passed + failed + skipped !== total) {
+    return undefined;
+  }
+
+  return {
+    total: total + errors,
+    passed,
+    failed: failed + errors,
+    skipped,
+    durationMs: seconds === undefined ? undefined : Math.round(seconds * 1000 * 1000) / 1000,
   };
 }
 
