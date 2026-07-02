@@ -5321,10 +5321,42 @@ test("cli plugins install supports pinned git catalog entries without fetch", as
     assert.match(review.stdout(), /install_enable_trust_grant_fetch_execute: separate_explicit_steps/);
     assert.equal(readFileSync(registryPath, "utf8"), registryText);
 
+    const reviewJson = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "plugins", "review", "--json"], env, reviewJson.io), 0);
+    const reviewReport = JSON.parse(reviewJson.stdout());
+    assert.equal(reviewReport.surface, "orx.plugin_review");
+    assert.equal(reviewReport.operator_only, true);
+    assert.equal(reviewReport.network, "none");
+    assert.equal(reviewReport.execution, "none");
+    assert.equal(reviewReport.data_state_writes, "none");
+    assert.equal(reviewReport.installed_count, 1);
+    assert.equal(reviewReport.enabled_count, 1);
+    assert.equal(reviewReport.catalog_update_available_count, 1);
+    assert.equal(reviewReport.plugins[0].id, "acme.git-cli-plugin@1.0.0");
+    assert.equal(reviewReport.plugins[0].source.type, "git");
+    assert.equal(reviewReport.plugins[0].source.resolved_commit, commit);
+    assert.equal(reviewReport.plugins[0].catalog.status, "update_available");
+    assert.equal(reviewReport.plugins[0].catalog.catalog_commit, nextCommit);
+    assert.deepEqual(reviewReport.plugins[0].next_actions, [
+      "orx plugins catalog update acme.git-cli-plugin@1.0.0",
+    ]);
+    assert.equal(reviewReport.authority.registry_catalog_cache_trust_state, "read_only");
+    assert.equal(readFileSync(registryPath, "utf8"), registryText);
+
     const doctor = createNoFetchIo();
-    assert.equal(await runCli(["node", "cli", "plugins", "doctor"], env, doctor.io), 0);
-    assert.match(doctor.stdout(), /Plugin Review/);
-    assert.match(doctor.stdout(), /catalog_updates_available: 1/);
+    assert.equal(await runCli(["node", "cli", "plugins", "doctor", "--json"], env, doctor.io), 0);
+    const doctorReport = JSON.parse(doctor.stdout());
+    assert.equal(doctorReport.surface, "orx.plugin_review");
+    assert.equal(doctorReport.catalog_update_available_count, 1);
+    assert.equal(readFileSync(registryPath, "utf8"), registryText);
+
+    const invalidReviewArgs = createNoFetchIo();
+    assert.equal(
+      await runCli(["node", "cli", "plugins", "audit", "--json", "extra"], env, invalidReviewArgs.io),
+      1,
+    );
+    assert.equal(invalidReviewArgs.stdout(), "");
+    assert.match(invalidReviewArgs.stderr(), /Usage: orx plugins review\|doctor\|audit \[--json\]/);
     assert.equal(readFileSync(registryPath, "utf8"), registryText);
 
     const applied = createNoFetchIo();

@@ -37,6 +37,12 @@ const steps = [
     [cliPath, "plugins", "review"],
     { smoke: "pluginsReview", cwd: smokeCwd },
   ],
+  [
+    "built CLI smoke: plugins review --json",
+    nodeBin,
+    [cliPath, "plugins", "review", "--json"],
+    { smoke: "pluginsReviewJson", cwd: smokeCwd },
+  ],
   ["built CLI smoke: mcp presets", nodeBin, [cliPath, "mcp", "presets"], { smoke: "mcpPresets", cwd: smokeCwd }],
 ];
 
@@ -176,6 +182,28 @@ function assertSmoke(kind, stdout) {
       data.summary.plugin_execution !== "none"
     ) {
       throw new Error("doctor --json smoke did not report no-network/no-plugin-execution boundaries");
+    }
+    return;
+  }
+
+  if (kind === "pluginsReviewJson") {
+    const data = JSON.parse(stdout);
+    if (data.schema_version !== 1 || data.surface !== "orx.plugin_review") {
+      throw new Error("plugins review --json schema metadata mismatch");
+    }
+    if (
+      data.operator_only !== true ||
+      data.network !== "none" ||
+      data.execution !== "none" ||
+      data.data_state_writes !== "none"
+    ) {
+      throw new Error("plugins review --json did not report read-only operator boundaries");
+    }
+    if (typeof data.installed_count !== "number" || !Array.isArray(data.plugins)) {
+      throw new Error("plugins review --json smoke missing review counts");
+    }
+    if (data.authority?.registry_catalog_cache_trust_state !== "read_only") {
+      throw new Error("plugins review --json smoke missing read-only authority");
     }
     return;
   }

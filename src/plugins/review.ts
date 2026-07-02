@@ -71,6 +71,10 @@ export interface PluginReview {
   entries: PluginReviewEntry[];
 }
 
+export interface PluginReviewParsedArgs {
+  json: boolean;
+}
+
 export function createPluginReview(options: PluginReviewOptions = {}): PluginReview {
   const registry = loadPluginRegistryReadOnly({ registryPath: options.registryPath });
   const plugins = Object.values(registry.plugins).sort((left, right) =>
@@ -209,6 +213,60 @@ export function renderPluginReview(review: PluginReview): string {
     "    install_enable_trust_grant_fetch_execute: separate_explicit_steps",
   );
   return lines.join("\n");
+}
+
+export function parsePluginReviewArgs(args: string[]): PluginReviewParsedArgs | undefined {
+  if (args.length === 1) {
+    return { json: false };
+  }
+  if (args.length === 2 && args[1] === "--json") {
+    return { json: true };
+  }
+  return undefined;
+}
+
+export function renderPluginReviewJson(review: PluginReview): string {
+  return JSON.stringify(
+    {
+      schema_version: 1,
+      surface: "orx.plugin_review",
+      operator_only: true,
+      model_tool: "none",
+      execution: "none",
+      network: "none",
+      data_state_writes: "none",
+      installed_count: review.installedCount,
+      enabled_count: review.enabledCount,
+      disabled_count: review.disabledCount,
+      catalog_update_available_count: review.updateAvailableCount,
+      bin_trust: surfaceCountsJson(totalBins(review), {
+        trusted: totalTrustedBins(review),
+        pending: review.pendingBinTrustCount,
+        untrusted: review.untrustedBinCount,
+      }),
+      hook_trust: surfaceCountsJson(totalHooks(review), {
+        trusted: totalTrustedHooks(review),
+        pending: review.pendingHookTrustCount,
+        untrusted: review.untrustedHookCount,
+      }),
+      plugin_mcp_profile_count: review.pluginMcpProfileCount,
+      plugin_command_alias_count: review.aliasCount,
+      omission_count: review.omissionCount,
+      truncated: review.truncated,
+      plugins: review.entries.map(pluginReviewEntryJson),
+      authority: {
+        review_side_effects: "none",
+        registry_catalog_cache_trust_state: "read_only",
+        install_enable_trust_grant_fetch_execute: "separate_explicit_steps",
+        catalog_edits: "orx plugins catalog add-local|add-git|remove",
+        catalog_updates: "orx plugins catalog update <id>",
+        trust_changes: "orx bins trust|untrust; orx hooks trust|untrust",
+      },
+      usage: "orx plugins review [--json]",
+    },
+    null,
+    2,
+  );
 }
 
 function countBins(
@@ -378,4 +436,80 @@ function formatSurfaceCounts(counts: SurfaceCounts): string {
 
 function formatAliasCounts(counts: AliasCounts): string {
   return `${counts.total}/prompt:${counts.prompt}/bin:${counts.bin}/exec:${counts.exec}/trusted:${counts.trusted}/pending:${counts.pending}/untrusted:${counts.untrusted}/missing:${counts.missing}`;
+}
+
+function totalBins(review: PluginReview): number {
+  return review.entries.reduce((sum, entry) => sum + entry.bins.total, 0);
+}
+
+function totalTrustedBins(review: PluginReview): number {
+  return review.entries.reduce((sum, entry) => sum + entry.bins.trusted, 0);
+}
+
+function totalHooks(review: PluginReview): number {
+  return review.entries.reduce((sum, entry) => sum + entry.hooks.total, 0);
+}
+
+function totalTrustedHooks(review: PluginReview): number {
+  return review.entries.reduce((sum, entry) => sum + entry.hooks.trusted, 0);
+}
+
+function surfaceCountsJson(
+  total: number,
+  counts: Pick<SurfaceCounts, "trusted" | "pending" | "untrusted">,
+): Record<string, number> {
+  return {
+    total,
+    trusted: counts.trusted,
+    pending: counts.pending,
+    untrusted: counts.untrusted,
+  };
+}
+
+function pluginReviewEntryJson(entry: PluginReviewEntry): Record<string, unknown> {
+  return {
+    id: entry.plugin.id,
+    enabled: entry.plugin.enabled,
+    source: pluginSourceJson(entry.plugin.manifest.source),
+    catalog: entry.catalog
+      ? {
+          status: entry.catalog.status,
+          catalog_commit: entry.catalog.catalogCommit,
+          installed_commit: entry.catalog.installedCommit,
+          repository: entry.catalog.repository,
+          installed_repository: entry.catalog.installedRepository,
+          enabled: entry.catalog.enabled,
+          message: entry.catalog.message,
+        }
+      : {
+          status: "not_in_catalog",
+        },
+    trust_tier: entry.plugin.manifest.metadata?.trustTier ?? "unspecified",
+    components: Object.keys(entry.plugin.manifest.components).sort(),
+    bins: surfaceCountsJson(entry.bins.total, entry.bins),
+    hooks: surfaceCountsJson(entry.hooks.total, entry.hooks),
+    aliases: {
+      total: entry.aliases.total,
+      prompt: entry.aliases.prompt,
+      bin: entry.aliases.bin,
+      exec: entry.aliases.exec,
+      trusted: entry.aliases.trusted,
+      pending: entry.aliases.pending,
+      untrusted: entry.aliases.untrusted,
+      missing: entry.aliases.missing,
+    },
+    mcp_profile_count: entry.mcpProfiles,
+    next_action_count: entry.actions.length,
+    next_actions: entry.actions,
+  };
+}
+
+function pluginSourceJson(source: InstalledPluginRecord["manifest"]["source"]): Record<string, unknown> {
+  return {
+    type: source.type,
+    path: source.path,
+    repository: source.repository,
+    ref: source.ref,
+    resolved_commit: source.resolvedCommit,
+  };
 }

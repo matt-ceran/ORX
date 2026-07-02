@@ -195,6 +195,7 @@ import {
   installPlugin,
   isPluginCommandAliasName,
   loadPluginCatalog,
+  parsePluginReviewArgs,
   parsePluginCatalogAddGitArgs,
   parsePluginCatalogAddLocalArgs,
   parsePluginScaffoldArgs,
@@ -214,6 +215,7 @@ import {
   renderPluginList,
   renderPluginPromptList,
   renderPluginReview,
+  renderPluginReviewJson,
   renderPluginRuleList,
   renderPluginScaffoldResult,
   renderPluginSkillList,
@@ -1364,7 +1366,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/plugins": {
-    usage: "/plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
+    usage: "/plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review [--json]|doctor [--json]|audit [--json]|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
     description: "Show catalog entries and update inert plugin registry state",
     group: "Integrations",
     tier: "advanced",
@@ -1956,6 +1958,12 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       }
       if (firstArg === "catalog" && argIndex === 1) {
         return [...PLUGIN_CATALOG_SUBCOMMAND_COMPLETIONS];
+      }
+      if (
+        (firstArg === "review" || firstArg === "doctor" || firstArg === "audit") &&
+        argIndex === 1
+      ) {
+        return ["--json"];
       }
       return [];
     case "/plugin":
@@ -3230,16 +3238,20 @@ async function handlePluginsCommand(
   }
 
   if (subcommand === "review" || subcommand === "doctor" || subcommand === "audit") {
+    const parsed = parsePluginReviewArgs(command.args);
+    if (!parsed) {
+      writeLine(context.io.stderr, `Usage: /plugins ${subcommand} [--json]`);
+      return;
+    }
+    const review = createPluginReview({
+      registryPath: context.pluginRegistryPath,
+      catalogPath: context.pluginCatalogPath,
+      binsConfigPath: context.pluginBinsConfigPath,
+      hooksConfigPath: context.pluginHooksConfigPath,
+    });
     writeLine(
       context.io.stdout,
-      renderPluginReview(
-        createPluginReview({
-          registryPath: context.pluginRegistryPath,
-          catalogPath: context.pluginCatalogPath,
-          binsConfigPath: context.pluginBinsConfigPath,
-          hooksConfigPath: context.pluginHooksConfigPath,
-        }),
-      ),
+      parsed.json ? renderPluginReviewJson(review) : renderPluginReview(review),
     );
     return;
   }
@@ -3369,7 +3381,7 @@ async function handlePluginsCommand(
 
   writeLine(
     context.io.stderr,
-    "Usage: /plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: /plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review [--json]|doctor [--json]|audit [--json]|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
   );
 }
 

@@ -14,6 +14,7 @@ import {
   createPluginReview,
   registerPluginManifest,
   renderPluginReview,
+  renderPluginReviewJson,
   savePluginCatalog,
   setPluginEnabledState,
 } from "./index.js";
@@ -146,6 +147,85 @@ test("plugin review summarizes catalog drift and enabled trust gates without net
     assert.match(rendered, /network: none/);
     assert.match(rendered, /execution: none/);
     assert.match(rendered, /install_enable_trust_grant_fetch_execute: separate_explicit_steps/);
+
+    const json = JSON.parse(renderPluginReviewJson(review));
+    assert.equal(json.schema_version, 1);
+    assert.equal(json.surface, "orx.plugin_review");
+    assert.equal(json.operator_only, true);
+    assert.equal(json.model_tool, "none");
+    assert.equal(json.execution, "none");
+    assert.equal(json.network, "none");
+    assert.equal(json.data_state_writes, "none");
+    assert.equal(json.installed_count, 1);
+    assert.equal(json.enabled_count, 1);
+    assert.equal(json.disabled_count, 0);
+    assert.equal(json.catalog_update_available_count, 1);
+    assert.deepEqual(json.bin_trust, {
+      total: 1,
+      trusted: 0,
+      pending: 0,
+      untrusted: 1,
+    });
+    assert.deepEqual(json.hook_trust, {
+      total: 1,
+      trusted: 0,
+      pending: 0,
+      untrusted: 1,
+    });
+    assert.equal(json.plugin_mcp_profile_count, 1);
+    assert.equal(json.plugin_command_alias_count, 1);
+    assert.equal(json.omission_count, 0);
+    assert.equal(json.truncated, false);
+    assert.equal(json.plugins.length, 1);
+    assert.equal(json.plugins[0].id, "acme.review-plugin@1.0.0");
+    assert.equal(json.plugins[0].enabled, true);
+    assert.deepEqual(json.plugins[0].source, {
+      type: "git",
+      repository: "https://example.test/acme/review-plugin.git",
+      ref: "v1.0.0",
+      resolved_commit: oldCommit,
+    });
+    assert.equal(json.plugins[0].catalog.status, "update_available");
+    assert.equal(json.plugins[0].catalog.catalog_commit, newCommit);
+    assert.equal(json.plugins[0].catalog.installed_commit, oldCommit);
+    assert.deepEqual(json.plugins[0].components, ["bins", "hooks", "mcpServers"]);
+    assert.deepEqual(json.plugins[0].bins, {
+      total: 1,
+      trusted: 0,
+      pending: 0,
+      untrusted: 1,
+    });
+    assert.deepEqual(json.plugins[0].hooks, {
+      total: 1,
+      trusted: 0,
+      pending: 0,
+      untrusted: 1,
+    });
+    assert.deepEqual(json.plugins[0].aliases, {
+      total: 1,
+      prompt: 0,
+      bin: 1,
+      exec: 0,
+      trusted: 0,
+      pending: 0,
+      untrusted: 1,
+      missing: 0,
+    });
+    assert.equal(json.plugins[0].mcp_profile_count, 1);
+    assert.equal(json.plugins[0].next_action_count, 4);
+    assert.deepEqual(json.plugins[0].next_actions, [
+      "orx plugins catalog update acme.review-plugin@1.0.0",
+      "orx bins trust plugin:acme.review-plugin@1.0.0:bin:format",
+      "orx hooks trust plugin:acme.review-plugin@1.0.0:format",
+      "orx mcp inspect plugin:acme.review-plugin@1.0.0:docs",
+    ]);
+    assert.equal(json.authority.review_side_effects, "none");
+    assert.equal(json.authority.registry_catalog_cache_trust_state, "read_only");
+    assert.equal(
+      json.authority.install_enable_trust_grant_fetch_execute,
+      "separate_explicit_steps",
+    );
+    assert.equal(json.usage, "orx plugins review [--json]");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

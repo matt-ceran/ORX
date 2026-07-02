@@ -441,3 +441,9 @@ Reasoning: Real-key dogfood showed capable controller models may emit blank opti
 Decision: The runnable clangd diagnostics profile should use an installed local or PATH `clangd` binary through `clangd --log=error --check=<local-c-cpp-source-or-header-file>`, not LSP server mode.
 
 Reasoning: `--check` gives a deterministic single-file local diagnostics command shape that fits the existing explicit-operator, no-install, no-network, shell-disabled diagnostics boundary. `--log=error` preserves error diagnostics while avoiding clangd's default setup-log noise in bounded ORX output.
+
+## 2026-07-01: Plugin Review JSON Stays Read-Only
+
+Decision: `orx plugins review|doctor|audit [--json]` and matching slash commands may expose ORX-owned structured review metadata for automation, but must preserve the same local read-only authority as text review.
+
+Reasoning: Operators and scripts need machine-readable installed/enabled counts, catalog drift, trust state, MCP profile counts, aliases, and next commands. Emitting JSON must not broaden the review surface into install, enable, trust, grant, fetch, execute, chmod, catalog-write, registry/cache-write, audit-write, or model-tool behavior.

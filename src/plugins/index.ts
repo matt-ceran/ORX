@@ -110,9 +110,12 @@ export {
 } from "./render.js";
 export {
   createPluginReview,
+  parsePluginReviewArgs,
   renderPluginReview,
+  renderPluginReviewJson,
   type PluginReview,
   type PluginReviewOptions,
+  type PluginReviewParsedArgs,
 } from "./review.js";
 export {
   activatePluginSkill,
