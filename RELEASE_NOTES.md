@@ -40,7 +40,7 @@ Use this as the final local gate before tagging, publishing, or handing off a v0
 npm run verify:release
 ```
 
-The release verifier clears real `OPENROUTER_API_KEY` and `BRAVE_SEARCH_API_KEY` values, checks whitespace, runs TypeScript typecheck, runs the full test suite, verifies a temp global source install, and performs isolated built-CLI smokes for doctor JSON, guide, code calls, plugin review, and MCP presets. It does not call OpenRouter, remote MCP endpoints, plugin bins, or plugin hooks by command selection.
+The release verifier clears real `OPENROUTER_API_KEY` and `BRAVE_SEARCH_API_KEY` values, checks whitespace, runs TypeScript typecheck, runs the full test suite, verifies a temp global source install, asserts npm package dry-run contents, and performs isolated built-CLI smokes for doctor JSON, guide, code calls, plugin review, plugin validation, and MCP presets. It does not call OpenRouter, remote MCP endpoints, plugin bins, or plugin hooks by command selection.
 
 For package contents inspection without publishing:
 

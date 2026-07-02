@@ -887,7 +887,7 @@ Added ast-grep syntax-aware search and codemod preview surface:
 Added v0.1 release-boundary verification:
 
 - Added `scripts/verify-release.mjs` and package script `verify:release`.
-- The gate runs `git diff --check`, `npm run typecheck`, full `npm test`, `npm run verify:global-install`, and built CLI smokes for `doctor --json`, `guide`, `code calls`, `plugins review`, `plugins review --json`, `plugins validate --json`, and `mcp presets`.
+- The gate runs `git diff --check`, `npm run typecheck`, full `npm test`, `npm run verify:global-install`, npm package dry-run content assertions, and built CLI smokes for `doctor --json`, `guide`, `code calls`, `plugins review`, `plugins review --json`, `plugins validate --json`, and `mcp presets`.
 - Smoke commands run with temporary isolated ORX state paths and cleared real `OPENROUTER_API_KEY`/`BRAVE_SEARCH_API_KEY` values; the nested global-install chat-launch smoke uses only a non-secret placeholder key to start chat and immediately run `/exit`. The gate does not call OpenRouter, remote MCP endpoints, plugin bins, or plugin hooks.
 - Hardened `scripts/verify-global-install.mjs` to strip inherited `ORX_*`, `OPENROUTER_API_KEY`, and `BRAVE_SEARCH_API_KEY` values and pin its ORX state paths under temporary verification state.
 - README and command memory now document `npm run verify:release` as the local v0.1 finalization gate.
@@ -2160,6 +2160,12 @@ Added plugin validation JSON output:
 - `orx plugins validate <manifest-path-or-directory> [--json]` and `/plugins validate <manifest-path-or-directory> [--json]` now emit ORX-owned `orx.plugin_validation` structured metadata for sanitized manifest fields, source, manifest/component hashes, permission counts, warnings, and usage.
 - Validation JSON preserves the text validation authority boundary: operator-only, no model tool, no network, no execution, no data-state writes, unchanged registry/cache/catalog/trust state, and no install/enable/trust/grant/fetch/execute side effects; misplaced `--json` fails with usage.
 - Verification passed: `npm run typecheck`, focused source `node --import tsx --test src/plugins/validate.test.ts src/cli.test.ts src/slash/index.test.ts` under isolated HOME with 152 tests, `npm run build`, focused built `node --test dist/plugins/validate.test.js dist/cli.test.js dist/slash/index.test.js` with 152 tests, direct built CLI plugin validation JSON smoke plus invalid `--json` placement check, `git diff --check`, full `npm run verify:release` with 11 steps including `plugins validate --json`, and independent verifier `019f2078-e7e4-7570-8e45-77de79c5de42` with no findings.
+
+Added release package dry-run assertions:
+
+- `npm run verify:release` now includes a 12th bounded release-hardening check: `npm pack --dry-run --json --ignore-scripts` verifies the package manifest includes `package.json`, `README.md`, `RELEASE_NOTES.md`, `LICENSE`, and `dist/cli.js`.
+- The package assertion fails if the dry-run includes source/private/local-operational paths such as `src/`, `memory/`, `.orx/`, `scripts/`, `package-lock.json`, or `tsconfig.json`; build/test/global-install steps still run before it, and the check does not publish or call network by command selection.
+- Verification passed: isolated-home `npm run verify:release` with 12 steps, including `npm package dry-run contents`, plus existing built CLI smokes for doctor JSON, guide, code calls, plugin review, plugin review JSON, plugin validation JSON, and MCP presets.
 
 ## Next Likely Task
 

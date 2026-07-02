@@ -20,6 +20,12 @@ const steps = [
   ["full npm test", npmBin, ["test"]],
   ["global install verifier", npmBin, ["run", "verify:global-install"]],
   [
+    "npm package dry-run contents",
+    npmBin,
+    ["pack", "--dry-run", "--json", "--ignore-scripts"],
+    { smoke: "packDryRun" },
+  ],
+  [
     "built CLI smoke: doctor --json",
     nodeBin,
     [cliPath, "doctor", "--json"],
@@ -260,6 +266,35 @@ function assertSmoke(kind, stdout) {
     }
     if (data.authority?.registry_cache_catalog_trust_state !== "unchanged") {
       throw new Error("plugins validate --json smoke missing unchanged-state authority");
+    }
+    return;
+  }
+
+  if (kind === "packDryRun") {
+    const packs = JSON.parse(stdout);
+    if (!Array.isArray(packs) || packs.length !== 1 || packs[0]?.name !== "orx") {
+      throw new Error("npm pack --dry-run did not report one orx package");
+    }
+    const filePaths = new Set((packs[0].files ?? []).map((file) => file?.path).filter(Boolean));
+    for (const required of ["package.json", "README.md", "RELEASE_NOTES.md", "LICENSE", "dist/cli.js"]) {
+      if (!filePaths.has(required)) {
+        throw new Error(`npm package dry-run missing required file: ${required}`);
+      }
+    }
+    for (const omitted of ["package-lock.json", "tsconfig.json", "scripts/verify-release.mjs"]) {
+      if (filePaths.has(omitted)) {
+        throw new Error(`npm package dry-run unexpectedly includes ${omitted}`);
+      }
+    }
+    for (const filePath of filePaths) {
+      if (
+        filePath.startsWith("src/") ||
+        filePath.startsWith("memory/") ||
+        filePath.startsWith(".orx/") ||
+        filePath.startsWith("scripts/")
+      ) {
+        throw new Error(`npm package dry-run unexpectedly includes private/source path: ${filePath}`);
+      }
     }
     return;
   }
