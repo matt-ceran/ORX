@@ -97,9 +97,9 @@ Minimum plugin metadata:
 
 ## Research Profiles
 
-- Current profile surface: `orx research profiles ...` and `/web profiles ...` render read-only catalog/inspect/setup-plan metadata without fetching URLs, calling Brave, launching browsers, spawning processes, writing state, or exposing model tools.
-- `research-web`: available today through explicit chat `/web fetch`, `/fetch`, `/web search`, and `/search`; future adapters may add Tavily/Exa/Perplexity/Jina Reader only after source/citation boundaries are designed.
-- `research-browser`: available today through explicit chat `/web browse` and `/browse` when the local browser runtime is available; Playwright MCP/Chrome DevTools MCP remain future profile options.
+- Current profile surface: `orx research profiles ...`, `orx web profiles ...`, and `/web profiles ...` render read-only catalog/inspect/setup-plan metadata without fetching URLs, calling Brave, launching browsers, spawning processes, writing state, or exposing model tools.
+- `research-web`: available today through explicit CLI `orx web fetch`, `orx research fetch`, `orx web search`, `orx research search` and explicit chat `/web fetch`, `/fetch`, `/web search`, and `/search`; future adapters may add Tavily/Exa/Perplexity/Jina Reader only after source/citation boundaries are designed.
+- `research-browser`: available today through explicit CLI `orx web browse`, `orx research browse` and explicit chat `/web browse` and `/browse` when the local browser runtime is available; Playwright MCP/Chrome DevTools MCP remain future profile options.
 - `research-crawl`: catalog-only until Firecrawl/Crawlee/Apify/Bright Data style page/cost/host/robots/cache contracts are implemented.
 - `research-scholar`: catalog-only until OpenAlex, Semantic Scholar, Crossref, arXiv, PubMed, Europe PMC, PDF, and identifier contracts are implemented.
 - `research-docs`: catalog-only until official docs provider routing, allowlists, source tiers, and citation contracts are implemented.

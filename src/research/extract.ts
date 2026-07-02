@@ -8,6 +8,10 @@ export interface ExtractContentOptions {
 }
 
 const DEFAULT_MAX_TEXT_CHARS = 12_000;
+const SECRET_LIKE_VALUE =
+  /\b(?:sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/g;
+const SECRET_ASSIGNMENT =
+  /((?:api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password|passwd|key)=)[^&\s]+/gi;
 
 export function extractContent({
   body,
@@ -33,6 +37,12 @@ export function sha256(value: string | Uint8Array): string {
 
 export function stripTerminalControlChars(value: string): string {
   return value.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "");
+}
+
+export function redactSecretLikeValues(value: string): string {
+  SECRET_LIKE_VALUE.lastIndex = 0;
+  SECRET_ASSIGNMENT.lastIndex = 0;
+  return value.replace(SECRET_LIKE_VALUE, "REDACTED").replace(SECRET_ASSIGNMENT, "$1REDACTED");
 }
 
 function extractHtml(html: string): { title?: string; text: string } {

@@ -3,7 +3,7 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { Readable } from "node:stream";
-import { extractContent, sha256, stripTerminalControlChars } from "./extract.js";
+import { extractContent, redactSecretLikeValues, sha256, stripTerminalControlChars } from "./extract.js";
 import { guardFetchUrl, isBlockedIpAddress, type UrlGuardAllowed } from "./url-guard.js";
 import type { EvidenceSource, ResearchFetchResult } from "./types.js";
 
@@ -123,7 +123,7 @@ export async function fetchUrl({
       id: sourceId,
       kind: "web",
       canonicalUrl: guarded.canonicalUrl,
-      title: extracted.title,
+      title: extracted.title ? redactSecretLikeValues(stripTerminalControlChars(extracted.title)) : undefined,
       fetchedAt: now.toISOString(),
       provider: "direct-fetch",
       contentHash: sha256(bytes),

@@ -10,6 +10,7 @@ import { runCli } from "./cli.js";
 import { getNativeToolDefinitions } from "./agent/index.js";
 import type { AstGrepRunner, TreeSitterRunner } from "./code-map/index.js";
 import type { DiagnosticsProcessRunner } from "./diagnostics/index.js";
+import type { BrowserSnapshotDriver, ResolveBrowserHost } from "./research/index.js";
 import type { ScannerProcessRunner } from "./security/index.js";
 import type { RunProcessOptions, RunProcessResult } from "./tools/process.js";
 import {
@@ -44,6 +45,8 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
     assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses\/outlines\/imports\/refs\/calls/);
+    assert.match(help.stdout(), /research\s+Fetch, search, browse, or plan research profiles/);
+    assert.match(help.stdout(), /web\s+Alias for explicit web fetch, search, browse, and profiles/);
     assert.match(help.stdout(), /scanners\s+List, inspect, plan, or run local security scanner profiles/);
     assert.match(help.stdout(), /scan\s+Alias for a local scanner run/);
     assert.match(help.stdout(), /diagnostics\s+List, inspect, or run local diagnostics profiles/);
@@ -332,6 +335,8 @@ test("namespace help exits successfully without loading config", async () => {
       { args: ["tests"], usage: /Usage: orx tests/ },
       { args: ["test"], usage: /Usage: orx tests/ },
       { args: ["code"], usage: /Usage: orx code/ },
+      { args: ["research"], usage: /Usage: orx research/ },
+      { args: ["web"], usage: /Usage: orx web/ },
       { args: ["scanners"], usage: /Usage: orx scanners/ },
       { args: ["scanner"], usage: /Usage: orx scanners/ },
       { args: ["scan"], usage: /Usage: orx scan/ },
@@ -2126,6 +2131,137 @@ test("cli research profile commands render read-only catalog and setup plans wit
     assert.equal(JSON.parse(profiled.stdout()).surface, "orx.research_profiles");
     assert.equal(profiled.stderr(), "");
     assert.equal(statSync(profileConfigPath).mode & 0o777, 0o666);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli web commands fetch search and browse through explicit guarded operator commands", async () => {
+  const cwd = createTempDir();
+  const env = { BRAVE_SEARCH_API_KEY: "brave-test-key" };
+  let fetchCalls = 0;
+  let searchCalls = 0;
+  let browserCalls = 0;
+  const publicResolveHost: ResolveBrowserHost = async (hostname) => {
+    assert.equal(hostname, "example.com");
+    return [{ address: "93.184.216.34", family: 4 }];
+  };
+  const browserSnapshot: BrowserSnapshotDriver = async (options) => {
+    browserCalls += 1;
+    assert.equal(options.url, "https://example.com/render");
+    return {
+      url: "https://example.com/render",
+      title: "Rendered Page",
+      text: "Rendered browser text with api_key=secret-value.",
+      html: "<html><body>Rendered browser text</body></html>",
+    };
+  };
+
+  try {
+    const fetchIo = createIo({
+      cwd,
+      webFetch: async (input) => {
+        fetchCalls += 1;
+        assert.equal(String(input), "https://example.com/plain.txt");
+        return new Response("plain text source", {
+          status: 200,
+          headers: { "content-type": "text/plain" },
+        });
+      },
+    });
+    assert.equal(await runCli(["node", "cli", "web", "fetch", "https://example.com/plain.txt"], {}, fetchIo.io), 0);
+    assert.equal(fetchCalls, 1);
+    assert.match(fetchIo.stdout(), /Fetched source src-1/);
+    assert.match(fetchIo.stdout(), /provider: direct-fetch/);
+    assert.match(fetchIo.stdout(), /cli_session_state: not_written/);
+    assert.match(fetchIo.stdout(), /model_context: not_appended/);
+    assert.equal(fetchIo.stderr(), "");
+
+    const blockedFetch = createIo({
+      cwd,
+      webFetch: async () => {
+        fetchCalls += 1;
+        throw new Error("blocked URL should not reach fetch");
+      },
+    });
+    assert.equal(await runCli(["node", "cli", "research", "fetch", "http://169.254.169.254/latest"], {}, blockedFetch.io), 1);
+    assert.equal(fetchCalls, 1);
+    assert.match(blockedFetch.stderr(), /Unable to fetch URL: Blocked local or private IPv4 address/);
+
+    const missingKey = createIo({
+      cwd,
+      webSearchFetch: async () => {
+        searchCalls += 1;
+        throw new Error("search should not run without key");
+      },
+    });
+    assert.equal(await runCli(["node", "cli", "web", "search", "latest", "typescript"], {}, missingKey.io), 1);
+    assert.equal(searchCalls, 0);
+    assert.match(missingKey.stderr(), /BRAVE_SEARCH_API_KEY is not set/);
+    assert.match(missingKey.stderr(), /No network request was made/);
+
+    const searchIo = createIo({
+      cwd,
+      webSearchFetch: async (input, init) => {
+        searchCalls += 1;
+        assert.match(String(input), /^https:\/\/api\.search\.brave\.com\/res\/v1\/web\/search\?/);
+        assert.match(String(input), /q=alpha\+docs/);
+        assert.equal((init?.headers as Record<string, string>)["x-subscription-token"], "brave-test-key");
+        return new Response(
+          JSON.stringify({
+            web: {
+              results: [
+                {
+                  title: "Alpha Result",
+                  url: "https://example.com/docs/sk-or-v1-secret?token=secret-token&ok=1",
+                  description: "Provider snippet with api_key=supersecret.",
+                },
+                {
+                  title: "Blocked Result",
+                  url: "http://169.254.169.254/latest",
+                  description: "Should be skipped.",
+                },
+              ],
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      },
+    });
+    assert.equal(await runCli(["node", "cli", "research", "search", "alpha", "docs"], env, searchIo.io), 0);
+    assert.equal(searchCalls, 1);
+    assert.match(searchIo.stdout(), /Search results: 1 source/);
+    assert.match(searchIo.stdout(), /provider: brave-search-snippet/);
+    assert.match(searchIo.stdout(), /skipped_results: 1/);
+    assert.match(searchIo.stdout(), /primary pages were not fetched/);
+    assert.match(searchIo.stdout(), /cli_session_state: not_written/);
+    assert.doesNotMatch(searchIo.stdout(), /supersecret|sk-or-v1-secret|secret-token/);
+    assert.equal(searchIo.stderr(), "");
+
+    const browseIo = createIo({
+      cwd,
+      browserSnapshot,
+      browserResolveHost: publicResolveHost,
+    });
+    assert.equal(await runCli(["node", "cli", "web", "browse", "https://example.com/render"], {}, browseIo.io), 0);
+    assert.equal(browserCalls, 1);
+    assert.match(browseIo.stdout(), /Browser snapshot source src-1/);
+    assert.match(browseIo.stdout(), /provider: playwright-browser-snapshot/);
+    assert.match(browseIo.stdout(), /cli_session_state: not_written/);
+    assert.doesNotMatch(browseIo.stdout(), /secret-value/);
+    assert.equal(browseIo.stderr(), "");
+
+    const blockedBrowse = createIo({
+      cwd,
+      browserSnapshot,
+      browserResolveHost: publicResolveHost,
+    });
+    assert.equal(await runCli(["node", "cli", "web", "browse", "http://127.0.0.1/private"], {}, blockedBrowse.io), 1);
+    assert.equal(browserCalls, 1);
+    assert.match(blockedBrowse.stderr(), /Unable to browse URL: Blocked local or private IPv4 address/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -7136,6 +7272,10 @@ function createIo(
     mcpCallFetch?: typeof fetch;
     mcpKeychainRunner?: McpMacosKeychainCommandRunner;
     mcpKeychainPlatform?: NodeJS.Platform;
+    webFetch?: typeof fetch;
+    webSearchFetch?: typeof fetch;
+    browserSnapshot?: BrowserSnapshotDriver;
+    browserResolveHost?: ResolveBrowserHost;
     astGrepRunner?: AstGrepRunner;
     treeSitterRunner?: TreeSitterRunner;
     scannerRunner?: ScannerProcessRunner;
@@ -7174,6 +7314,10 @@ function createIo(
       mcpCallFetch: options.mcpCallFetch,
       mcpKeychainRunner: options.mcpKeychainRunner,
       mcpKeychainPlatform: options.mcpKeychainPlatform,
+      webFetch: options.webFetch,
+      webSearchFetch: options.webSearchFetch,
+      browserSnapshot: options.browserSnapshot,
+      browserResolveHost: options.browserResolveHost,
       astGrepRunner: options.astGrepRunner,
       treeSitterRunner: options.treeSitterRunner,
       scannerRunner: options.scannerRunner,

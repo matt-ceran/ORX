@@ -36,6 +36,8 @@ export {
   type SearchResultSnippet,
 } from "./search.js";
 export {
+  CLI_WEB_PROFILES_USAGE,
+  CLI_WEB_USAGE,
   RESEARCH_PROFILES_USAGE,
   RESEARCH_USAGE,
   SLASH_WEB_PROFILES_USAGE,

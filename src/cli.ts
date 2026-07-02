@@ -250,9 +250,18 @@ import {
   saveCurrentProfile,
 } from "./profiles/index.js";
 import {
+  CLI_WEB_PROFILES_USAGE,
+  CLI_WEB_USAGE,
   RESEARCH_PROFILES_USAGE,
   RESEARCH_USAGE,
   findResearchProfile,
+  fetchUrl,
+  formatBrowserSnapshotResult,
+  formatFetchedUrlResult,
+  formatResearchBrowserError,
+  formatResearchFetchError,
+  formatResearchSearchError,
+  formatSearchResults,
   parseResearchReadinessJsonFlag,
   renderMissingResearchProfile,
   renderResearchInspectUsage,
@@ -263,7 +272,10 @@ import {
   renderResearchProfilesJson,
   renderResearchSetupPlan,
   renderResearchSetupPlanJson,
+  searchWeb,
+  snapshotBrowserUrl,
   type BrowserSnapshotDriver,
+  type ResolveBrowserHost,
 } from "./research/index.js";
 import { resolveSessionDirectory } from "./sessions/index.js";
 import {
@@ -322,7 +334,10 @@ interface CliIo {
   mcpCallFetch?: typeof fetch;
   mcpKeychainRunner?: McpMacosKeychainCommandRunner;
   mcpKeychainPlatform?: NodeJS.Platform;
+  webFetch?: typeof fetch;
+  webSearchFetch?: typeof fetch;
   browserSnapshot?: BrowserSnapshotDriver;
+  browserResolveHost?: ResolveBrowserHost;
   astGrepRunner?: AstGrepRunner;
   treeSitterRunner?: TreeSitterRunner;
   scannerRunner?: ScannerProcessRunner;
@@ -354,6 +369,7 @@ const CLI_NAMESPACE_USAGES = {
   tests: "Usage: orx tests [list [--json]|status [--json]|run [target-id] [--json] [-- args...]]",
   code: "Usage: orx code [map|symbols|refs|imports|calls|ast-grep|tree-sitter|outline] [query-or-path]",
   research: RESEARCH_USAGE,
+  web: CLI_WEB_USAGE,
   scanners: SCANNERS_USAGE,
   scan: SCAN_USAGE,
   diagnostics: DIAGNOSTICS_USAGE,
@@ -438,6 +454,8 @@ function getNamespaceHelpUsage(args: string[]): string | undefined {
       return CLI_NAMESPACE_USAGES.code;
     case "research":
       return CLI_NAMESPACE_USAGES.research;
+    case "web":
+      return CLI_NAMESPACE_USAGES.web;
     case "scanner":
     case "scanners":
       return CLI_NAMESPACE_USAGES.scanners;
@@ -628,8 +646,14 @@ export async function runCli(
     return runOpenRouterAuthCommand(args.slice(1), io, env);
   }
 
-  if (first === "research") {
-    return runResearchCommand(args.slice(1), io);
+  if (first === "research" || first === "web") {
+    return runResearchCommand(args.slice(1), io, env, {
+      usage: first === "web" ? CLI_WEB_USAGE : RESEARCH_USAGE,
+      profilesUsage: first === "web" ? CLI_WEB_PROFILES_USAGE : RESEARCH_PROFILES_USAGE,
+      fetchUsage: `Usage: orx ${first} fetch <url>`,
+      searchUsage: `Usage: orx ${first} search <query>`,
+      browseUsage: `Usage: orx ${first} browse <url>`,
+    });
   }
 
   if (first === "scanners" || first === "scanner") {
@@ -962,7 +986,8 @@ function helpText(): string {
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  tests         Discover or run native test targets",
     "  code          Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses/outlines/imports/refs/calls/repo-files/repo-outline/repo-symbols/repo-refs/repo-calls/repo-imports/repo-deps",
-    "  research      List, inspect, or plan research profiles",
+    "  research      Fetch, search, browse, or plan research profiles",
+    "  web           Alias for explicit web fetch, search, browse, and profiles",
     "  scanners      List, inspect, plan, or run local security scanner profiles",
     "  scan          Alias for a local scanner run",
     "  diagnostics  List, inspect, or run local diagnostics profiles",
@@ -1276,12 +1301,39 @@ function runCodeTreeSitterCommand(
   return result.ok ? 0 : 1;
 }
 
-function runResearchCommand(args: string[], io: CliIo): number {
+async function runResearchCommand(
+  args: string[],
+  io: CliIo,
+  env: NodeJS.ProcessEnv,
+  options: {
+    usage: string;
+    profilesUsage: string;
+    fetchUsage: string;
+    searchUsage: string;
+    browseUsage: string;
+  } = {
+    usage: RESEARCH_USAGE,
+    profilesUsage: RESEARCH_PROFILES_USAGE,
+    fetchUsage: "Usage: orx research fetch <url>",
+    searchUsage: "Usage: orx research search <query>",
+    browseUsage: "Usage: orx research browse <url>",
+  },
+): Promise<number> {
   const firstArg = args[0]?.toLowerCase();
 
   if (isNamespaceHelp(args)) {
-    writeLine(io.stdout, RESEARCH_USAGE);
+    writeLine(io.stdout, options.usage);
     return 0;
+  }
+
+  if (firstArg === "fetch") {
+    return runResearchFetchCommand(args.slice(1), io, options.fetchUsage);
+  }
+  if (firstArg === "search") {
+    return runResearchSearchCommand(args.slice(1), io, env, options.searchUsage);
+  }
+  if (firstArg === "browse") {
+    return runResearchBrowseCommand(args.slice(1), io, options.browseUsage);
   }
 
   const profileArgs = firstArg === "profiles" || firstArg === "profile"
@@ -1293,7 +1345,7 @@ function runResearchCommand(args: string[], io: CliIo): number {
   if (subcommand === "list" || subcommand === "status") {
     const jsonFlag = parseResearchReadinessJsonFlag(
       subcommandArg === "list" || subcommandArg === "status" ? profileArgs.slice(1) : profileArgs,
-      RESEARCH_PROFILES_USAGE,
+      options.profilesUsage,
     );
     if (!jsonFlag.ok) {
       writeLine(io.stderr, jsonFlag.message);
@@ -1305,9 +1357,9 @@ function runResearchCommand(args: string[], io: CliIo): number {
 
   if (subcommand === "inspect" || subcommand === "show") {
     const profileId = profileArgs[1];
-    const jsonFlag = parseResearchReadinessJsonFlag(profileArgs.slice(2), RESEARCH_PROFILES_USAGE);
+    const jsonFlag = parseResearchReadinessJsonFlag(profileArgs.slice(2), options.profilesUsage);
     if (!profileId || !jsonFlag.ok) {
-      writeLine(io.stderr, renderResearchInspectUsage(RESEARCH_PROFILES_USAGE));
+      writeLine(io.stderr, renderResearchInspectUsage(options.profilesUsage));
       return 1;
     }
     const profile = findResearchProfile(profileId);
@@ -1324,9 +1376,9 @@ function runResearchCommand(args: string[], io: CliIo): number {
 
   if (subcommand === "plan" || subcommand === "setup-plan") {
     const profileId = profileArgs[1];
-    const jsonFlag = parseResearchReadinessJsonFlag(profileArgs.slice(2), RESEARCH_PROFILES_USAGE);
+    const jsonFlag = parseResearchReadinessJsonFlag(profileArgs.slice(2), options.profilesUsage);
     if (!profileId || !jsonFlag.ok) {
-      writeLine(io.stderr, renderResearchPlanUsage(RESEARCH_PROFILES_USAGE));
+      writeLine(io.stderr, renderResearchPlanUsage(options.profilesUsage));
       return 1;
     }
     const profile = findResearchProfile(profileId);
@@ -1341,8 +1393,95 @@ function runResearchCommand(args: string[], io: CliIo): number {
     return 0;
   }
 
-  writeLine(io.stderr, RESEARCH_USAGE);
+  writeLine(io.stderr, options.usage);
   return 1;
+}
+
+async function runResearchFetchCommand(args: string[], io: CliIo, usage: string): Promise<number> {
+  const url = args[0];
+  if (!url || args.length !== 1) {
+    writeLine(io.stderr, usage);
+    return 1;
+  }
+
+  try {
+    const result = await fetchUrl({
+      url,
+      sourceId: "src-1",
+      fetch: io.webFetch,
+    });
+    writeLine(io.stdout, renderCliResearchResult(formatFetchedUrlResult(result)));
+    return 0;
+  } catch (error) {
+    writeLine(io.stderr, `Unable to fetch URL: ${formatResearchFetchError(error)}`);
+    return 1;
+  }
+}
+
+async function runResearchSearchCommand(
+  args: string[],
+  io: CliIo,
+  env: NodeJS.ProcessEnv,
+  usage: string,
+): Promise<number> {
+  const query = args.join(" ").trim();
+  if (!query) {
+    writeLine(io.stderr, usage);
+    return 1;
+  }
+
+  const apiKey = env.BRAVE_SEARCH_API_KEY?.trim();
+  if (!apiKey) {
+    writeLine(
+      io.stderr,
+      "Web search unavailable: BRAVE_SEARCH_API_KEY is not set. No network request was made.",
+    );
+    return 1;
+  }
+
+  try {
+    const result = await searchWeb({
+      query,
+      apiKey,
+      fetch: io.webSearchFetch ?? io.fetch,
+    });
+    writeLine(io.stdout, renderCliResearchResult(formatSearchResults(result)));
+    return 0;
+  } catch (error) {
+    writeLine(io.stderr, `Unable to search web: ${formatResearchSearchError(error, apiKey)}`);
+    return 1;
+  }
+}
+
+async function runResearchBrowseCommand(args: string[], io: CliIo, usage: string): Promise<number> {
+  const url = args[0];
+  if (!url || args.length !== 1) {
+    writeLine(io.stderr, usage);
+    return 1;
+  }
+
+  try {
+    const result = await snapshotBrowserUrl({
+      url,
+      sourceId: "src-1",
+      browserSnapshot: io.browserSnapshot,
+      resolveHost: io.browserResolveHost,
+    });
+    writeLine(io.stdout, renderCliResearchResult(formatBrowserSnapshotResult(result)));
+    return 0;
+  } catch (error) {
+    writeLine(io.stderr, `Unable to browse URL: ${formatResearchBrowserError(error)}`);
+    return 1;
+  }
+}
+
+function renderCliResearchResult(rendered: string): string {
+  return [
+    rendered,
+    "cli_session_state: not_written",
+    "model_context: not_appended",
+    "model_tool: not_exposed",
+  ].join("\n");
 }
 
 async function runScannersCommand(args: string[], io: CliIo, env: NodeJS.ProcessEnv): Promise<number> {

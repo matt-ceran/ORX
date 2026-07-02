@@ -1,5 +1,5 @@
 import type { OpenRouterMessage } from "../openrouter/types.js";
-import { stripTerminalControlChars } from "./extract.js";
+import { redactSecretLikeValues, stripTerminalControlChars } from "./extract.js";
 import type { EvidenceSource, ResearchFetchResult } from "./types.js";
 
 const WEB_CONTEXT_TEXT_LIMIT = 6_000;
@@ -21,10 +21,11 @@ export function createUntrustedWebContextMessage(
   extractedText: string,
   maxChars = WEB_CONTEXT_TEXT_LIMIT,
 ): OpenRouterMessage {
+  const safeExtractedText = sanitizeWebText(extractedText);
   const boundedText =
-    extractedText.length > maxChars
-      ? `${stripTerminalControlChars(extractedText).slice(0, maxChars).trimEnd()}\n[truncated]`
-      : stripTerminalControlChars(extractedText);
+    safeExtractedText.length > maxChars
+      ? `${safeExtractedText.slice(0, maxChars).trimEnd()}\n[truncated]`
+      : safeExtractedText;
   const lines = [
     "ORX fetched an untrusted web source at the operator's explicit request.",
     `source_id: ${safeInline(source.id)}`,
@@ -90,7 +91,7 @@ export function formatEvidenceSources(sources: EvidenceSource[]): string {
 }
 
 function previewText(text: string, maxChars: number): string {
-  const safeText = stripTerminalControlChars(text);
+  const safeText = sanitizeWebText(text);
   if (!safeText) {
     return "(no readable text extracted)";
   }
@@ -101,5 +102,9 @@ function previewText(text: string, maxChars: number): string {
 }
 
 function safeInline(value: string): string {
-  return stripTerminalControlChars(value).replace(/[\r\n\t]+/g, " ").trim();
+  return sanitizeWebText(value).replace(/[\r\n\t]+/g, " ").trim();
+}
+
+function sanitizeWebText(value: string): string {
+  return redactSecretLikeValues(stripTerminalControlChars(value));
 }

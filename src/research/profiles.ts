@@ -1,7 +1,11 @@
 export const RESEARCH_USAGE =
-  "Usage: orx research [profiles [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]]]";
+  "Usage: orx research [fetch <url>|search <query>|browse <url>|profiles [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]]]";
+export const CLI_WEB_USAGE =
+  "Usage: orx web [fetch <url>|search <query>|browse <url>|profiles [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]]]";
 export const RESEARCH_PROFILES_USAGE =
   "Usage: orx research profiles [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]]";
+export const CLI_WEB_PROFILES_USAGE =
+  "Usage: orx web profiles [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]]";
 export const SLASH_WEB_USAGE =
   "Usage: /web [help|fetch <url>|search <query>|browse <url>|profiles [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]]]";
 export const SLASH_WEB_PROFILES_USAGE =
@@ -46,16 +50,16 @@ const RESEARCH_PROFILES: ResearchProfile[] = [
     id: "research-web",
     label: "Research Web",
     state: "available",
-    summary: "Explicit chat web fetch and Brave search snippet evidence.",
-    currentSupport: "available in chat through `/web fetch <url>`, `/fetch <url>`, `/web search <query>`, and `/search <query>`; search requires `BRAVE_SEARCH_API_KEY`",
+    summary: "Explicit CLI/chat web fetch and Brave search snippet evidence.",
+    currentSupport: "available through `orx web fetch <url>`, `orx research fetch <url>`, `orx web search <query>`, `orx research search <query>`, `/web fetch <url>`, `/fetch <url>`, `/web search <query>`, and `/search <query>`; search requires `BRAVE_SEARCH_API_KEY`",
     networkBoundary: "operator-explicit fetch/search only; URL/DNS guards, Brave-key requirement, bounded extraction, redaction, and untrusted context markers apply",
   },
   {
     id: "research-browser",
     label: "Research Browser",
     state: "available",
-    summary: "Explicit chat browser DOM text snapshots when the local browser runtime is available.",
-    currentSupport: "available in chat through `/web browse <url>` and `/browse <url>` when the browser snapshot runtime is available",
+    summary: "Explicit CLI/chat browser DOM text snapshots when the local browser runtime is available.",
+    currentSupport: "available through `orx web browse <url>`, `orx research browse <url>`, `/web browse <url>`, and `/browse <url>` when the browser snapshot runtime is available",
     networkBoundary: "operator-explicit browse only; guarded document fetch, DNS checks, browser final-URL checks, bounded DOM text, redaction, and untrusted context markers apply",
   },
   {
@@ -167,7 +171,7 @@ export function createResearchSetupPlan(profile: ResearchProfile): ResearchSetup
     return {
       profile,
       status: "available_now",
-      nextAction: "Use the existing explicit chat research commands when an operator requests them.",
+      nextAction: "Use the existing explicit CLI or chat research commands when an operator requests them.",
       currentCommands: currentResearchCommands(profile.id),
       blockers: [],
       boundaries: researchPlanBoundaries(),
@@ -295,6 +299,10 @@ function researchPlanBoundaries(): ResearchSetupPlan["boundaries"] {
 function currentResearchCommands(profile: ResearchProfileId): string[] {
   if (profile === "research-web") {
     return [
+      "orx web fetch <url>",
+      "orx research fetch <url>",
+      "orx web search <query>",
+      "orx research search <query>",
       "/web fetch <url>",
       "/fetch <url>",
       "/web search <query>",
@@ -306,6 +314,8 @@ function currentResearchCommands(profile: ResearchProfileId): string[] {
   }
   if (profile === "research-browser") {
     return [
+      "orx web browse <url>",
+      "orx research browse <url>",
       "/web browse <url>",
       "/browse <url>",
       "/sources",

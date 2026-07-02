@@ -316,6 +316,12 @@ Decision: ORX's first web/research implementation should expose direct URL fetch
 
 Reasoning: Web pages are prompt-injection surface, not authority. Slash-only fetch gives the operator current-source retrieval and source ledgers without allowing model output or fetched text to expand ORX's tool surface, enable plugins/MCP/profiles/hooks/bins, change permissions, execute commands, or alter policy.
 
+## 2026-07-02: CLI Web Research Reuses Explicit Operator Boundaries
+
+Decision: Noninteractive `orx web|research fetch`, `orx web|research search`, and `orx web|research browse` may reuse the same guarded research fetch/search/browser helpers as chat slash commands, but CLI forms must print source metadata only and must not append model context, persist session evidence state, expose model tools, or create a durable research store. Chat slash forms remain the session evidence-ledger path for `/sources`, `/cite`, and `/bibliography`.
+
+Reasoning: CLI parity makes research usable outside interactive chat without weakening the original trust model. The operator still explicitly requests each network/browser action, while model autonomy and persistence remain separate design decisions.
+
 ## 2026-06-26: Plugin Skills Use Progressive Disclosure Only
 
 Decision: ORX should discover Agent Skills only from enabled plugins and expose compact, sanitized metadata automatically. Full `SKILL.md` content is loaded only after an explicit `/skills activate <id>` action, then rejected if it contains secret-like values or terminal control characters, appended as an untrusted system message with provenance, and recorded in session metadata. Compact metadata may be injected into model requests as ephemeral system context so it does not become normal conversation history.

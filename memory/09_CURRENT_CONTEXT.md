@@ -118,6 +118,17 @@ Current files:
 
 ## Latest Work
 
+Added noninteractive CLI web research parity:
+
+- Added explicit operator CLI commands `orx web fetch <url>`, `orx research fetch <url>`, `orx web search <query>`, `orx research search <query>`, `orx web browse <url>`, and `orx research browse <url>`.
+- CLI fetch/search/browse reuse the existing guarded research functions and render source metadata without appending chat model context, writing session evidence state, exposing model tools, or changing `/web` slash evidence-ledger behavior. Fetch uses the native DNS-vetted transport unless tests inject `webFetch`; search requires `BRAVE_SEARCH_API_KEY` and makes no network request when it is missing; browse keeps URL/DNS/final-URL guards plus the optional local Playwright snapshot path.
+- Hardened research rendering/context sanitization so direct-fetch and browser snapshot titles/previews/context redact assignment-shaped secrets such as `api_key=...` and token-shaped secrets such as `sk-or-v1-...` / `github_pat_...`, not only terminal controls or error text.
+- Added focused CLI/research regressions for fetch success, blocked fetch before network, search missing-key no-network, Brave snippet search with skipped guarded URLs and redaction, browser snapshot success, blocked browse before browser invocation, and fetch/browser text secret redaction.
+- Verification: typecheck, focused CLI/research tests, build, broader `src/research/research.test.ts src/cli.test.ts src/slash/index.test.ts`, built CLI web profiles/missing-key/blocked fetch/blocked browse smokes, `git diff --check`, and `npm run verify:release` all pass. Independent verifier first found redaction and decision-log ordering issues; after fixes, scoped verifier recheck passed.
+- Next likely work remains another bounded optional completion slice such as actual LSP/SCIP execution/readback after safe local lifecycle/storage design, Snyk/Socket adapters after deterministic no-network/no-auth command shapes are proven, provider preset/tool declaration packs after current docs/metadata review, or making one catalog-only research profile executable after its source/storage/citation contract is designed.
+
+Previous latest work:
+
 Added local MCP provider preset search:
 
 - Added `orx mcp presets search <query> [--json]`, `orx mcp presets find <query> [--json]`, `/mcp presets search <query> [--json]`, and `/mcp presets find <query> [--json]` as local metadata-only discovery surfaces over built-in MCP provider preset ids, profile ids, names, URLs, notes, tags, and static tool names.
@@ -126,7 +137,7 @@ Added local MCP provider preset search:
 - Verification: `npm run typecheck`, focused MCP preset source tests, `npm run build`, built CLI smokes for normal search/JSON search/no-match/secret-query rejection, broad source MCP/CLI/slash tests (224 passed), `git diff --check`, `npm run verify:release`, and independent read-only verifier `019f2112-106e-7a23-89cb-1dfdc602e2c7` PASS. The verifier initially found that `password=...` and `credential=...` queries were accepted and echoed; the fix expanded preset-search secret-like detection and added pure MCP, CLI, and slash regressions for sensitive assignment forms.
 - Next likely work remains another bounded optional completion slice such as actual LSP/SCIP execution/readback after safe local lifecycle/storage design, Snyk/Socket adapters after deterministic no-network/no-auth command shapes are proven, provider preset/tool declaration packs after current docs/metadata review, or making one catalog-only research profile executable after its source/storage/citation contract is designed.
 
-Previous latest work:
+Earlier latest work:
 
 Added guarded OSV-Scanner offline runs:
 
@@ -171,7 +182,7 @@ Older latest work:
 Added read-only research profile plans:
 
 - Added `orx research profiles [list|status] [--json]`, `orx research profiles inspect|show <profile> [--json]`, `orx research profiles plan|setup-plan <profile> [--json]`, and matching `/web profiles ...` slash metadata surfaces.
-- The profile catalog covers `research-web`, `research-browser`, `research-crawl`, `research-scholar`, `research-docs`, `research-rag`, and `research-memory`. `research-web` and `research-browser` point to existing explicit chat commands; crawl, scholar, docs, RAG, and memory stay catalog-only with blockers for source, storage, citation, and model-visible retrieval contracts.
+- The profile catalog covers `research-web`, `research-browser`, `research-crawl`, `research-scholar`, `research-docs`, `research-rag`, and `research-memory`. `research-web` and `research-browser` point to existing explicit CLI/chat commands; crawl, scholar, docs, RAG, and memory stay catalog-only with blockers for source, storage, citation, and model-visible retrieval contracts.
 - These surfaces are read-only metadata only. They do not fetch URLs, call Brave, launch browsers, spawn processes, write state, or expose model tools. CLI `research` dispatch happens before config/profile loading so `orx --profile <id> research ...` does not read or chmod the saved-profile registry.
 - Verification passed: isolated-home `npm run typecheck`, `npm run build`, focused `node --import tsx --test --test-name-pattern "research profile|web profile|web fetch|slash command completer|help all" src/cli.test.ts src/slash/index.test.ts src/research/research.test.ts`, isolated-home `node --import tsx --test src/cli.test.ts src/slash/index.test.ts` with 150 tests, built CLI smokes for catalog/JSON/plan/rejection and the `--profile` no-chmod boundary, `git diff --check`, isolated-home `npm run verify:release` with all 12 steps passing, and independent verifier `019f20c1-de59-7372-874c-175e9c0989ad` PASS after fixing the profile-loading and `/web help` findings.
 - Next likely work remained another bounded optional completion slice such as actual LSP/SCIP execution/readback after safe local lifecycle/storage design, scanner adapters after deterministic no-network/no-auth command shapes are proven, provider preset/tool declaration packs after current docs/metadata review, or making one catalog-only research profile executable after its source/storage/citation contract is designed.

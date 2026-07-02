@@ -177,10 +177,10 @@ Current Phase 9 plugin scaffold:
 
 Current Phase 10 research scaffold:
 
-- `src/research/` exposes slash-only direct URL fetch/extract helpers and evidence ledger metadata.
-- `/web fetch <url>` and `/fetch <url>` are explicit operator commands; there is no model-autonomous `fetch_url` tool yet.
-- `/web search <query>` and `/search <query>` are explicit operator commands backed by Brave Web Search when `BRAVE_SEARCH_API_KEY` is configured; there is still no model-autonomous web-search tool.
-- `/web browse <url>` and `/browse <url>` are explicit operator commands for browser evidence snapshots; there is still no model-autonomous browser tool.
+- `src/research/` exposes guarded direct URL fetch/search/browser helpers plus evidence ledger metadata.
+- `orx web fetch <url>`, `orx research fetch <url>`, `/web fetch <url>`, and `/fetch <url>` are explicit operator commands; there is no model-autonomous `fetch_url` tool yet. Noninteractive CLI forms print source metadata without writing session evidence state or appending model context; chat slash forms update the session evidence ledger.
+- `orx web search <query>`, `orx research search <query>`, `/web search <query>`, and `/search <query>` are explicit operator commands backed by Brave Web Search when `BRAVE_SEARCH_API_KEY` is configured; there is still no model-autonomous web-search tool.
+- `orx web browse <url>`, `orx research browse <url>`, `/web browse <url>`, and `/browse <url>` are explicit operator commands for browser evidence snapshots; there is still no model-autonomous browser tool.
 - Search requests are bounded to Brave's documented query limits before network dispatch, and the CLI passes the key/fetch transport through the normal `runCli(argv, env, io)` boundary for testability.
 - Search result URLs go through the same public URL guard; local/private/reserved/metadata-style URLs are skipped before they enter evidence state or chat context.
 - Search results are stored as secondary `brave-search-snippet` evidence with sanitized provider title/snippet metadata and stable hashes. `/cite` and `/bibliography` mark them as provider snippets, not fetched primary-page evidence.

@@ -347,7 +347,7 @@ interface EvidenceSource {
 }
 ```
 
-Current status as of 2026-06-27: Phase 10 has implemented slash-only direct web fetch/extract, `/sources`, session-persisted `evidenceSources`, and a metadata-only `/cite` plus `/bibliography` MVP. Citation commands are deterministic, local, no-network, sanitized, and do not render fetched page text.
+Current status as of 2026-07-02: Phase 10 has implemented explicit CLI/chat guarded web fetch/search/browser evidence commands, `/sources`, session-persisted chat `evidenceSources`, and a metadata-only `/cite` plus `/bibliography` MVP. Citation commands are deterministic, local, no-network, sanitized, and do not render fetched page text.
 
 Acceptance:
 

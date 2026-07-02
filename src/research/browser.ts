@@ -4,7 +4,7 @@ import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { Readable } from "node:stream";
 import type { OpenRouterMessage } from "../openrouter/types.js";
-import { sha256, stripTerminalControlChars } from "./extract.js";
+import { redactSecretLikeValues, sha256, stripTerminalControlChars } from "./extract.js";
 import type { EvidenceSource } from "./types.js";
 import { guardFetchUrl, isBlockedIpAddress, type UrlGuardAllowed } from "./url-guard.js";
 
@@ -697,7 +697,7 @@ function formatBrowserFailure(error: unknown, timeoutMs: number): string {
 }
 
 function sanitizeBrowserText(value: string): string {
-  return stripTerminalControlChars(stripTerminalSequences(value))
+  return redactSecretLikeValues(stripTerminalControlChars(stripTerminalSequences(value)))
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .replace(/[ \t\f\v]+/g, " ")
@@ -712,7 +712,7 @@ function safeInline(value: string, maxChars = 500): string {
 }
 
 function sanitizeErrorText(value: string): string {
-  return stripTerminalControlChars(stripTerminalSequences(value))
+  return redactSecretLikeValues(stripTerminalControlChars(stripTerminalSequences(value)))
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer REDACTED")
     .replace(/sk-or-v1-[A-Za-z0-9_-]+/gi, "sk-or-v1-REDACTED")
     .replace(/(https?:\/\/)[^/@\s]+@/gi, "$1REDACTED@")
