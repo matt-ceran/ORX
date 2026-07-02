@@ -1980,11 +1980,11 @@ test("tty chat renders bottom status composer instead of the repeated plain foot
     assert.match(stdout, /╭─ orx/);
     assert.match(stdout, /orx › /);
     assert.match(stdout, /work ⠋ assistant/);
-    assert.match(
-      rawStdout,
-      /\r\x1b\[2K\x1b\[1F\x1b\[2K\x1b\[1F\x1b\[2Kassistant: TTY reply/,
-    );
+    assert.match(rawStdout, /\r\x1b\[2K\x1b\[1F\x1b\[2K\x1b\[1F\x1b\[2K/);
     assert.match(stdout, /assistant: TTY reply/);
+    assert.match(stdout, /meta  route openrouter\/auto  tokens 3  cost \$0\.000200/);
+    assert.doesNotMatch(stdout, /\nmetadata:\n/);
+    assert.doesNotMatch(stdout, /requested_model:/);
     assert.match(stdout, /route auto/);
     assert.doesNotMatch(stdout, /model openrouter\/auto/);
     assert.match(stdout, /mode auto/);

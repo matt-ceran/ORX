@@ -20,7 +20,11 @@ export function formatToolCallStart(
   const renderer = createTerminalRenderer(options);
   const argumentSummary = formatToolArguments(toolCall, options);
   return argumentSummary
-    ? `${renderer.accent("[tool]")} ${toolCall.function.name} ${argumentSummary}`
+    ? [
+        renderer.accent("[tool]"),
+        toolCall.function.name,
+        renderer.dim(argumentSummary),
+      ].join(" ")
     : `${renderer.accent("[tool]")} ${toolCall.function.name}`;
 }
 
@@ -34,8 +38,8 @@ export function formatToolResult(
     renderer.accent("[tool]"),
     result.toolCall.function.name,
     result.ok ? renderer.success("ok") : renderer.danger("failed"),
-    `duration=${formatDuration(result.durationMs)}`,
-    ...details,
+    renderer.dim(`duration=${formatDuration(result.durationMs)}`),
+    ...details.map((detail) => renderer.dim(detail)),
   ].join(" ");
 }
 

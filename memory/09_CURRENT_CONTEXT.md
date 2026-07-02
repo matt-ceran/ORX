@@ -14,6 +14,8 @@ To continue Phase 12 in a fresh session, read:
 
 Urgent UX recovery additions from user testing:
 
+- TTY chat now suppresses the raw multi-line OpenRouter `metadata:` block after assistant turns. The same observed metadata is kept in the cost/status state and rendered as a single compact `meta` line in TTY; non-TTY/script output keeps the full metadata block.
+- TTY tool summaries now dim secondary arguments/details and use width-aware truncation bounds from the active terminal width while preserving plain non-TTY/`NO_COLOR=1` output.
 - Catalog-backed `/model` resolution is implemented. Unknown friendly names such as `/model deepseek v4` are refused without mutating state; exact provider/model slugs still work.
 - The first bottom-oriented TTY composer/status notch pass is implemented.
 - TTY-only assistant/tool activity animation is implemented in the bottom status composer; continue polishing richer command discovery and input ergonomics.

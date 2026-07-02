@@ -17,7 +17,10 @@ import {
   type DelegationState,
 } from "../delegation/index.js";
 import type { OpenRouterCreditsInfo } from "../openrouter/live.js";
-import { formatOpenRouterMetadata } from "../openrouter/summary.js";
+import {
+  formatCompactOpenRouterMetadata,
+  formatOpenRouterMetadata,
+} from "../openrouter/summary.js";
 import type { OpenRouterMessage, OpenRouterStreamMetadata } from "../openrouter/types.js";
 import {
   createEnabledPluginPromptsSystemMessage,
@@ -485,7 +488,7 @@ export async function runChat({
               onText(text) {
                 finishTtyActivityLine();
                 if (needsAssistantPrefix) {
-                  io.stdout.write("assistant: ");
+                  io.stdout.write(formatAssistantLabel());
                   needsAssistantPrefix = false;
                 }
                 io.stdout.write(text);
@@ -493,7 +496,7 @@ export async function runChat({
               async onToolCall(toolCall) {
                 finishTtyActivityLine();
                 io.stdout.write(
-                  `\n${formatToolCallStart(toolCall, { stream: io.stdout, theme: activeConfig.theme })}\n`,
+                  `\n${formatToolCallStart(toolCall, toolSummaryOptions())}\n`,
                 );
                 startTtyActivity("tool", toolCall.function.name);
                 needsAssistantPrefix = true;
@@ -502,7 +505,7 @@ export async function runChat({
               async onToolResult(result) {
                 finishTtyActivityLine();
                 io.stdout.write(
-                  `${formatToolResult(result, { stream: io.stdout, theme: activeConfig.theme })}\n`,
+                  `${formatToolResult(result, toolSummaryOptions())}\n`,
                 );
                 startTtyActivity("assistant");
                 needsAssistantPrefix = true;
@@ -531,8 +534,10 @@ export async function runChat({
           delegationState,
           io.stderr,
         );
-        writeLine(io.stdout, formatOpenRouterMetadata(result.metadata));
-        if (!useTtyScreen) {
+        if (useTtyScreen) {
+          writeLine(io.stdout, renderCompactMetadata(result.metadata));
+        } else {
+          writeLine(io.stdout, formatOpenRouterMetadata(result.metadata));
           writeLine(
             io.stdout,
             renderFooter(activeCwd, loadedConfig, activeConfig, session, {
@@ -606,6 +611,36 @@ export async function runChat({
       width: resolveTerminalWidth(io.stdout),
       renderOptions: { stream: io.stdout, theme: activeConfig.theme },
     });
+  }
+
+  function renderCompactMetadata(metadata: OpenRouterStreamMetadata): string {
+    return formatCompactOpenRouterMetadata(metadata, {
+      stream: io.stdout,
+      theme: activeConfig.theme,
+      maxWidth: resolveTerminalWidth(io.stdout),
+    });
+  }
+
+  function formatAssistantLabel(): string {
+    if (!useTtyScreen) {
+      return "assistant: ";
+    }
+
+    const renderer = createTerminalRenderer({ stream: io.stdout, theme: activeConfig.theme });
+    return `${renderer.accent("assistant")}${renderer.dim(":")} `;
+  }
+
+  function toolSummaryOptions(): TerminalRenderOptions & {
+    maxStringLength: number;
+    maxListItems: number;
+  } {
+    const width = resolveTerminalWidth(io.stdout);
+    return {
+      stream: io.stdout,
+      theme: activeConfig.theme,
+      maxStringLength: useTtyScreen ? Math.max(32, Math.min(96, width - 28)) : 96,
+      maxListItems: useTtyScreen && width < 88 ? 3 : 5,
+    };
   }
 
   function consumeInputLine(rawLine: string): string | undefined {
