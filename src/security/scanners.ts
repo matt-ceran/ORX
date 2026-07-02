@@ -7,13 +7,13 @@ import { truncateText } from "../tools/truncation.js";
 import type { TextTruncation } from "../tools/types.js";
 
 export const SCANNERS_USAGE =
-  "Usage: orx scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]]";
+  "Usage: orx scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <semgrep|trivy|codeql|osv-scanner> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]]";
 export const SCAN_USAGE =
-  "Usage: orx scan <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]";
+  "Usage: orx scan <semgrep|trivy|codeql|osv-scanner> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]";
 export const SLASH_SCANNERS_USAGE =
-  "Usage: /scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]]";
+  "Usage: /scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <semgrep|trivy|codeql|osv-scanner> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]]";
 export const SLASH_SCAN_USAGE =
-  "Usage: /scan <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]";
+  "Usage: /scan <semgrep|trivy|codeql|osv-scanner> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]";
 
 export type ScannerProfileId =
   | "semgrep"
@@ -49,7 +49,7 @@ export interface ScannerSetupPlan {
   };
 }
 
-export type RunnableScannerProfileId = "semgrep" | "trivy" | "codeql";
+export type RunnableScannerProfileId = "semgrep" | "trivy" | "codeql" | "osv-scanner";
 
 export interface ScannerRunArgs {
   profile: ScannerProfileId;
@@ -140,11 +140,11 @@ const SCANNER_PROFILES: ScannerProfile[] = [
   {
     id: "osv-scanner",
     label: "OSV-Scanner",
-    state: "catalog_only",
+    state: "runnable",
     binary: "osv-scanner",
-    summary: "Catalog/readiness placeholder for future vulnerability scanning.",
-    runSupport: "not runnable in this slice",
-    networkBoundary: "no no-network/no-auth command selection is enabled yet",
+    summary: "Local dependency vulnerability scan using an already-installed OSV-Scanner CLI and already-cached offline vulnerability data.",
+    runSupport: "runnable only through `run osv-scanner <path> [--json]` for offline source/lockfile scanning",
+    networkBoundary: "source scanning uses full --offline mode and --no-resolve; database downloads, online matching, config overrides, license scans, image scans, and guided remediation are not enabled",
   },
   {
     id: "codeql",
@@ -279,6 +279,17 @@ function scannerProfileJsonDetails(profile: ScannerProfile): Record<string, stri
       run: "orx scanners run codeql <database-dir> --query <local-query-or-suite> [--json]",
     };
   }
+  if (profile.id === "osv-scanner") {
+    return {
+      scan_scope: "source and lockfile vulnerability scanning only",
+      command_shape: "osv-scanner scan source --recursive --format json --offline --no-resolve <path>",
+      target_guard: "local regular file or directory under cwd; symlink realpath must remain under cwd",
+      offline_data: "uses OSV full offline mode with already-cached vulnerability databases only; ORX does not pass --download-offline-databases",
+      rejected_options: "--config, --query, URLs, dash-prefixed values, symlink escapes, secrets, and control characters",
+      output: "bounded and redacted; run --json passes redacted bounded OSV-Scanner JSON stdout only on success",
+      run: "orx scanners run osv-scanner <path> [--json]",
+    };
+  }
   return undefined;
 }
 
@@ -322,6 +333,17 @@ export function renderScannerProfileInspect(profile: ScannerProfile): string {
       "  rejected_inputs: pack names, URLs, dash-prefixed operands, symlink escapes, secrets, control characters, and --config",
       "  output: bounded and redacted; --json passes redacted bounded SARIF JSON from the ORX temp output file on success",
       "  run: orx scanners run codeql <database-dir> --query <local-query-or-suite> [--json]",
+    );
+  }
+  if (profile.id === "osv-scanner") {
+    lines.push(
+      "  scan_scope: source and lockfile vulnerability scanning only",
+      "  command_shape: osv-scanner scan source --recursive --format json --offline --no-resolve <path>",
+      "  target_guard: local regular file or directory under cwd; symlink realpath must remain under cwd",
+      "  offline_data: uses OSV full offline mode with already-cached vulnerability databases only; ORX does not pass --download-offline-databases",
+      "  rejected_options: --config, --query, URLs, dash-prefixed values, symlink escapes, secrets, and control characters",
+      "  output: bounded and redacted; --json passes redacted bounded OSV-Scanner JSON stdout only on success",
+      "  run: orx scanners run osv-scanner <path> [--json]",
     );
   }
 
@@ -509,7 +531,7 @@ export function parseScannerRunArgs(
   if (!PROFILE_IDS.has(profile)) {
     return { ok: false, message: renderMissingScannerProfile(profile) };
   }
-  if (profile !== "semgrep" && profile !== "trivy" && profile !== "codeql") {
+  if (profile !== "semgrep" && profile !== "trivy" && profile !== "codeql" && profile !== "osv-scanner") {
     return {
       ok: false,
       message: `Scanner profile ${profile} is catalog/readiness-only in this slice; no run path is enabled.`,
@@ -523,6 +545,12 @@ export function parseScannerRunArgs(
     return {
       ok: false,
       message: `${usage}\nTrivy secret scans do not accept --config; ORX does not load Trivy config files in this profile.`,
+    };
+  }
+  if (profile === "osv-scanner" && configProvided) {
+    return {
+      ok: false,
+      message: `${usage}\nOSV-Scanner offline source scans do not accept --config; ORX does not load OSV config files in this profile.`,
     };
   }
   if (profile === "codeql" && configProvided) {
@@ -586,7 +614,7 @@ export async function runSecurityScanner(options: RunSecurityScannerOptions): Pr
   const runner = options.runner ?? runProcess;
   const emptyText = emptyScannerText();
 
-  if (options.profile !== "semgrep" && options.profile !== "trivy" && options.profile !== "codeql") {
+  if (options.profile !== "semgrep" && options.profile !== "trivy" && options.profile !== "codeql" && options.profile !== "osv-scanner") {
     return {
       ok: false,
       status: "invalid_arguments",
@@ -602,7 +630,7 @@ export async function runSecurityScanner(options: RunSecurityScannerOptions): Pr
       stderr: "",
       stdoutTruncation: emptyText.truncation,
       stderrTruncation: emptyText.truncation,
-      message: "Only the semgrep, trivy, and codeql scanner profiles are runnable in this slice.",
+      message: "Only the semgrep, trivy, codeql, and osv-scanner scanner profiles are runnable in this slice.",
     };
   }
 
@@ -664,7 +692,9 @@ export async function runSecurityScanner(options: RunSecurityScannerOptions): Pr
 
   const spawnArgs = options.profile === "semgrep"
     ? buildSemgrepArgs(target.arg, config?.arg ?? "", options.json)
-    : buildTrivyArgs(target.arg);
+    : options.profile === "trivy"
+      ? buildTrivyArgs(target.arg)
+      : buildOsvScannerArgs(target.arg);
   const result = await runner({
     command: command.command,
     args: spawnArgs,
@@ -783,6 +813,19 @@ function buildTrivyArgs(targetPath: string): string[] {
     "--skip-version-check",
     "--disable-telemetry",
     "--no-progress",
+    targetPath,
+  ];
+}
+
+function buildOsvScannerArgs(targetPath: string): string[] {
+  return [
+    "scan",
+    "source",
+    "--recursive",
+    "--format",
+    "json",
+    "--offline",
+    "--no-resolve",
     targetPath,
   ];
 }
@@ -938,16 +981,19 @@ function mergeSourceTruncation(rendered: TextTruncation, source: TextTruncation)
 }
 
 async function resolveScannerCommand(
-  profile: "semgrep" | "trivy" | "codeql",
+  profile: "semgrep" | "trivy" | "codeql" | "osv-scanner",
   cwd: string,
   env: NodeJS.ProcessEnv,
   runner: ScannerProcessRunner,
-): Promise<{ ok: true; command: "semgrep" | "trivy" | "codeql" } | { ok: false; message: string }> {
+): Promise<{ ok: true; command: "semgrep" | "trivy" | "codeql" | "osv-scanner" } | { ok: false; message: string }> {
   if (profile === "semgrep") {
     return resolveSemgrepCommand(cwd, env, runner);
   }
   if (profile === "trivy") {
     return resolveTrivyCommand(cwd, env, runner);
+  }
+  if (profile === "osv-scanner") {
+    return resolveOsvScannerCommand(cwd, env, runner);
   }
   return resolveCodeqlCommand(cwd, env, runner);
 }
@@ -1030,6 +1076,33 @@ async function resolveCodeqlCommand(
   return {
     ok: false,
     message: `CodeQL was found but did not respond to --version successfully. ${scannerMissingMessage("codeql")}`,
+  };
+}
+
+async function resolveOsvScannerCommand(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  runner: ScannerProcessRunner,
+): Promise<{ ok: true; command: "osv-scanner" } | { ok: false; message: string }> {
+  const result = await runner({
+    command: "osv-scanner",
+    args: ["--version"],
+    cwd,
+    env,
+    inheritEnv: false,
+    shell: false,
+    timeoutMs: SCANNER_DISCOVERY_TIMEOUT_MS,
+    maxBytes: SCANNER_DISCOVERY_BYTES,
+  });
+  if (result.exitCode === 0) {
+    return { ok: true, command: "osv-scanner" };
+  }
+  if (result.error && isCommandMissingError(result.error)) {
+    return { ok: false, message: scannerMissingMessage("osv-scanner") };
+  }
+  return {
+    ok: false,
+    message: `OSV-Scanner was found but did not respond to --version successfully. ${scannerMissingMessage("osv-scanner")}`,
   };
 }
 
@@ -1360,6 +1433,9 @@ function scannerMissingMessage(profile: ScannerProfileId): string {
   if (profile === "codeql") {
     return "CodeQL is not installed or not on PATH. Install the CodeQL CLI yourself, ensure `codeql` is available locally, and rerun with an explicit local database directory plus --query path under the current working directory.";
   }
+  if (profile === "osv-scanner") {
+    return "OSV-Scanner is not installed or not on PATH. Install OSV-Scanner yourself, ensure `osv-scanner` is available locally, pre-cache offline vulnerability data yourself, and rerun with an explicit local target path under the current working directory.";
+  }
   if (profile === "trivy") {
     return "Trivy is not installed or not on PATH. Install Trivy yourself, ensure `trivy` is available locally, and rerun with an explicit local target path under the current working directory.";
   }
@@ -1383,7 +1459,10 @@ function runnableScannerCommandForProfile(profile: RunnableScannerProfileId): st
   if (profile === "trivy") {
     return "orx scanners run trivy <path> [--json]";
   }
-  return "orx scanners run codeql <database-dir> --query <local-query-or-suite> [--json]";
+  if (profile === "codeql") {
+    return "orx scanners run codeql <database-dir> --query <local-query-or-suite> [--json]";
+  }
+  return "orx scanners run osv-scanner <path> [--json]";
 }
 
 function futureScannerIntegrationForProfile(profile: ScannerProfileId): string | undefined {
@@ -1392,9 +1471,6 @@ function futureScannerIntegrationForProfile(profile: ScannerProfileId): string |
   }
   if (profile === "socket") {
     return "prove a noninteractive local Socket command shape with no auth, no network, no package-manager side effects, cwd-confined manifest inputs, cleaned env, bounded/redacted output, and explicit denial tests before enabling runs";
-  }
-  if (profile === "osv-scanner") {
-    return "prove OSV-Scanner can run with a fixed no-network contract, cwd-confined lockfile or SBOM inputs, explicit cache/write behavior, cleaned env, bounded/redacted output, and explicit denial tests before enabling runs";
   }
   return undefined;
 }
@@ -1412,13 +1488,6 @@ function catalogOnlyScannerBlockers(profile: ScannerProfileId): string[] {
       "no deterministic local dependency-risk command shape has been accepted",
       "cwd-confined manifest or package-manager input guards and output parsing are not implemented",
       "auth, telemetry, package-manager side-effect, and network/update denial tests are not implemented",
-    ];
-  }
-  if (profile === "osv-scanner") {
-    return [
-      "offline vulnerability data and update/cache behavior have not been fixed to a no-network contract",
-      "cwd-confined lockfile or SBOM input guards and output parsing are not implemented",
-      "database/cache/write-location and cleanup/readback denial tests are not implemented",
     ];
   }
   return [];

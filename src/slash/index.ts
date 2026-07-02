@@ -630,10 +630,11 @@ const TREE_SITTER_MODE_COMPLETIONS = ["parse", "outline", "imports", "refs", "ca
 const TREE_SITTER_OPTION_COMPLETIONS = ["--json"] as const;
 const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "plan", "setup-plan", "run"] as const;
 const SCANNER_PROFILE_COMPLETIONS = ["semgrep", "snyk", "socket", "osv-scanner", "codeql", "trivy"] as const;
-const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep", "trivy", "codeql"] as const;
+const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep", "trivy", "codeql", "osv-scanner"] as const;
 const SCANNER_READINESS_OPTION_COMPLETIONS = ["--json"] as const;
 const SCANNER_RUN_OPTION_COMPLETIONS = ["--config", "--json"] as const;
 const TRIVY_SCANNER_RUN_OPTION_COMPLETIONS = ["--json"] as const;
+const OSV_SCANNER_RUN_OPTION_COMPLETIONS = ["--json"] as const;
 const CODEQL_SCANNER_RUN_OPTION_COMPLETIONS = ["--query", "--json"] as const;
 const DIAGNOSTICS_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "plan", "setup-plan", "run"] as const;
 const DIAGNOSTIC_PROFILE_COMPLETIONS = [
@@ -2091,6 +2092,9 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
         if (scanner === "trivy") {
           return [...TRIVY_SCANNER_RUN_OPTION_COMPLETIONS];
         }
+        if (scanner === "osv-scanner") {
+          return [...OSV_SCANNER_RUN_OPTION_COMPLETIONS];
+        }
         if (scanner === "codeql") {
           return [...CODEQL_SCANNER_RUN_OPTION_COMPLETIONS];
         }
@@ -2104,6 +2108,9 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       if (argIndex >= 2) {
         if (firstArg === "trivy") {
           return [...TRIVY_SCANNER_RUN_OPTION_COMPLETIONS];
+        }
+        if (firstArg === "osv-scanner") {
+          return [...OSV_SCANNER_RUN_OPTION_COMPLETIONS];
         }
         if (firstArg === "codeql") {
           return [...CODEQL_SCANNER_RUN_OPTION_COMPLETIONS];

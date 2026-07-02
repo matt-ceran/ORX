@@ -2145,6 +2145,7 @@ test("cli scanner commands list, inspect, and run guarded local profiles with mo
     assert.equal(await runCli(["node", "cli", "scanners", "list"], {}, list.io), 0);
     assert.match(list.stdout(), /Security scanner profiles/);
     assert.match(list.stdout(), /id=semgrep state=runnable/);
+    assert.match(list.stdout(), /id=osv-scanner state=runnable/);
     assert.match(list.stdout(), /id=snyk state=catalog_only/);
 
     const listJson = createIo({ cwd });
@@ -2155,6 +2156,7 @@ test("cli scanner commands list, inspect, and run guarded local profiles with mo
     assert.equal(profileReport.network, "none_for_list_or_inspect");
     const profileEntries = profileReport.profiles as Array<{ id: string; state: string }>;
     assert.equal(profileEntries.find((profile) => profile.id === "codeql")?.state, "runnable");
+    assert.equal(profileEntries.find((profile) => profile.id === "osv-scanner")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "semgrep")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "trivy")?.state, "runnable");
     assert.equal(listJson.stderr(), "");
@@ -2183,6 +2185,12 @@ test("cli scanner commands list, inspect, and run guarded local profiles with mo
     assert.match(inspectCodeql.stdout(), /command_shape: codeql database analyze --format=sarifv2\.1\.0/);
     assert.match(inspectCodeql.stdout(), /--no-download/);
 
+    const inspectOsv = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "scanners", "inspect", "osv-scanner"], {}, inspectOsv.io), 0);
+    assert.match(inspectOsv.stdout(), /Security scanner profile: osv-scanner/);
+    assert.match(inspectOsv.stdout(), /command_shape: osv-scanner scan source --recursive --format json --offline --no-resolve/);
+    assert.match(inspectOsv.stdout(), /does not pass --download-offline-databases/);
+
     const inspectCatalogOnly = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "scanners", "inspect", "snyk"], {}, inspectCatalogOnly.io), 0);
     assert.match(inspectCatalogOnly.stdout(), /state: catalog_only/);
@@ -2196,16 +2204,24 @@ test("cli scanner commands list, inspect, and run guarded local profiles with mo
     assert.match(planSemgrep.stdout(), /blockers:\n    - none/);
     assert.equal(planSemgrep.stderr(), "");
 
+    const planOsv = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "scanners", "plan", "osv-scanner"], {}, planOsv.io), 0);
+    assert.match(planOsv.stdout(), /Security scanner setup plan: osv-scanner/);
+    assert.match(planOsv.stdout(), /status: runnable_now/);
+    assert.match(planOsv.stdout(), /current_run: orx scanners run osv-scanner <path> \[--json\]/);
+    assert.match(planOsv.stdout(), /blockers:\n    - none/);
+    assert.equal(planOsv.stderr(), "");
+
     const setupPlanJson = createIo({ cwd });
-    assert.equal(await runCli(["node", "cli", "scanners", "setup-plan", "osv-scanner", "--json"], {}, setupPlanJson.io), 0);
+    assert.equal(await runCli(["node", "cli", "scanners", "setup-plan", "socket", "--json"], {}, setupPlanJson.io), 0);
     const setupPlanReport = JSON.parse(setupPlanJson.stdout());
     assert.equal(setupPlanReport.surface, "orx.security_scanner_setup_plan");
-    assert.equal(setupPlanReport.profile.id, "osv-scanner");
+    assert.equal(setupPlanReport.profile.id, "socket");
     assert.equal(setupPlanReport.status, "catalog_only");
     assert.equal(setupPlanReport.authority.process_spawn, "none");
     assert.equal(setupPlanReport.authority.network, "none");
-    assert.match(setupPlanReport.future_integration, /fixed no-network contract/);
-    assert.ok(setupPlanReport.blockers.some((blocker: string) => blocker.includes("no-network contract")));
+    assert.match(setupPlanReport.future_integration, /no package-manager side effects/);
+    assert.ok(setupPlanReport.blockers.some((blocker: string) => blocker.includes("dependency-risk")));
     assert.equal(setupPlanJson.stderr(), "");
 
     const planUnknownOption = createIo({ cwd });
@@ -2244,10 +2260,20 @@ test("cli scanner commands list, inspect, and run guarded local profiles with mo
       if (options.command === "codeql" && options.args?.includes("--version")) {
         return mockProcessResult(options, { exitCode: 0, stdout: "CodeQL command-line toolchain release 2.22.0\n" });
       }
+      if (options.command === "osv-scanner" && options.args?.includes("--version")) {
+        return mockProcessResult(options, { exitCode: 0, stdout: "OSV-Scanner version: 2.3.3\n" });
+      }
       if (options.command === "trivy") {
         return mockProcessResult(options, {
           exitCode: 0,
           stdout: "{\"Results\":[{\"Secrets\":[{\"RuleID\":\"generic-api-key\",\"Match\":\"api_key=trivy-secret\"}]}]}\n",
+          stderr: "Authorization: Bearer should-redact\n",
+        });
+      }
+      if (options.command === "osv-scanner") {
+        return mockProcessResult(options, {
+          exitCode: 0,
+          stdout: "{\"results\":[{\"packages\":[{\"package\":{\"name\":\"pkg\",\"version\":\"1.0.0\"},\"vulnerabilities\":[{\"id\":\"GHSA-test\",\"summary\":\"api_key=osv-secret\"}]}]}]}\n",
           stderr: "Authorization: Bearer should-redact\n",
         });
       }
@@ -2391,6 +2417,56 @@ test("cli scanner commands list, inspect, and run guarded local profiles with mo
     assert.equal(scannerCalls.at(-1)?.inheritEnv, false);
     assert.equal(scannerCalls.at(-1)?.env?.HOME, undefined);
 
+    const osv = createIo({
+      cwd,
+      scannerRunner,
+    });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "scanners", "run", "osv-scanner", "src"],
+        {
+          OPENROUTER_API_KEY: "sk-or-v1-secret",
+          BRAVE_SEARCH_API_KEY: "brave-secret",
+          ORX_PLUGIN_REGISTRY_PATH: "should-not-forward",
+          HOME: join(cwd, "sk-or-v1-home-secret"),
+          PATH: "/usr/bin",
+          LANG: "C",
+        },
+        osv.io,
+      ),
+      0,
+    );
+    assert.match(osv.stdout(), /Security scanner run/);
+    assert.match(osv.stdout(), /profile: osv-scanner/);
+    assert.match(osv.stdout(), /command: "osv-scanner" "scan" "source" "--recursive" "--format" "json" "--offline" "--no-resolve" "src"/);
+    assert.match(osv.stdout(), /api_key=\[redacted\]/);
+    assert.match(osv.stdout(), /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(osv.stdout(), /osv-secret|should-redact|sk-or-v1-secret|brave-secret/);
+    assert.equal(osv.stderr(), "");
+    assert.deepEqual(scannerCalls.at(-1)?.args, [
+      "scan",
+      "source",
+      "--recursive",
+      "--format",
+      "json",
+      "--offline",
+      "--no-resolve",
+      "src",
+    ]);
+    assert.equal(scannerCalls.at(-1)?.command, "osv-scanner");
+    assert.equal(scannerCalls.at(-1)?.shell, false);
+    assert.equal(scannerCalls.at(-1)?.inheritEnv, false);
+    assert.equal(scannerCalls.at(-1)?.env?.OPENROUTER_API_KEY, undefined);
+    assert.equal(scannerCalls.at(-1)?.env?.BRAVE_SEARCH_API_KEY, undefined);
+    assert.equal(scannerCalls.at(-1)?.env?.HOME, undefined);
+
+    const osvJson = createIo({ cwd, scannerRunner });
+    assert.equal(await runCli(["node", "cli", "scan", "osv-scanner", "src", "--json"], {}, osvJson.io), 0);
+    const osvJsonReport = JSON.parse(osvJson.stdout());
+    assert.equal(osvJsonReport.results[0].packages[0].vulnerabilities[0].summary, "api_key=[redacted]");
+    assert.doesNotMatch(osvJson.stdout(), /osv-secret|should-redact/);
+    assert.equal(osvJson.stderr(), "");
+
     const trivyJson = createIo({ cwd, scannerRunner });
     assert.equal(await runCli(["node", "cli", "scan", "trivy", "src", "--json"], {}, trivyJson.io), 0);
     const trivyJsonReport = JSON.parse(trivyJson.stdout());
@@ -2498,6 +2574,22 @@ test("cli scanner commands list, inspect, and run guarded local profiles with mo
     assert.match(trivyConfig.stderr(), /Trivy secret scans do not accept --config/);
     assert.equal(scannerCalls.length, beforeUnsafeCalls);
 
+    const osvConfig = createIo({ cwd, scannerRunner });
+    assert.equal(
+      await runCli(["node", "cli", "scan", "osv-scanner", "src", "--config", "semgrep.yml"], {}, osvConfig.io),
+      1,
+    );
+    assert.match(osvConfig.stderr(), /OSV-Scanner offline source scans do not accept --config/);
+    assert.equal(scannerCalls.length, beforeUnsafeCalls);
+
+    const osvQuery = createIo({ cwd, scannerRunner });
+    assert.equal(
+      await runCli(["node", "cli", "scan", "osv-scanner", "src", "--query", "query.ql"], {}, osvQuery.io),
+      1,
+    );
+    assert.match(osvQuery.stderr(), /Only the CodeQL scanner profile accepts --query/);
+    assert.equal(scannerCalls.length, beforeUnsafeCalls);
+
     const trivyEmptyConfigEquals = createIo({ cwd, scannerRunner });
     assert.equal(await runCli(["node", "cli", "scan", "trivy", "src", "--config="], {}, trivyEmptyConfigEquals.io), 1);
     assert.match(trivyEmptyConfigEquals.stderr(), /Trivy secret scans do not accept --config/);
@@ -2542,6 +2634,15 @@ test("cli scanner commands list, inspect, and run guarded local profiles with mo
       1,
     );
     assert.match(unsafeTrivySymlink.stderr(), /path resolves outside the current working directory/);
+    assert.equal(scannerCalls.length, beforeUnsafeCalls);
+
+    symlinkSync(join(outside, "outside.yml"), join(cwd, "outside-osv-target.yml"));
+    const unsafeOsvSymlink = createIo({ cwd, scannerRunner });
+    assert.equal(
+      await runCli(["node", "cli", "scan", "osv-scanner", "outside-osv-target.yml"], {}, unsafeOsvSymlink.io),
+      1,
+    );
+    assert.match(unsafeOsvSymlink.stderr(), /path resolves outside the current working directory/);
     assert.equal(scannerCalls.length, beforeUnsafeCalls);
 
     symlinkSync(join(outside, "outside.yml"), join(cwd, "outside-query.ql"));

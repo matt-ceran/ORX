@@ -462,7 +462,7 @@ Reasoning: Operators need to understand why TypeScript Language Server, rust-ana
 
 ## 2026-07-02: Scanner Setup Plans Are Read-Only
 
-Decision: Scanner `plan` and `setup-plan` commands should render ORX-owned metadata only, including catalog-only Snyk/Socket/OSV-Scanner blockers, and must not probe binaries, spawn processes, access the network, write project or ORX state, or expose model tools.
+Decision: Scanner `plan` and `setup-plan` commands should render ORX-owned metadata only, including then-catalog-only Snyk/Socket/OSV-Scanner blockers, and must not probe binaries, spawn processes, access the network, write project or ORX state, or expose model tools.
 
 Reasoning: Operators need to understand why catalog-only scanner profiles are not runnable yet without accidentally invoking scanner auth, telemetry, package-manager, cache/update, or network behavior. A read-only plan keeps Semgrep/Trivy/CodeQL next commands discoverable while preserving the stronger local/no-auth/no-network design gate for future scanner adapters.
 
@@ -477,3 +477,9 @@ Reasoning: ORX already has explicit chat web fetch/search/browser commands, but 
 Decision: CLI namespaces whose behavior does not depend on saved routing profiles should dispatch before config/profile loading. This currently covers `research`, `scanners`, `scan`, `diagnostics`, `diag`, `tests`, `test`, `code`, top-level local code-intelligence aliases (`map`, `code-map`, `symbols`, `refs`, `references`, `imports`, `import-graph`, `calls`, `call-graph`, `ast-grep`, `tree-sitter`, and `outline`), and profile-independent state/metadata namespaces (`history`, `plugins`, `plugin`, `bins`, `bin`, `hooks`, `hook`, `mcp`, `orchestrator`, `delegate`, and `delegates`).
 
 Reasoning: Saved profiles are for model/routing/session defaults, not local metadata or explicit local tooling runs. Bypassing profile registry reads for these namespaces preserves their no-state-write boundaries even when an operator includes global `--profile <id>`.
+
+## 2026-07-02: OSV-Scanner Runs Stay Offline Source Scans
+
+Decision: The runnable OSV-Scanner profile is limited to `osv-scanner scan source --recursive --format json --offline --no-resolve <path>` against a cwd-confined local file or directory. ORX must not pass `--download-offline-databases`, load OSV config files, accept `--query`, run image/license/fix modes, enable online vulnerability matching, or expose scanner runs as model tools.
+
+Reasoning: OSV-Scanner's documented full offline mode makes a useful local dependency-vulnerability scan possible, but database download/update behavior, package resolution, config overrides, and alternate modes would broaden the network/write/side-effect boundary. Keeping the command fixed preserves ORX's explicit-operator, no-install, no-network-by-command-selection scanner model.
