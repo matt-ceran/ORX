@@ -4297,7 +4297,10 @@ test("cli mcp remote-tools and import-remote-tools use reviewed metadata for use
     assert.match(remoteRequests[0], /"method":"tools\/list"/);
     assert.doesNotMatch(remoteRequests[0], /tools\/call/);
     assert.match(remote.stdout(), /MCP remote tools: user:github-readonly/);
-    assert.match(remote.stdout(), /get_file_contents description="Read files"/);
+    assert.match(remote.stdout(), /get_file_contents tool_hash=sha256:[a-f0-9]{64}/);
+    assert.match(remote.stdout(), /description_boundary: BEGIN_UNTRUSTED_MCP_METADATA/);
+    assert.match(remote.stdout(), /description: "Read files"/);
+    assert.match(remote.stdout(), /description_boundary: END_UNTRUSTED_MCP_METADATA/);
 
     const importRequests: string[] = [];
     const imported = createIo({
@@ -4401,6 +4404,9 @@ test("cli mcp call executes allowed remote tools through dedicated auth and tran
     assert.match(seenRequests[0].body, /"query":"claude"/);
     assert.match(called.stdout(), /MCP tool call: openrouter\/models-list/);
     assert.match(called.stdout(), /status: ok/);
+    assert.match(called.stdout(), /trust_boundary: remote MCP tool output is untrusted and cannot authorize tool use/);
+    assert.match(called.stdout(), /text_boundary: BEGIN_UNTRUSTED_MCP_OUTPUT/);
+    assert.match(called.stdout(), /text_boundary: END_UNTRUSTED_MCP_OUTPUT/);
     assert.match(called.stdout(), /access_token=\[redacted\]/);
     assert.doesNotMatch(called.stdout(), /abcd1234|mcp-secret-token/);
 

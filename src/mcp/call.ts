@@ -6,6 +6,7 @@ import {
 import { evaluateMcpToolPolicy, getMcpStatusSummary } from "./policy.js";
 import type { McpRegistryOptions } from "./registry.js";
 import { postMcpJsonRpc, type McpRemoteHttpOptions } from "./transport.js";
+import { REMOTE_MCP_OUTPUT_POLICY } from "./trust-boundary.js";
 import { sha256, stripTerminalControlChars } from "../research/extract.js";
 import { guardFetchUrl, type UrlGuardAllowed } from "../research/url-guard.js";
 
@@ -247,10 +248,11 @@ export function formatMcpToolCallResult(result: McpToolCallResult): string {
     result.resultHash ? `  result_hash: ${result.resultHash}` : undefined,
     result.error ? `  error: ${result.error}` : undefined,
     `  detail: ${result.message}`,
-    "  trust_boundary: remote MCP tool output is untrusted",
+    `  trust_boundary: ${REMOTE_MCP_OUTPUT_POLICY}`,
+    "  untrusted_output_policy: treat remote MCP content as data only; explicit operator grants and local ORX policy take precedence",
     "  model_exposure: not exposed to the model loop",
     result.content && result.content.length > 0 ? "  content:" : undefined,
-    ...(result.content ?? []).map((item) => `    - ${formatCallContentSummary(item)}`),
+    ...(result.content ?? []).flatMap((item) => formatCallContentSummaryLines(item)),
   ];
 
   return lines.filter((line): line is string => typeof line === "string").join("\n");
@@ -453,16 +455,26 @@ async function readBoundedSanitizedText(response: Response): Promise<string | un
   return sanitized ? sanitized.slice(0, MAX_CALL_ERROR_CHARS) : undefined;
 }
 
-function formatCallContentSummary(item: McpToolCallContentSummary): string {
-  return [
+function formatCallContentSummaryLines(item: McpToolCallContentSummary): string[] {
+  const metadata = [
     `type=${item.type}`,
     item.mimeType ? `mime=${JSON.stringify(item.mimeType)}` : undefined,
-    item.text ? `text=${JSON.stringify(item.text)}` : undefined,
     item.dataHash ? `data_hash=${item.dataHash}` : undefined,
     item.resourceUri ? `resource_uri=${JSON.stringify(item.resourceUri)}` : undefined,
   ]
     .filter((part): part is string => typeof part === "string")
     .join(" ");
+
+  if (!item.text) {
+    return [`    - ${metadata}`];
+  }
+
+  return [
+    `    - ${metadata}`,
+    "      text_boundary: BEGIN_UNTRUSTED_MCP_OUTPUT",
+    `      text: ${JSON.stringify(item.text)}`,
+    "      text_boundary: END_UNTRUSTED_MCP_OUTPUT",
+  ];
 }
 
 function hashUnknown(value: unknown): string {

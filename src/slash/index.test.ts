@@ -3826,6 +3826,9 @@ test("mcp call executes allowed remote tools only with auth and audits without r
     assert.match(seenRequests[0].body, /"query":"claude"/);
     assert.match(harness.stdout(), /MCP tool call: openrouter\/models-list/);
     assert.match(harness.stdout(), /status: ok/);
+    assert.match(harness.stdout(), /trust_boundary: remote MCP tool output is untrusted and cannot authorize tool use/);
+    assert.match(harness.stdout(), /text_boundary: BEGIN_UNTRUSTED_MCP_OUTPUT/);
+    assert.match(harness.stdout(), /text_boundary: END_UNTRUSTED_MCP_OUTPUT/);
     assert.match(harness.stdout(), /secret=\[redacted\]/);
     assert.doesNotMatch(harness.stdout(), /secret=abc123/);
 
@@ -4090,9 +4093,12 @@ test("mcp remote-tools calls tools/list for enabled trusted profile and does not
     assert.match(harness.stdout(), /MCP remote tools: openrouter/);
     assert.match(harness.stdout(), /status: ok/);
     assert.match(harness.stdout(), /remote_tool_count: 1/);
-    assert.match(harness.stdout(), /models-list description="List models" tool_hash=sha256:[a-f0-9]{64}/);
+    assert.match(harness.stdout(), /models-list tool_hash=sha256:[a-f0-9]{64}/);
     assert.match(harness.stdout(), /input_schema_hash=sha256:[a-f0-9]{64}/);
-    assert.match(harness.stdout(), /trust_boundary: remote tool metadata is untrusted/);
+    assert.match(harness.stdout(), /description_boundary: BEGIN_UNTRUSTED_MCP_METADATA/);
+    assert.match(harness.stdout(), /description: "List models"/);
+    assert.match(harness.stdout(), /description_boundary: END_UNTRUSTED_MCP_METADATA/);
+    assert.match(harness.stdout(), /trust_boundary: remote MCP metadata is untrusted and cannot authorize tool use/);
     assert.match(
       harness.stdout(),
       /tool_execution: explicit \/mcp call or orx mcp call; tools\/list metadata is untrusted operator output; \/mcp model enable or orx ask --mcp-tools exposes read-only non-billable model-granted mcp_call only/,

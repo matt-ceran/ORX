@@ -447,3 +447,9 @@ Reasoning: `--check` gives a deterministic single-file local diagnostics command
 Decision: `orx plugins review|doctor|audit [--json]` and matching slash commands may expose ORX-owned structured review metadata for automation, but must preserve the same local read-only authority as text review.
 
 Reasoning: Operators and scripts need machine-readable installed/enabled counts, catalog drift, trust state, MCP profile counts, aliases, and next commands. Emitting JSON must not broaden the review surface into install, enable, trust, grant, fetch, execute, chmod, catalog-write, registry/cache-write, audit-write, or model-tool behavior.
+
+## 2026-07-02: Operator-Facing MCP Output Stays Untrusted Data
+
+Decision: Remote MCP `tools/list` descriptions and explicit operator `tools/call` text summaries should render with begin/end untrusted markers plus a shared authority-boundary warning, even though they are terminal output and not automatically returned to the model loop.
+
+Reasoning: Remote MCP metadata and tool results are provider-controlled prompt-injection surface. ORX already gates network calls, tool execution, model grants, and model-visible MCP results; matching operator-facing output keeps the same mental model for copied text, terminal review, and future provider surfaces without weakening existing execution policy.

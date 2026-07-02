@@ -63,7 +63,7 @@ Urgent UX recovery additions from user testing:
 - Plugin manifests support optional inert `metadata` for homepage, documentation, license, trust tier, auth, privacy, and runtime requirements. `/plugins inspect` renders sanitized metadata as risk/requirements context only.
 - Enabled plugin `components.mcpServers` JSON can contribute MCP preset profiles. They appear as `plugin:<plugin-id>:<server-id>` in `/mcp list`, `/mcp inspect`, `/mcp tools`, `/mcp call`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`; trusted unchanged `remote-http` plugin profiles can be discovered, list remote tool metadata, run explicit operator `tools/call`, and optionally expose model-granted read-only non-billable tools through session-local `/mcp model enable`.
 - MCP tool grants are implemented: `/mcp allow-tool`, `/mcp revoke-tool`, and `orx mcp allow-tool|revoke-tool` persist per-tool grants for billable/write/destructive declared tools only on enabled/trusted/unchanged profiles. Grants bind to the current trusted profile hash; stale grants are visible and denied before explicit calls can reach the network.
-- Explicit MCP `tools/call` is implemented for operator commands: `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` require enabled/trusted/unchanged profiles, allowed declared-tool policy, env bearer auth or explicit `ORX_MCP_KEYCHAIN=1` macOS Keychain opt-in for auth-bearing tools, guarded DNS-vetted transport, redacted/truncated untrusted output, and audit logs without raw arguments/output.
+- Explicit MCP `tools/call` is implemented for operator commands: `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` require enabled/trusted/unchanged profiles, allowed declared-tool policy, env bearer auth or explicit `ORX_MCP_KEYCHAIN=1` macOS Keychain opt-in for auth-bearing tools, guarded DNS-vetted transport, redacted/truncated untrusted output with operator-visible begin/end untrusted markers, and audit logs without raw arguments/output. Remote `tools/list` metadata descriptions are also rendered inside begin/end untrusted metadata markers.
 - Model MCP exposure is implemented through `/mcp model enable|disable|status` for interactive chat and `orx ask --mcp-tools` for one-shot requests. ORX adds a single native model tool `mcp_call`, limited to read-only non-billable declared MCP tools with active `/mcp allow-model-tool` / `orx mcp allow-model-tool` grants; broad/billable/write/destructive model-loop MCP exposure remains inactive.
 - Enabled plugin `components.hooks` JSON can contribute hook definitions. They appear as `plugin:<plugin-id>:<hook-id>` in `orx hooks`, `/hooks`, and `/status`; trusted hook hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run manually through `hooks run` / `/hooks run` or automatically on matching lifecycle events with minimal env/cwd and JSONL audit logging.
 - Enabled plugin `components.bins` directories can contribute explicit operator-run bins. Regular cached bin files appear as `plugin:<plugin-id>:bin:<file>` in `orx bins`, `/bins`, and `/status`; trusted bin hashes persist outside repos, changed hashes show pending trust, and trusted current hashes can run only through explicit `bins run` / `/bins run` with cached-plugin cwd, manifest-declared env, redacted/truncated output, and JSONL audit logs without raw argument lists.
@@ -118,6 +118,16 @@ Current files:
 
 ## Latest Work
 
+Added operator-visible remote MCP trust boundaries:
+
+- Added shared MCP authority-boundary wording for remote MCP metadata and remote MCP tool output, covering tool use, permission changes, MCP/profile/plugin enablement, hooks, bins, command execution, policy changes, and instruction priority changes.
+- `orx mcp remote-tools` and `/mcp remote-tools` still only call guarded `tools/list`, but remote tool descriptions now render inside `BEGIN_UNTRUSTED_MCP_METADATA` / `END_UNTRUSTED_MCP_METADATA` blocks and the terminal summary explicitly says remote metadata is untrusted data only.
+- `orx mcp call` and `/mcp call` still require enabled/trusted/unchanged profiles, auth, grants, guarded transport, redaction, truncation, and audit logging, but text content summaries now render inside `BEGIN_UNTRUSTED_MCP_OUTPUT` / `END_UNTRUSTED_MCP_OUTPUT` blocks with an explicit data-only policy. Model exposure remains `not exposed to the model loop`.
+- Verification passed: focused source `node --import tsx --test src/mcp/mcp.test.ts`, isolated-home focused source `node --import tsx --test src/slash/index.test.ts src/cli.test.ts`, `npm run typecheck`, `npm run build`, isolated-home full `npm test` with 548 tests, `git diff --check`, isolated-home `npm run verify:release` with all 12 steps passing, and independent verifier `019f2094-5bb5-72d3-9519-7ec75e5f51ad` with no findings.
+- Next likely work remains another bounded optional completion slice such as semantic tree-sitter/LSP/SCIP depth, provider preset/tool declaration packs after current docs/metadata review, scanner adapters after deterministic no-network/no-auth shapes are proven, or future crawl/scholar/RAG research profiles with the same untrusted-output policy.
+
+Previous latest work:
+
 Added MCP provider preset JSON output:
 
 - Added `--json` to provider preset list/inspect surfaces: `orx mcp presets --json`, `orx mcp presets inspect <preset> --json`, shorthand `orx mcp presets <preset> --json`, `/mcp presets --json`, and `/mcp presets inspect <preset> --json`.
@@ -128,7 +138,7 @@ Added MCP provider preset JSON output:
 - Verification passed: focused source `node --import tsx --test src/mcp/mcp.test.ts src/cli.test.ts src/slash/index.test.ts` with 221 tests, `npm run typecheck`, `npm run build`, compiled MCP/CLI/slash tests with 221 tests, built CLI JSON smokes for `mcp presets --json`, `mcp presets inspect deepwiki --json`, and `mcp presets inspect --json` usage rejection, `git diff --check`, full `npm test` with 547 tests, and `npm run verify:release`. Independent verifier `019f2038-012d-7281-be09-eab7845497e1` first found only a memory-completeness gap after behavioral checks passed; current context, backlog, and integration handoff were updated with the no-side-effect JSON boundary, and the verifier rechecked PASS.
 - Next likely work after this slice remains another bounded optional completion slice such as semantic tree-sitter refs/calls/dependency depth, LSP/SCIP diagnostics/references, wrapper-safe report integration, reviewed GitHub/Sourcegraph tool declaration packs, or scanner adapters/additional Trivy modes only after deterministic no-network/no-auth local command shapes are proven.
 
-Previous latest work:
+Earlier latest work:
 
 Added DeepWiki MCP provider preset:
 
