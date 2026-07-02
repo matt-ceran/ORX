@@ -3650,6 +3650,24 @@ test("cli mcp commands use user MCP profile catalog", async () => {
     assert.equal(await runCli(["node", "cli", "mcp", "catalog"], env, emptyCatalog.io), 0);
     assert.match(emptyCatalog.stdout(), /profiles: 0/);
 
+    const emptyCatalogJson = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "catalog", "--json"], env, emptyCatalogJson.io),
+      0,
+    );
+    const emptyCatalogReport = JSON.parse(emptyCatalogJson.stdout()) as {
+      surface: string;
+      exists: boolean;
+      profile_count: number;
+      data_state_writes: string;
+      authority: { catalog_read_side_effects: string };
+    };
+    assert.equal(emptyCatalogReport.surface, "orx.mcp_user_catalog");
+    assert.equal(emptyCatalogReport.exists, false);
+    assert.equal(emptyCatalogReport.profile_count, 0);
+    assert.equal(emptyCatalogReport.data_state_writes, "none");
+    assert.equal(emptyCatalogReport.authority.catalog_read_side_effects, "none");
+
     const addedProfile = createIo({ cwd });
     assert.equal(
       await runCli(
@@ -3692,6 +3710,57 @@ test("cli mcp commands use user MCP profile catalog", async () => {
       0,
     );
     assert.match(addedTool.stdout(), /User MCP tool user:context7\/resolve-library-id stored/);
+
+    const catalogJson = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "catalog", "--json"], env, catalogJson.io),
+      0,
+    );
+    const catalogReport = JSON.parse(catalogJson.stdout()) as {
+      surface: string;
+      path: string;
+      profile_count: number;
+      data_state_writes: string;
+      authority: Record<string, string>;
+      profiles: Array<{
+        id: string;
+        name: string;
+        state: string;
+        transport: string;
+        auth_required: boolean;
+        source: { kind: string; catalog_path: string; declaration_hash: string };
+        tools: Array<{ name: string; risk: string; auth_required: boolean; billable: boolean }>;
+      }>;
+    };
+    assert.equal(catalogReport.surface, "orx.mcp_user_catalog");
+    assert.equal(catalogReport.path, profileCatalogPath);
+    assert.equal(catalogReport.profile_count, 1);
+    assert.equal(catalogReport.data_state_writes, "none");
+    assert.equal(catalogReport.authority.catalog_read_side_effects, "none");
+    assert.equal(catalogReport.profiles[0].id, "user:context7");
+    assert.equal(catalogReport.profiles[0].name, "Context7 docs");
+    assert.equal(catalogReport.profiles[0].state, "disabled");
+    assert.equal(catalogReport.profiles[0].transport, "remote-http");
+    assert.equal(catalogReport.profiles[0].auth_required, true);
+    assert.equal(catalogReport.profiles[0].source.kind, "user");
+    assert.equal(catalogReport.profiles[0].source.catalog_path, profileCatalogPath);
+    assert.match(catalogReport.profiles[0].source.declaration_hash, /^sha256:[a-f0-9]{64}$/);
+    assert.deepEqual(catalogReport.profiles[0].tools, [
+      {
+        name: "resolve-library-id",
+        risk: "read",
+        auth_required: true,
+        billable: false,
+      },
+    ]);
+
+    const invalidCatalogJson = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "catalog", "--json", "extra"], env, invalidCatalogJson.io),
+      1,
+    );
+    assert.equal(invalidCatalogJson.stdout(), "");
+    assert.match(invalidCatalogJson.stderr(), /Usage: orx mcp catalog \[--json\]/);
 
     const list = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "list"], env, list.io), 0);

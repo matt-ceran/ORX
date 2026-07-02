@@ -70,6 +70,10 @@ export interface UserMcpProfileToolsMutationResult extends UserMcpProfileCatalog
   toolNames: string[];
 }
 
+export interface UserMcpProfileCatalogParsedArgs {
+  json: boolean;
+}
+
 const MAX_USER_MCP_PROFILES = 128;
 const MAX_USER_MCP_FILE_BYTES = 256 * 1024;
 const MAX_USER_MCP_TOOLS = 128;
@@ -540,6 +544,53 @@ export function renderUserMcpProfileCatalog(
   return lines.join("\n");
 }
 
+export function parseUserMcpProfileCatalogArgs(
+  args: string[],
+): UserMcpProfileCatalogParsedArgs | undefined {
+  if (args.length === 1) {
+    return { json: false };
+  }
+  if (args.length === 2 && args[1] === "--json") {
+    return { json: true };
+  }
+  return undefined;
+}
+
+export function renderUserMcpProfileCatalogJson(
+  catalog: UserMcpProfileCatalogLoadResult,
+): string {
+  return JSON.stringify(
+    {
+      schema_version: 1,
+      surface: "orx.mcp_user_catalog",
+      operator_only: true,
+      model_tool: "none",
+      execution: "none",
+      network: "none",
+      data_state_writes: "none",
+      path: catalog.path,
+      exists: catalog.exists,
+      profile_count: catalog.profiles.length,
+      omission_count: catalog.omissions.length,
+      truncated: catalog.truncated,
+      profiles: catalog.profiles.map(userMcpProfileJson),
+      omissions: catalog.omissions.map((omission) => ({
+        id: omission.id,
+        path: omission.path,
+        reason: omission.reason,
+      })),
+      authority: {
+        catalog_read_side_effects: "none",
+        install_enable_trust_grant_fetch_call_model_exposure: "separate_explicit_steps",
+        catalog_edits: "orx mcp add-profile|remove-profile|add-tool|remove-tool",
+      },
+      usage: "orx mcp catalog [--json]",
+    },
+    null,
+    2,
+  );
+}
+
 function sanitizeUserMcpProfile(
   fallbackProfileId: string,
   value: unknown,
@@ -592,6 +643,34 @@ function sanitizeUserMcpProfile(
       normalizedDeclaration.notes ??
       "Declared in the local user MCP profile catalog. Disabled until explicitly enabled and trusted.",
     source,
+  };
+}
+
+function userMcpProfileJson(profile: McpProfile): Record<string, unknown> {
+  return {
+    id: profile.id,
+    name: profile.name,
+    state: profile.state,
+    transport: profile.transport.kind,
+    url: profile.transport.url,
+    auth_required: profile.authRequired,
+    risk_level: profile.riskLevel,
+    write_capable: profile.writeCapable,
+    notes: profile.notes,
+    source: profile.source
+      ? {
+          kind: profile.source.kind,
+          catalog_path: profile.source.componentPath,
+          declaration_hash: profile.source.componentHash,
+        }
+      : undefined,
+    tool_count: profile.tools.length,
+    tools: profile.tools.map((tool) => ({
+      name: tool.name,
+      risk: tool.risk,
+      auth_required: tool.authRequired,
+      billable: tool.billable,
+    })),
   };
 }
 

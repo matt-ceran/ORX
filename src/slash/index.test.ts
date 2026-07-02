@@ -135,7 +135,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/refs <query> \[--json\]/);
   assert.match(output, /\/imports \[query\]/);
   assert.match(output, /\/calls \[query\]/);
-  assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog \[--json\]\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
@@ -150,7 +150,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog \[--json\]\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -263,6 +263,8 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mcp plan source"), [["sourcegraph-github-readonly "], "source"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan context7 --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp catalog --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp user-catalog --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/mcp model e"), [["enable "], "e"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets i"), [["inspect ", "info "], "i"]);
@@ -1915,7 +1917,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-  assert.match(alias.stdout(), /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(alias.stdout(), /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog \[--json\]\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -4531,6 +4533,24 @@ test("mcp slash commands use user MCP profile catalog", async () => {
     assert.equal(await handleSlashCommand("/mcp catalog", harness.context), "continue");
     assert.match(harness.stdout(), /profiles: 0/);
 
+    const emptyCatalogJson = createSlashHarness({
+      mcpConfigPath: configPath,
+      mcpProfileCatalogPath: profileCatalogPath,
+    });
+    assert.equal(await handleSlashCommand("/mcp catalog --json", emptyCatalogJson.context), "continue");
+    const emptyCatalogReport = JSON.parse(emptyCatalogJson.stdout()) as {
+      surface: string;
+      exists: boolean;
+      profile_count: number;
+      data_state_writes: string;
+      authority: { catalog_read_side_effects: string };
+    };
+    assert.equal(emptyCatalogReport.surface, "orx.mcp_user_catalog");
+    assert.equal(emptyCatalogReport.exists, false);
+    assert.equal(emptyCatalogReport.profile_count, 0);
+    assert.equal(emptyCatalogReport.data_state_writes, "none");
+    assert.equal(emptyCatalogReport.authority.catalog_read_side_effects, "none");
+
     assert.equal(
       await handleSlashCommand(
         '/mcp add-profile context7 https://mcp.context7.example/mcp --name "Context7 docs" --auth-required',
@@ -4548,6 +4568,58 @@ test("mcp slash commands use user MCP profile catalog", async () => {
       "continue",
     );
     assert.match(harness.stdout(), /User MCP tool user:context7\/resolve-library-id stored/);
+
+    const catalogJson = createSlashHarness({
+      mcpConfigPath: configPath,
+      mcpProfileCatalogPath: profileCatalogPath,
+    });
+    assert.equal(await handleSlashCommand("/mcp catalog --json", catalogJson.context), "continue");
+    const catalogReport = JSON.parse(catalogJson.stdout()) as {
+      surface: string;
+      profile_count: number;
+      data_state_writes: string;
+      authority: Record<string, string>;
+      profiles: Array<{
+        id: string;
+        name: string;
+        state: string;
+        transport: string;
+        auth_required: boolean;
+        source: { kind: string; catalog_path: string; declaration_hash: string };
+        tools: Array<{ name: string; risk: string; auth_required: boolean; billable: boolean }>;
+      }>;
+    };
+    assert.equal(catalogReport.surface, "orx.mcp_user_catalog");
+    assert.equal(catalogReport.profile_count, 1);
+    assert.equal(catalogReport.data_state_writes, "none");
+    assert.equal(catalogReport.authority.catalog_read_side_effects, "none");
+    assert.equal(catalogReport.profiles[0].id, "user:context7");
+    assert.equal(catalogReport.profiles[0].name, "Context7 docs");
+    assert.equal(catalogReport.profiles[0].state, "disabled");
+    assert.equal(catalogReport.profiles[0].transport, "remote-http");
+    assert.equal(catalogReport.profiles[0].auth_required, true);
+    assert.equal(catalogReport.profiles[0].source.kind, "user");
+    assert.equal(catalogReport.profiles[0].source.catalog_path, profileCatalogPath);
+    assert.match(catalogReport.profiles[0].source.declaration_hash, /^sha256:[a-f0-9]{64}$/);
+    assert.deepEqual(catalogReport.profiles[0].tools, [
+      {
+        name: "resolve-library-id",
+        risk: "read",
+        auth_required: true,
+        billable: false,
+      },
+    ]);
+
+    const invalidCatalogJson = createSlashHarness({
+      mcpConfigPath: configPath,
+      mcpProfileCatalogPath: profileCatalogPath,
+    });
+    assert.equal(
+      await handleSlashCommand("/mcp catalog --json extra", invalidCatalogJson.context),
+      "continue",
+    );
+    assert.equal(invalidCatalogJson.stdout(), "");
+    assert.match(invalidCatalogJson.stderr(), /Usage: \/mcp catalog \[--json\]/);
 
     assert.equal(handleSlashCommand("/status", harness.context), "continue");
     assert.match(harness.stdout(), /mcp_user_profiles: 1/);

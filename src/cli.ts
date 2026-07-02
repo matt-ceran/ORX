@@ -132,6 +132,7 @@ import {
   loadUserMcpProfileCatalog,
   listRemoteMcpTools,
   parseMcpSetupPlanArgs,
+  parseUserMcpProfileCatalogArgs,
   renderMcpAuthEnvFileInitResult,
   renderMcpMacosKeychainResult,
   renderMcpProviderPresetInspectJson,
@@ -146,6 +147,7 @@ import {
   renderMcpSetupPlanJson,
   renderMcpStatus,
   renderUserMcpProfileCatalog,
+  renderUserMcpProfileCatalogJson,
   resolveMcpConfigPath,
   resolveMcpProfileCatalogPath,
   resolveMcpBearerCredential,
@@ -317,7 +319,7 @@ const CLI_NAMESPACE_USAGES = {
   config: "Usage: orx config [show|path|init|set <key> <value> [--user|--local]]",
   profile: "Usage: orx profile [list|save <id> [options]|use <id>|inspect <id>|delete <id>]",
   history: "Usage: orx history [search <query>|clear]",
-  mcp: "Usage: orx mcp [list|plan [preset-or-profile] [--json]|catalog|presets [--json|inspect <preset> [--json]]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+  mcp: "Usage: orx mcp [list|plan [preset-or-profile] [--json]|catalog [--json]|presets [--json|inspect <preset> [--json]]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   plugins: "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|doctor|audit|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
   bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
@@ -2625,16 +2627,16 @@ async function runMcpCommand(
   }
 
   if (subcommand === "catalog" || subcommand === "user-catalog") {
-    if (args.length !== 1) {
-      writeLine(io.stderr, "Usage: orx mcp catalog");
+    const parsed = parseUserMcpProfileCatalogArgs(args);
+    if (!parsed) {
+      writeLine(io.stderr, "Usage: orx mcp catalog [--json]");
       return 1;
     }
 
+    const catalog = loadUserMcpProfileCatalog({ profileCatalogPath: mcpProfileCatalogPath });
     writeLine(
       io.stdout,
-      renderUserMcpProfileCatalog(
-        loadUserMcpProfileCatalog({ profileCatalogPath: mcpProfileCatalogPath }),
-      ),
+      parsed.json ? renderUserMcpProfileCatalogJson(catalog) : renderUserMcpProfileCatalog(catalog),
     );
     return 0;
   }
