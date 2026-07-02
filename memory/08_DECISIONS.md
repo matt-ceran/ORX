@@ -453,3 +453,9 @@ Reasoning: Operators and scripts need machine-readable installed/enabled counts,
 Decision: Remote MCP `tools/list` descriptions and explicit operator `tools/call` text summaries should render with begin/end untrusted markers plus a shared authority-boundary warning, even though they are terminal output and not automatically returned to the model loop.
 
 Reasoning: Remote MCP metadata and tool results are provider-controlled prompt-injection surface. ORX already gates network calls, tool execution, model grants, and model-visible MCP results; matching operator-facing output keeps the same mental model for copied text, terminal review, and future provider surfaces without weakening existing execution policy.
+
+## 2026-07-02: Diagnostics Setup Plans Are Read-Only
+
+Decision: Diagnostics `plan` and `setup-plan` commands should render ORX-owned metadata only, including catalog-only LSP/SCIP blockers, and must not probe binaries, spawn processes, access the network, write project or ORX state, or expose model tools.
+
+Reasoning: Operators need to understand why TypeScript Language Server, rust-analyzer, and SCIP TypeScript are not runnable yet, especially because SCIP indexing writes output. A read-only plan preserves implementation momentum and command discoverability without prematurely adding unsafe lifecycle, cache, or index behavior.

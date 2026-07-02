@@ -63,10 +63,13 @@ import {
   parseDiagnosticReadinessJsonFlag,
   parseDiagnosticRunArgText,
   renderDiagnosticInspectUsage,
+  renderDiagnosticPlanUsage,
   renderDiagnosticProfileInspect,
   renderDiagnosticProfileInspectJson,
   renderDiagnosticProfiles,
   renderDiagnosticProfilesJson,
+  renderDiagnosticSetupPlan,
+  renderDiagnosticSetupPlanJson,
   renderLocalDiagnosticsJson,
   renderLocalDiagnosticsResult,
   renderMissingDiagnosticProfile,
@@ -605,7 +608,7 @@ const SCANNER_READINESS_OPTION_COMPLETIONS = ["--json"] as const;
 const SCANNER_RUN_OPTION_COMPLETIONS = ["--config", "--json"] as const;
 const TRIVY_SCANNER_RUN_OPTION_COMPLETIONS = ["--json"] as const;
 const CODEQL_SCANNER_RUN_OPTION_COMPLETIONS = ["--query", "--json"] as const;
-const DIAGNOSTICS_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "run"] as const;
+const DIAGNOSTICS_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "plan", "setup-plan", "run"] as const;
 const DIAGNOSTIC_PROFILE_COMPLETIONS = [
   "typescript",
   "typescript-language-server",
@@ -2070,10 +2073,10 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       if ((firstArg === "list" || firstArg === "status") && argIndex === 1) {
         return [...DIAGNOSTIC_READINESS_OPTION_COMPLETIONS];
       }
-      if ((firstArg === "inspect" || firstArg === "show") && argIndex === 1) {
+      if ((firstArg === "inspect" || firstArg === "show" || firstArg === "plan" || firstArg === "setup-plan") && argIndex === 1) {
         return [...DIAGNOSTIC_PROFILE_COMPLETIONS];
       }
-      if ((firstArg === "inspect" || firstArg === "show") && argIndex === 2) {
+      if ((firstArg === "inspect" || firstArg === "show" || firstArg === "plan" || firstArg === "setup-plan") && argIndex === 2) {
         return [...DIAGNOSTIC_READINESS_OPTION_COMPLETIONS];
       }
       if (firstArg === "run" && argIndex === 1) {
@@ -2688,6 +2691,28 @@ async function handleDiagnosticsCommand(
     writeLine(
       context.io.stdout,
       jsonFlag.json ? renderDiagnosticProfileInspectJson(profile) : renderDiagnosticProfileInspect(profile),
+    );
+    return;
+  }
+
+  if (subcommand === "plan" || subcommand === "setup-plan") {
+    const profileId = command.args[1];
+    const jsonFlag = parseDiagnosticReadinessJsonFlag(command.args.slice(2), usage);
+    if (!profileId || !jsonFlag.ok) {
+      const planUsage = command.originalName === "/diag"
+        ? renderDiagnosticPlanUsage(SLASH_DIAG_USAGE)
+        : renderDiagnosticPlanUsage(usage);
+      writeLine(context.io.stderr, planUsage);
+      return;
+    }
+    const profile = findDiagnosticProfile(profileId);
+    if (!profile) {
+      writeLine(context.io.stderr, renderMissingDiagnosticProfile(profileId));
+      return;
+    }
+    writeLine(
+      context.io.stdout,
+      jsonFlag.json ? renderDiagnosticSetupPlanJson(profile) : renderDiagnosticSetupPlan(profile),
     );
     return;
   }

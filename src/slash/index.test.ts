@@ -130,7 +130,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
   assert.match(output, /\/scanners \[list \[--json\]\|status \[--json\]\|inspect <profile> \[--json\]\|show <profile> \[--json\]\|run <semgrep\|trivy\|codeql> <path> \[--config <local-config-path>\] \[--query <local-query-or-suite>\] \[--json\]\]/);
   assert.match(output, /\/scan <semgrep\|trivy\|codeql> <path> \[--config <local-config-path>\] \[--query <local-query-or-suite>\] \[--json\]/);
-  assert.match(output, /\/diagnostics \[list \[--json\]\|status \[--json\]\|inspect <profile> \[--json\]\|show <profile> \[--json\]\|run <typescript\|pyright\|eslint\|ruff\|mypy\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
+  assert.match(output, /\/diagnostics \[list \[--json\]\|status \[--json\]\|inspect <profile> \[--json\]\|show <profile> \[--json\]\|plan <profile> \[--json\]\|setup-plan <profile> \[--json\]\|run <typescript\|pyright\|eslint\|ruff\|mypy\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
   assert.match(output, /\/symbols \[query\]/);
   assert.match(output, /\/refs <query> \[--json\]/);
   assert.match(output, /\/imports \[query\]/);
@@ -371,13 +371,15 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/scan trivy src --c"), [[], "/scan trivy src --c"]);
   assert.deepEqual(completeSlashCommandLine("/scan codeql codeql-db --c"), [[], "/scan codeql codeql-db --c"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics --"), [["--json "], "--"]);
-  assert.deepEqual(completeSlashCommandLine("/diagnostics s"), [["status ", "show "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics s"), [["status ", "show ", "setup-plan "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics list --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics status --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics inspect t"), [["typescript ", "typescript-language-server "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics inspect pyright --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics show pyright --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics plan s"), [["scip-typescript "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/diagnostics setup-plan scip-typescript --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run t"), [["typescript "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run p"), [["pyright "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/diagnostics run e"), [["eslint "], "e"]);
@@ -1179,6 +1181,7 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.equal(profileEntries.find((profile) => profile.id === "ruff")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "mypy")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "rust-analyzer")?.state, "catalog_only");
+    assert.equal(profileEntries.find((profile) => profile.id === "scip-typescript")?.state, "catalog_only");
     assert.equal(listJson.stderr(), "");
 
     const inspect = createSlashHarness({ cwd });
@@ -1252,6 +1255,32 @@ test("diagnostics slash commands list, inspect, and run TypeScript with a mocked
     assert.match(inspectClangd.stdout(), /state: runnable/);
     assert.match(inspectClangd.stdout(), /default_project: none; --project <local-c-cpp-source-or-header-file> is required/);
     assert.match(inspectClangd.stdout(), /command_shape: clangd --log=error --check=<file>/);
+
+    const scipPlan = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diagnostics plan scip-typescript", scipPlan.context), "continue");
+    assert.match(scipPlan.stdout(), /Diagnostics setup plan: scip-typescript/);
+    assert.match(scipPlan.stdout(), /status: catalog_only/);
+    assert.match(scipPlan.stdout(), /future_integration: future SCIP index generation and readback/);
+    assert.match(scipPlan.stdout(), /`scip-typescript index` generates index output/);
+    assert.match(scipPlan.stdout(), /execution: none/);
+    assert.match(scipPlan.stdout(), /state_writes: none/);
+
+    const typescriptPlanJson = createSlashHarness({ cwd });
+    assert.equal(
+      await handleSlashCommand("/diag setup-plan typescript --json", typescriptPlanJson.context),
+      "continue",
+    );
+    const typescriptPlanReport = JSON.parse(typescriptPlanJson.stdout());
+    assert.equal(typescriptPlanReport.surface, "orx.local_diagnostics_setup_plan");
+    assert.equal(typescriptPlanReport.profile.id, "typescript");
+    assert.equal(typescriptPlanReport.status, "runnable_now");
+    assert.equal(typescriptPlanReport.current_run, "orx diagnostics run typescript [--project <local-tsconfig-path>] [--json]");
+    assert.equal(typescriptPlanReport.authority.execution, "none");
+    assert.equal(typescriptPlanReport.authority.state_writes, "none");
+
+    const planUsage = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/diag plan", planUsage.context), "continue");
+    assert.match(planUsage.stderr(), /^Usage: \/diag \[plan\|setup-plan\] <profile>/);
 
     const inspectUsage = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/diag inspect", inspectUsage.context), "continue");

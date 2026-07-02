@@ -6,13 +6,13 @@ import { runProcess, type RunProcessOptions, type RunProcessResult } from "../to
 import type { TextTruncation } from "../tools/types.js";
 
 export const DIAGNOSTICS_USAGE =
-  "Usage: orx diagnostics [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: orx diagnostics [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const DIAG_USAGE =
-  "Usage: orx diag [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: orx diag [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAGNOSTICS_USAGE =
-  "Usage: /diagnostics [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: /diagnostics [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
 export const SLASH_DIAG_USAGE =
-  "Usage: /diag [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
+  "Usage: /diag [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]";
 
 export type DiagnosticProfileId =
   | "typescript"
@@ -34,6 +34,22 @@ export interface DiagnosticProfile {
   summary: string;
   runSupport: string;
   networkBoundary: string;
+}
+
+export interface DiagnosticSetupPlan {
+  profile: DiagnosticProfile;
+  status: "runnable_now" | "catalog_only";
+  nextAction: string;
+  currentRunCommand?: string;
+  futureIntegration?: string;
+  blockers: string[];
+  boundaries: {
+    execution: "none";
+    processSpawn: "none";
+    network: "none";
+    stateWrites: "none";
+    modelTool: "not_exposed";
+  };
 }
 
 export type RunnableDiagnosticProfileId = "typescript" | "pyright" | "eslint" | "ruff" | "mypy" | "gopls" | "clangd";
@@ -508,15 +524,161 @@ export function renderDiagnosticProfileInspectJson(profile: DiagnosticProfile): 
   }, null, 2);
 }
 
+export function createDiagnosticSetupPlan(profile: DiagnosticProfile): DiagnosticSetupPlan {
+  if (profile.state === "runnable") {
+    return {
+      profile,
+      status: "runnable_now",
+      nextAction: "Run the existing guarded local diagnostics command when an operator explicitly requests it.",
+      currentRunCommand: runnableCommandForProfile(profile.id as RunnableDiagnosticProfileId),
+      blockers: [],
+      boundaries: diagnosticPlanBoundaries(),
+    };
+  }
+
+  return {
+    profile,
+    status: "catalog_only",
+    nextAction: "Keep this profile in list/inspect/plan metadata until a deterministic local integration shape is implemented.",
+    futureIntegration: futureDiagnosticIntegrationForProfile(profile.id),
+    blockers: catalogOnlyDiagnosticBlockers(profile.id),
+    boundaries: diagnosticPlanBoundaries(),
+  };
+}
+
+export function renderDiagnosticSetupPlan(profile: DiagnosticProfile): string {
+  const plan = createDiagnosticSetupPlan(profile);
+  const lines = [
+    `Diagnostics setup plan: ${plan.profile.id}`,
+    `  label: ${plan.profile.label}`,
+    `  state: ${plan.profile.state}`,
+    `  status: ${plan.status}`,
+    `  binary: ${plan.profile.binary}`,
+    `  next_action: ${plan.nextAction}`,
+    plan.currentRunCommand ? `  current_run: ${plan.currentRunCommand}` : undefined,
+    plan.futureIntegration ? `  future_integration: ${plan.futureIntegration}` : undefined,
+    "  execution: none",
+    "  process_spawn: none",
+    "  network: none",
+    "  state_writes: none",
+    "  model_tool: not_exposed",
+    "  blockers:",
+    ...(plan.blockers.length > 0
+      ? plan.blockers.map((blocker) => `    - ${blocker}`)
+      : ["    - none"]),
+  ];
+
+  return lines.filter((line): line is string => typeof line === "string").join("\n");
+}
+
+export function renderDiagnosticSetupPlanJson(profile: DiagnosticProfile): string {
+  const plan = createDiagnosticSetupPlan(profile);
+  return JSON.stringify({
+    schema_version: 1,
+    surface: "orx.local_diagnostics_setup_plan",
+    operator_only: true,
+    profile: diagnosticProfileJson(profile),
+    status: plan.status,
+    next_action: plan.nextAction,
+    current_run: plan.currentRunCommand,
+    future_integration: plan.futureIntegration,
+    blockers: plan.blockers,
+    authority: {
+      execution: plan.boundaries.execution,
+      process_spawn: plan.boundaries.processSpawn,
+      network: plan.boundaries.network,
+      state_writes: plan.boundaries.stateWrites,
+      model_tool: plan.boundaries.modelTool,
+    },
+  }, null, 2);
+}
+
 export function renderMissingDiagnosticProfile(profileId: string): string {
   return `Unknown diagnostics profile: ${sanitizeInline(profileId)}. Available profiles: ${DIAGNOSTIC_PROFILES.map((profile) => profile.id).join(", ")}.`;
 }
 
 export function renderDiagnosticInspectUsage(usage: string): string {
   return usage.replace(
-    /\[list(?: \[--json\])?\|status(?: \[--json\])?\|inspect <profile>(?: \[--json\])?\|show <profile>(?: \[--json\])?\|run .+$/,
+    /\[list(?: \[--json\])?\|status(?: \[--json\])?\|inspect <profile>(?: \[--json\])?\|show <profile>(?: \[--json\])?\|plan <profile>(?: \[--json\])?\|setup-plan <profile>(?: \[--json\])?\|run .+$/,
     "[inspect|show] <profile> [--json]",
   );
+}
+
+export function renderDiagnosticPlanUsage(usage: string): string {
+  return usage.replace(
+    /\[list(?: \[--json\])?\|status(?: \[--json\])?\|inspect <profile>(?: \[--json\])?\|show <profile>(?: \[--json\])?\|plan <profile>(?: \[--json\])?\|setup-plan <profile>(?: \[--json\])?\|run .+$/,
+    "[plan|setup-plan] <profile> [--json]",
+  );
+}
+
+function diagnosticPlanBoundaries(): DiagnosticSetupPlan["boundaries"] {
+  return {
+    execution: "none",
+    processSpawn: "none",
+    network: "none",
+    stateWrites: "none",
+    modelTool: "not_exposed",
+  };
+}
+
+function runnableCommandForProfile(profile: RunnableDiagnosticProfileId): string {
+  if (profile === "typescript") {
+    return "orx diagnostics run typescript [--project <local-tsconfig-path>] [--json]";
+  }
+  if (profile === "pyright") {
+    return "orx diagnostics run pyright [--project <local-project-file-or-directory>] [--json]";
+  }
+  if (profile === "eslint") {
+    return "orx diagnostics run eslint [--project <local-file-or-directory>] [--json]";
+  }
+  if (profile === "ruff") {
+    return "orx diagnostics run ruff [--project <local-file-or-directory>] [--json]";
+  }
+  if (profile === "mypy") {
+    return "orx diagnostics run mypy [--project <local-file-or-directory>] [--json]";
+  }
+  if (profile === "gopls") {
+    return "orx diagnostics run gopls --project <local-go-file> [--json]";
+  }
+  return "orx diagnostics run clangd --project <local-c-cpp-source-or-header-file> [--json]";
+}
+
+function futureDiagnosticIntegrationForProfile(profile: DiagnosticProfileId): string {
+  if (profile === "typescript-language-server") {
+    return "future local LSP lifecycle for diagnostics, references, hover, and definition over an operator-selected workspace";
+  }
+  if (profile === "rust-analyzer") {
+    return "future local Rust language-server lifecycle or one-shot diagnostics bridge after no-network/no-write behavior is proven";
+  }
+  if (profile === "scip-typescript") {
+    return "future SCIP index generation and readback using ORX-owned temporary or explicit cache storage";
+  }
+  return "none";
+}
+
+function catalogOnlyDiagnosticBlockers(profile: DiagnosticProfileId): string[] {
+  if (profile === "typescript-language-server") {
+    return [
+      "needs a bounded local LSP process lifecycle instead of a long-running unmanaged server",
+      "needs workspace-root, file-open, cancellation, timeout, and shutdown guarantees",
+      "needs proof that diagnostics/references/hover/definition requests do not install packages, call package managers, access network resources, or write project state",
+    ];
+  }
+  if (profile === "rust-analyzer") {
+    return [
+      "needs a deterministic local command or bounded LSP lifecycle that cannot trigger toolchain installation or network fetches",
+      "needs explicit workspace/file target guards and environment controls for Cargo/Rustup network and toolchain variables",
+      "needs parsed diagnostics/references output shape before becoming runnable",
+    ];
+  }
+  if (profile === "scip-typescript") {
+    return [
+      "`scip-typescript index` generates index output, so ORX needs an explicit index storage/delete policy before running it",
+      "needs local binary discovery and project guards that reject package-manager or launcher invocation",
+      "needs bounded SCIP parsing/readback and a separate references/definition surface before exposing indexed code intelligence",
+    ];
+  }
+  return ["profile is catalog-only until a no-network/no-auth/no-write command shape is implemented"];
 }
 
 export function parseDiagnosticReadinessJsonFlag(

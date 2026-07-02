@@ -86,10 +86,13 @@ import {
   parseDiagnosticReadinessJsonFlag,
   parseDiagnosticRunArgs,
   renderDiagnosticInspectUsage,
+  renderDiagnosticPlanUsage,
   renderDiagnosticProfileInspect,
   renderDiagnosticProfileInspectJson,
   renderDiagnosticProfiles,
   renderDiagnosticProfilesJson,
+  renderDiagnosticSetupPlan,
+  renderDiagnosticSetupPlanJson,
   renderLocalDiagnosticsJson,
   renderLocalDiagnosticsResult,
   renderMissingDiagnosticProfile,
@@ -1341,6 +1344,25 @@ async function runDiagnosticsCommand(
     writeLine(
       io.stdout,
       jsonFlag.json ? renderDiagnosticProfileInspectJson(profile) : renderDiagnosticProfileInspect(profile),
+    );
+    return 0;
+  }
+
+  if (subcommand === "plan" || subcommand === "setup-plan") {
+    const profileId = args[1];
+    const jsonFlag = parseDiagnosticReadinessJsonFlag(args.slice(2), usage);
+    if (!profileId || !jsonFlag.ok) {
+      writeLine(io.stderr, renderDiagnosticPlanUsage(usage));
+      return 1;
+    }
+    const profile = findDiagnosticProfile(profileId);
+    if (!profile) {
+      writeLine(io.stderr, renderMissingDiagnosticProfile(profileId));
+      return 1;
+    }
+    writeLine(
+      io.stdout,
+      jsonFlag.json ? renderDiagnosticSetupPlanJson(profile) : renderDiagnosticSetupPlan(profile),
     );
     return 0;
   }

@@ -2401,6 +2401,7 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.equal(profileEntries.find((profile) => profile.id === "ruff")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "mypy")?.state, "runnable");
     assert.equal(profileEntries.find((profile) => profile.id === "rust-analyzer")?.state, "catalog_only");
+    assert.equal(profileEntries.find((profile) => profile.id === "scip-typescript")?.state, "catalog_only");
     assert.equal(listJson.stderr(), "");
 
     const inspect = createIo({ cwd });
@@ -2475,6 +2476,34 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     assert.match(inspectClangd.stdout(), /state: runnable/);
     assert.match(inspectClangd.stdout(), /default_project: none; --project <local-c-cpp-source-or-header-file> is required/);
     assert.match(inspectClangd.stdout(), /command_shape: clangd --log=error --check=<file>/);
+
+    const scipPlan = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diagnostics", "plan", "scip-typescript"], {}, scipPlan.io), 0);
+    assert.match(scipPlan.stdout(), /Diagnostics setup plan: scip-typescript/);
+    assert.match(scipPlan.stdout(), /status: catalog_only/);
+    assert.match(scipPlan.stdout(), /future_integration: future SCIP index generation and readback/);
+    assert.match(scipPlan.stdout(), /`scip-typescript index` generates index output/);
+    assert.match(scipPlan.stdout(), /execution: none/);
+    assert.match(scipPlan.stdout(), /state_writes: none/);
+    assert.equal(scipPlan.stderr(), "");
+
+    const typescriptPlanJson = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "diagnostics", "setup-plan", "typescript", "--json"], {}, typescriptPlanJson.io),
+      0,
+    );
+    const typescriptPlanReport = JSON.parse(typescriptPlanJson.stdout());
+    assert.equal(typescriptPlanReport.surface, "orx.local_diagnostics_setup_plan");
+    assert.equal(typescriptPlanReport.profile.id, "typescript");
+    assert.equal(typescriptPlanReport.status, "runnable_now");
+    assert.equal(typescriptPlanReport.current_run, "orx diagnostics run typescript [--project <local-tsconfig-path>] [--json]");
+    assert.equal(typescriptPlanReport.authority.execution, "none");
+    assert.equal(typescriptPlanReport.authority.state_writes, "none");
+    assert.equal(typescriptPlanJson.stderr(), "");
+
+    const planUsage = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "diag", "plan"], {}, planUsage.io), 1);
+    assert.match(planUsage.stderr(), /^Usage: orx diag \[plan\|setup-plan\] <profile>/);
 
     const inspectUsage = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diag", "inspect"], {}, inspectUsage.io), 1);
