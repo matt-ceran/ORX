@@ -7,6 +7,7 @@ import {
   renderTtyComposerPrompt,
   renderTtyStatusComposer,
   renderTtyStatusNotch,
+  renderTtyStatusProbe,
   shouldUseTtyScreen,
 } from "./screen.js";
 
@@ -44,12 +45,51 @@ test("tty screen renders a wide bottom status notch with compact meters", () => 
   });
 
   assert.match(output, /^╭─ orx  provider anthropic  model claude-sonnet-4\.5  mode exact/);
-  assert.match(output, /ctx \[[#-]{8}\] \d+\.\d% approx/);
-  assert.match(output, /cost \$0\.000700 meta 2\/3/);
-  assert.match(output, /credits \[##------\] 25\.0% rem \$3\.000000/);
-  assert.match(output, /╰─ cwd ~\/Documents\/ORX  perm never\/danger-full-access  session abcdef12/);
+  assert.match(output, /ctx \[[#-]{10}\] \d+\.\d% approx/);
+  assert.match(output, /cost \[####--\] 66\.7% \$0\.000700 meta 2\/3/);
+  assert.match(output, /credits \[##------\] 25\.0% rem \$3\.00/);
+  assert.match(output, /╰─ cwd ~\/Documents\/ORX  session abcdef12  perm never\/danger-full-access/);
   assert.match(output, /\norx › $/);
   assertLinesFit(output, 180);
+});
+
+test("tty screen has stable 80 and 120 column HUD probes", () => {
+  const at80 = renderTtyStatusProbe(80);
+  const at120 = renderTtyStatusProbe(120);
+
+  assert.equal(
+    stripAnsi(at80),
+    [
+      "╭─ orx  work ⠹ assistant  route auto  mode auto",
+      "│  ctx [--------] 3.1% • approx  cost [###-] 66.7% • $0.004100 meta 2/3",
+      "│  credits [#-------] 13.8% rem $17.25",
+      "╰─ cwd ~/Documents/ORX  session probe1851d3e  perm never/danger-full-access",
+      "orx › ",
+    ].join("\n"),
+  );
+  assert.equal(
+    stripAnsi(at120),
+    [
+      "╭─ orx  work ⠹ assistant  route auto  mode auto",
+      "│  ctx [----------] 3.1% • approx  cost [####--] 66.7% • $0.004100 meta 2/3",
+      "│  credits [#-------] 13.8% rem $17.25",
+      "╰─ cwd ~/Documents/ORX  session probe1851d3e  perm never/danger-full-access",
+      "orx › ",
+    ].join("\n"),
+  );
+  assertLinesFit(at80, 80);
+  assertLinesFit(at120, 120);
+});
+
+test("tty screen probe remains bounded at very narrow widths", () => {
+  const output = renderTtyStatusProbe(32);
+
+  assert.match(stripAnsi(output), /^╭─ orx  work …  route …  mode a…/);
+  assert.match(stripAnsi(output), /ctx /);
+  assert.match(stripAnsi(output), /cost /);
+  assert.match(stripAnsi(output), /credits /);
+  assert.match(stripAnsi(output), /perm /);
+  assertLinesFit(output, 32);
 });
 
 test("tty screen truncates long status fields at narrow widths", () => {
@@ -192,7 +232,7 @@ test("tty screen splits exact providers while keeping OpenRouter routes compact"
 });
 
 test("tty screen keeps exact models compact near the wide layout threshold", () => {
-  for (const width of [72, 80, 104, 120, 140]) {
+  for (const width of [72, 80, 104]) {
     const output = renderTtyStatusNotch({
       cwd: "/Users/draingang/Documents/ORX",
       model: "openai/gpt-4.1",
@@ -225,7 +265,47 @@ test("tty screen keeps exact models compact near the wide layout threshold", () 
     assert.match(output, /model openai\/gpt-4\.1/);
     assert.doesNotMatch(output, /provider openai  model gpt-4\.1/);
     assert.match(output, /ctx \[[#-]{8}\]/);
-    assert.match(output, /cost \$0\.000700/);
+    assert.match(output, /cost \[[#-]{4}\] 66\.7% \$0\.000700/);
+    assert.match(output, /credits \[##------\]/);
+    assertLinesFit(output, width);
+  }
+});
+
+test("tty screen splits exact model ids once the HUD has room", () => {
+  for (const width of [120, 140]) {
+    const output = renderTtyStatusNotch({
+      cwd: "/Users/draingang/Documents/ORX",
+      model: "openai/gpt-4.1",
+      mode: "exact",
+      permissions: {
+        approvalPolicy: "never",
+        sandboxMode: "danger-full-access",
+      },
+      messages: [{ role: "user", content: "hello" }],
+      contextBudget: {
+        maxBytes: 1_000,
+        maxMessages: 8,
+      },
+      costMeterState: {
+        latestTurnCost: 0.0002,
+        knownSessionCost: 0.0007,
+        costedTurnCount: 2,
+        uncostedTurnCount: 1,
+      },
+      latestCredits: {
+        totalCredits: 4,
+        totalUsage: 1,
+        remainingCredits: 3,
+        percentUsed: 25,
+      },
+      width,
+      renderOptions: { color: false },
+    });
+
+    assert.match(output, /provider openai  model gpt-4\.1  mode exact/);
+    assert.doesNotMatch(output, /model openai\/gpt-4\.1/);
+    assert.match(output, /ctx \[[#-]{10}\]/);
+    assert.match(output, /cost \[[#-]{6}\] 66\.7% \$0\.000700/);
     assert.match(output, /credits \[##------\]/);
     assertLinesFit(output, width);
   }

@@ -6,7 +6,6 @@ import type { PermissionConfig } from "../config/types.js";
 import type { OpenRouterCreditsInfo } from "../openrouter/live.js";
 import type { OpenRouterMessage } from "../openrouter/types.js";
 import {
-  formatMoney,
   type SessionCostMeterState,
 } from "../terminal/meters.js";
 import {
@@ -47,11 +46,12 @@ const DEFAULT_SCREEN_WIDTH = 80;
 const MIN_SCREEN_WIDTH = 20;
 const MAX_SCREEN_WIDTH = 220;
 const WIDE_LAYOUT_WIDTH = 72;
-const SPLIT_PROVIDER_MODEL_WIDTH = 104;
+const SPLIT_PROVIDER_MODEL_WIDTH = 112;
 const INLINE_CREDITS_WIDTH = 152;
 const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const CONTROL_PATTERN = /[\x00-\x1F\x7F]/g;
 const ACTIVITY_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+const METER_PULSE_FRAMES = ["·", "∙", "•", "∙"] as const;
 
 export function shouldUseTtyScreen(
   stdin: unknown,
@@ -79,12 +79,20 @@ export function renderTtyStatusNotch(state: TtyStatusComposerState): string {
   const renderer = createTerminalRenderer(state.renderOptions);
   const contextState = getContextState(state.messages, state.contextBudget);
   const activity = formatActivity(state.activity, renderer);
-  const splitProviderModel =
-    width >= (state.latestCredits ? INLINE_CREDITS_WIDTH : SPLIT_PROVIDER_MODEL_WIDTH);
+  const splitProviderModel = width >= SPLIT_PROVIDER_MODEL_WIDTH;
   const modelBadges = formatModelBadges(state.model, renderer, splitProviderModel);
   const mode = keyValue("mode", state.mode, renderer, "success");
-  const context = keyValue("ctx", formatNotchContext(contextState, renderer, width), renderer);
-  const cost = keyValue("cost", formatNotchCost(state.costMeterState, renderer), renderer);
+  const activityFrame = state.activity?.frame;
+  const context = keyValue(
+    "ctx",
+    formatNotchContext(contextState, renderer, width, activityFrame),
+    renderer,
+  );
+  const cost = keyValue(
+    "cost",
+    formatNotchCost(state.costMeterState, renderer, width, activityFrame),
+    renderer,
+  );
   const credits = state.latestCredits
     ? keyValue("credits", formatNotchCredits(state.latestCredits, renderer, width), renderer)
     : undefined;
@@ -93,7 +101,6 @@ export function renderTtyStatusNotch(state: TtyStatusComposerState): string {
     "perm",
     `${state.permissions.approvalPolicy}/${state.permissions.sandboxMode}`,
     renderer,
-    "warning",
   );
   const session = keyValue("session", compactSessionId(state.sessionId), renderer);
 
@@ -102,7 +109,7 @@ export function renderTtyStatusNotch(state: TtyStatusComposerState): string {
       fitStatusLine("╭─ ", [renderer.bold("orx"), activity, ...modelBadges, mode], width),
       fitStatusLine("│  ", [context, cost], width),
       fitStatusLine("│  ", [credits], width),
-      fitStatusLine("╰─ ", [cwd, permissions, session], width),
+      fitStatusLine("╰─ ", [cwd, session, permissions], width),
     ].join("\n");
   }
 
@@ -113,15 +120,58 @@ export function renderTtyStatusNotch(state: TtyStatusComposerState): string {
         [renderer.bold("orx"), activity, ...modelBadges, mode, context, cost, credits],
         width,
       ),
-      fitStatusLine("╰─ ", [cwd, permissions, session], width),
+      fitStatusLine("╰─ ", [cwd, session, permissions], width),
     ].join("\n");
   }
 
   return [
     fitStatusLine("╭─ ", [renderer.bold("orx"), activity, ...modelBadges, mode], width),
     fitStatusLine("│  ", [context, cost, credits], width),
-    fitStatusLine("╰─ ", [cwd, permissions, session], width),
+    fitStatusLine("╰─ ", [cwd, session, permissions], width),
   ].join("\n");
+}
+
+export function renderTtyStatusProbe(
+  width: number,
+  overrides: Partial<TtyStatusComposerState> = {},
+): string {
+  return renderTtyStatusComposer({
+    cwd: "/Users/draingang/Documents/ORX",
+    model: "openrouter/auto",
+    mode: "auto",
+    permissions: {
+      approvalPolicy: "never",
+      sandboxMode: "danger-full-access",
+    },
+    sessionId: "20260702T120000Z-probe1851d3e4",
+    messages: [
+      { role: "user", content: "Please inspect the changed files." },
+      { role: "assistant", content: "I am checking the HUD render path." },
+    ],
+    contextBudget: {
+      maxBytes: 4_096,
+      maxMessages: 12,
+    },
+    costMeterState: {
+      latestTurnCost: 0.00035,
+      knownSessionCost: 0.0041,
+      costedTurnCount: 2,
+      uncostedTurnCount: 1,
+    },
+    latestCredits: {
+      totalCredits: 20,
+      totalUsage: 2.75,
+      remainingCredits: 17.25,
+      percentUsed: 13.75,
+    },
+    activity: {
+      kind: "assistant",
+      frame: 2,
+    },
+    width,
+    renderOptions: { color: false },
+    ...overrides,
+  });
 }
 
 export function renderTtyComposerPrompt(
@@ -145,26 +195,44 @@ function formatNotchContext(
   state: ReturnType<typeof getContextState>,
   renderer: TerminalRenderer,
   width: number,
+  activityFrame: number | undefined,
 ): string {
-  const meterWidth = width >= WIDE_LAYOUT_WIDTH ? 8 : 4;
+  const meterWidth = width >= SPLIT_PROVIDER_MODEL_WIDTH ? 10 : width >= WIDE_LAYOUT_WIDTH ? 8 : 4;
   return [
-    formatMeter(
+    formatHudMeter(
       {
         current: state.approximateBytes,
         total: state.budget.maxBytes,
         width: meterWidth,
       },
       renderer,
+      activityFrame,
     ),
     "approx",
   ].join(" ");
 }
 
-function formatNotchCost(state: SessionCostMeterState, renderer: TerminalRenderer): string {
+function formatNotchCost(
+  state: SessionCostMeterState,
+  renderer: TerminalRenderer,
+  width: number,
+  activityFrame: number | undefined,
+): string {
   const totalTurns = state.costedTurnCount + state.uncostedTurnCount;
   const coverage = totalTurns > 0 ? `${state.costedTurnCount}/${totalTurns}` : "n/a";
+  const meterWidth = width >= SPLIT_PROVIDER_MODEL_WIDTH ? 6 : 4;
   return [
-    colorMoney(formatMoney(state.knownSessionCost), renderer),
+    formatHudMeter(
+      {
+        current: totalTurns > 0 ? state.costedTurnCount : undefined,
+        total: totalTurns > 0 ? totalTurns : undefined,
+        width: meterWidth,
+        tone: "success",
+      },
+      renderer,
+      activityFrame,
+    ),
+    colorMoney(formatHudMoney(state.knownSessionCost), renderer),
     renderer.dim(`meta ${coverage}`),
   ].join(" ");
 }
@@ -186,12 +254,46 @@ function formatNotchCredits(
       },
       renderer,
     ),
-    `rem ${colorMoney(formatMoney(credits.remainingCredits), renderer)}`,
+    `rem ${colorMoney(formatHudMoney(credits.remainingCredits), renderer)}`,
   ].join(" ");
 }
 
 function colorMoney(value: string, renderer: TerminalRenderer): string {
   return value === "n/a" ? value : renderer.success(value);
+}
+
+function formatHudMoney(value: number | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "n/a";
+  }
+
+  const absolute = Math.abs(value);
+  if (absolute >= 100) {
+    return `$${value.toFixed(2)}`;
+  }
+
+  if (absolute >= 1) {
+    return `$${value.toFixed(2)}`;
+  }
+
+  if (absolute >= 0.01) {
+    return `$${value.toFixed(4)}`;
+  }
+
+  return `$${value.toFixed(6)}`;
+}
+
+function formatHudMeter(
+  options: Parameters<typeof formatMeter>[0],
+  renderer: TerminalRenderer,
+  activityFrame: number | undefined,
+): string {
+  const meter = formatMeter(options, renderer);
+  if (activityFrame === undefined) {
+    return meter;
+  }
+
+  return `${meter} ${renderer.accent(METER_PULSE_FRAMES[normalizePulseFrame(activityFrame)])}`;
 }
 
 function formatActivity(
@@ -260,6 +362,14 @@ function normalizeActivityFrame(frame: number | undefined): number {
   }
 
   return Math.abs(Math.floor(frame)) % ACTIVITY_FRAMES.length;
+}
+
+function normalizePulseFrame(frame: number): number {
+  if (!Number.isFinite(frame)) {
+    return 0;
+  }
+
+  return Math.abs(Math.floor(frame)) % METER_PULSE_FRAMES.length;
 }
 
 function keyValue(

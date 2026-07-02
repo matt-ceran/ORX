@@ -1990,7 +1990,7 @@ test("tty chat renders bottom status composer instead of the repeated plain foot
     assert.doesNotMatch(stdout, /model openrouter\/auto/);
     assert.match(stdout, /mode auto/);
     assert.match(stdout, /ctx \[[#-]{8}\] \d+\.\d% approx/);
-    assert.match(stdout, /cost \$0\.000200 meta 1\/1/);
+    assert.match(stdout, /cost \[####\] 100\.0% \$0\.000200 meta 1\/1/);
     assert.match(stdout, /perm never\/danger-full-access/);
     assert.doesNotMatch(stdout, /cwd: .* \| mode: .* \| model:/);
     assert.doesNotMatch(stdout, /session: .* @ /);
