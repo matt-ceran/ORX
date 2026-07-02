@@ -1,15 +1,17 @@
 # Backlog
 
-Last updated: 2026-07-01
+Last updated: 2026-07-02
 
 ## P0
 
 Urgent UX recovery:
 
 - Continue TTY polish only if a future raw-mode editor can preserve script-safe fallback behavior.
+- Add a true PTY/xterm/browser visual QA harness later for pixel-level TTY verification; the current HUD pass is covered by pure render probes and width assertions only.
 
 Completed:
 
+- Add bottom HUD product pass: route shortcuts stay compact, exact provider/model badges split when there is room, context and observed OpenRouter cost meters use frame-driven pulse markers during assistant/tool activity, permissions stay visible but secondary, and `renderTtyStatusProbe(width)` has 80/120/narrow snapshot coverage without adding Playwright/xterm dependencies.
 - Add structured Node test report ingestion: direct Node fallback requests native JUnit into a private temporary report file, parses bounded counts before stdout fallback, deletes the report directory, and strips inherited `NODE_TEST_*` control variables from child test runs.
 - Add structured Jest/Vitest/Playwright JSON test report ingestion: when package scripts already emit whole-object JSON result output to stdout or stderr, ORX parses bounded Jest/Vitest-style numeric result objects and Playwright `stats` objects before summary-line fallback, without adding reporter flags, report files, installs, network, or model-tool exposure changes.
 - Add captured Mocha JSON report parsing: when already-captured bounded whole-object Mocha JSON reporter output contains consistent `stats.tests`/`passes`/`failures`/`pending` counts and matching result arrays, ORX parses compact `source=mocha-json` counts before summary-line fallback without adding reporter flags, report files, installs, network, or model-tool exposure changes.
