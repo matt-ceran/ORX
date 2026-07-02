@@ -7,11 +7,11 @@ import { truncateText } from "../tools/truncation.js";
 import type { TextTruncation } from "../tools/types.js";
 
 export const SCANNERS_USAGE =
-  "Usage: orx scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]]";
+  "Usage: orx scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]]";
 export const SCAN_USAGE =
   "Usage: orx scan <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]";
 export const SLASH_SCANNERS_USAGE =
-  "Usage: /scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]]";
+  "Usage: /scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]]";
 export const SLASH_SCAN_USAGE =
   "Usage: /scan <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]";
 
@@ -32,6 +32,24 @@ export interface ScannerProfile {
   runSupport: string;
   networkBoundary: string;
 }
+
+export interface ScannerSetupPlan {
+  profile: ScannerProfile;
+  status: "runnable_now" | "catalog_only";
+  nextAction: string;
+  currentRunCommand?: string;
+  futureIntegration?: string;
+  blockers: string[];
+  boundaries: {
+    execution: "none";
+    processSpawn: "none";
+    network: "none";
+    stateWrites: "none";
+    modelTool: "not_exposed";
+  };
+}
+
+export type RunnableScannerProfileId = "semgrep" | "trivy" | "codeql";
 
 export interface ScannerRunArgs {
   profile: ScannerProfileId;
@@ -318,14 +336,90 @@ export function renderScannerProfileInspectJson(profile: ScannerProfile): string
   }, null, 2);
 }
 
+export function createScannerSetupPlan(profile: ScannerProfile): ScannerSetupPlan {
+  if (profile.state === "runnable") {
+    return {
+      profile,
+      status: "runnable_now",
+      nextAction: "Run the existing guarded local scanner command when an operator explicitly requests it.",
+      currentRunCommand: runnableScannerCommandForProfile(profile.id as RunnableScannerProfileId),
+      blockers: [],
+      boundaries: scannerPlanBoundaries(),
+    };
+  }
+
+  return {
+    profile,
+    status: "catalog_only",
+    nextAction: "Keep this profile in list/inspect/plan metadata until a deterministic local no-network/no-auth integration shape is implemented.",
+    futureIntegration: futureScannerIntegrationForProfile(profile.id),
+    blockers: catalogOnlyScannerBlockers(profile.id),
+    boundaries: scannerPlanBoundaries(),
+  };
+}
+
+export function renderScannerSetupPlan(profile: ScannerProfile): string {
+  const plan = createScannerSetupPlan(profile);
+  const lines = [
+    `Security scanner setup plan: ${plan.profile.id}`,
+    `  label: ${plan.profile.label}`,
+    `  state: ${plan.profile.state}`,
+    `  status: ${plan.status}`,
+    `  binary: ${plan.profile.binary}`,
+    `  next_action: ${plan.nextAction}`,
+    plan.currentRunCommand ? `  current_run: ${plan.currentRunCommand}` : undefined,
+    plan.futureIntegration ? `  future_integration: ${plan.futureIntegration}` : undefined,
+    "  execution: none",
+    "  process_spawn: none",
+    "  network: none",
+    "  state_writes: none",
+    "  model_tool: not_exposed",
+    "  blockers:",
+    ...(plan.blockers.length > 0
+      ? plan.blockers.map((blocker) => `    - ${blocker}`)
+      : ["    - none"]),
+  ];
+
+  return lines.filter((line): line is string => typeof line === "string").join("\n");
+}
+
+export function renderScannerSetupPlanJson(profile: ScannerProfile): string {
+  const plan = createScannerSetupPlan(profile);
+  return JSON.stringify({
+    schema_version: 1,
+    surface: "orx.security_scanner_setup_plan",
+    operator_only: true,
+    profile: scannerProfileJson(profile),
+    status: plan.status,
+    next_action: plan.nextAction,
+    current_run: plan.currentRunCommand,
+    future_integration: plan.futureIntegration,
+    blockers: plan.blockers,
+    authority: {
+      execution: plan.boundaries.execution,
+      process_spawn: plan.boundaries.processSpawn,
+      network: plan.boundaries.network,
+      state_writes: plan.boundaries.stateWrites,
+      model_tool: plan.boundaries.modelTool,
+    },
+  }, null, 2);
+}
+
 export function renderMissingScannerProfile(profileId: string): string {
   return `Unknown scanner profile: ${sanitizeInline(profileId)}. Available profiles: ${SCANNER_PROFILES.map((profile) => profile.id).join(", ")}.`;
 }
 
 export function renderScannerInspectUsage(usage: string): string {
   return usage.replace(
-    /\[list(?: \[--json\])?\|status(?: \[--json\])?\|inspect <profile>(?: \[--json\])?\|show <profile>(?: \[--json\])?\|run .+$/,
+    /\[list(?: \[--json\])?\|status(?: \[--json\])?\|inspect <profile>(?: \[--json\])?\|show <profile>(?: \[--json\])?\|plan <profile>(?: \[--json\])?\|setup-plan <profile>(?: \[--json\])?\|run .+$/,
     "[inspect|show] <profile> [--json]",
+  );
+}
+
+export function renderScannerPlanUsage(usage: string): string {
+  return usage.replace(
+    /\[list(?: \[--json\])?\|status(?: \[--json\])?\|inspect <profile>(?: \[--json\])?\|show <profile>(?: \[--json\])?\|plan <profile>(?: \[--json\])?\|setup-plan <profile>(?: \[--json\])?\|run .+$/,
+    "[plan|setup-plan] <profile> [--json]",
   );
 }
 
@@ -1270,6 +1364,64 @@ function scannerMissingMessage(profile: ScannerProfileId): string {
     return "Trivy is not installed or not on PATH. Install Trivy yourself, ensure `trivy` is available locally, and rerun with an explicit local target path under the current working directory.";
   }
   return "Semgrep is not installed or not on PATH. Install Semgrep yourself, ensure `semgrep` is available locally, and rerun with an explicit local --config file under the current working directory.";
+}
+
+function scannerPlanBoundaries(): ScannerSetupPlan["boundaries"] {
+  return {
+    execution: "none",
+    processSpawn: "none",
+    network: "none",
+    stateWrites: "none",
+    modelTool: "not_exposed",
+  };
+}
+
+function runnableScannerCommandForProfile(profile: RunnableScannerProfileId): string {
+  if (profile === "semgrep") {
+    return "orx scanners run semgrep <path> --config <local-config-path> [--json]";
+  }
+  if (profile === "trivy") {
+    return "orx scanners run trivy <path> [--json]";
+  }
+  return "orx scanners run codeql <database-dir> --query <local-query-or-suite> [--json]";
+}
+
+function futureScannerIntegrationForProfile(profile: ScannerProfileId): string | undefined {
+  if (profile === "snyk") {
+    return "prove a noninteractive local Snyk command shape with no auth, no network, no telemetry, cwd-confined inputs, cleaned env, bounded/redacted output, and explicit denial tests before enabling runs";
+  }
+  if (profile === "socket") {
+    return "prove a noninteractive local Socket command shape with no auth, no network, no package-manager side effects, cwd-confined manifest inputs, cleaned env, bounded/redacted output, and explicit denial tests before enabling runs";
+  }
+  if (profile === "osv-scanner") {
+    return "prove OSV-Scanner can run with a fixed no-network contract, cwd-confined lockfile or SBOM inputs, explicit cache/write behavior, cleaned env, bounded/redacted output, and explicit denial tests before enabling runs";
+  }
+  return undefined;
+}
+
+function catalogOnlyScannerBlockers(profile: ScannerProfileId): string[] {
+  if (profile === "snyk") {
+    return [
+      "no deterministic no-network/no-auth command shape has been accepted",
+      "cwd-confined manifest or SBOM input guards and output parsing are not implemented",
+      "auth, telemetry, update, policy-file, and environment denial tests are not implemented",
+    ];
+  }
+  if (profile === "socket") {
+    return [
+      "no deterministic local dependency-risk command shape has been accepted",
+      "cwd-confined manifest or package-manager input guards and output parsing are not implemented",
+      "auth, telemetry, package-manager side-effect, and network/update denial tests are not implemented",
+    ];
+  }
+  if (profile === "osv-scanner") {
+    return [
+      "offline vulnerability data and update/cache behavior have not been fixed to a no-network contract",
+      "cwd-confined lockfile or SBOM input guards and output parsing are not implemented",
+      "database/cache/write-location and cleanup/readback denial tests are not implemented",
+    ];
+  }
+  return [];
 }
 
 function isCommandMissingError(error: { code: string }): boolean {

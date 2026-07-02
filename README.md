@@ -77,6 +77,8 @@ orx scanners inspect semgrep --json
 orx scanners inspect trivy
 orx scanners inspect codeql
 orx scanners show trivy --json
+orx scanners plan semgrep
+orx scanners setup-plan osv-scanner --json
 orx scanners run trivy src
 orx scanners run codeql codeql-db --query queries/example.ql
 orx diagnostics list
@@ -224,6 +226,8 @@ orx scanners status --json
 orx scanners inspect semgrep
 orx scanners inspect trivy
 orx scanners show trivy --json
+orx scanners plan semgrep
+orx scanners setup-plan osv-scanner --json
 orx scanners run semgrep src --config semgrep.yml
 orx scan semgrep src --config semgrep.yml --json
 orx scanners run trivy src
@@ -274,6 +278,8 @@ orx scanners inspect semgrep
 orx scanners inspect trivy
 orx scanners inspect codeql
 orx scanners show trivy --json
+orx scanners plan semgrep
+orx scanners setup-plan osv-scanner --json
 orx scanners run semgrep src --config semgrep.yml
 orx scan semgrep src --config semgrep.yml --json
 orx scanners run trivy src
@@ -282,7 +288,7 @@ orx scanners run codeql codeql-db --query queries/example.ql
 orx scan codeql codeql-db --query queries/example.ql --json
 ```
 
-The runnable profiles are Semgrep, Trivy secret scanning, and CodeQL database analysis. ORX never installs any scanner. Semgrep requires an already-installed local `semgrep` binary plus an explicit local `--config` file under the current working directory; registry configs such as `auto` or `p/default`, URLs, dash-prefixed operands, symlink escapes outside cwd, control characters, and secret-like arguments are rejected before spawning. Trivy requires an already-installed local `trivy` binary and runs only filesystem secret scans as `trivy fs --scanners secret --format json --offline-scan --skip-db-update --skip-java-db-update --skip-check-update --skip-version-check --disable-telemetry --no-progress <path>`; ORX rejects `--config` for this profile and does not enable vulnerability, misconfiguration, license, image, or registry scanning. CodeQL requires an already-installed local `codeql` binary, an existing cwd-confined CodeQL database directory, and a cwd-confined local query, suite, or query directory via `--query`; ORX runs `codeql database analyze --format=sarifv2.1.0 --output=<orx-temp-sarif> --no-download --no-sarif-add-file-contents --no-sarif-add-snippets --sarif-include-query-help=never --no-print-diagnostics-summary --no-print-metrics-summary --threads=0 -- <database> <query>` and does not create databases, resolve remote packs, load `--config`, or expose scanner runs as model tools. Runs use shell-disabled process execution, a minimal env without ORX/OpenRouter/Brave/API token values, bounded/redacted stdout and stderr, and no network by command selection. Snyk, Socket, and OSV-Scanner are currently catalog/readiness profiles only.
+The runnable profiles are Semgrep, Trivy secret scanning, and CodeQL database analysis. ORX never installs any scanner. `orx scanners plan <profile> [--json]` and `orx scanners setup-plan <profile> [--json]` are read-only metadata surfaces: they do not probe binaries, spawn processes, access the network, write state, or expose model tools; runnable profiles show the existing guarded run command, while catalog-only profiles show the blockers that must be resolved before ORX can run them safely. Semgrep requires an already-installed local `semgrep` binary plus an explicit local `--config` file under the current working directory; registry configs such as `auto` or `p/default`, URLs, dash-prefixed operands, symlink escapes outside cwd, control characters, and secret-like arguments are rejected before spawning. Trivy requires an already-installed local `trivy` binary and runs only filesystem secret scans as `trivy fs --scanners secret --format json --offline-scan --skip-db-update --skip-java-db-update --skip-check-update --skip-version-check --disable-telemetry --no-progress <path>`; ORX rejects `--config` for this profile and does not enable vulnerability, misconfiguration, license, image, or registry scanning. CodeQL requires an already-installed local `codeql` binary, an existing cwd-confined CodeQL database directory, and a cwd-confined local query, suite, or query directory via `--query`; ORX runs `codeql database analyze --format=sarifv2.1.0 --output=<orx-temp-sarif> --no-download --no-sarif-add-file-contents --no-sarif-add-snippets --sarif-include-query-help=never --no-print-diagnostics-summary --no-print-metrics-summary --threads=0 -- <database> <query>` and does not create databases, resolve remote packs, load `--config`, or expose scanner runs as model tools. Runs use shell-disabled process execution, a minimal env without ORX/OpenRouter/Brave/API token values, bounded/redacted stdout and stderr, and no network by command selection. Snyk, Socket, and OSV-Scanner are currently catalog/readiness profiles only.
 
 Delegation/orchestration CLI commands are no-key and sessionless. `orx orchestrator`, `orx delegate`, and `orx delegates` render delegation status, readiness blockers, saved-team guidance, and the current policy boundary. `orx delegates plan <saved-team-id>` and `orx delegate plan <saved-team-id>` preview a saved team against the current execution policy without loading it into chat. Mutating live-session forms such as `orx orchestrator openrouter <model>` and `orx delegate add <name> openrouter <model>` validate arguments, then refuse because the noninteractive CLI has no active chat session to mutate.
 
@@ -580,7 +586,7 @@ The chat UI keeps in-session message history for the current process, streams as
 /ast-grep <pattern> [path] [--lang <lang>]
 /tree-sitter [parse|outline|imports|refs|calls|repo-files|repo-outline|repo-symbols|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path] [--json]
 /outline <file> [--json]
-/scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|run <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]]
+/scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]]
 /scan <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]
 /diagnostics [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]
 /diag [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]

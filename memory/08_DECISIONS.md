@@ -459,3 +459,9 @@ Reasoning: Remote MCP metadata and tool results are provider-controlled prompt-i
 Decision: Diagnostics `plan` and `setup-plan` commands should render ORX-owned metadata only, including catalog-only LSP/SCIP blockers, and must not probe binaries, spawn processes, access the network, write project or ORX state, or expose model tools.
 
 Reasoning: Operators need to understand why TypeScript Language Server, rust-analyzer, and SCIP TypeScript are not runnable yet, especially because SCIP indexing writes output. A read-only plan preserves implementation momentum and command discoverability without prematurely adding unsafe lifecycle, cache, or index behavior.
+
+## 2026-07-02: Scanner Setup Plans Are Read-Only
+
+Decision: Scanner `plan` and `setup-plan` commands should render ORX-owned metadata only, including catalog-only Snyk/Socket/OSV-Scanner blockers, and must not probe binaries, spawn processes, access the network, write project or ORX state, or expose model tools.
+
+Reasoning: Operators need to understand why catalog-only scanner profiles are not runnable yet without accidentally invoking scanner auth, telemetry, package-manager, cache/update, or network behavior. A read-only plan keeps Semgrep/Trivy/CodeQL next commands discoverable while preserving the stronger local/no-auth/no-network design gate for future scanner adapters.

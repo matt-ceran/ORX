@@ -128,7 +128,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/tests \[list \[--json\]\|status \[--json\]\|run \[target-id\] \[--json\] \[-- args\.\.\.\]\]/);
   assert.match(output, /\/code \[map\|symbols\|refs\|imports\|calls\|ast-grep\|tree-sitter\|outline\]/);
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
-  assert.match(output, /\/scanners \[list \[--json\]\|status \[--json\]\|inspect <profile> \[--json\]\|show <profile> \[--json\]\|run <semgrep\|trivy\|codeql> <path> \[--config <local-config-path>\] \[--query <local-query-or-suite>\] \[--json\]\]/);
+  assert.match(output, /\/scanners \[list \[--json\]\|status \[--json\]\|inspect <profile> \[--json\]\|show <profile> \[--json\]\|plan <profile> \[--json\]\|setup-plan <profile> \[--json\]\|run <semgrep\|trivy\|codeql> <path> \[--config <local-config-path>\] \[--query <local-query-or-suite>\] \[--json\]\]/);
   assert.match(output, /\/scan <semgrep\|trivy\|codeql> <path> \[--config <local-config-path>\] \[--query <local-query-or-suite>\] \[--json\]/);
   assert.match(output, /\/diagnostics \[list \[--json\]\|status \[--json\]\|inspect <profile> \[--json\]\|show <profile> \[--json\]\|plan <profile> \[--json\]\|setup-plan <profile> \[--json\]\|run <typescript\|pyright\|eslint\|ruff\|mypy\|gopls\|clangd> \[--project <local-project-path>\] \[--json\]\]/);
   assert.match(output, /\/symbols \[query\]/);
@@ -352,12 +352,15 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/tree-sitter repo-files src --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/outline src --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/scanners --"), [["--json "], "--"]);
-  assert.deepEqual(completeSlashCommandLine("/scanners s"), [["status ", "show "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/scanners s"), [["status ", "show ", "setup-plan "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/scanners p"), [["plan "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/scanners r"), [["run "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/scanners list --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/scanners status --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/scanners inspect s"), [["semgrep ", "snyk ", "socket "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/scanners show semgrep --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/scanners plan s"), [["semgrep ", "snyk ", "socket "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/scanners setup-plan osv-scanner --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/scanners run s"), [["semgrep "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/scanners run t"), [["trivy "], "t"]);
   assert.deepEqual(completeSlashCommandLine("/scanners run c"), [["codeql "], "c"]);
@@ -854,6 +857,31 @@ test("scanner slash commands list, inspect, and run guarded local profiles with 
     const inspectCatalogOnly = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/scanners inspect snyk", inspectCatalogOnly.context), "continue");
     assert.match(inspectCatalogOnly.stdout(), /state: catalog_only/);
+
+    const planSemgrep = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/scanners plan semgrep", planSemgrep.context), "continue");
+    assert.match(planSemgrep.stdout(), /Security scanner setup plan: semgrep/);
+    assert.match(planSemgrep.stdout(), /status: runnable_now/);
+    assert.match(planSemgrep.stdout(), /current_run: orx scanners run semgrep <path> --config <local-config-path> \[--json\]/);
+    assert.match(planSemgrep.stdout(), /process_spawn: none/);
+    assert.match(planSemgrep.stdout(), /blockers:\n    - none/);
+    assert.equal(planSemgrep.stderr(), "");
+
+    const setupPlanJson = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/scanners setup-plan socket --json", setupPlanJson.context), "continue");
+    const setupPlanReport = JSON.parse(setupPlanJson.stdout());
+    assert.equal(setupPlanReport.surface, "orx.security_scanner_setup_plan");
+    assert.equal(setupPlanReport.profile.id, "socket");
+    assert.equal(setupPlanReport.status, "catalog_only");
+    assert.equal(setupPlanReport.authority.process_spawn, "none");
+    assert.equal(setupPlanReport.authority.network, "none");
+    assert.match(setupPlanReport.future_integration, /no package-manager side effects/);
+    assert.ok(setupPlanReport.blockers.some((blocker: string) => blocker.includes("dependency-risk")));
+    assert.equal(setupPlanJson.stderr(), "");
+
+    const planUnknownOption = createSlashHarness({ cwd });
+    assert.equal(await handleSlashCommand("/scanners plan snyk --project package.json", planUnknownOption.context), "continue");
+    assert.match(planUnknownOption.stderr(), /^Usage: \/scanners \[plan\|setup-plan\]/);
 
     const listExtra = createSlashHarness({ cwd });
     assert.equal(await handleSlashCommand("/scanners list extra", listExtra.context), "continue");

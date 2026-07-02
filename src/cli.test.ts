@@ -44,7 +44,7 @@ test("help, version, and status work without an API key", async () => {
     assert.match(help.stdout(), /hooks\s+List, inspect, trust, untrust, or run plugin hook definitions/);
     assert.match(help.stdout(), /tests\s+Discover or run native test targets/);
     assert.match(help.stdout(), /code\s+Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses\/outlines\/imports\/refs\/calls/);
-    assert.match(help.stdout(), /scanners\s+List, inspect, or run local security scanner profiles/);
+    assert.match(help.stdout(), /scanners\s+List, inspect, plan, or run local security scanner profiles/);
     assert.match(help.stdout(), /scan\s+Alias for a local scanner run/);
     assert.match(help.stdout(), /diagnostics\s+List, inspect, or run local diagnostics profiles/);
     assert.match(help.stdout(), /diag\s+Alias for diagnostics/);
@@ -2024,6 +2024,31 @@ test("cli scanner commands list, inspect, and run guarded local profiles with mo
     const inspectCatalogOnly = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "scanners", "inspect", "snyk"], {}, inspectCatalogOnly.io), 0);
     assert.match(inspectCatalogOnly.stdout(), /state: catalog_only/);
+
+    const planSemgrep = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "scanners", "plan", "semgrep"], {}, planSemgrep.io), 0);
+    assert.match(planSemgrep.stdout(), /Security scanner setup plan: semgrep/);
+    assert.match(planSemgrep.stdout(), /status: runnable_now/);
+    assert.match(planSemgrep.stdout(), /current_run: orx scanners run semgrep <path> --config <local-config-path> \[--json\]/);
+    assert.match(planSemgrep.stdout(), /process_spawn: none/);
+    assert.match(planSemgrep.stdout(), /blockers:\n    - none/);
+    assert.equal(planSemgrep.stderr(), "");
+
+    const setupPlanJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "scanners", "setup-plan", "osv-scanner", "--json"], {}, setupPlanJson.io), 0);
+    const setupPlanReport = JSON.parse(setupPlanJson.stdout());
+    assert.equal(setupPlanReport.surface, "orx.security_scanner_setup_plan");
+    assert.equal(setupPlanReport.profile.id, "osv-scanner");
+    assert.equal(setupPlanReport.status, "catalog_only");
+    assert.equal(setupPlanReport.authority.process_spawn, "none");
+    assert.equal(setupPlanReport.authority.network, "none");
+    assert.match(setupPlanReport.future_integration, /fixed no-network contract/);
+    assert.ok(setupPlanReport.blockers.some((blocker: string) => blocker.includes("no-network contract")));
+    assert.equal(setupPlanJson.stderr(), "");
+
+    const planUnknownOption = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "scanners", "plan", "snyk", "--project", "package.json"], {}, planUnknownOption.io), 1);
+    assert.match(planUnknownOption.stderr(), /^Usage: orx scanners \[plan\|setup-plan\]/);
 
     const listExtra = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "scanners", "list", "extra"], {}, listExtra.io), 1);

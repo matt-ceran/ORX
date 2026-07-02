@@ -316,11 +316,14 @@ import {
   parseScannerRunArgText,
   renderMissingScannerProfile,
   renderScannerInspectUsage,
+  renderScannerPlanUsage,
   renderScannerProfileInspect,
   renderScannerProfileInspectJson,
   renderScannerProfiles,
   renderScannerProfilesJson,
   renderScannerRunResult,
+  renderScannerSetupPlan,
+  renderScannerSetupPlanJson,
   runSecurityScanner,
   type ScannerProcessRunner,
 } from "../security/index.js";
@@ -601,7 +604,7 @@ const CODE_SUBCOMMAND_COMPLETIONS = ["map", "symbols", "refs", "imports", "calls
 const CODE_JSON_OPTION_COMPLETIONS = ["--json"] as const;
 const TREE_SITTER_MODE_COMPLETIONS = ["parse", "outline", "imports", "refs", "calls", "repo-files", "repo-outline", "repo-symbols", "repo-refs", "repo-calls", "repo-imports", "repo-deps"] as const;
 const TREE_SITTER_OPTION_COMPLETIONS = ["--json"] as const;
-const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "run"] as const;
+const SCANNER_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "plan", "setup-plan", "run"] as const;
 const SCANNER_PROFILE_COMPLETIONS = ["semgrep", "snyk", "socket", "osv-scanner", "codeql", "trivy"] as const;
 const RUNNABLE_SCANNER_PROFILE_COMPLETIONS = ["semgrep", "trivy", "codeql"] as const;
 const SCANNER_READINESS_OPTION_COMPLETIONS = ["--json"] as const;
@@ -969,7 +972,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
   },
   "/scanners": {
     usage: SLASH_SCANNERS_USAGE.replace(/^Usage:\s*/, ""),
-    description: "List, inspect, or run local security scanner profiles",
+    description: "List, inspect, plan, or run local security scanner profiles",
     group: "Workspace",
     tier: "advanced",
     aliases: ["/scanner"],
@@ -2032,10 +2035,10 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       if ((firstArg === "list" || firstArg === "status") && argIndex === 1) {
         return [...SCANNER_READINESS_OPTION_COMPLETIONS];
       }
-      if ((firstArg === "inspect" || firstArg === "show") && argIndex === 1) {
+      if ((firstArg === "inspect" || firstArg === "show" || firstArg === "plan" || firstArg === "setup-plan") && argIndex === 1) {
         return [...SCANNER_PROFILE_COMPLETIONS];
       }
-      if ((firstArg === "inspect" || firstArg === "show") && argIndex === 2) {
+      if ((firstArg === "inspect" || firstArg === "show" || firstArg === "plan" || firstArg === "setup-plan") && argIndex === 2) {
         return [...SCANNER_READINESS_OPTION_COMPLETIONS];
       }
       if (firstArg === "run" && argIndex === 1) {
@@ -2636,6 +2639,25 @@ async function handleScannersCommand(command: SlashCommand, context: SlashComman
     writeLine(
       context.io.stdout,
       jsonFlag.json ? renderScannerProfileInspectJson(profile) : renderScannerProfileInspect(profile),
+    );
+    return;
+  }
+
+  if (subcommand === "plan" || subcommand === "setup-plan") {
+    const profileId = command.args[1];
+    const jsonFlag = parseScannerReadinessJsonFlag(command.args.slice(2), SLASH_SCANNERS_USAGE);
+    if (!profileId || !jsonFlag.ok) {
+      writeLine(context.io.stderr, renderScannerPlanUsage(SLASH_SCANNERS_USAGE));
+      return;
+    }
+    const profile = findScannerProfile(profileId);
+    if (!profile) {
+      writeLine(context.io.stderr, renderMissingScannerProfile(profileId));
+      return;
+    }
+    writeLine(
+      context.io.stdout,
+      jsonFlag.json ? renderScannerSetupPlanJson(profile) : renderScannerSetupPlan(profile),
     );
     return;
   }

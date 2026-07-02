@@ -256,11 +256,14 @@ import {
   parseScannerRunArgs,
   renderMissingScannerProfile,
   renderScannerInspectUsage,
+  renderScannerPlanUsage,
   renderScannerProfileInspect,
   renderScannerProfileInspectJson,
   renderScannerProfiles,
   renderScannerProfilesJson,
   renderScannerRunResult,
+  renderScannerSetupPlan,
+  renderScannerSetupPlanJson,
   runSecurityScanner,
   type ScannerProcessRunner,
 } from "./security/index.js";
@@ -932,7 +935,7 @@ function helpText(): string {
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  tests         Discover or run native test targets",
     "  code          Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses/outlines/imports/refs/calls/repo-files/repo-outline/repo-symbols/repo-refs/repo-calls/repo-imports/repo-deps",
-    "  scanners      List, inspect, or run local security scanner profiles",
+    "  scanners      List, inspect, plan, or run local security scanner profiles",
     "  scan          Alias for a local scanner run",
     "  diagnostics  List, inspect, or run local diagnostics profiles",
     "  diag          Alias for diagnostics",
@@ -1282,6 +1285,25 @@ async function runScannersCommand(args: string[], io: CliIo, env: NodeJS.Process
     writeLine(
       io.stdout,
       jsonFlag.json ? renderScannerProfileInspectJson(profile) : renderScannerProfileInspect(profile),
+    );
+    return 0;
+  }
+
+  if (subcommand === "plan" || subcommand === "setup-plan") {
+    const profileId = args[1];
+    const jsonFlag = parseScannerReadinessJsonFlag(args.slice(2), SCANNERS_USAGE);
+    if (!profileId || !jsonFlag.ok) {
+      writeLine(io.stderr, renderScannerPlanUsage(SCANNERS_USAGE));
+      return 1;
+    }
+    const profile = findScannerProfile(profileId);
+    if (!profile) {
+      writeLine(io.stderr, renderMissingScannerProfile(profileId));
+      return 1;
+    }
+    writeLine(
+      io.stdout,
+      jsonFlag.json ? renderScannerSetupPlanJson(profile) : renderScannerSetupPlan(profile),
     );
     return 0;
   }
