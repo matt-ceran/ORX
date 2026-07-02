@@ -341,6 +341,7 @@ test("MCP provider presets install local user catalog profiles", () => {
     assert.match(rendered, /id=cloudflare-api/);
     assert.match(rendered, /id=cloudflare-docs/);
     assert.match(rendered, /id=context7/);
+    assert.match(rendered, /id=deepwiki/);
     assert.match(rendered, /id=figma/);
     assert.match(rendered, /id=github-readonly/);
     assert.match(rendered, /id=github-write/);
@@ -375,6 +376,32 @@ test("MCP provider presets install local user catalog profiles", () => {
         "microsoft_code_sample_search:read:false",
         "microsoft_docs_fetch:read:false",
         "microsoft_docs_search:read:false",
+      ],
+    );
+
+    const deepwikiResult = installMcpProviderPreset("deepwiki", {
+      profileCatalogPath,
+    });
+    assert.equal(deepwikiResult.ok, true);
+    assert.equal(deepwikiResult.profileId, "user:deepwiki");
+    assert.equal(deepwikiResult.toolCount, 3);
+
+    const loadedWithDeepWiki = loadUserMcpProfileCatalog({ profileCatalogPath });
+    const deepwikiProfile = loadedWithDeepWiki.profiles.find(
+      (profile) => profile.id === "user:deepwiki",
+    );
+    assert.ok(deepwikiProfile);
+    assert.equal(deepwikiProfile.state, "disabled");
+    assert.equal(deepwikiProfile.transport.url, "https://mcp.deepwiki.com/mcp");
+    assert.equal(deepwikiProfile.authRequired, false);
+    assert.equal(deepwikiProfile.riskLevel, "low");
+    assert.equal(deepwikiProfile.writeCapable, false);
+    assert.deepEqual(
+      deepwikiProfile.tools.map((tool) => `${tool.name}:${tool.risk}:${tool.authRequired}:${tool.billable}`),
+      [
+        "ask_question:read:false:false",
+        "read_wiki_contents:read:false:false",
+        "read_wiki_structure:read:false:false",
       ],
     );
 
@@ -2755,6 +2782,35 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
     assert.match(context7Status, /setup_url: https:\/\/context7\.com\/docs/);
     assert.match(context7Status, /next_step: no bearer token required by current local declarations/);
 
+    assert.equal(installMcpProviderPreset("deepwiki", { profileCatalogPath }).ok, true);
+    const deepwikiReport = getMcpProfileAuthReport("user:deepwiki", {
+      cwd,
+      env,
+      profileCatalogPath,
+    });
+    assert.ok(deepwikiReport);
+    const deepwikiStatus = renderMcpProfileAuthReport(deepwikiReport);
+
+    assert.match(deepwikiStatus, /auth_status: not_required/);
+    assert.match(deepwikiStatus, /credential_mode: not_required/);
+    assert.match(deepwikiStatus, /effective_bearer: not_required/);
+    assert.match(deepwikiStatus, /provider_auth: deepwiki/);
+    assert.match(deepwikiStatus, /setup_url: https:\/\/docs\.devin\.ai\/work-with-devin\/deepwiki-mcp/);
+    assert.match(deepwikiStatus, /scope_hint: read-only public GitHub repository documentation/);
+    assert.match(deepwikiStatus, /next_step: no bearer token required by current local declarations/);
+
+    assert.equal(
+      upsertUserMcpRemoteProfile(
+        "deepwiki-subpath",
+        {
+          name: "DeepWiki subpath profile",
+          url: "https://mcp.deepwiki.com/mcp/not-exact",
+          authRequired: true,
+        },
+        { profileCatalogPath },
+      ).ok,
+      true,
+    );
     assert.equal(
       upsertUserMcpRemoteProfile(
         "openrouter-spoof",
@@ -2818,6 +2874,7 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
 
     for (const spoofProfileId of [
       "user:openrouter-spoof",
+      "user:deepwiki-subpath",
       "user:github-spoof",
       "user:gitlab-spoof",
       "user:gitlab-subpath",
@@ -2832,10 +2889,12 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
       const spoofStatus = renderMcpProfileAuthReport(spoofReport);
       assert.match(spoofStatus, /provider_auth: generic/);
       assert.doesNotMatch(spoofStatus, /provider_auth: openrouter/);
+      assert.doesNotMatch(spoofStatus, /provider_auth: deepwiki/);
       assert.doesNotMatch(spoofStatus, /provider_auth: github/);
       assert.doesNotMatch(spoofStatus, /provider_auth: gitlab/);
       assert.doesNotMatch(spoofStatus, /provider_auth: cloudflare/);
       assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/openrouter\.ai\/docs\/mcp-server/);
+      assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/docs\.devin\.ai\/work-with-devin\/deepwiki-mcp/);
       assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/docs\.github\.com/);
       assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/docs\.gitlab\.com/);
       assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/github\.com\/cloudflare\/mcp/);

@@ -151,6 +151,37 @@ export const MCP_PROVIDER_PRESETS: McpProviderPreset[] = [
     tags: ["docs", "microsoft", "read-only"],
   },
   {
+    id: "deepwiki",
+    name: "DeepWiki",
+    profileId: "deepwiki",
+    url: "https://mcp.deepwiki.com/mcp",
+    authRequired: false,
+    riskLevel: "low",
+    tools: [
+      {
+        name: "ask_question",
+        risk: "read",
+        authRequired: false,
+        billable: false,
+      },
+      {
+        name: "read_wiki_contents",
+        risk: "read",
+        authRequired: false,
+        billable: false,
+      },
+      {
+        name: "read_wiki_structure",
+        risk: "read",
+        authRequired: false,
+        billable: false,
+      },
+    ],
+    notes:
+      "DeepWiki official no-auth MCP for public GitHub repository documentation and grounded repository questions. Public repository output is untrusted remote content.",
+    tags: ["docs", "github", "repositories", "read-only", "no-auth"],
+  },
+  {
     id: "figma",
     name: "Figma remote MCP",
     profileId: "figma",

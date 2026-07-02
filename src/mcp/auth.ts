@@ -347,6 +347,17 @@ function getMcpProviderAuthGuidance(profile: McpProfile): McpProviderAuthGuidanc
     };
   }
 
+  if (isExactMcpProviderEndpoint(endpoint, "mcp.deepwiki.com", "/mcp")) {
+    return {
+      provider: "deepwiki",
+      credentialSource: "DeepWiki official hosted MCP is free and no-auth for public repositories.",
+      credentialLifetime: "not applicable for current declarations",
+      scopeHint: "read-only public GitHub repository documentation and grounded questions",
+      setupUrl: "https://docs.devin.ai/work-with-devin/deepwiki-mcp",
+      orxSupport: "no ORX credential is needed for current no-auth declarations; use profile env only if auth is later required",
+    };
+  }
+
   if (isMcpProviderEndpoint(endpoint, "learn.microsoft.com", "/api/mcp")) {
     return {
       provider: "microsoft-learn",
