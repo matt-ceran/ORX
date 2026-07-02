@@ -69,6 +69,7 @@ import {
 } from "../terminal/meters.js";
 import { createTerminalRenderer, type TerminalRenderOptions } from "../terminal/render.js";
 import {
+  createTtyScreenController,
   isInteractiveTerminal,
   renderPlainContinuationPrompt,
   renderPlainComposerPrompt,
@@ -77,6 +78,7 @@ import {
   shouldUseTtyScreen,
   type TtyActivityState,
   type TtyInputState,
+  type TtyScreenController,
 } from "./screen.js";
 import {
   appendChatHistoryEntry,
@@ -184,7 +186,6 @@ export async function runChat({
   let latestCredits: OpenRouterCreditsInfo | undefined;
   let activeAbort: AbortController | undefined;
   let activeTtyActivity: TtyActivityState | undefined;
-  let activeTtyActivityLineCount = 0;
   let activeTtyActivityTimer: ReturnType<typeof setInterval> | undefined;
   let ttyActivityFrame = 0;
   let pendingInputLines: string[] = [];
@@ -197,6 +198,9 @@ export async function runChat({
   let delegationState: DelegationState = normalizeDelegationState(session.record.delegation);
   let modelMcpEnabled = false;
   const { useReadlineTerminal, useTtyScreen } = resolveChatTerminalModes(io.stdin, io.stdout);
+  const ttyScreen: TtyScreenController | undefined = useTtyScreen
+    ? createTtyScreenController(io.stdout)
+    : undefined;
   let promptHistoryEntries: ChatHistoryEntry[] = [];
   let historyWarningShown = false;
 
@@ -209,7 +213,7 @@ export async function runChat({
   }
 
   if (useTtyScreen) {
-    writeComposer(io.stdout, renderCurrentTtyComposer());
+    ttyScreen?.show(renderCurrentTtyComposer());
   } else {
     writeLine(
       io.stdout,
@@ -244,12 +248,14 @@ export async function runChat({
       return;
     }
 
+    ttyScreen?.clear();
     writeLine(io.stdout, "\nExiting ORX chat.");
     rl.close();
   });
 
   try {
     for await (const rawLine of rl) {
+      ttyScreen?.clearAfterSubmit();
       const consumedInput = consumeInputLine(rawLine);
       if (consumedInput === undefined) {
         writeContinuationPromptOrComposer();
@@ -579,7 +585,7 @@ export async function runChat({
 
   function writePromptOrComposer(): void {
     if (useTtyScreen) {
-      writeComposer(io.stdout, renderCurrentTtyComposer());
+      ttyScreen?.show(renderCurrentTtyComposer());
       return;
     }
 
@@ -588,7 +594,7 @@ export async function runChat({
 
   function writeContinuationPromptOrComposer(): void {
     if (useTtyScreen) {
-      writeComposer(io.stdout, renderCurrentTtyComposer(undefined, { mode: "multiline" }));
+      ttyScreen?.show(renderCurrentTtyComposer(undefined, { mode: "multiline" }));
       return;
     }
 
@@ -716,8 +722,7 @@ export async function runChat({
     const activity = nextTtyActivity(kind, label);
     const composer = renderCurrentTtyComposer(activity);
     activeTtyActivity = activity;
-    activeTtyActivityLineCount = countLines(composer);
-    writeComposer(io.stdout, composer);
+    ttyScreen?.show(composer);
 
     activeTtyActivityTimer = setInterval(() => {
       if (!activeTtyActivity) {
@@ -726,10 +731,8 @@ export async function runChat({
 
       const nextActivity = nextTtyActivity(kind, label);
       const nextComposer = renderCurrentTtyComposer(nextActivity);
-      io.stdout.write(clearRenderedLines(activeTtyActivityLineCount));
       activeTtyActivity = nextActivity;
-      activeTtyActivityLineCount = countLines(nextComposer);
-      writeComposer(io.stdout, nextComposer);
+      ttyScreen?.show(nextComposer);
     }, TTY_ACTIVITY_INTERVAL_MS);
     activeTtyActivityTimer.unref?.();
   }
@@ -749,10 +752,8 @@ export async function runChat({
       return false;
     }
 
-    const lineCount = activeTtyActivityLineCount;
     stopTtyActivity();
-    io.stdout.write(clearRenderedLines(lineCount));
-    return true;
+    return ttyScreen?.clear() ?? false;
   }
 
   function stopTtyActivity(): void {
@@ -761,7 +762,6 @@ export async function runChat({
       activeTtyActivityTimer = undefined;
     }
     activeTtyActivity = undefined;
-    activeTtyActivityLineCount = 0;
   }
 
   async function runLifecycleHooksAndWarn(
@@ -874,28 +874,12 @@ function writeContinuationPrompt(stream: WritableLike) {
   stream.write(`\n${renderPlainContinuationPrompt()}`);
 }
 
-function writeComposer(stream: WritableLike, composer: string) {
-  stream.write(composer);
-}
-
 function writeLine(stream: WritableLike, text: string) {
   stream.write(`${text}\n`);
 }
 
 function setReadlineHistory(rl: unknown, history: string[]): void {
   (rl as { history?: string[] }).history = history;
-}
-
-function countLines(value: string): number {
-  return value.split("\n").length;
-}
-
-function clearRenderedLines(lineCount: number): string {
-  const count = Math.max(1, Math.floor(lineCount));
-  return [
-    "\r\x1b[2K",
-    ...Array.from({ length: count - 1 }, () => "\x1b[1F\x1b[2K"),
-  ].join("");
 }
 
 function isSlashCommandSubmission(input: string): boolean {

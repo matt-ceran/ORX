@@ -42,6 +42,17 @@ export interface TtyInputState {
   mode: "normal" | "multiline";
 }
 
+export interface TtyScreenWritable {
+  write(chunk: string): unknown;
+}
+
+export interface TtyScreenController {
+  show(composer: string): void;
+  clear(): boolean;
+  clearAfterSubmit(): boolean;
+  readonly visibleLineCount: number;
+}
+
 const DEFAULT_SCREEN_WIDTH = 80;
 const MIN_SCREEN_WIDTH = 20;
 const MAX_SCREEN_WIDTH = 220;
@@ -71,7 +82,7 @@ export function resolveTerminalWidth(stream: unknown, fallback = DEFAULT_SCREEN_
 }
 
 export function renderTtyStatusComposer(state: TtyStatusComposerState): string {
-  return `${renderTtyStatusNotch(state)}\n${renderTtyComposerPrompt(state.renderOptions, state.input)}`;
+  return `${renderTtyStatusNotchForComposer(state)}\n${renderTtyFramedComposerPrompt(state)}`;
 }
 
 export function renderTtyStatusNotch(state: TtyStatusComposerState): string {
@@ -191,6 +202,86 @@ export function renderPlainContinuationPrompt(): string {
   return "...> ";
 }
 
+export function createTtyScreenController(stream: TtyScreenWritable): TtyScreenController {
+  return new DefaultTtyScreenController(stream);
+}
+
+export function countRenderedLines(value: string): number {
+  return Math.max(1, value.split("\n").length);
+}
+
+export function clearRenderedTtyLines(lineCount: number): string {
+  const count = normalizeLineCount(lineCount);
+  return [
+    "\r\x1b[2K",
+    ...Array.from({ length: count - 1 }, () => "\x1b[1F\x1b[2K"),
+  ].join("");
+}
+
+export function clearSubmittedTtyLines(lineCount: number): string {
+  const count = normalizeLineCount(lineCount);
+  return [
+    "\r\x1b[2K",
+    ...Array.from({ length: count }, () => "\x1b[1F\x1b[2K"),
+  ].join("");
+}
+
+class DefaultTtyScreenController implements TtyScreenController {
+  private lineCount = 0;
+
+  constructor(private readonly stream: TtyScreenWritable) {}
+
+  get visibleLineCount(): number {
+    return this.lineCount;
+  }
+
+  show(composer: string): void {
+    if (this.lineCount > 0) {
+      this.stream.write(clearRenderedTtyLines(this.lineCount));
+    }
+
+    this.stream.write(composer);
+    this.lineCount = countRenderedLines(composer);
+  }
+
+  clear(): boolean {
+    if (this.lineCount <= 0) {
+      return false;
+    }
+
+    this.stream.write(clearRenderedTtyLines(this.lineCount));
+    this.lineCount = 0;
+    return true;
+  }
+
+  clearAfterSubmit(): boolean {
+    if (this.lineCount <= 0) {
+      return false;
+    }
+
+    this.stream.write(clearSubmittedTtyLines(this.lineCount));
+    this.lineCount = 0;
+    return true;
+  }
+}
+
+function renderTtyStatusNotchForComposer(state: TtyStatusComposerState): string {
+  const lines = renderTtyStatusNotch(state).split("\n");
+  if (lines.length === 0) {
+    return "";
+  }
+
+  const lastIndex = lines.length - 1;
+  lines[lastIndex] = lines[lastIndex].replace(/^╰─ /, "│  ");
+  return lines.join("\n");
+}
+
+function renderTtyFramedComposerPrompt(state: TtyStatusComposerState): string {
+  const width = normalizeWidth(state.width);
+  const prompt = renderTtyComposerPrompt(state.renderOptions, state.input);
+  return truncateVisible(`╰─ ${prompt}`, width);
+}
+
 function formatNotchContext(
   state: ReturnType<typeof getContextState>,
   renderer: TerminalRenderer,
@@ -219,6 +310,10 @@ function formatNotchCost(
   activityFrame: number | undefined,
 ): string {
   const totalTurns = state.costedTurnCount + state.uncostedTurnCount;
+  if (totalTurns === 0) {
+    return `${colorMoney(formatHudMoney(0), renderer)} observed`;
+  }
+
   const coverage = totalTurns > 0 ? `${state.costedTurnCount}/${totalTurns}` : "n/a";
   const meterWidth = width >= SPLIT_PROVIDER_MODEL_WIDTH ? 6 : 4;
   return [
@@ -268,6 +363,10 @@ function formatHudMoney(value: number | undefined): string {
   }
 
   const absolute = Math.abs(value);
+  if (absolute === 0) {
+    return "$0.00";
+  }
+
   if (absolute >= 100) {
     return `$${value.toFixed(2)}`;
   }
@@ -488,6 +587,14 @@ function normalizeWidth(width: number | undefined): number {
   }
 
   return Math.max(MIN_SCREEN_WIDTH, Math.min(MAX_SCREEN_WIDTH, Math.floor(width)));
+}
+
+function normalizeLineCount(lineCount: number): number {
+  if (typeof lineCount !== "number" || !Number.isFinite(lineCount)) {
+    return 1;
+  }
+
+  return Math.max(1, Math.floor(lineCount));
 }
 
 function isTty(stream: unknown): boolean {

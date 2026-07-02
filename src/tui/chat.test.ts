@@ -17,6 +17,7 @@ import type { BrowserSnapshotDriver, ResolveBrowserHost } from "../research/inde
 import { createSessionRecord, saveSessionRecord } from "../sessions/index.js";
 import { resolveChatTerminalModes, runChat } from "./chat.js";
 import { loadChatHistory } from "./history.js";
+import { clearSubmittedTtyLines } from "./screen.js";
 
 const encoder = new TextEncoder();
 const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
@@ -1979,8 +1980,9 @@ test("tty chat renders bottom status composer instead of the repeated plain foot
     const stdout = stripAnsi(rawStdout);
     assert.equal(exitCode, 0);
     assert.match(stdout, /╭─ orx/);
-    assert.match(stdout, /orx › /);
+    assert.match(stdout, /╰─ orx › /);
     assert.match(stdout, /work ⠋ assistant/);
+    assert.match(rawStdout, new RegExp(escapeRegExp(clearSubmittedTtyLines(3))));
     assert.match(rawStdout, /\r\x1b\[2K\x1b\[1F\x1b\[2K\x1b\[1F\x1b\[2K/);
     assert.match(stdout, /\nassistant\n  TTY reply/);
     assert.match(stdout, /meta  route openrouter\/auto  tokens 3  cost \$0\.000200/);
@@ -1994,6 +1996,51 @@ test("tty chat renders bottom status composer instead of the repeated plain foot
     assert.match(stdout, /perm never\/danger-full-access/);
     assert.doesNotMatch(stdout, /cwd: .* \| mode: .* \| model:/);
     assert.doesNotMatch(stdout, /session: .* @ /);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat launch idle state is a framed bottom composer", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+
+  try {
+    const capture = createIo({
+      stdin: Readable.from(["/exit\n"]),
+      tty: true,
+      columns: 80,
+      fetch: async () => {
+        throw new Error("launch and exit should not call OpenRouter.");
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    const rawStdout = capture.stdout();
+    const stdout = stripAnsi(rawStdout);
+    assert.equal(exitCode, 0);
+    assert.match(stdout, /^╭─ orx  route auto  mode auto/);
+    assert.match(stdout, /ctx \[[#-]{8}\] 0\.0%/);
+    assert.match(stdout, /cost \$0\.00 observed/);
+    assert.match(stdout, /│  cwd \/tmp\/orx-chat-test  session [a-f0-9]{8}  perm never\/danger-full-access/);
+    assert.match(stdout, /╰─ orx › /);
+    assert.match(rawStdout, new RegExp(escapeRegExp(clearSubmittedTtyLines(3))));
+    assert.doesNotMatch(stdout, /^ORX chat/m);
+    assert.doesNotMatch(stdout, /Type \/help for commands/);
+    assert.doesNotMatch(stdout, /orx> /);
     assert.equal(capture.stderr(), "");
   } finally {
     if (previousNoColor === undefined) {

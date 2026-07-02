@@ -6,7 +6,11 @@ import {
   renderTtyToolResultBlock,
   renderTtyUserTranscript,
 } from "../dist/tui/transcript.js";
-import { renderTtyStatusComposer } from "../dist/tui/screen.js";
+import {
+  createTtyScreenController,
+  renderTtyStatusComposer,
+} from "../dist/tui/screen.js";
+import { formatCompactOpenRouterMetadata } from "../dist/openrouter/summary.js";
 
 const toolCall = {
   id: "call_read",
@@ -42,6 +46,28 @@ const toolResult = {
 
 for (const width of [80, 120]) {
   const renderOptions = { color: false };
+  const initialComposer = renderTtyStatusComposer({
+    cwd: "/Users/draingang/Documents/ORX-ui-ux",
+    model: "openrouter/auto",
+    mode: "auto",
+    permissions: {
+      approvalPolicy: "never",
+      sandboxMode: "danger-full-access",
+    },
+    sessionId: "20260702T120000Z-abcdef12",
+    messages: [],
+    costMeterState: {
+      costedTurnCount: 0,
+      uncostedTurnCount: 0,
+    },
+    width,
+    renderOptions,
+  });
+  const metadata = {
+    requestedModel: "openrouter/auto",
+    totalTokens: 412,
+    cost: 0.0002,
+  };
   const transcript = [
     renderTtyUserTranscript("Review the chat transcript spacing.", {
       ...renderOptions,
@@ -59,7 +85,10 @@ for (const width of [80, 120]) {
       ...renderOptions,
       maxWidth: width,
     }),
-    "meta  route openrouter/auto  tokens 412  cost $0.000200",
+    formatCompactOpenRouterMetadata(metadata, {
+      ...renderOptions,
+      maxWidth: width,
+    }),
     renderTtyStatusComposer({
       cwd: "/Users/draingang/Documents/ORX-ui-ux",
       model: "openrouter/auto",
@@ -83,7 +112,38 @@ for (const width of [80, 120]) {
       renderOptions,
     }),
   ].join("\n");
+  const redrawTrace = renderRedrawTrace({
+    width,
+    initialComposer,
+    transcript,
+    renderOptions,
+  });
 
-  console.log(`--- ORX TTY transcript probe (${width} cols) ---`);
+  console.log(`--- ORX TTY launch/idle probe (${width} cols) ---`);
+  console.log(initialComposer);
+  console.log(`--- ORX TTY redraw trace escaped (${width} cols) ---`);
+  console.log(escapeControls(redrawTrace));
+  console.log(`--- ORX TTY assistant-turn visible frame (${width} cols) ---`);
   console.log(transcript);
+}
+
+function renderRedrawTrace({ initialComposer, transcript }) {
+  let output = "";
+  const screen = createTtyScreenController({
+    write(chunk) {
+      output += chunk;
+    },
+  });
+
+  screen.show(initialComposer);
+  screen.clearAfterSubmit();
+  output += transcript;
+  return output;
+}
+
+function escapeControls(value) {
+  return value
+    .replace(/\x1b/g, "\\x1b")
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n\n");
 }

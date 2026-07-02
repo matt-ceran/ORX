@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  clearRenderedTtyLines,
+  clearSubmittedTtyLines,
+  countRenderedLines,
+  createTtyScreenController,
   isInteractiveTerminal,
   renderPlainContinuationPrompt,
   renderPlainComposerPrompt,
@@ -48,8 +52,8 @@ test("tty screen renders a wide bottom status notch with compact meters", () => 
   assert.match(output, /ctx \[[#-]{10}\] \d+\.\d% approx/);
   assert.match(output, /cost \[####--\] 66\.7% \$0\.000700 meta 2\/3/);
   assert.match(output, /credits \[##------\] 25\.0% rem \$3\.00/);
-  assert.match(output, /╰─ cwd ~\/Documents\/ORX  session abcdef12  perm never\/danger-full-access/);
-  assert.match(output, /\norx › $/);
+  assert.match(output, /│  cwd ~\/Documents\/ORX  session abcdef12  perm never\/danger-full-access/);
+  assert.match(output, /\n╰─ orx › $/);
   assertLinesFit(output, 180);
 });
 
@@ -63,8 +67,8 @@ test("tty screen has stable 80 and 120 column HUD probes", () => {
       "╭─ orx  work ⠹ assistant  route auto  mode auto",
       "│  ctx [--------] 3.1% • approx  cost [###-] 66.7% • $0.004100 meta 2/3",
       "│  credits [#-------] 13.8% rem $17.25",
-      "╰─ cwd ~/Documents/ORX  session probe1851d3e  perm never/danger-full-access",
-      "orx › ",
+      "│  cwd ~/Documents/ORX  session probe1851d3e  perm never/danger-full-access",
+      "╰─ orx › ",
     ].join("\n"),
   );
   assert.equal(
@@ -73,12 +77,40 @@ test("tty screen has stable 80 and 120 column HUD probes", () => {
       "╭─ orx  work ⠹ assistant  route auto  mode auto",
       "│  ctx [----------] 3.1% • approx  cost [####--] 66.7% • $0.004100 meta 2/3",
       "│  credits [#-------] 13.8% rem $17.25",
-      "╰─ cwd ~/Documents/ORX  session probe1851d3e  perm never/danger-full-access",
-      "orx › ",
+      "│  cwd ~/Documents/ORX  session probe1851d3e  perm never/danger-full-access",
+      "╰─ orx › ",
     ].join("\n"),
   );
   assertLinesFit(at80, 80);
   assertLinesFit(at120, 120);
+});
+
+test("tty screen controller clears composer redraws in place and after submitted input", () => {
+  let output = "";
+  const controller = createTtyScreenController({
+    write(chunk) {
+      output += chunk;
+    },
+  });
+
+  controller.show("╭─ orx\n│  cwd ~/repo\n╰─ orx › ");
+  assert.equal(controller.visibleLineCount, 3);
+  controller.show("╭─ orx  work ⠋ assistant\n│  cwd ~/repo\n╰─ orx › ");
+  assert.equal(controller.visibleLineCount, 3);
+  assert.equal(
+    output,
+    [
+      "╭─ orx\n│  cwd ~/repo\n╰─ orx › ",
+      clearRenderedTtyLines(3),
+      "╭─ orx  work ⠋ assistant\n│  cwd ~/repo\n╰─ orx › ",
+    ].join(""),
+  );
+
+  assert.equal(controller.clearAfterSubmit(), true);
+  assert.equal(controller.visibleLineCount, 0);
+  assert.equal(output.endsWith(clearSubmittedTtyLines(3)), true);
+  assert.equal(controller.clear(), false);
+  assert.equal(countRenderedLines("one\ntwo\nthree"), 3);
 });
 
 test("tty screen probe remains bounded at very narrow widths", () => {
