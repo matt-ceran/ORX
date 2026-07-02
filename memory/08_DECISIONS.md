@@ -474,6 +474,6 @@ Reasoning: ORX already has explicit chat web fetch/search/browser commands, but 
 
 ## 2026-07-02: Profile-Independent Local Tooling Bypasses Saved Profile Loading
 
-Decision: CLI namespaces whose behavior does not depend on saved routing profiles should dispatch before config/profile loading. This currently covers `research`, `scanners`, `scan`, `diagnostics`, `diag`, `tests`, `test`, `code`, and the top-level local code-intelligence aliases (`map`, `code-map`, `symbols`, `refs`, `references`, `imports`, `import-graph`, `calls`, `call-graph`, `ast-grep`, `tree-sitter`, and `outline`).
+Decision: CLI namespaces whose behavior does not depend on saved routing profiles should dispatch before config/profile loading. This currently covers `research`, `scanners`, `scan`, `diagnostics`, `diag`, `tests`, `test`, `code`, top-level local code-intelligence aliases (`map`, `code-map`, `symbols`, `refs`, `references`, `imports`, `import-graph`, `calls`, `call-graph`, `ast-grep`, `tree-sitter`, and `outline`), and profile-independent state/metadata namespaces (`history`, `plugins`, `plugin`, `bins`, `bin`, `hooks`, `hook`, `mcp`, `orchestrator`, `delegate`, and `delegates`).
 
 Reasoning: Saved profiles are for model/routing/session defaults, not local metadata or explicit local tooling runs. Bypassing profile registry reads for these namespaces preserves their no-state-write boundaries even when an operator includes global `--profile <id>`.

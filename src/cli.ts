@@ -705,6 +705,69 @@ export async function runCli(
   const delegationTeamConfigPath = resolveDelegationTeamRegistryPath({ env, cwd: io.cwd });
   const delegationPolicyPath = resolveDelegationPolicyPath({ env, cwd: io.cwd });
   const delegationAuditLogPath = resolveDelegationAuditLogPath({ env, cwd: io.cwd });
+
+  if (first === "history") {
+    return runHistoryCommand(args.slice(1), io, chatHistoryPath);
+  }
+
+  if (first === "plugins" || first === "plugin") {
+    return runPluginsCommand(
+      args.slice(1),
+      io,
+      pluginRegistryPath,
+      pluginCacheDirectory,
+      pluginCatalogPath,
+      pluginBinsConfigPath,
+      pluginHooksConfigPath,
+    );
+  }
+
+  if (first === "bins" || first === "bin") {
+    return runBinsCommand(
+      args.slice(1),
+      env,
+      io,
+      pluginRegistryPath,
+      pluginBinsConfigPath,
+      pluginBinsAuditLogPath,
+    );
+  }
+
+  if (first === "hooks" || first === "hook") {
+    return runHooksCommand(
+      args.slice(1),
+      env,
+      io,
+      pluginRegistryPath,
+      pluginHooksConfigPath,
+      pluginHooksAuditLogPath,
+    );
+  }
+
+  if (first === "mcp") {
+    return runMcpCommand(
+      args.slice(1),
+      io,
+      env,
+      mcpConfigPath,
+      mcpProfileCatalogPath,
+      pluginRegistryPath,
+      env.ORX_MCP_AUDIT_PATH,
+    );
+  }
+
+  if (first === "orchestrator") {
+    return runOrchestratorCommand(args.slice(1), io, delegationPolicyPath);
+  }
+
+  if (first === "delegate") {
+    return runDelegateCommand(args.slice(1), io, delegationTeamConfigPath, delegationPolicyPath);
+  }
+
+  if (first === "delegates") {
+    return runDelegatesCommand(args.slice(1), io, delegationTeamConfigPath, delegationPolicyPath);
+  }
+
   const loadedConfigResult = loadConfigWithProfile({
     env,
     cwd: io.cwd,
@@ -808,68 +871,6 @@ export async function runCli(
 
   if (first === "profile" || first === "profiles") {
     return runProfileCommand(args.slice(1), loadedConfig.config, io, profileConfigPath);
-  }
-
-  if (first === "history") {
-    return runHistoryCommand(args.slice(1), io, chatHistoryPath);
-  }
-
-  if (first === "plugins" || first === "plugin") {
-    return runPluginsCommand(
-      args.slice(1),
-      io,
-      pluginRegistryPath,
-      pluginCacheDirectory,
-      pluginCatalogPath,
-      pluginBinsConfigPath,
-      pluginHooksConfigPath,
-    );
-  }
-
-  if (first === "bins" || first === "bin") {
-    return runBinsCommand(
-      args.slice(1),
-      env,
-      io,
-      pluginRegistryPath,
-      pluginBinsConfigPath,
-      pluginBinsAuditLogPath,
-    );
-  }
-
-  if (first === "hooks" || first === "hook") {
-    return runHooksCommand(
-      args.slice(1),
-      env,
-      io,
-      pluginRegistryPath,
-      pluginHooksConfigPath,
-      pluginHooksAuditLogPath,
-    );
-  }
-
-  if (first === "mcp") {
-    return runMcpCommand(
-      args.slice(1),
-      io,
-      env,
-      mcpConfigPath,
-      mcpProfileCatalogPath,
-      pluginRegistryPath,
-      env.ORX_MCP_AUDIT_PATH,
-    );
-  }
-
-  if (first === "orchestrator") {
-    return runOrchestratorCommand(args.slice(1), io, delegationPolicyPath);
-  }
-
-  if (first === "delegate") {
-    return runDelegateCommand(args.slice(1), io, delegationTeamConfigPath, delegationPolicyPath);
-  }
-
-  if (first === "delegates") {
-    return runDelegatesCommand(args.slice(1), io, delegationTeamConfigPath, delegationPolicyPath);
   }
 
   const apiKeyError = validateApiKey(loadedConfig);

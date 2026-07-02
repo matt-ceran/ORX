@@ -484,8 +484,8 @@ test("MCP and plugin onboarding subcommand flag help exits successfully without 
       1,
     );
     assert.equal(unsupportedPresetHelp.stdout(), "");
-    assert.match(unsupportedPresetHelp.stderr(), /Unable to load config/);
-    assert.doesNotMatch(unsupportedPresetHelp.stderr(), /sk-or-secret/);
+    assert.match(unsupportedPresetHelp.stderr(), /Usage: orx mcp presets/);
+    assert.doesNotMatch(unsupportedPresetHelp.stderr(), /Unable to load config|sk-or-secret/);
     assert.equal(fetchCalls, 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -1120,6 +1120,52 @@ test("cli history searches and clears local prompt history without an API key", 
     assert.equal(await runCli(["node", "cli", "history"], env, empty.io), 0);
     assert.match(empty.stdout(), /No prompt history found/);
     assert.equal(fetchCalls, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cli profile-independent state commands bypass saved profile loading", async () => {
+  const cwd = createTempDir();
+  try {
+    const configPath = join(cwd, "invalid-config.toml");
+    const profileConfigPath = join(cwd, "profiles.json");
+    writeFileSync(configPath, 'api_key = "sk-or-v1-malformed\n');
+    writeFileSync(profileConfigPath, "{}\n");
+
+    const env = {
+      ORX_CONFIG_PATH: configPath,
+      ORX_PROFILE_CONFIG_PATH: profileConfigPath,
+      ORX_CHAT_HISTORY_PATH: join(cwd, "history.json"),
+      ORX_MCP_CONFIG_PATH: join(cwd, "mcp", "profiles.json"),
+      ORX_MCP_PROFILE_CATALOG_PATH: join(cwd, "mcp", "profile-catalog.json"),
+      ORX_PLUGIN_REGISTRY_PATH: join(cwd, "plugins", "registry.json"),
+      ORX_PLUGIN_CATALOG_PATH: join(cwd, "plugins", "catalog.json"),
+      ORX_PLUGIN_BINS_CONFIG_PATH: join(cwd, "plugins", "bins.json"),
+      ORX_PLUGIN_HOOKS_CONFIG_PATH: join(cwd, "plugins", "hooks.json"),
+      ORX_DELEGATION_TEAMS_PATH: join(cwd, "delegation", "teams.json"),
+      ORX_DELEGATION_POLICY_PATH: join(cwd, "delegation", "policy.json"),
+    };
+
+    const cases: Array<{ argv: string[]; stdout: RegExp }> = [
+      { argv: ["history"], stdout: /No prompt history found|Prompt history:/ },
+      { argv: ["plugins", "review", "--json"], stdout: /"surface": "orx\.plugin_review"/ },
+      { argv: ["bins", "list"], stdout: /Bins/ },
+      { argv: ["hooks", "list"], stdout: /Hooks/ },
+      { argv: ["mcp", "list"], stdout: /MCP\n/ },
+      { argv: ["orchestrator", "status"], stdout: /ORX orchestrator session:/ },
+      { argv: ["delegate", "status"], stdout: /ORX delegates/ },
+      { argv: ["delegates", "status"], stdout: /ORX delegates/ },
+    ];
+
+    for (const entry of cases) {
+      chmodSync(profileConfigPath, 0o666);
+      const io = createIo({ cwd });
+      assert.equal(await runCli(["node", "cli", "--profile", "demo", ...entry.argv], env, io.io), 0);
+      assert.match(io.stdout(), entry.stdout);
+      assert.equal(io.stderr(), "");
+      assert.equal(statSync(profileConfigPath).mode & 0o777, 0o666);
+    }
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
