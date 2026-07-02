@@ -135,7 +135,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/refs <query> \[--json\]/);
   assert.match(output, /\/imports \[query\]/);
   assert.match(output, /\/calls \[query\]/);
-  assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
@@ -150,7 +150,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|plan \[preset-or-profile\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -261,6 +261,8 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mcp plan d"), [["deepwiki "], "d"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan git"), [["github-readonly ", "github-write ", "gitlab-ci-write ", "gitlab-readonly "], "git"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan source"), [["sourcegraph-github-readonly "], "source"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp plan --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp plan context7 --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/mcp model e"), [["enable "], "e"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets i"), [["inspect ", "info "], "i"]);
@@ -1913,7 +1915,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-  assert.match(alias.stdout(), /\/mcp \[list\|plan \[preset-or-profile\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(alias.stdout(), /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -4703,6 +4705,38 @@ test("mcp slash commands install provider presets", async () => {
     assert.match(harness.stdout(), /data_state_writes: none/);
     assert.match(harness.stdout(), /plan_side_effects: no install, enable, trust, grant, fetch, call, audit, or model exposure/);
 
+    const presetPlanJsonStart = harness.stdout().length;
+    assert.equal(await handleSlashCommand("/mcp plan microsoft-learn --json", harness.context), "continue");
+    const presetPlanReport = JSON.parse(harness.stdout().slice(presetPlanJsonStart)) as {
+      surface: string;
+      kind: string;
+      target: string;
+      status: string;
+      network: string;
+      data_state_writes: string;
+      preset: { id: string; profile_id: string };
+      profile: { id: string; installed: boolean };
+      authority: { plan_side_effects: string };
+    };
+    assert.equal(presetPlanReport.surface, "orx.mcp_setup_plan");
+    assert.equal(presetPlanReport.kind, "preset");
+    assert.equal(presetPlanReport.target, "microsoft-learn");
+    assert.equal(presetPlanReport.status, "preset_available");
+    assert.equal(presetPlanReport.network, "none");
+    assert.equal(presetPlanReport.data_state_writes, "none");
+    assert.equal(presetPlanReport.preset.id, "microsoft-learn");
+    assert.equal(presetPlanReport.preset.profile_id, "user:microsoft-learn");
+    assert.equal(presetPlanReport.profile.id, "user:microsoft-learn");
+    assert.equal(presetPlanReport.profile.installed, false);
+    assert.match(presetPlanReport.authority.plan_side_effects, /no install, enable, trust, grant, fetch, call, audit, or model exposure/);
+
+    const misplacedPlanJsonStart = harness.stderr().length;
+    assert.equal(await handleSlashCommand("/mcp plan --json microsoft-learn", harness.context), "continue");
+    assert.match(
+      harness.stderr().slice(misplacedPlanJsonStart),
+      /Usage: \/mcp plan \[preset-or-profile\] \[--json\]/,
+    );
+
     assert.equal(await handleSlashCommand("/mcp plan gitlab-readonly", harness.context), "continue");
     assert.match(harness.stdout(), /MCP setup plan: gitlab-readonly/);
     assert.match(harness.stdout(), /status: preset_available/);
@@ -4755,6 +4789,23 @@ test("mcp slash commands install provider presets", async () => {
     assert.match(harness.stdout(), /orx mcp allow-model-tool user:mslearn microsoft_code_sample_search/);
     assert.doesNotMatch(harness.stdout(), /in chat: \/mcp model enable/);
 
+    const readyPlanJsonStart = harness.stdout().length;
+    assert.equal(await handleSlashCommand("/mcp setup-plan user:mslearn --json", harness.context), "continue");
+    const readyPlanReport = JSON.parse(harness.stdout().slice(readyPlanJsonStart)) as {
+      kind: string;
+      status: string;
+      profile: { id: string; state: string };
+      tools: { model_grantable: number; active_model_grants: number };
+      grants: { model: number };
+    };
+    assert.equal(readyPlanReport.kind, "profile");
+    assert.equal(readyPlanReport.status, "ready_for_model_grants");
+    assert.equal(readyPlanReport.profile.id, "user:mslearn");
+    assert.equal(readyPlanReport.profile.state, "enabled");
+    assert.equal(readyPlanReport.tools.model_grantable, 3);
+    assert.equal(readyPlanReport.tools.active_model_grants, 0);
+    assert.equal(readyPlanReport.grants.model, 0);
+
     assert.equal(
       await handleSlashCommand("/mcp allow-model-tool user:mslearn microsoft_code_sample_search", harness.context),
       "continue",
@@ -4774,6 +4825,18 @@ test("mcp slash commands install provider presets", async () => {
     assert.equal(await handleSlashCommand("/mcp plan sk-or-v1-secret-plan-target", harness.context), "continue");
     assert.match(harness.stderr(), /target: \[redacted\]/);
     assert.doesNotMatch(harness.stderr(), /sk-or-v1-secret-plan-target/);
+
+    const unknownPlanJsonStart = harness.stderr().length;
+    assert.equal(await handleSlashCommand("/mcp plan sk-or-v1-secret-plan-target --json", harness.context), "continue");
+    const unknownPlanReport = JSON.parse(harness.stderr().slice(unknownPlanJsonStart)) as {
+      kind: string;
+      target: string;
+      status: string;
+    };
+    assert.equal(unknownPlanReport.kind, "unknown");
+    assert.equal(unknownPlanReport.target, "[redacted]");
+    assert.equal(unknownPlanReport.status, "unknown_target");
+    assert.doesNotMatch(harness.stderr().slice(unknownPlanJsonStart), /sk-or-v1-secret-plan-target/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

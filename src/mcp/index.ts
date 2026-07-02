@@ -175,10 +175,13 @@ export {
 } from "./provider-presets.js";
 export {
   createMcpSetupPlan,
+  parseMcpSetupPlanArgs,
   renderMcpSetupPlan,
+  renderMcpSetupPlanJson,
   type McpSetupPlan,
   type McpSetupPlanKind,
   type McpSetupPlanOptions,
+  type McpSetupPlanParsedArgs,
   type McpSetupPlanStatus,
 } from "./plan.js";
 export {

@@ -3910,6 +3910,59 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(presetPlan.stdout(), /data_state_writes: none/);
     assert.match(presetPlan.stdout(), /plan_side_effects: no install, enable, trust, grant, fetch, call, audit, or model exposure/);
 
+    const overviewPlanJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "setup-plan", "--json"], env, overviewPlanJson.io), 0);
+    const overviewReport = JSON.parse(overviewPlanJson.stdout()) as {
+      surface: string;
+      kind: string;
+      target: string;
+      status: string;
+      network: string;
+      data_state_writes: string;
+      next_commands: string[];
+      authority: { plan_side_effects: string };
+    };
+    assert.equal(overviewReport.surface, "orx.mcp_setup_plan");
+    assert.equal(overviewReport.kind, "overview");
+    assert.equal(overviewReport.target, "all");
+    assert.equal(overviewReport.status, "overview");
+    assert.equal(overviewReport.network, "none");
+    assert.equal(overviewReport.data_state_writes, "none");
+    assert.ok(overviewReport.next_commands.includes("orx mcp plan context7"));
+    assert.match(overviewReport.authority.plan_side_effects, /no install, enable, trust, grant, fetch, call, audit, or model exposure/);
+
+    const presetPlanJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "plan", "context7", "--json"], env, presetPlanJson.io), 0);
+    const presetPlanReport = JSON.parse(presetPlanJson.stdout()) as {
+      surface: string;
+      kind: string;
+      target: string;
+      status: string;
+      preset: { id: string; profile_id: string };
+      profile: { id: string; installed: boolean };
+      tools: { total: number; static_tool_count: number };
+      authority: { install_enable_auth_grant_fetch_call_model_exposure: string };
+    };
+    assert.equal(presetPlanReport.surface, "orx.mcp_setup_plan");
+    assert.equal(presetPlanReport.kind, "preset");
+    assert.equal(presetPlanReport.target, "context7");
+    assert.equal(presetPlanReport.status, "preset_available");
+    assert.equal(presetPlanReport.preset.id, "context7");
+    assert.equal(presetPlanReport.preset.profile_id, "user:context7");
+    assert.equal(presetPlanReport.profile.id, "user:context7");
+    assert.equal(presetPlanReport.profile.installed, false);
+    assert.equal(presetPlanReport.tools.total, 2);
+    assert.equal(presetPlanReport.tools.static_tool_count, 2);
+    assert.equal(
+      presetPlanReport.authority.install_enable_auth_grant_fetch_call_model_exposure,
+      "separate_explicit_steps",
+    );
+
+    const misplacedPlanJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "plan", "--json", "context7"], env, misplacedPlanJson.io), 1);
+    assert.equal(misplacedPlanJson.stdout(), "");
+    assert.match(misplacedPlanJson.stderr(), /Usage: orx mcp plan \[preset-or-profile\] \[--json\]/);
+
     const sourcegraphPlan = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "plan", "sourcegraph-github-readonly"], env, sourcegraphPlan.io), 0);
     assert.match(sourcegraphPlan.stdout(), /MCP setup plan: sourcegraph-github-readonly/);
@@ -3985,6 +4038,26 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.doesNotMatch(readyPlan.stdout(), /orx ask --mcp-tools/);
     assert.doesNotMatch(readyPlan.stdout(), /in chat: \/mcp model enable/);
 
+    const readyPlanJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "plan", "user:docs", "--json"], env, readyPlanJson.io), 0);
+    const readyPlanReport = JSON.parse(readyPlanJson.stdout()) as {
+      kind: string;
+      status: string;
+      profile: { id: string; state: string };
+      tools: { model_grantable: number; active_model_grants: number };
+      grants: { tool: number; stale_tool: number; model: number; stale_model: number };
+    };
+    assert.equal(readyPlanReport.kind, "profile");
+    assert.equal(readyPlanReport.status, "ready_for_model_grants");
+    assert.equal(readyPlanReport.profile.id, "user:docs");
+    assert.equal(readyPlanReport.profile.state, "enabled");
+    assert.equal(readyPlanReport.tools.model_grantable, 2);
+    assert.equal(readyPlanReport.tools.active_model_grants, 0);
+    assert.equal(readyPlanReport.grants.tool, 0);
+    assert.equal(readyPlanReport.grants.stale_tool, 0);
+    assert.equal(readyPlanReport.grants.model, 0);
+    assert.equal(readyPlanReport.grants.stale_model, 0);
+
     const modelGrant = createIo({ cwd });
     assert.equal(
       await runCli(["node", "cli", "mcp", "allow-model-tool", "user:docs", "query-docs"], env, modelGrant.io),
@@ -4008,6 +4081,22 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     );
     assert.match(unknownPlan.stderr(), /target: \[redacted\]/);
     assert.doesNotMatch(unknownPlan.stderr(), /sk-or-v1-secret-plan-target/);
+
+    const unknownPlanJson = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "plan", "sk-or-v1-secret-plan-target", "--json"], env, unknownPlanJson.io),
+      1,
+    );
+    assert.equal(unknownPlanJson.stdout(), "");
+    const unknownPlanReport = JSON.parse(unknownPlanJson.stderr()) as {
+      kind: string;
+      target: string;
+      status: string;
+    };
+    assert.equal(unknownPlanReport.kind, "unknown");
+    assert.equal(unknownPlanReport.target, "[redacted]");
+    assert.equal(unknownPlanReport.status, "unknown_target");
+    assert.doesNotMatch(unknownPlanJson.stderr(), /sk-or-v1-secret-plan-target/);
 
     const inspected = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "inspect", "user:docs"], env, inspected.io), 0);

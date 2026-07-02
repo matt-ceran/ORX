@@ -81,6 +81,8 @@ OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello from ORX"
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello" --model anthropic/claude-sonnet-4.5
 OPENROUTER_API_KEY="sk-or-..." npm run dev -- ask "Say hello" --mode fusion --fusion general-budget
 npm run dev -- mcp plan context7
+npm run dev -- mcp plan context7 --json
+npm run dev -- mcp setup-plan --json
 npm run dev -- mcp enable openrouter
 npm run dev -- mcp auth setup openrouter
 npm run dev -- mcp auth env openrouter
@@ -200,7 +202,7 @@ API-key command flag help is also available before config/profile loading: `orx 
 
 MCP/plugin onboarding subcommand flag help is available before config/profile loading for exact supported help shapes: `orx mcp plan --help`, `orx mcp add-preset --help`, `orx mcp presets --help`, `orx mcp presets inspect --help`, `orx plugins scaffold --help`, `orx plugins validate --help`, `orx plugins install --help`, `orx plugins register --help`, and `orx plugins catalog --help`. Unsupported nested shapes such as `orx plugins catalog bogus --help` still fail through the normal command path.
 
-`orx mcp plan [preset-or-profile]` and `/mcp plan [preset-or-profile]` are onboarding planners for MCP. Use them before and after `orx mcp add-preset`, `orx mcp enable`, auth setup, remote-tool import, or model grants to see the next concrete commands without installing, enabling, trusting, granting, fetching, calling, auditing, or exposing tools to the model. Existing loose MCP state file permissions may still be tightened while local state is read.
+`orx mcp plan [preset-or-profile] [--json]`, `orx mcp setup-plan [preset-or-profile] [--json]`, `/mcp plan [preset-or-profile] [--json]`, and `/mcp setup-plan [preset-or-profile] [--json]` are onboarding planners for MCP. Use them before and after `orx mcp add-preset`, `orx mcp enable`, auth setup, remote-tool import, or model grants to see the next concrete commands without installing, enabling, trusting, granting, fetching, calling, auditing, or exposing tools to the model. `--json` emits ORX-owned structured plan metadata with sanitized targets, status, preset/profile/tool/grant counts, notes, next commands, and authority fields. Existing loose MCP state file permissions may still be tightened while local state is read.
 
 `orx config show` and `/config show` render the effective local/user config with API-key values redacted. `orx config path` and `/config path` show the local and user config paths, including `ORX_CONFIG_PATH` overrides. If config parsing fails, normal commands fail with a sanitized message, while `orx config path` still renders a recovery path report with `effective_sources: not_evaluated_config_unreadable`. `orx config set <key> <value> [--user|--local]` and `/config set <key> <value> [--user|--local]` edit supported non-secret keys only: `model`, `mode`, `fusion_preset`, `theme`, `approval_policy`, and `sandbox_mode`. Edits default to the user config path, write private files, do not call network/subprocesses, refuse API-key storage through CLI/slash args, and redact secret-like/control-character unknown keys; slash edits also update the active chat config snapshot for the edited key. Use `OPENROUTER_API_KEY` or manual config editing for keys.
 

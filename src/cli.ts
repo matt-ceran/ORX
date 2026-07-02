@@ -131,6 +131,7 @@ import {
   installMcpProviderPreset,
   loadUserMcpProfileCatalog,
   listRemoteMcpTools,
+  parseMcpSetupPlanArgs,
   renderMcpAuthEnvFileInitResult,
   renderMcpMacosKeychainResult,
   renderMcpProviderPresetInspectJson,
@@ -142,6 +143,7 @@ import {
   renderMcpProfileInspect,
   renderMcpProfileTools,
   renderMcpSetupPlan,
+  renderMcpSetupPlanJson,
   renderMcpStatus,
   renderUserMcpProfileCatalog,
   resolveMcpConfigPath,
@@ -315,7 +317,7 @@ const CLI_NAMESPACE_USAGES = {
   config: "Usage: orx config [show|path|init|set <key> <value> [--user|--local]]",
   profile: "Usage: orx profile [list|save <id> [options]|use <id>|inspect <id>|delete <id>]",
   history: "Usage: orx history [search <query>|clear]",
-  mcp: "Usage: orx mcp [list|plan [preset-or-profile]|catalog|presets [--json|inspect <preset> [--json]]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+  mcp: "Usage: orx mcp [list|plan [preset-or-profile] [--json]|catalog|presets [--json|inspect <preset> [--json]]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   plugins: "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|doctor|audit|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
   bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
@@ -340,7 +342,7 @@ const CLI_API_COMMAND_USAGES = {
 } as const;
 
 const CLI_MCP_SUBCOMMAND_USAGES = {
-  plan: "Usage: orx mcp plan [preset-or-profile]",
+  plan: "Usage: orx mcp plan [preset-or-profile] [--json]",
   presets: "Usage: orx mcp presets [--json|inspect <preset> [--json]]",
   presetsInspect: "Usage: orx mcp presets inspect <preset> [--json]",
   addPreset: "Usage: orx mcp add-preset <preset> [--id <profile-id>] [--url <url>] [--auth-required|--no-auth]",
@@ -2604,17 +2606,21 @@ async function runMcpCommand(
   }
 
   if (subcommand === "plan" || subcommand === "setup-plan") {
-    if (args.length > 2) {
-      writeLine(io.stderr, "Usage: orx mcp plan [preset-or-profile]");
+    const parsed = parseMcpSetupPlanArgs(args);
+    if (!parsed) {
+      writeLine(io.stderr, CLI_MCP_SUBCOMMAND_USAGES.plan);
       return 1;
     }
 
-    const plan = createMcpSetupPlan(args[1], {
+    const plan = createMcpSetupPlan(parsed.target, {
       ...registryOptions,
       env,
       cwd: io.cwd,
     });
-    writeLine(plan.kind === "unknown" ? io.stderr : io.stdout, renderMcpSetupPlan(plan));
+    writeLine(
+      plan.kind === "unknown" ? io.stderr : io.stdout,
+      parsed.json ? renderMcpSetupPlanJson(plan) : renderMcpSetupPlan(plan),
+    );
     return plan.kind === "unknown" ? 1 : 0;
   }
 

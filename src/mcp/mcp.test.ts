@@ -51,6 +51,7 @@ import {
   renderMcpProfileTools,
   renderMcpProviderPresets,
   renderMcpSetupPlan,
+  renderMcpSetupPlanJson,
   renderUserMcpProfileCatalog,
   redactSecrets,
   removeUserMcpProfile,
@@ -588,6 +589,43 @@ test("MCP setup planner guides preset, profile, auth, and grant next steps witho
     assert.equal(existsSync(profileCatalogPath), false);
     assert.equal(existsSync(configPath), false);
 
+    const presetPlanJson = JSON.parse(
+      renderMcpSetupPlanJson(createMcpSetupPlan("context7", { profileCatalogPath, configPath })),
+    ) as {
+      surface: string;
+      network: string;
+      data_state_writes: string;
+      permission_tightening: string;
+      kind: string;
+      status: string;
+      target: string;
+      preset: { id: string; profile_id: string; static_tool_count: number };
+      profile: { id: string; installed: boolean; state: string };
+      auth: { required: boolean; status: string };
+      tools: { total: number; static_tool_count: number };
+      authority: { plan_side_effects: string };
+      next_commands: string[];
+    };
+    assert.equal(presetPlanJson.surface, "orx.mcp_setup_plan");
+    assert.equal(presetPlanJson.network, "none");
+    assert.equal(presetPlanJson.data_state_writes, "none");
+    assert.equal(presetPlanJson.permission_tightening, "possible_on_existing_mcp_state_reads");
+    assert.equal(presetPlanJson.kind, "preset");
+    assert.equal(presetPlanJson.status, "preset_available");
+    assert.equal(presetPlanJson.target, "context7");
+    assert.equal(presetPlanJson.preset.id, "context7");
+    assert.equal(presetPlanJson.preset.profile_id, "user:context7");
+    assert.equal(presetPlanJson.preset.static_tool_count, 2);
+    assert.equal(presetPlanJson.profile.id, "user:context7");
+    assert.equal(presetPlanJson.profile.installed, false);
+    assert.equal(presetPlanJson.profile.state, "not_installed");
+    assert.equal(presetPlanJson.auth.required, false);
+    assert.equal(presetPlanJson.auth.status, "not_required");
+    assert.equal(presetPlanJson.tools.total, 2);
+    assert.equal(presetPlanJson.tools.static_tool_count, 2);
+    assert.match(presetPlanJson.authority.plan_side_effects, /no install, enable, trust, grant, fetch, call, audit, or model exposure/);
+    assert.ok(presetPlanJson.next_commands.includes("orx mcp add-preset context7"));
+
     installMcpProviderPreset("context7", { profileCatalogPath });
     const disabledPlan = renderMcpSetupPlan(
       createMcpSetupPlan("context7", { profileCatalogPath, configPath }),
@@ -626,6 +664,31 @@ test("MCP setup planner guides preset, profile, auth, and grant next steps witho
     assert.match(modelUsePlan, /orx ask --mcp-tools "Use query-docs from user:context7"/);
     assert.match(modelUsePlan, /orx mcp allow-model-tool user:context7 resolve-library-id/);
     assert.doesNotMatch(modelUsePlan, /orx mcp allow-model-tool user:context7 query-docs/);
+
+    const modelUseJson = JSON.parse(
+      renderMcpSetupPlanJson(createMcpSetupPlan("context7", { profileCatalogPath, configPath })),
+    ) as {
+      kind: string;
+      status: string;
+      profile: { id: string; state: string; profile_hash: string };
+      tools: { total: number; model_grantable: number; active_model_grants: number; evaluations: Array<{ name: string; model_grant: string }> };
+      grants: { tool: number; stale_tool: number; model: number; stale_model: number };
+    };
+    assert.equal(modelUseJson.kind, "profile");
+    assert.equal(modelUseJson.status, "ready_for_model_use");
+    assert.equal(modelUseJson.profile.id, "user:context7");
+    assert.equal(modelUseJson.profile.state, "enabled");
+    assert.match(modelUseJson.profile.profile_hash, /^sha256:[a-f0-9]{64}$/);
+    assert.equal(modelUseJson.tools.total, 2);
+    assert.equal(modelUseJson.tools.model_grantable, 1);
+    assert.equal(modelUseJson.tools.active_model_grants, 1);
+    assert.deepEqual(
+      modelUseJson.tools.evaluations
+        .filter((evaluation) => evaluation.model_grant === "active")
+        .map((evaluation) => evaluation.name),
+      ["query-docs"],
+    );
+    assert.deepEqual(modelUseJson.grants, { tool: 0, stale_tool: 0, model: 1, stale_model: 0 });
 
     installMcpProviderPreset("github-readonly", { profileCatalogPath });
     setMcpProfilePersistentState("user:github-readonly", "enabled", {
@@ -666,6 +729,11 @@ test("MCP setup planner guides preset, profile, auth, and grant next steps witho
     );
     assert.match(unknownPlan, /target: \[redacted\]/);
     assert.doesNotMatch(unknownPlan, /sk-or-v1-secret-plan-target/);
+    const unknownPlanJson = renderMcpSetupPlanJson(
+      createMcpSetupPlan("sk-or-v1-secret-plan-target", { profileCatalogPath, configPath }),
+    );
+    assert.match(unknownPlanJson, /"target": "\[redacted\]"/);
+    assert.doesNotMatch(unknownPlanJson, /sk-or-v1-secret-plan-target/);
 
     upsertUserMcpRemoteProfile(
       "context7",

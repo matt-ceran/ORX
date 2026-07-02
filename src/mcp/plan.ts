@@ -46,10 +46,33 @@ export interface McpSetupPlan {
   notes: string[];
 }
 
+export interface McpSetupPlanParsedArgs {
+  target?: string;
+  json: boolean;
+}
+
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
 const CONTROL_CHAR_GLOBAL_PATTERN = /[\x00-\x1F\x7F]/g;
 const SECRET_LIKE_PATTERN =
   /\b(?:bearer\s+[A-Za-z0-9._~+/=-]{8,}|authorization:\s*bearer|access[_-]?token|api[_-]?key|token=|key=|secret=|sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/i;
+
+export function parseMcpSetupPlanArgs(args: string[]): McpSetupPlanParsedArgs | undefined {
+  if (args.length === 1) {
+    return { json: false };
+  }
+
+  if (args.length === 2) {
+    return args[1] === "--json"
+      ? { json: true }
+      : { target: args[1], json: false };
+  }
+
+  if (args.length === 3 && args[1] !== "--json" && args[2] === "--json") {
+    return { target: args[1], json: true };
+  }
+
+  return undefined;
+}
 
 export function createMcpSetupPlan(
   target?: string,
@@ -215,6 +238,65 @@ export function renderMcpSetupPlan(plan: McpSetupPlan): string {
     ...plan.nextCommands.map((command) => `    - ${command}`),
     ...renderAuthority(),
   ].filter((line): line is string => typeof line === "string").join("\n");
+}
+
+export function renderMcpSetupPlanJson(plan: McpSetupPlan): string {
+  const payload: Record<string, unknown> = {
+    schema_version: 1,
+    surface: "orx.mcp_setup_plan",
+    operator_only: true,
+    model_tool: "none",
+    execution: "none",
+    network: "none",
+    data_state_writes: "none",
+    permission_tightening: "possible_on_existing_mcp_state_reads",
+    kind: plan.kind,
+    target: plan.kind === "overview" ? "all" : plan.target ?? "[redacted]",
+    status: plan.status,
+    notes: plan.notes,
+    next_commands: plan.nextCommands,
+    authority: mcpSetupPlanAuthorityJson(),
+    usage: "orx mcp plan [preset-or-profile] [--json]",
+  };
+
+  if (plan.preset) {
+    payload.preset = mcpSetupPlanPresetJson(plan.preset);
+  }
+
+  if (plan.report) {
+    payload.profile = mcpSetupPlanProfileJson(plan.report);
+    payload.auth = plan.authReport ? mcpSetupPlanAuthJson(plan.authReport) : undefined;
+    payload.tools = mcpSetupPlanToolsJson(plan.report);
+    payload.grants = {
+      tool: plan.report.toolGrantCount,
+      stale_tool: plan.report.staleToolGrantCount,
+      model: plan.report.modelToolGrantCount,
+      stale_model: plan.report.staleModelToolGrantCount,
+    };
+  } else if (plan.kind === "preset" && plan.preset) {
+    payload.profile = {
+      id: `user:${plan.preset.profileId}`,
+      installed: false,
+      state: "not_installed",
+    };
+    payload.auth = {
+      required: plan.preset.authRequired,
+      status: plan.preset.authRequired ? "setup_needed_after_install" : "not_required",
+    };
+    payload.tools = {
+      total: plan.preset.tools.length,
+      static_tool_count: plan.preset.tools.length,
+      remote_tool_review_required: plan.preset.tools.length === 0,
+      static_tools: plan.preset.tools.map((tool) => ({
+        name: tool.name,
+        risk: tool.risk,
+        auth_required: tool.authRequired,
+        billable: tool.billable,
+      })),
+    };
+  }
+
+  return JSON.stringify(payload, null, 2);
 }
 
 function createPresetAvailablePlan(target: string, preset: McpProviderPreset): McpSetupPlan {
@@ -492,6 +574,94 @@ function renderAuthority(): string[] {
     "    plan_side_effects: no install, enable, trust, grant, fetch, call, audit, or model exposure; existing MCP state permissions may be tightened while reading",
     "    install_enable_auth_grant_fetch_call_model_exposure: separate_explicit_steps",
   ];
+}
+
+function mcpSetupPlanAuthorityJson(): Record<string, string> {
+  return {
+    plan_side_effects:
+      "no install, enable, trust, grant, fetch, call, audit, or model exposure; existing MCP state permissions may be tightened while reading",
+    install_enable_auth_grant_fetch_call_model_exposure: "separate_explicit_steps",
+  };
+}
+
+function mcpSetupPlanPresetJson(preset: McpProviderPreset): Record<string, unknown> {
+  return {
+    id: preset.id,
+    name: preset.name,
+    profile_id: `user:${preset.profileId}`,
+    profile_local_id: preset.profileId,
+    url: preset.url,
+    auth_required: preset.authRequired,
+    risk_level: preset.riskLevel ?? "auto",
+    write_capable: preset.writeCapable === true,
+    tags: preset.tags,
+    notes: preset.notes,
+    static_tool_count: preset.tools.length,
+    remote_tool_review_required: preset.tools.length === 0,
+  };
+}
+
+function mcpSetupPlanProfileJson(report: McpProfileToolPolicyReport): Record<string, unknown> {
+  return {
+    id: report.profile.id,
+    source: report.profile.source?.kind ?? "builtin",
+    state: report.profile.state,
+    transport: report.profile.transport.kind,
+    url: report.profile.transport.url,
+    auth_required: report.profile.authRequired,
+    risk_level: report.profile.riskLevel,
+    write_capable: report.profile.writeCapable,
+    profile_hash: report.profileHash,
+    trusted_hash: report.trustedProfileHash,
+    updated_at: report.updatedAt,
+    schema_change: report.schemaChangePending ? "pending" : "none",
+  };
+}
+
+function mcpSetupPlanAuthJson(report: McpProfileAuthReport): Record<string, unknown> {
+  const needsBearer = profileNeedsBearer(report);
+  return {
+    required: needsBearer,
+    status: formatAuthStatus(report),
+    profile_env: report.profileEnvName,
+    profile_env_set: report.profileEnvSet,
+    fallback_env: report.fallbackEnvName,
+    fallback_env_set: report.fallbackEnvSet,
+    effective_bearer: !needsBearer
+      ? "not_required"
+      : report.effectiveBearerConfigured
+        ? "configured"
+        : "missing",
+    macos_keychain: {
+      supported: report.macosKeychainSupported,
+      opted_in: report.macosKeychainOptedIn,
+    },
+    tools_requiring_auth: report.authRequiredToolCount,
+  };
+}
+
+function mcpSetupPlanToolsJson(report: McpProfileToolPolicyReport): Record<string, unknown> {
+  const counts = countProfilePlanTools(report.evaluations);
+  return {
+    total: report.evaluations.length,
+    allowed: counts.allowed,
+    denied: counts.denied,
+    blocked: counts.blocked,
+    model_grantable: counts.modelGrantable,
+    active_model_grants: counts.activeModelGrants,
+    risky_denied: counts.riskyDenied,
+    evaluations: report.evaluations.map((evaluation) => ({
+      name: evaluation.toolName,
+      risk: evaluation.tool?.risk,
+      auth_required: evaluation.tool?.authRequired,
+      billable: evaluation.tool?.billable,
+      policy: evaluation.decision,
+      reason: evaluation.reason,
+      grant: evaluation.grantStatus ?? "none",
+      model_policy: evaluation.modelPolicyDecision ?? "not_evaluated",
+      model_grant: evaluation.modelGrantStatus ?? "none",
+    })),
+  };
 }
 
 function appendUnique(commands: string[], extra: string[]): string[] {
