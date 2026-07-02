@@ -42,6 +42,9 @@ export interface InstallMcpProviderPresetResult {
 
 const PRESET_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/;
+const PRESET_SEARCH_MAX_LENGTH = 120;
+const SECRET_LIKE_PATTERN =
+  /\b(?:bearer\s+[A-Za-z0-9._~+/=-]{8,}|authorization\s*[:=]\s*bearer(?:\s+[A-Za-z0-9._~+/=-]{4,})?|(?:access[_-]?token|auth[_-]?token|api[_-]?key|token|key|secret|password|passwd|credential)\s*[=:]\s*[A-Za-z0-9._~+/=-]{4,}|sk-or-v1-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)\b/i;
 
 export const MCP_PROVIDER_PRESETS: McpProviderPreset[] = [
   {
@@ -327,7 +330,100 @@ export function renderMcpProviderPresetsJson(
         list_side_effects: "none",
         install_enable_trust_grant_call_model_exposure: "separate_explicit_steps",
       },
-      usage: "orx mcp presets [--json|inspect <preset> [--json]]",
+      usage: "orx mcp presets [--json|inspect <preset> [--json]|search <query> [--json]]",
+    },
+    null,
+    2,
+  );
+}
+
+export function searchMcpProviderPresets(
+  query: string,
+  presets: McpProviderPreset[] = listMcpProviderPresets(),
+): { ok: true; query: string; presets: McpProviderPreset[] } | { ok: false; message: string } {
+  const normalized = query.trim().replace(/\s+/g, " ");
+  if (!normalized) {
+    return { ok: false, message: "search query is required." };
+  }
+  if (normalized.length > PRESET_SEARCH_MAX_LENGTH) {
+    return { ok: false, message: "search query is too long." };
+  }
+  if (CONTROL_CHAR_PATTERN.test(normalized)) {
+    return { ok: false, message: "search query contains unsupported control characters." };
+  }
+  if (SECRET_LIKE_PATTERN.test(normalized)) {
+    return { ok: false, message: "search query must not contain secret-like values." };
+  }
+
+  const needle = normalized.toLowerCase();
+  return {
+    ok: true,
+    query: normalized,
+    presets: presets.filter((preset) => presetSearchHaystack(preset).includes(needle)),
+  };
+}
+
+export function renderMcpProviderPresetSearch(
+  result: { query: string; presets: McpProviderPreset[] },
+): string {
+  const lines = [
+    "MCP provider preset search",
+    `  query: ${JSON.stringify(result.query)}`,
+    `  matches: ${result.presets.length}`,
+  ];
+
+  for (const preset of result.presets) {
+    lines.push(
+      [
+        `  - id=${preset.id}`,
+        `profile=user:${preset.profileId}`,
+        `name=${JSON.stringify(preset.name)}`,
+        `auth=${preset.authRequired ? "yes" : "no"}`,
+        `risk=${preset.riskLevel ?? "auto"}`,
+        `write_capable=${preset.writeCapable ? "yes" : "no"}`,
+        `tools=${preset.tools.length}`,
+        preset.tags.length > 0 ? `tags=${preset.tags.join(",")}` : undefined,
+      ]
+        .filter((part): part is string => typeof part === "string")
+        .join(" "),
+    );
+  }
+
+  if (result.presets.length === 0) {
+    lines.push("  next: orx mcp presets");
+  }
+
+  lines.push(
+    "  authority:",
+    "    search_source: local_builtin_preset_metadata",
+    "    search_side_effects: none",
+    "    install_enable_trust_grant_fetch_call_model_exposure: separate_explicit_steps",
+  );
+
+  return lines.join("\n");
+}
+
+export function renderMcpProviderPresetSearchJson(
+  result: { query: string; presets: McpProviderPreset[] },
+): string {
+  return JSON.stringify(
+    {
+      schema_version: 1,
+      surface: "orx.mcp_provider_preset_search",
+      operator_only: true,
+      model_tool: "none",
+      execution: "none",
+      network: "none",
+      data_state_writes: "none",
+      query: result.query,
+      match_count: result.presets.length,
+      presets: result.presets.map(mcpProviderPresetJson),
+      authority: {
+        search_source: "local_builtin_preset_metadata",
+        search_side_effects: "none",
+        install_enable_trust_grant_fetch_call_model_exposure: "separate_explicit_steps",
+      },
+      usage: "orx mcp presets search <query> [--json]",
     },
     null,
     2,
@@ -422,6 +518,18 @@ function mcpProviderPresetJson(preset: McpProviderPreset): Record<string, unknow
     })),
     remote_tool_review_required: preset.tools.length === 0,
   };
+}
+
+function presetSearchHaystack(preset: McpProviderPreset): string {
+  return [
+    preset.id,
+    preset.profileId,
+    preset.name,
+    preset.url,
+    preset.notes,
+    ...preset.tags,
+    ...preset.tools.flatMap((tool) => [tool.name, tool.risk, tool.authRequired ? "auth" : "no-auth"]),
+  ].join("\n").toLowerCase();
 }
 
 export function formatMcpProviderPresetIdForMessage(id: string): string {

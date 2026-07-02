@@ -1,6 +1,6 @@
 # Commands
 
-Last updated: 2026-07-01
+Last updated: 2026-07-02
 
 ## Repository
 
@@ -94,6 +94,8 @@ npm run dev -- mcp auth keychain set openrouter
 npm run dev -- mcp allow-model-tool openrouter models-list
 npm run dev -- mcp presets
 npm run dev -- mcp presets --json
+npm run dev -- mcp presets search github
+npm run dev -- mcp presets search "code search" --json
 npm run dev -- mcp presets inspect deepwiki
 npm run dev -- mcp presets inspect deepwiki --json
 npm run dev -- mcp presets inspect gitlab-readonly
@@ -214,6 +216,8 @@ API-key command flag help is also available before config/profile loading: `orx 
 MCP/plugin onboarding subcommand flag help is available before config/profile loading for exact supported help shapes: `orx mcp plan --help`, `orx mcp add-preset --help`, `orx mcp presets --help`, `orx mcp presets inspect --help`, `orx plugins scaffold --help`, `orx plugins validate --help`, `orx plugins install --help`, `orx plugins register --help`, and `orx plugins catalog --help`. Unsupported nested shapes such as `orx plugins catalog bogus --help` still fail through the normal command path.
 
 `orx mcp plan [preset-or-profile] [--json]`, `orx mcp setup-plan [preset-or-profile] [--json]`, `/mcp plan [preset-or-profile] [--json]`, and `/mcp setup-plan [preset-or-profile] [--json]` are onboarding planners for MCP. Use them before and after `orx mcp add-preset`, `orx mcp enable`, auth setup, remote-tool import, or model grants to see the next concrete commands without installing, enabling, trusting, granting, fetching, calling, auditing, or exposing tools to the model. `--json` emits ORX-owned structured plan metadata with sanitized targets, status, preset/profile/tool/grant counts, notes, next commands, and authority fields. Existing loose MCP state file permissions may still be tightened while local state is read.
+
+`orx mcp presets search <query> [--json]`, `orx mcp presets find <query> [--json]`, `/mcp presets search <query> [--json]`, and `/mcp presets find <query> [--json]` search local built-in provider preset metadata only. The query covers preset ids, profile ids, names, URLs, notes, tags, auth/risk markers, and static tool names; it rejects missing, option-like, control-character, overlong, and secret-like input without echoing secret-shaped values. Text and JSON output include authority fields showing no install, enable, trust, grant, fetch, call, audit, model-tool exposure, catalog write, network call, or execution.
 
 `orx mcp catalog [--json]`, `orx mcp user-catalog [--json]`, `/mcp catalog [--json]`, and `/mcp user-catalog [--json]` inspect the local user MCP catalog. JSON output includes profile/tool/source metadata, omissions, truncation, local path/existence, and authority fields; it does not install, enable, trust, grant, fetch, call, audit, expose model tools, or write catalog state.
 

@@ -43,6 +43,8 @@ import {
   loadMcpProfilesConfig,
   renderMcpProviderPresetInspectJson,
   renderMcpProviderPresetInspect,
+  renderMcpProviderPresetSearch,
+  renderMcpProviderPresetSearchJson,
   renderMcpProviderPresetsJson,
   renderMcpAuthEnvFileInitResult,
   renderMcpMacosKeychainResult,
@@ -61,6 +63,7 @@ import {
   revokeMcpToolGrant,
   resolveMcpBearerCredential,
   saveMcpProfilesConfig,
+  searchMcpProviderPresets,
   setMcpMacosKeychainBearerPrompt,
   setMcpProfilePersistentState,
   upsertUserMcpProfileTool,
@@ -445,6 +448,55 @@ test("MCP provider presets install local user catalog profiles", () => {
         "read_wiki_structure:read:false:false",
       ],
     );
+
+    const search = searchMcpProviderPresets("github");
+    assert.equal(search.ok, true);
+    assert.ok(search.ok);
+    assert.deepEqual(
+      search.presets.map((preset) => preset.id),
+      ["deepwiki", "github-readonly", "github-write", "sourcegraph-github-readonly"],
+    );
+    const renderedSearch = renderMcpProviderPresetSearch(search);
+    assert.match(renderedSearch, /MCP provider preset search/);
+    assert.match(renderedSearch, /query: "github"/);
+    assert.match(renderedSearch, /matches: 4/);
+    assert.match(renderedSearch, /id=sourcegraph-github-readonly/);
+    assert.match(renderedSearch, /search_side_effects: none/);
+
+    const searchJson = JSON.parse(renderMcpProviderPresetSearchJson(search)) as {
+      surface: string;
+      network: string;
+      data_state_writes: string;
+      query: string;
+      match_count: number;
+      presets: Array<{ id: string }>;
+      authority: { search_source: string; search_side_effects: string };
+    };
+    assert.equal(searchJson.surface, "orx.mcp_provider_preset_search");
+    assert.equal(searchJson.network, "none");
+    assert.equal(searchJson.data_state_writes, "none");
+    assert.equal(searchJson.query, "github");
+    assert.equal(searchJson.match_count, 4);
+    assert.deepEqual(searchJson.presets.map((preset) => preset.id), search.presets.map((preset) => preset.id));
+    assert.equal(searchJson.authority.search_source, "local_builtin_preset_metadata");
+    assert.equal(searchJson.authority.search_side_effects, "none");
+
+    const emptySearch = searchMcpProviderPresets("definitely-not-present");
+    assert.equal(emptySearch.ok, true);
+    assert.ok(emptySearch.ok);
+    assert.equal(emptySearch.presets.length, 0);
+    assert.match(renderMcpProviderPresetSearch(emptySearch), /next: orx mcp presets/);
+
+    for (const secretQuery of [
+      "sk-or-v1-secret",
+      "password=abcd1234",
+      "credential=abcd1234",
+      "auth_token: abcd1234",
+    ]) {
+      const secretSearch = searchMcpProviderPresets(secretQuery);
+      assert.ok(!secretSearch.ok);
+      assert.match(secretSearch.message, /secret-like values/);
+    }
 
     const inspectedJson = JSON.parse(renderMcpProviderPresetInspectJson(listMcpProviderPresets()[0]!)) as {
       surface: string;

@@ -4199,6 +4199,70 @@ test("cli mcp provider presets install local catalog profiles", async () => {
       ["user:deepwiki:3"],
     );
 
+    const search = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "presets", "search", "github"], env, search.io), 0);
+    assert.match(search.stdout(), /MCP provider preset search/);
+    assert.match(search.stdout(), /query: "github"/);
+    assert.match(search.stdout(), /matches: 4/);
+    assert.match(search.stdout(), /id=deepwiki/);
+    assert.match(search.stdout(), /id=sourcegraph-github-readonly/);
+    assert.match(search.stdout(), /search_side_effects: none/);
+    assert.equal(search.stderr(), "");
+
+    const searchJson = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "presets", "find", "code", "search", "--json"], env, searchJson.io),
+      0,
+    );
+    const searchReport = JSON.parse(searchJson.stdout()) as {
+      surface: string;
+      network: string;
+      data_state_writes: string;
+      query: string;
+      match_count: number;
+      presets: Array<{ id: string }>;
+      authority: { search_source: string; search_side_effects: string };
+    };
+    assert.equal(searchReport.surface, "orx.mcp_provider_preset_search");
+    assert.equal(searchReport.network, "none");
+    assert.equal(searchReport.data_state_writes, "none");
+    assert.equal(searchReport.query, "code search");
+    assert.equal(searchReport.match_count, 1);
+    assert.deepEqual(searchReport.presets.map((preset) => preset.id), ["sourcegraph-github-readonly"]);
+    assert.equal(searchReport.authority.search_source, "local_builtin_preset_metadata");
+    assert.equal(searchReport.authority.search_side_effects, "none");
+    assert.equal(searchJson.stderr(), "");
+
+    const searchNone = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "presets", "search", "zzzz"], env, searchNone.io), 0);
+    assert.match(searchNone.stdout(), /matches: 0/);
+    assert.match(searchNone.stdout(), /next: orx mcp presets/);
+
+    const missingSearch = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "presets", "search"], env, missingSearch.io), 1);
+    assert.equal(missingSearch.stdout(), "");
+    assert.match(missingSearch.stderr(), /Usage: orx mcp presets search <query> \[--json\]/);
+
+    const secretSearch = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "presets", "search", "sk-or-v1-secret"], env, secretSearch.io),
+      1,
+    );
+    assert.equal(secretSearch.stdout(), "");
+    assert.match(secretSearch.stderr(), /search query must not contain secret-like values/);
+    assert.doesNotMatch(secretSearch.stderr(), /sk-or-v1-secret/);
+
+    for (const secretQuery of ["password=abcd1234", "credential=abcd1234"]) {
+      const assignedSecretSearch = createIo({ cwd });
+      assert.equal(
+        await runCli(["node", "cli", "mcp", "presets", "search", secretQuery], env, assignedSecretSearch.io),
+        1,
+      );
+      assert.equal(assignedSecretSearch.stdout(), "");
+      assert.match(assignedSecretSearch.stderr(), /search query must not contain secret-like values/);
+      assert.equal(assignedSecretSearch.stderr().includes(secretQuery), false);
+    }
+
     const presetInspect = createIo({ cwd });
     assert.equal(
       await runCli(["node", "cli", "mcp", "presets", "inspect", "context7"], env, presetInspect.io),

@@ -1,6 +1,6 @@
 # Backlog
 
-Last updated: 2026-07-01
+Last updated: 2026-07-02
 
 ## P0
 
@@ -105,6 +105,7 @@ Completed:
 - Add nested MCP/plugin onboarding flag help: exact supported forms such as `orx mcp plan --help`, `orx mcp add-preset --help`, `orx mcp presets inspect --help`, `orx plugins scaffold --help`, `orx plugins install --help`, and `orx plugins catalog --help` now print usage before config/profile loading; unsupported nested shapes still fail instead of being promoted to generic help success.
 - Add API-key command flag help preflight: `orx ask|chat|models|credits|generation --help|-h` now prints usage before config/profile loading so malformed configs and missing saved profiles do not block first-run help, while bare `help` values such as `orx ask help` remain normal command input.
 - Add MCP setup planner JSON output: `orx mcp plan [preset-or-profile] [--json]`, `orx mcp setup-plan ...`, `/mcp plan ...`, and `/mcp setup-plan ...` now emit ORX-owned structured setup-plan metadata with sanitized targets, status, preset/profile/tool/grant counts, notes, next commands, and authority fields without adding install/enable/trust/grant/fetch/call/audit/model-exposure side effects.
+- Add local MCP provider preset search: `orx mcp presets search|find <query> [--json]` and matching `/mcp presets search|find ...` search built-in preset metadata only, reject secret/control/option-like queries without echoing secrets, and emit text/JSON authority metadata without install/enable/trust/grant/fetch/call/audit/model-exposure or catalog-write side effects.
 - Add Sourcegraph GitHub read-only provider preset: `sourcegraph-github-readonly` is now an auth-required, read-only planning preset for Sourcegraph-backed multi-repo GitHub search/navigation/history, with no static tools until reviewed remote metadata, Sourcegraph auth guidance, list/inspect/plan no-network surfaces, and separate enable/trust/auth/grant/model-exposure gates.
 - Add GitLab read-only provider preset: `gitlab-readonly` is now an auth-required, medium-risk, write-capable=no planning preset for GitLab.com's `https://gitlab.com/api/v4/mcp` endpoint, with no static tools until reviewed remote metadata, GitLab beta/OAuth/read-only-scope auth guidance, list/inspect/plan no-network surfaces, and separate enable/trust/auth/grant/model-exposure gates.
 - Add GitLab CI write-capable provider preset: `gitlab-ci-write` is now an auth-required, high-risk, write-capable=yes planning preset for GitLab.com's `https://gitlab.com/api/v4/mcp` endpoint, with `manage_pipeline` declared as destructive and kept behind disabled profile install, trust, compatible auth, and explicit tool grants.

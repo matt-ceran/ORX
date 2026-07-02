@@ -135,7 +135,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/refs <query> \[--json\]/);
   assert.match(output, /\/imports \[query\]/);
   assert.match(output, /\/calls \[query\]/);
-  assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog \[--json\]\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog \[--json\]\|presets \[--json\|inspect <preset> \[--json\]\|search <query> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review \[--json\]\|doctor \[--json\]\|audit \[--json\]\|commands\|scaffold <directory>\|validate <manifest-path-or-directory> \[--json\]\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
@@ -150,7 +150,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog \[--json\]\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog \[--json\]\|presets \[--json\|inspect <preset> \[--json\]\|search <query> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -276,6 +276,8 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect d"), [["deepwiki "], "d"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect g"), [["github-readonly ", "github-write ", "gitlab-ci-write ", "gitlab-readonly "], "g"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect deepwiki --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets s"), [["search ", "show ", "sentry-readonly ", "sourcegraph-github-readonly "], "s"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets search github --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect github-w"), [["github-write "], "github-w"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect gitl"), [["gitlab-ci-write ", "gitlab-readonly "], "gitl"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets show m"), [["microsoft-learn "], "m"]);
@@ -2074,7 +2076,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-  assert.match(alias.stdout(), /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog \[--json\]\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(alias.stdout(), /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog \[--json\]\|presets \[--json\|inspect <preset> \[--json\]\|search <query> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -4955,6 +4957,71 @@ test("mcp slash commands install provider presets", async () => {
         .map((preset) => `${preset.profile_id}:${preset.static_tool_count}`),
       ["user:deepwiki:3"],
     );
+
+    assert.equal(await handleSlashCommand("/mcp presets search github", harness.context), "continue");
+    assert.match(harness.stdout(), /MCP provider preset search/);
+    assert.match(harness.stdout(), /query: "github"/);
+    assert.match(harness.stdout(), /matches: 4/);
+    assert.match(harness.stdout(), /id=deepwiki/);
+    assert.match(harness.stdout(), /id=sourcegraph-github-readonly/);
+    assert.match(harness.stdout(), /search_side_effects: none/);
+
+    const searchJsonHarness = createSlashHarness({
+      mcpConfigPath,
+      mcpProfileCatalogPath: profileCatalogPath,
+    });
+    assert.equal(await handleSlashCommand("/mcp presets find code search --json", searchJsonHarness.context), "continue");
+    const searchReport = JSON.parse(searchJsonHarness.stdout()) as {
+      surface: string;
+      network: string;
+      data_state_writes: string;
+      query: string;
+      match_count: number;
+      presets: Array<{ id: string }>;
+      authority: { search_source: string; search_side_effects: string };
+    };
+    assert.equal(searchReport.surface, "orx.mcp_provider_preset_search");
+    assert.equal(searchReport.network, "none");
+    assert.equal(searchReport.data_state_writes, "none");
+    assert.equal(searchReport.query, "code search");
+    assert.equal(searchReport.match_count, 1);
+    assert.deepEqual(searchReport.presets.map((preset) => preset.id), ["sourcegraph-github-readonly"]);
+    assert.equal(searchReport.authority.search_source, "local_builtin_preset_metadata");
+    assert.equal(searchReport.authority.search_side_effects, "none");
+
+    const searchNoneHarness = createSlashHarness({
+      mcpConfigPath,
+      mcpProfileCatalogPath: profileCatalogPath,
+    });
+    assert.equal(await handleSlashCommand("/mcp presets search zzzz", searchNoneHarness.context), "continue");
+    assert.match(searchNoneHarness.stdout(), /matches: 0/);
+    assert.match(searchNoneHarness.stdout(), /next: orx mcp presets/);
+
+    const searchSecretHarness = createSlashHarness({
+      mcpConfigPath,
+      mcpProfileCatalogPath: profileCatalogPath,
+    });
+    assert.equal(
+      await handleSlashCommand("/mcp presets search sk-or-v1-secret", searchSecretHarness.context),
+      "continue",
+    );
+    assert.equal(searchSecretHarness.stdout(), "");
+    assert.match(searchSecretHarness.stderr(), /search query must not contain secret-like values/);
+    assert.doesNotMatch(searchSecretHarness.stderr(), /sk-or-v1-secret/);
+
+    for (const secretQuery of ["password=abcd1234", "credential=abcd1234"]) {
+      const assignedSecretSearchHarness = createSlashHarness({
+        mcpConfigPath,
+        mcpProfileCatalogPath: profileCatalogPath,
+      });
+      assert.equal(
+        await handleSlashCommand(`/mcp presets search ${secretQuery}`, assignedSecretSearchHarness.context),
+        "continue",
+      );
+      assert.equal(assignedSecretSearchHarness.stdout(), "");
+      assert.match(assignedSecretSearchHarness.stderr(), /search query must not contain secret-like values/);
+      assert.equal(assignedSecretSearchHarness.stderr().includes(secretQuery), false);
+    }
 
     assert.equal(await handleSlashCommand("/mcp presets inspect github-readonly", harness.context), "continue");
     assert.match(harness.stdout(), /MCP Provider Preset: github-readonly/);

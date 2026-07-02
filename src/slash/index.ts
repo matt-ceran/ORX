@@ -130,6 +130,8 @@ import {
   renderMcpMacosKeychainResult,
   renderMcpProviderPresetInspectJson,
   renderMcpProviderPresetInspect,
+  renderMcpProviderPresetSearch,
+  renderMcpProviderPresetSearchJson,
   renderMcpProviderPresetsJson,
   renderMcpProviderPresets,
   renderMcpProfileAuthReport,
@@ -148,6 +150,7 @@ import {
   revokeMcpToolGrant,
   setMcpMacosKeychainBearerPrompt,
   setMcpProfilePersistentState,
+  searchMcpProviderPresets,
   upsertUserMcpProfileTool,
   upsertUserMcpRemoteProfile,
   writeMcpAuditEvent,
@@ -581,6 +584,8 @@ const MCP_PROVIDER_PRESET_COMPLETIONS = [
 const MCP_PROVIDER_PRESET_ACTION_COMPLETIONS = [
   "--json",
   "inspect",
+  "search",
+  "find",
   "show",
   "info",
   ...MCP_PROVIDER_PRESET_COMPLETIONS,
@@ -1389,7 +1394,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|plan [preset-or-profile] [--json]|catalog [--json]|presets [--json|inspect <preset> [--json]]|add-preset|add-profile|add-tool|model|inspect|auth|auth setup|auth env|auth init|auth env-file|auth keychain|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
+    usage: "/mcp [list|plan [preset-or-profile] [--json]|catalog [--json]|presets [--json|inspect <preset> [--json]|search <query> [--json]]|add-preset|add-profile|add-tool|model|inspect|auth|auth setup|auth env|auth init|auth env-file|auth keychain|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
     description: "Show and manage MCP profiles, local user catalogs, remote metadata, and tool grants",
     group: "Integrations",
     tier: "advanced",
@@ -1978,6 +1983,14 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
         argIndex === 2
       ) {
         return [...MCP_PROVIDER_PRESET_COMPLETIONS];
+      }
+      if (
+        (firstArg === "presets" || firstArg === "preset") &&
+        (secondArg === "search" || secondArg === "find") &&
+        argIndex >= 3 &&
+        !completedArgs.includes("--json")
+      ) {
+        return ["--json"];
       }
       if (
         (firstArg === "presets" || firstArg === "preset") &&
@@ -4421,6 +4434,23 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
       writeLine(context.io.stderr, presetArgs.message.replace(/^Usage: orx mcp /, "Usage: /mcp "));
       return;
     }
+    if (presetArgs.kind === "search") {
+      const result = searchMcpProviderPresets(presetArgs.query);
+      if (!result.ok) {
+        writeLine(
+          context.io.stderr,
+          `Usage: /mcp presets search <query> [--json]\n${result.message}`,
+        );
+        return;
+      }
+      writeLine(
+        context.io.stdout,
+        presetArgs.json
+          ? renderMcpProviderPresetSearchJson(result)
+          : renderMcpProviderPresetSearch(result),
+      );
+      return;
+    }
     if (presetArgs.kind === "inspect") {
       const preset = findMcpProviderPreset(presetArgs.presetId);
       if (!preset) {
@@ -5215,7 +5245,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /mcp [list|plan [preset-or-profile] [--json]|catalog [--json]|presets [--json|inspect <preset> [--json]]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: /mcp [list|plan [preset-or-profile] [--json]|catalog [--json]|presets [--json|inspect <preset> [--json]|search <query> [--json]]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
 }
 
@@ -5269,6 +5299,7 @@ function parseMcpPresetInspectArgs(
 ):
   | { kind: "list"; json: boolean }
   | { kind: "inspect"; presetId: string; json: boolean }
+  | { kind: "search"; query: string; json: boolean }
   | { kind: "error"; message: string } {
   if (args.length === 1) {
     return { kind: "list", json: false };
@@ -5285,14 +5316,26 @@ function parseMcpPresetInspectArgs(
     }
     return { kind: "inspect", presetId, json: rest[0] === "--json" };
   }
+  if (action === "search" || action === "find") {
+    const rest = args.slice(2);
+    const json = rest.at(-1) === "--json";
+    const queryParts = json ? rest.slice(0, -1) : rest;
+    if (
+      queryParts.length === 0 ||
+      queryParts.some((part) => part === "--json" || part.startsWith("-"))
+    ) {
+      return { kind: "error", message: "Usage: orx mcp presets search <query> [--json]" };
+    }
+    return { kind: "search", query: queryParts.join(" "), json };
+  }
   if (args.length === 2 || (args.length === 3 && args[2] === "--json")) {
     const presetId = args[1] ?? "";
     if (presetId.startsWith("-")) {
-      return { kind: "error", message: "Usage: orx mcp presets [--json|inspect <preset> [--json]]" };
+      return { kind: "error", message: "Usage: orx mcp presets [--json|inspect <preset> [--json]|search <query> [--json]]" };
     }
     return { kind: "inspect", presetId, json: args[2] === "--json" };
   }
-  return { kind: "error", message: "Usage: orx mcp presets [--json|inspect <preset> [--json]]" };
+  return { kind: "error", message: "Usage: orx mcp presets [--json|inspect <preset> [--json]|search <query> [--json]]" };
 }
 
 function parseMcpAddPresetArgs(args: string[]):

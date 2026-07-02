@@ -148,6 +148,12 @@ Decision: ORX may ship built-in MCP provider presets such as `context7`, `micros
 
 Reasoning: Provider presets make real MCP setup comfortable without making provider metadata an authority boundary. Keeping presets as local declaration templates preserves the existing operator-owned flow: review the profile, enable/trust the current hash, inspect remote tools when needed, grant specific tools, and only then call tools or expose read-only model MCP.
 
+## 2026-07-02: MCP Provider Preset Search Is Metadata-Only
+
+Decision: `orx mcp presets search|find <query> [--json]` and matching `/mcp` commands may search built-in provider preset ids, profile ids, names, URLs, notes, tags, auth/risk markers, and static tool names. Search must stay local and metadata-only: no install, enable, trust, grant, fetch, call, audit, model-tool exposure, catalog write, network call, process execution, or secret echoing. Missing, option-like, control-character, overlong, and secret-like queries should be rejected before matching.
+
+Reasoning: Preset discovery helps operators find supported provider templates without turning provider docs, remote metadata, or user queries into an authority boundary. Keeping search over bundled metadata preserves the same explicit next-step flow as list and inspect.
+
 ## 2026-06-28: User MCP Catalog Editing Is Local Configuration Only
 
 Decision: ORX may provide `orx mcp catalog|add-profile|remove-profile|add-tool|remove-tool` and matching `/mcp ...` slash commands to edit the private local user MCP catalog. These commands write only local operator configuration, preserve existing declarations when possible, keep profiles disabled by default, and do not bypass profile enablement, trusted hashes, schema-change gates, tool grants, model-tool grants, bearer-auth policy, guarded transport, or audit logging.
