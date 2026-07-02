@@ -48,6 +48,19 @@ const SECRET_LIKE_PATTERN =
 
 export const MCP_PROVIDER_PRESETS: McpProviderPreset[] = [
   {
+    id: "atlassian-rovo",
+    name: "Atlassian Rovo",
+    profileId: "atlassian-rovo",
+    url: "https://mcp.atlassian.com/v1/mcp/authv2",
+    authRequired: true,
+    riskLevel: "high",
+    writeCapable: true,
+    tools: [],
+    notes:
+      "Atlassian Rovo MCP for Jira, Jira Service Management, Confluence, and Bitbucket context and actions. It can create or update work items and pages, so review remote tool metadata before declaring tools.",
+    tags: ["atlassian", "jira", "confluence", "bitbucket", "rovo", "write-capable", "auth"],
+  },
+  {
     id: "browser",
     name: "Cloudflare Browser Rendering",
     profileId: "browser",
@@ -152,6 +165,32 @@ export const MCP_PROVIDER_PRESETS: McpProviderPreset[] = [
     notes:
       "Microsoft official docs and code sample lookup. No auth is required by the hosted endpoint.",
     tags: ["docs", "microsoft", "read-only"],
+  },
+  {
+    id: "linear",
+    name: "Linear",
+    profileId: "linear",
+    url: "https://mcp.linear.app/mcp",
+    authRequired: true,
+    riskLevel: "high",
+    writeCapable: true,
+    tools: [],
+    notes:
+      "Linear hosted MCP for issues, projects, comments, and related workflow objects. The provider can find, create, and update Linear objects, so ORX keeps tools undeclared until reviewed.",
+    tags: ["linear", "issues", "projects", "comments", "workflow", "write-capable", "auth"],
+  },
+  {
+    id: "notion",
+    name: "Notion",
+    profileId: "notion",
+    url: "https://mcp.notion.com/mcp",
+    authRequired: true,
+    riskLevel: "high",
+    writeCapable: true,
+    tools: [],
+    notes:
+      "Notion hosted MCP for workspace search, fetch, page, database, and content management. Notion tools can read and write workspace content, so review remote metadata before declarations.",
+    tags: ["notion", "docs", "workspace", "database", "pages", "write-capable", "auth"],
   },
   {
     id: "deepwiki",

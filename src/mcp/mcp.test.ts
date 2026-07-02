@@ -667,6 +667,49 @@ test("MCP provider presets install local user catalog profiles", () => {
     assert.equal(githubWriteProfile.writeCapable, true);
     assert.equal(githubWriteProfile.tools.length, 0);
 
+    for (const expected of [
+      {
+        preset: "atlassian-rovo",
+        profileId: "user:atlassian-rovo",
+        url: "https://mcp.atlassian.com/v1/mcp/authv2",
+      },
+      {
+        preset: "linear",
+        profileId: "user:linear",
+        url: "https://mcp.linear.app/mcp",
+      },
+      {
+        preset: "notion",
+        profileId: "user:notion",
+        url: "https://mcp.notion.com/mcp",
+      },
+    ]) {
+      const installResult = installMcpProviderPreset(expected.preset, {
+        profileCatalogPath,
+      });
+      assert.equal(installResult.ok, true);
+      assert.equal(installResult.profileId, expected.profileId);
+      assert.equal(installResult.toolCount, 0);
+
+      const loadedCatalog = loadUserMcpProfileCatalog({ profileCatalogPath });
+      const profile = loadedCatalog.profiles.find((candidate) => candidate.id === expected.profileId);
+      assert.ok(profile);
+      assert.equal(profile.state, "disabled");
+      assert.equal(profile.transport.url, expected.url);
+      assert.equal(profile.authRequired, true);
+      assert.equal(profile.riskLevel, "high");
+      assert.equal(profile.writeCapable, true);
+      assert.equal(profile.tools.length, 0);
+    }
+
+    const workflowSearch = searchMcpProviderPresets("workflow");
+    assert.equal(workflowSearch.ok, true);
+    assert.ok(workflowSearch.ok);
+    assert.deepEqual(
+      workflowSearch.presets.map((preset) => preset.id),
+      ["linear"],
+    );
+
     const unknown = installMcpProviderPreset("missing", { profileCatalogPath });
     assert.equal(unknown.ok, false);
     assert.match(unknown.message, /Unknown MCP provider preset/);
@@ -2982,6 +3025,45 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
     assert.match(gitlabCiSetup, /network_calls: none/);
     assert.doesNotMatch(gitlabCiSetup, /mcp-secret-token/);
 
+    for (const expected of [
+      {
+        preset: "atlassian-rovo",
+        profileId: "user:atlassian-rovo",
+        provider: /provider_auth: atlassian/,
+        setupUrl: /setup_url: https:\/\/support\.atlassian\.com\/atlassian-rovo-mcp-server\/docs\/getting-started-with-the-atlassian-remote-mcp-server\//,
+        warning: /Atlassian Rovo can create or update work items and pages/,
+      },
+      {
+        preset: "linear",
+        profileId: "user:linear",
+        provider: /provider_auth: linear/,
+        setupUrl: /setup_url: https:\/\/linear\.app\/docs\/mcp/,
+        warning: /Linear tools can create or update workspace objects/,
+      },
+      {
+        preset: "notion",
+        profileId: "user:notion",
+        provider: /provider_auth: notion/,
+        setupUrl: /setup_url: https:\/\/developers\.notion\.com\/docs\/mcp/,
+        warning: /Notion tools can read and write workspace content/,
+      },
+    ]) {
+      assert.equal(installMcpProviderPreset(expected.preset, { profileCatalogPath }).ok, true);
+      const report = getMcpProfileAuthReport(expected.profileId, {
+        cwd,
+        env,
+        profileCatalogPath,
+      });
+      assert.ok(report);
+      const setup = renderMcpProfileAuthSetup(report);
+      assert.match(setup, expected.provider);
+      assert.match(setup, expected.setupUrl);
+      assert.match(setup, /scope_hint: high-risk\/write-capable/);
+      assert.match(setup, expected.warning);
+      assert.match(setup, /network_calls: none/);
+      assert.doesNotMatch(setup, /mcp-secret-token/);
+    }
+
     assert.equal(installMcpProviderPreset("figma", { profileCatalogPath }).ok, true);
     const figmaReport = getMcpProfileAuthReport("user:figma", {
       cwd,
@@ -3066,6 +3148,42 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
     );
     assert.equal(
       upsertUserMcpRemoteProfile(
+        "atlassian-port-spoof",
+        {
+          name: "Atlassian nonstandard port profile",
+          url: "https://mcp.atlassian.com:444/v1/mcp/authv2",
+          authRequired: true,
+        },
+        { profileCatalogPath },
+      ).ok,
+      true,
+    );
+    assert.equal(
+      upsertUserMcpRemoteProfile(
+        "linear-port-spoof",
+        {
+          name: "Linear nonstandard port profile",
+          url: "https://mcp.linear.app:444/mcp",
+          authRequired: true,
+        },
+        { profileCatalogPath },
+      ).ok,
+      true,
+    );
+    assert.equal(
+      upsertUserMcpRemoteProfile(
+        "notion-port-spoof",
+        {
+          name: "Notion nonstandard port profile",
+          url: "https://mcp.notion.com:444/mcp",
+          authRequired: true,
+        },
+        { profileCatalogPath },
+      ).ok,
+      true,
+    );
+    assert.equal(
+      upsertUserMcpRemoteProfile(
         "gitlab-spoof",
         {
           name: "GitLab-looking profile",
@@ -3105,6 +3223,9 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
       "user:openrouter-spoof",
       "user:deepwiki-subpath",
       "user:github-spoof",
+      "user:atlassian-port-spoof",
+      "user:linear-port-spoof",
+      "user:notion-port-spoof",
       "user:gitlab-spoof",
       "user:gitlab-subpath",
       "user:cloudflare-spoof",
@@ -3120,11 +3241,17 @@ test("mcp auth renderers include provider-specific setup guidance without leakin
       assert.doesNotMatch(spoofStatus, /provider_auth: openrouter/);
       assert.doesNotMatch(spoofStatus, /provider_auth: deepwiki/);
       assert.doesNotMatch(spoofStatus, /provider_auth: github/);
+      assert.doesNotMatch(spoofStatus, /provider_auth: atlassian/);
+      assert.doesNotMatch(spoofStatus, /provider_auth: linear/);
+      assert.doesNotMatch(spoofStatus, /provider_auth: notion/);
       assert.doesNotMatch(spoofStatus, /provider_auth: gitlab/);
       assert.doesNotMatch(spoofStatus, /provider_auth: cloudflare/);
       assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/openrouter\.ai\/docs\/mcp-server/);
       assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/docs\.devin\.ai\/work-with-devin\/deepwiki-mcp/);
       assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/docs\.github\.com/);
+      assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/support\.atlassian\.com/);
+      assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/linear\.app\/docs\/mcp/);
+      assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/developers\.notion\.com\/docs\/mcp/);
       assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/docs\.gitlab\.com/);
       assert.doesNotMatch(spoofStatus, /setup_url: https:\/\/github\.com\/cloudflare\/mcp/);
     }

@@ -275,6 +275,55 @@ function getMcpProviderAuthGuidance(profile: McpProfile): McpProviderAuthGuidanc
     };
   }
 
+  if (isExactMcpProviderEndpoint(endpoint, "mcp.atlassian.com", "/v1/mcp/authv2")) {
+    return {
+      provider: "atlassian",
+      credentialSource:
+        "Atlassian Rovo MCP uses provider OAuth for Atlassian site and workspace access.",
+      credentialLifetime: "provider managed",
+      scopeHint:
+        "high-risk/write-capable: approve only the Jira, Jira Service Management, Confluence, and Bitbucket sites and actions intentionally needed",
+      setupUrl:
+        "https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/",
+      orxSupport:
+        "complete Atlassian OAuth externally; ORX stores only bearer-compatible credentials in profile env vars or opted-in macOS Keychain",
+      warning:
+        "Atlassian Rovo can create or update work items and pages; ORX keeps tools undeclared and denied until explicit review and grants",
+    };
+  }
+
+  if (isExactMcpProviderEndpoint(endpoint, "mcp.linear.app", "/mcp")) {
+    return {
+      provider: "linear",
+      credentialSource:
+        "Linear hosted MCP uses provider OAuth for Linear workspace access.",
+      credentialLifetime: "provider managed",
+      scopeHint:
+        "high-risk/write-capable: approve only the Linear workspace scopes needed for reviewed issue, project, and comment actions",
+      setupUrl: "https://linear.app/docs/mcp",
+      orxSupport:
+        "complete Linear OAuth externally; ORX stores only bearer-compatible credentials in profile env vars or opted-in macOS Keychain",
+      warning:
+        "Linear tools can create or update workspace objects; ORX keeps tools undeclared and denied until explicit review and grants",
+    };
+  }
+
+  if (isExactMcpProviderEndpoint(endpoint, "mcp.notion.com", "/mcp")) {
+    return {
+      provider: "notion",
+      credentialSource:
+        "Notion hosted MCP uses provider OAuth for workspace access and integration permissions.",
+      credentialLifetime: "provider managed",
+      scopeHint:
+        "high-risk/write-capable: approve only the Notion pages, databases, and workspace capabilities intentionally needed",
+      setupUrl: "https://developers.notion.com/docs/mcp",
+      orxSupport:
+        "complete Notion OAuth externally; ORX stores only bearer-compatible credentials in profile env vars or opted-in macOS Keychain",
+      warning:
+        "Notion tools can read and write workspace content; ORX keeps tools undeclared and denied until explicit review and grants",
+    };
+  }
+
   if (isMcpProviderEndpoint(endpoint, "sourcegraph.com", "/mcp")) {
     return {
       provider: "sourcegraph",
@@ -415,6 +464,9 @@ function isExactMcpProviderEndpoint(
   path: string,
 ): boolean {
   if (!endpoint || endpoint.hostname.toLowerCase() !== hostname) {
+    return false;
+  }
+  if (endpoint.port) {
     return false;
   }
 

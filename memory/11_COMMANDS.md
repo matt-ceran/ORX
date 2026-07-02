@@ -110,6 +110,18 @@ npm run dev -- mcp presets inspect gitlab-ci-write
 npm run dev -- mcp plan gitlab-ci-write
 npm run dev -- mcp add-preset gitlab-ci-write
 npm run dev -- mcp auth setup user:gitlab-ci-write
+npm run dev -- mcp presets inspect atlassian-rovo
+npm run dev -- mcp plan atlassian-rovo
+npm run dev -- mcp add-preset atlassian-rovo
+npm run dev -- mcp auth setup user:atlassian-rovo
+npm run dev -- mcp presets inspect linear
+npm run dev -- mcp plan linear
+npm run dev -- mcp add-preset linear
+npm run dev -- mcp auth setup user:linear
+npm run dev -- mcp presets inspect notion
+npm run dev -- mcp plan notion
+npm run dev -- mcp add-preset notion
+npm run dev -- mcp auth setup user:notion
 OPENROUTER_API_KEY="sk-or-..." ORX_MCP_BEARER_OPENROUTER="..." npm run dev -- ask "Use OpenRouter MCP metadata" --mcp-tools
 npm run dev -- tests list
 npm run dev -- tests run
