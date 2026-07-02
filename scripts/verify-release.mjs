@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,7 @@ const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
 const nodeBin = process.execPath;
 const cliPath = join(repoRoot, "dist", "cli.js");
 const smokeCwd = join(tempRoot, "smoke-cwd");
+const pluginSmokeDir = join(tempRoot, "plugin-smoke");
 const codeSmokeRoot = join(tempRoot, "code-root");
 
 const steps = [
@@ -42,6 +43,12 @@ const steps = [
     nodeBin,
     [cliPath, "plugins", "review", "--json"],
     { smoke: "pluginsReviewJson", cwd: smokeCwd },
+  ],
+  [
+    "built CLI smoke: plugins validate --json",
+    nodeBin,
+    [cliPath, "plugins", "validate", pluginSmokeDir, "--json"],
+    { smoke: "pluginsValidateJson", cwd: smokeCwd },
   ],
   ["built CLI smoke: mcp presets", nodeBin, [cliPath, "mcp", "presets"], { smoke: "mcpPresets", cwd: smokeCwd }],
 ];
@@ -87,11 +94,38 @@ function prepareSmokeDirs() {
     join(tempRoot, "mcp", "auth-env"),
     join(tempRoot, "plugins"),
     join(tempRoot, "plugins", "cache"),
+    pluginSmokeDir,
     join(tempRoot, "delegation"),
     join(tempRoot, "audit"),
   ]) {
     mkdirSync(path, { recursive: true });
   }
+
+  writeFileSync(
+    join(pluginSmokeDir, "orx-plugin.json"),
+    JSON.stringify(
+      {
+        schemaVersion: "1",
+        name: "validate-smoke",
+        version: "1.0.0",
+        description: "Validate smoke plugin.",
+        publisher: "orx",
+        source: {
+          type: "local",
+          path: ".",
+        },
+        components: {},
+        permissions: {
+          filesystem: [],
+          network: [],
+          env: [],
+          mcp: [],
+        },
+      },
+      null,
+      2,
+    ),
+  );
 
   for (const entry of ["package.json", "README.md", "tsconfig.json", "src"]) {
     cpSync(join(repoRoot, entry), join(codeSmokeRoot, entry), { recursive: true });
@@ -204,6 +238,28 @@ function assertSmoke(kind, stdout) {
     }
     if (data.authority?.registry_catalog_cache_trust_state !== "read_only") {
       throw new Error("plugins review --json smoke missing read-only authority");
+    }
+    return;
+  }
+
+  if (kind === "pluginsValidateJson") {
+    const data = JSON.parse(stdout);
+    if (data.schema_version !== 1 || data.surface !== "orx.plugin_validation") {
+      throw new Error("plugins validate --json schema metadata mismatch");
+    }
+    if (
+      data.operator_only !== true ||
+      data.network !== "none" ||
+      data.execution !== "none" ||
+      data.data_state_writes !== "none"
+    ) {
+      throw new Error("plugins validate --json did not report read-only operator boundaries");
+    }
+    if (data.plugin_id !== "orx.validate-smoke@1.0.0" || data.ok !== true) {
+      throw new Error("plugins validate --json smoke did not validate the smoke plugin");
+    }
+    if (data.authority?.registry_cache_catalog_trust_state !== "unchanged") {
+      throw new Error("plugins validate --json smoke missing unchanged-state authority");
     }
     return;
   }

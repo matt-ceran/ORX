@@ -136,7 +136,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/imports \[query\]/);
   assert.match(output, /\/calls \[query\]/);
   assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog \[--json\]\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
-  assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review \[--json\]\|doctor \[--json\]\|audit \[--json\]\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
+  assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review \[--json\]\|doctor \[--json\]\|audit \[--json\]\|commands\|scaffold <directory>\|validate <manifest-path-or-directory> \[--json\]\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(output, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
@@ -176,7 +176,7 @@ test("command palette renderer is a pure grouped listing surface", () => {
 
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
-  assert.match(palette, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review \[--json\]\|doctor \[--json\]\|audit \[--json\]\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
+  assert.match(palette, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review \[--json\]\|doctor \[--json\]\|audit \[--json\]\|commands\|scaffold <directory>\|validate <manifest-path-or-directory> \[--json\]\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -296,6 +296,7 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/plugins review --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/plugins doctor --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/plugins audit --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins validate ./plugin --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/orchestrator p"), [["plan "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/delegate p"), [["plan ", "policy "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/delegate team s"), [
@@ -1909,7 +1910,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.equal(handleSlashCommand("/commands plugin", harness.context), "continue");
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
-  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review \[--json\]\|doctor \[--json\]\|audit \[--json\]\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
+  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review \[--json\]\|doctor \[--json\]\|audit \[--json\]\|commands\|scaffold <directory>\|validate <manifest-path-or-directory> \[--json\]\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(harness.stdout(), /\/plugin \[list\|status\]/);
   assert.match(harness.stdout(), /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(harness.stdout(), /\/skills \[list\|status\|activate <id>\]/);
@@ -4440,6 +4441,44 @@ test("plugins scaffold creates an installable bundle without registry changes", 
     assert.match(harness.stdout(), /components:\n    - none/);
     assert.match(harness.stdout(), /registry_state: unchanged/);
     assert.equal(existsSync(registryPath), false);
+
+    const validateJson = createSlashHarness({
+      cwd,
+      pluginRegistryPath: registryPath,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("plugin validate should not call fetch");
+      },
+    });
+    assert.equal(
+      await handleSlashCommand(`/plugins validate ${targetDirectory} --json`, validateJson.context),
+      "continue",
+    );
+    const validationReport = JSON.parse(validateJson.stdout());
+    assert.equal(validationReport.surface, "orx.plugin_validation");
+    assert.equal(validationReport.plugin_id, "acme.slash-plugin@0.1.0");
+    assert.equal(validationReport.operator_only, true);
+    assert.equal(validationReport.network, "none");
+    assert.equal(validationReport.execution, "none");
+    assert.equal(validationReport.data_state_writes, "none");
+    assert.equal(validationReport.component_count, 0);
+    assert.equal(validationReport.authority.validation_side_effects, "none");
+    assert.equal(validationReport.authority.registry_cache_catalog_trust_state, "unchanged");
+    assert.equal(existsSync(registryPath), false);
+
+    const invalidValidate = createSlashHarness({
+      cwd,
+      pluginRegistryPath: registryPath,
+    });
+    assert.equal(
+      await handleSlashCommand(`/plugins validate ${targetDirectory} --json extra`, invalidValidate.context),
+      "continue",
+    );
+    assert.equal(invalidValidate.stdout(), "");
+    assert.match(
+      invalidValidate.stderr(),
+      /Usage: \/plugins validate <manifest-path-or-directory> \[--json\]/,
+    );
 
     assert.equal(
       await handleSlashCommand(`/plugins install ${targetDirectory}`, harness.context),

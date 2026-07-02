@@ -120,7 +120,7 @@ Reasoning: A usable plugin authoring workflow needs more than manual JSON editin
 
 ## 2026-06-28: Plugin Validation Is Read-Only Authoring Feedback
 
-Decision: ORX may provide `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>` as a manifest preview/check command, but validation must not register, install, enable, trust, grant, fetch, execute, or write plugin cache/registry state. It may parse and sanitize manifests, compute local manifest/component hashes, and warn about missing component paths using the same bounded local hashing logic used for plugin lock records.
+Decision: ORX may provide `orx plugins validate <manifest-path-or-directory> [--json]` and `/plugins validate <manifest-path-or-directory> [--json]` as a manifest preview/check command, but validation must not register, install, enable, trust, grant, fetch, execute, or write plugin cache/registry state. It may parse and sanitize manifests, compute local manifest/component hashes, and warn about missing component paths using the same bounded local hashing logic used for plugin lock records. JSON output may expose ORX-owned validation metadata for automation but must preserve the same unchanged-state authority boundary.
 
 Reasoning: Plugin authors need fast feedback before install, especially after scaffold generation, but validation should not become another authority boundary. Keeping it read-only lets operators inspect exactly what ORX would recognize while preserving the existing disabled-by-default install, enable, hash-trust, MCP grant, hook, and bin execution gates.
 

@@ -185,6 +185,7 @@ import {
   installPlugin,
   loadPluginCatalog,
   parsePluginReviewArgs,
+  parsePluginValidationArgs,
   parsePluginCatalogAddGitArgs,
   parsePluginCatalogAddLocalArgs,
   parsePluginScaffoldArgs,
@@ -198,6 +199,7 @@ import {
   renderPluginCatalogUpdateReport,
   renderPluginScaffoldResult,
   renderPluginValidation,
+  renderPluginValidationJson,
   renderPluginHookInspect,
   renderPluginHookLifecycleResult,
   renderPluginHookRunResult,
@@ -322,7 +324,7 @@ const CLI_NAMESPACE_USAGES = {
   profile: "Usage: orx profile [list|save <id> [options]|use <id>|inspect <id>|delete <id>]",
   history: "Usage: orx history [search <query>|clear]",
   mcp: "Usage: orx mcp [list|plan [preset-or-profile] [--json]|catalog [--json]|presets [--json|inspect <preset> [--json]]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
-  plugins: "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review [--json]|doctor [--json]|audit [--json]|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
+  plugins: "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review [--json]|doctor [--json]|audit [--json]|commands|scaffold <directory>|validate <manifest-path-or-directory> [--json]|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
   bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
   tests: "Usage: orx tests [list [--json]|status [--json]|run [target-id] [--json] [-- args...]]",
@@ -355,7 +357,7 @@ const CLI_MCP_SUBCOMMAND_USAGES = {
 const CLI_PLUGIN_SUBCOMMAND_USAGES = {
   scaffold:
     "Usage: orx plugins scaffold <directory> [--name <id>] [--publisher <id>] [--version <version>] [--description <text>] [--with <components>] [--minimal]",
-  validate: "Usage: orx plugins validate <manifest-path-or-directory>",
+  validate: "Usage: orx plugins validate <manifest-path-or-directory> [--json]",
   install: "Usage: orx plugins install <manifest-path-or-directory-or-catalog-id>",
   register: "Usage: orx plugins register <manifest-path-or-directory-or-catalog-id>",
   review: "Usage: orx plugins review|doctor|audit [--json]",
@@ -2335,15 +2337,15 @@ async function runPluginsCommand(
   }
 
   if (subcommand === "validate" || subcommand === "check") {
-    const manifestPathText = args.slice(1).join(" ").trim();
-    if (!manifestPathText) {
-      writeLine(io.stderr, `Usage: orx plugins ${subcommand} <manifest-path-or-directory>`);
+    const parsed = parsePluginValidationArgs(args);
+    if (!parsed) {
+      writeLine(io.stderr, `Usage: orx plugins ${subcommand} <manifest-path-or-directory> [--json]`);
       return 1;
     }
 
     try {
-      const result = validatePluginManifestInput(manifestPathText, { cwd: io.cwd });
-      writeLine(io.stdout, renderPluginValidation(result));
+      const result = validatePluginManifestInput(parsed.input, { cwd: io.cwd });
+      writeLine(io.stdout, parsed.json ? renderPluginValidationJson(result) : renderPluginValidation(result));
       return 0;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

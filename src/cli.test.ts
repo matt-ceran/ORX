@@ -4685,6 +4685,42 @@ test("cli plugins scaffold creates an installable disabled plugin bundle", async
     assert.match(validated.stdout(), /registry_state: unchanged/);
     assert.match(validated.stdout(), /execution_state: no install, enable, trust, grant, fetch, or execution performed/);
 
+    const validatedJson = createNoFetchIo();
+    assert.equal(
+      await runCli(["node", "cli", "plugins", "validate", targetDirectory, "--json"], env, validatedJson.io),
+      0,
+    );
+    const validationReport = JSON.parse(validatedJson.stdout());
+    assert.equal(validationReport.surface, "orx.plugin_validation");
+    assert.equal(validationReport.plugin_id, "acme.new-plugin@0.1.0");
+    assert.equal(validationReport.operator_only, true);
+    assert.equal(validationReport.network, "none");
+    assert.equal(validationReport.execution, "none");
+    assert.equal(validationReport.data_state_writes, "none");
+    assert.ok(validationReport.component_count >= 4);
+    assert.ok(
+      validationReport.components.some(
+        (component: { key: string; status: string }) =>
+          component.key === "mcpServers" && component.status === "present",
+      ),
+    );
+    assert.equal(validationReport.authority.registry_cache_catalog_trust_state, "unchanged");
+
+    const invalidValidationArgs = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "validate", targetDirectory, "--json", "extra"],
+        env,
+        invalidValidationArgs.io,
+      ),
+      1,
+    );
+    assert.equal(invalidValidationArgs.stdout(), "");
+    assert.match(
+      invalidValidationArgs.stderr(),
+      /Usage: orx plugins validate <manifest-path-or-directory> \[--json\]/,
+    );
+
     const listed = createNoFetchIo();
     assert.equal(await runCli(["node", "cli", "plugins", "list"], env, listed.io), 0);
     assert.match(listed.stdout(), /installed: 0/);

@@ -69,8 +69,11 @@ export {
   type PluginScaffoldResult,
 } from "./scaffold.js";
 export {
+  parsePluginValidationArgs,
   renderPluginValidation,
+  renderPluginValidationJson,
   validatePluginManifestInput,
+  type PluginValidationParsedArgs,
   type PluginValidationComponent,
   type PluginValidationResult,
 } from "./validate.js";

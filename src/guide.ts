@@ -67,6 +67,7 @@ export function renderOperatorGuide(report: DoctorReport): string {
     "  - orx plugins catalog",
     "  - orx plugins scaffold ./my-plugin",
     "  - orx plugins validate ./my-plugin",
+    "  - orx plugins validate ./my-plugin --json",
     "  - orx plugins install ./my-plugin",
     "  - orx plugins doctor",
     "delegation_setup:",
