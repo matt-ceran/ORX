@@ -644,6 +644,49 @@ export async function runCli(
     return runDiagnosticsCommand(args.slice(1), io, env, DIAG_USAGE);
   }
 
+  if (first === "tests" || first === "test") {
+    return runTestsCommand(args.slice(1), io);
+  }
+
+  if (first === "code") {
+    return runCodeCommand(args.slice(1), io);
+  }
+
+  if (first === "map" || first === "code-map") {
+    return runCodeMapCommand(args.slice(1), io);
+  }
+
+  if (first === "symbols") {
+    return runCodeSymbolsCommand(args.slice(1), io);
+  }
+
+  if (first === "refs" || first === "references") {
+    return runCodeReferencesCommand(args.slice(1), io);
+  }
+
+  if (first === "imports" || first === "import-graph") {
+    return runCodeImportGraphCommand(args.slice(1), io);
+  }
+
+  if (first === "calls" || first === "call-graph") {
+    return runCodeCallGraphCommand(args.slice(1), io);
+  }
+
+  if (first === "ast-grep") {
+    return runCodeAstGrepCommand(args.slice(1), io);
+  }
+
+  if (first === "tree-sitter") {
+    return runCodeTreeSitterCommand(args.slice(1), io);
+  }
+
+  if (first === "outline") {
+    return runCodeTreeSitterCommand(args.slice(1), io, {
+      defaultMode: "outline",
+      usage: CODE_TREE_SITTER_OUTLINE_USAGE,
+    });
+  }
+
   const mcpConfigPath = resolveMcpConfigPath({ env, cwd: io.cwd });
   const mcpProfileCatalogPath = resolveMcpProfileCatalogPath({ env, cwd: io.cwd });
   const pluginRegistryPath = resolvePluginRegistryPath({ env, cwd: io.cwd });
@@ -815,49 +858,6 @@ export async function runCli(
       pluginRegistryPath,
       env.ORX_MCP_AUDIT_PATH,
     );
-  }
-
-  if (first === "tests" || first === "test") {
-    return runTestsCommand(args.slice(1), io);
-  }
-
-  if (first === "code") {
-    return runCodeCommand(args.slice(1), io);
-  }
-
-  if (first === "map" || first === "code-map") {
-    return runCodeMapCommand(args.slice(1), io);
-  }
-
-  if (first === "symbols") {
-    return runCodeSymbolsCommand(args.slice(1), io);
-  }
-
-  if (first === "refs" || first === "references") {
-    return runCodeReferencesCommand(args.slice(1), io);
-  }
-
-  if (first === "imports" || first === "import-graph") {
-    return runCodeImportGraphCommand(args.slice(1), io);
-  }
-
-  if (first === "calls" || first === "call-graph") {
-    return runCodeCallGraphCommand(args.slice(1), io);
-  }
-
-  if (first === "ast-grep") {
-    return runCodeAstGrepCommand(args.slice(1), io);
-  }
-
-  if (first === "tree-sitter") {
-    return runCodeTreeSitterCommand(args.slice(1), io);
-  }
-
-  if (first === "outline") {
-    return runCodeTreeSitterCommand(args.slice(1), io, {
-      defaultMode: "outline",
-      usage: CODE_TREE_SITTER_OUTLINE_USAGE,
-    });
   }
 
   if (first === "orchestrator") {

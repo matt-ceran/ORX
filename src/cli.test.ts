@@ -1472,6 +1472,22 @@ test("cli tests commands list and run package scripts without an API key", async
     assert.equal(await runCli(["node", "cli", "tests", "status", "--xml"], {}, badListOption.io), 1);
     assert.match(badListOption.stderr(), /Unknown tests option: --xml/);
 
+    const profileConfigPath = join(cwd, "profiles.json");
+    writeFileSync(profileConfigPath, "{}\n");
+    chmodSync(profileConfigPath, 0o666);
+    const profiled = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "--profile", "demo", "tests", "list", "--json"],
+        { ORX_PROFILE_CONFIG_PATH: profileConfigPath },
+        profiled.io,
+      ),
+      0,
+    );
+    assert.equal(JSON.parse(profiled.stdout()).surface, "orx.test_targets");
+    assert.equal(profiled.stderr(), "");
+    assert.equal(statSync(profileConfigPath).mode & 0o777, 0o666);
+
     const ran = createIo({ cwd });
     assert.equal(
       await runCli(["node", "cli", "tests", "run", "script:test:unit", "--", "--flag"], {}, ran.io),
@@ -1551,6 +1567,22 @@ test("cli code map renders a bounded repository overview without an API key", as
     assert.equal(mappedJsonReport.source_file_count, 3);
     assert.ok(mappedJsonReport.source_files.some((file: { path: string }) => file.path === "src/index.ts"));
     assert.equal(mappedJson.stderr(), "");
+
+    const profileConfigPath = join(cwd, "profiles.json");
+    writeFileSync(profileConfigPath, "{}\n");
+    chmodSync(profileConfigPath, 0o666);
+    const profiled = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "--profile", "demo", "code", "map", "--json"],
+        { ORX_PROFILE_CONFIG_PATH: profileConfigPath },
+        profiled.io,
+      ),
+      0,
+    );
+    assert.equal(JSON.parse(profiled.stdout()).surface, "orx.code_map");
+    assert.equal(profiled.stderr(), "");
+    assert.equal(statSync(profileConfigPath).mode & 0o777, 0o666);
 
     const alias = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "map", "src"], {}, alias.io), 0);
