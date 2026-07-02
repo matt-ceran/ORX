@@ -471,3 +471,9 @@ Reasoning: Operators need to understand why catalog-only scanner profiles are no
 Decision: Research profile `list`, `inspect`, `plan`, and `setup-plan` commands should render ORX-owned metadata only, including catalog-only crawl/scholar/docs/RAG/memory blockers, and must not fetch URLs, call search providers, launch browsers, spawn subprocesses, write project or ORX state, or expose model tools.
 
 Reasoning: ORX already has explicit chat web fetch/search/browser commands, but future crawl, scholarly, docs, RAG, and durable memory profiles need clear source, budget, storage, citation, and model-visible retrieval contracts before execution. A read-only profile catalog makes the roadmap discoverable without broadening network or persistence behavior.
+
+## 2026-07-02: Profile-Independent Local Tooling Bypasses Saved Profile Loading
+
+Decision: CLI namespaces whose behavior does not depend on saved routing profiles should dispatch before config/profile loading. This currently covers `research`, `scanners`, `scan`, `diagnostics`, and `diag`.
+
+Reasoning: Saved profiles are for model/routing/session defaults, not local metadata or explicit local tooling runs. Bypassing profile registry reads for these namespaces preserves their no-state-write boundaries even when an operator includes global `--profile <id>`.

@@ -2138,6 +2138,22 @@ test("cli scanner commands list, inspect, and run guarded local profiles with mo
     assert.equal(await runCli(["node", "cli", "scanners", "list", "extra"], {}, listExtra.io), 1);
     assert.match(listExtra.stderr(), /^Usage: orx scanners/);
 
+    const profileConfigPath = join(cwd, "profiles.json");
+    writeFileSync(profileConfigPath, "{}\n");
+    chmodSync(profileConfigPath, 0o666);
+    const profiled = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "--profile", "demo", "scanners", "list", "--json"],
+        { ORX_PROFILE_CONFIG_PATH: profileConfigPath },
+        profiled.io,
+      ),
+      0,
+    );
+    assert.equal(JSON.parse(profiled.stdout()).surface, "orx.security_scanner_profiles");
+    assert.equal(profiled.stderr(), "");
+    assert.equal(statSync(profileConfigPath).mode & 0o777, 0o666);
+
     const scannerCalls: Array<Parameters<ScannerProcessRunner>[0]> = [];
     const scannerRunner: ScannerProcessRunner = async (options) => {
       scannerCalls.push(options);
@@ -2621,6 +2637,22 @@ test("cli diagnostics commands list, inspect, and run TypeScript with guarded lo
     const listExtra = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "diagnostics", "list", "extra"], {}, listExtra.io), 1);
     assert.match(listExtra.stderr(), /^Usage: orx diagnostics/);
+
+    const profileConfigPath = join(cwd, "profiles.json");
+    writeFileSync(profileConfigPath, "{}\n");
+    chmodSync(profileConfigPath, 0o666);
+    const profiled = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "--profile", "demo", "diagnostics", "list", "--json"],
+        { ORX_PROFILE_CONFIG_PATH: profileConfigPath },
+        profiled.io,
+      ),
+      0,
+    );
+    assert.equal(JSON.parse(profiled.stdout()).surface, "orx.local_diagnostics_profiles");
+    assert.equal(profiled.stderr(), "");
+    assert.equal(statSync(profileConfigPath).mode & 0o777, 0o666);
 
     const tscCalls: Array<Parameters<DiagnosticsProcessRunner>[0]> = [];
     const diagnosticsRunner: DiagnosticsProcessRunner = async (options) => {

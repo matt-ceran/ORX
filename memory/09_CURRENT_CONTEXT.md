@@ -118,15 +118,25 @@ Current files:
 
 ## Latest Work
 
+Hardened profile-independent local tooling dispatch:
+
+- Moved `orx scanners`, `orx scan`, `orx diagnostics`, and `orx diag` dispatch before config/profile loading, matching the already-applied `orx research` boundary.
+- Global `--profile <id>` is still parsed by the CLI, but these local tooling namespaces do not read or chmod the saved-profile registry because the saved routing profile has no effect on their list/inspect/plan/run behavior.
+- Added CLI regressions proving `orx --profile demo scanners list --json` and `orx --profile demo diagnostics list --json` leave an existing `ORX_PROFILE_CONFIG_PATH` file mode unchanged.
+- Verification passed: isolated-home `npm run typecheck`, `npm run build`, focused `node --import tsx --test --test-name-pattern "research profile|scanner commands|diagnostics commands" src/cli.test.ts src/slash/index.test.ts`, isolated-home `node --import tsx --test src/cli.test.ts src/slash/index.test.ts` with 150 tests, built CLI no-chmod smokes for scanners and diagnostics, `git diff --check`, isolated-home `npm run verify:release` with all 12 steps passing, and independent verifier `019f20cf-9e27-74b2-8680-9b533345260f` PASS with no findings.
+- Next likely work remains another bounded optional completion slice such as actual LSP/SCIP execution/readback after safe local lifecycle/storage design, scanner adapters after deterministic no-network/no-auth command shapes are proven, provider preset/tool declaration packs after current docs/metadata review, or making one catalog-only research profile executable after its source/storage/citation contract is designed.
+
+Previous latest work:
+
 Added read-only research profile plans:
 
 - Added `orx research profiles [list|status] [--json]`, `orx research profiles inspect|show <profile> [--json]`, `orx research profiles plan|setup-plan <profile> [--json]`, and matching `/web profiles ...` slash metadata surfaces.
 - The profile catalog covers `research-web`, `research-browser`, `research-crawl`, `research-scholar`, `research-docs`, `research-rag`, and `research-memory`. `research-web` and `research-browser` point to existing explicit chat commands; crawl, scholar, docs, RAG, and memory stay catalog-only with blockers for source, storage, citation, and model-visible retrieval contracts.
 - These surfaces are read-only metadata only. They do not fetch URLs, call Brave, launch browsers, spawn processes, write state, or expose model tools. CLI `research` dispatch happens before config/profile loading so `orx --profile <id> research ...` does not read or chmod the saved-profile registry.
 - Verification passed: isolated-home `npm run typecheck`, `npm run build`, focused `node --import tsx --test --test-name-pattern "research profile|web profile|web fetch|slash command completer|help all" src/cli.test.ts src/slash/index.test.ts src/research/research.test.ts`, isolated-home `node --import tsx --test src/cli.test.ts src/slash/index.test.ts` with 150 tests, built CLI smokes for catalog/JSON/plan/rejection and the `--profile` no-chmod boundary, `git diff --check`, isolated-home `npm run verify:release` with all 12 steps passing, and independent verifier `019f20c1-de59-7372-874c-175e9c0989ad` PASS after fixing the profile-loading and `/web help` findings.
-- Next likely work remains another bounded optional completion slice such as actual LSP/SCIP execution/readback after safe local lifecycle/storage design, scanner adapters after deterministic no-network/no-auth command shapes are proven, provider preset/tool declaration packs after current docs/metadata review, or making one catalog-only research profile executable after its source/storage/citation contract is designed.
+- Next likely work remained another bounded optional completion slice such as actual LSP/SCIP execution/readback after safe local lifecycle/storage design, scanner adapters after deterministic no-network/no-auth command shapes are proven, provider preset/tool declaration packs after current docs/metadata review, or making one catalog-only research profile executable after its source/storage/citation contract is designed.
 
-Previous latest work:
+Earlier latest work:
 
 Added scanner setup plans:
 
@@ -136,7 +146,7 @@ Added scanner setup plans:
 - Verification passed: `npm run typecheck`, `npm run build`, focused isolated-home `node --import tsx --test --test-name-pattern "scanner" src/cli.test.ts src/slash/index.test.ts`, isolated-home `node --import tsx --test src/cli.test.ts src/slash/index.test.ts` with 148 tests, built CLI smokes for scanner plan text/JSON/rejection forms, isolated-home `npm run verify:release` with all 12 steps passing after memory fixes, and independent verifier `019f20ab-3869-7b31-beda-dabd7fde3c82` PASS after a memory-staleness finding was fixed.
 - Next likely work remained another bounded optional completion slice such as actual LSP/SCIP execution/readback after safe local lifecycle/storage design, scanner adapters after deterministic no-network/no-auth command shapes are proven, provider preset/tool declaration packs after current docs/metadata review, or future crawl/scholar/RAG research profiles.
 
-Earlier latest work:
+Older latest work:
 
 Added diagnostics setup plans:
 
@@ -146,7 +156,7 @@ Added diagnostics setup plans:
 - Verification passed: `npm run typecheck`, `npm run build`, focused isolated-home `node --import tsx --test --test-name-pattern "diagnostics" src/cli.test.ts src/slash/index.test.ts`, isolated-home `node --import tsx --test src/cli.test.ts src/slash/index.test.ts` with 148 tests, `git diff --check`, isolated-home `npm run verify:release` with all 12 steps passing, and independent verifier `019f209f-e0cc-7bc3-b39a-e2f1593d299d` with no findings.
 - Next likely work remained another bounded optional completion slice such as actual LSP/SCIP execution/readback after safe local lifecycle/storage design, provider preset/tool declaration packs after current docs/metadata review, scanner adapters after deterministic no-network/no-auth shapes are proven, or future crawl/scholar/RAG research profiles.
 
-Older latest work:
+Older work:
 
 Added operator-visible remote MCP trust boundaries:
 
@@ -156,7 +166,7 @@ Added operator-visible remote MCP trust boundaries:
 - Verification passed: focused source `node --import tsx --test src/mcp/mcp.test.ts`, isolated-home focused source `node --import tsx --test src/slash/index.test.ts src/cli.test.ts`, `npm run typecheck`, `npm run build`, isolated-home full `npm test` with 548 tests, `git diff --check`, isolated-home `npm run verify:release` with all 12 steps passing, and independent verifier `019f2094-5bb5-72d3-9519-7ec75e5f51ad` with no findings.
 - Next likely work remained another bounded optional completion slice such as semantic tree-sitter/LSP/SCIP depth, provider preset/tool declaration packs after current docs/metadata review, scanner adapters after deterministic no-network/no-auth shapes are proven, or future crawl/scholar/RAG research profiles with the same untrusted-output policy.
 
-Older work:
+Older work archive:
 
 Added MCP provider preset JSON output:
 

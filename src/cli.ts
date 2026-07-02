@@ -628,6 +628,22 @@ export async function runCli(
     return runResearchCommand(args.slice(1), io);
   }
 
+  if (first === "scanners" || first === "scanner") {
+    return runScannersCommand(args.slice(1), io, env);
+  }
+
+  if (first === "scan") {
+    return runScanAliasCommand(args.slice(1), io, env);
+  }
+
+  if (first === "diagnostics") {
+    return runDiagnosticsCommand(args.slice(1), io, env, DIAGNOSTICS_USAGE);
+  }
+
+  if (first === "diag") {
+    return runDiagnosticsCommand(args.slice(1), io, env, DIAG_USAGE);
+  }
+
   const mcpConfigPath = resolveMcpConfigPath({ env, cwd: io.cwd });
   const mcpProfileCatalogPath = resolveMcpProfileCatalogPath({ env, cwd: io.cwd });
   const pluginRegistryPath = resolvePluginRegistryPath({ env, cwd: io.cwd });
@@ -842,22 +858,6 @@ export async function runCli(
       defaultMode: "outline",
       usage: CODE_TREE_SITTER_OUTLINE_USAGE,
     });
-  }
-
-  if (first === "scanners" || first === "scanner") {
-    return runScannersCommand(args.slice(1), io, env);
-  }
-
-  if (first === "scan") {
-    return runScanAliasCommand(args.slice(1), io, env);
-  }
-
-  if (first === "diagnostics") {
-    return runDiagnosticsCommand(args.slice(1), io, env, DIAGNOSTICS_USAGE);
-  }
-
-  if (first === "diag") {
-    return runDiagnosticsCommand(args.slice(1), io, env, DIAG_USAGE);
   }
 
   if (first === "orchestrator") {
