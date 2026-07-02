@@ -35,6 +35,27 @@ export {
   type ResearchSearchResult,
   type SearchResultSnippet,
 } from "./search.js";
+export {
+  RESEARCH_PROFILES_USAGE,
+  RESEARCH_USAGE,
+  SLASH_WEB_PROFILES_USAGE,
+  SLASH_WEB_USAGE,
+  findResearchProfile,
+  listResearchProfiles,
+  parseResearchReadinessJsonFlag,
+  renderMissingResearchProfile,
+  renderResearchInspectUsage,
+  renderResearchPlanUsage,
+  renderResearchProfileInspect,
+  renderResearchProfileInspectJson,
+  renderResearchProfiles,
+  renderResearchProfilesJson,
+  renderResearchSetupPlan,
+  renderResearchSetupPlanJson,
+  type ResearchProfile,
+  type ResearchProfileId,
+  type ResearchSetupPlan,
+} from "./profiles.js";
 export { canonicalizeUrl, guardFetchUrl } from "./url-guard.js";
 export type {
   EvidenceSource,

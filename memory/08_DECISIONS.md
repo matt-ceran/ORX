@@ -465,3 +465,9 @@ Reasoning: Operators need to understand why TypeScript Language Server, rust-ana
 Decision: Scanner `plan` and `setup-plan` commands should render ORX-owned metadata only, including catalog-only Snyk/Socket/OSV-Scanner blockers, and must not probe binaries, spawn processes, access the network, write project or ORX state, or expose model tools.
 
 Reasoning: Operators need to understand why catalog-only scanner profiles are not runnable yet without accidentally invoking scanner auth, telemetry, package-manager, cache/update, or network behavior. A read-only plan keeps Semgrep/Trivy/CodeQL next commands discoverable while preserving the stronger local/no-auth/no-network design gate for future scanner adapters.
+
+## 2026-07-02: Research Profile Plans Are Read-Only
+
+Decision: Research profile `list`, `inspect`, `plan`, and `setup-plan` commands should render ORX-owned metadata only, including catalog-only crawl/scholar/docs/RAG/memory blockers, and must not fetch URLs, call search providers, launch browsers, spawn subprocesses, write project or ORX state, or expose model tools.
+
+Reasoning: ORX already has explicit chat web fetch/search/browser commands, but future crawl, scholarly, docs, RAG, and durable memory profiles need clear source, budget, storage, citation, and model-visible retrieval contracts before execution. A read-only profile catalog makes the roadmap discoverable without broadening network or persistence behavior.

@@ -97,13 +97,14 @@ Minimum plugin metadata:
 
 ## Research Profiles
 
-- `research-web`: Brave/Tavily/Exa/Perplexity adapters, `fetch_url`, `extract_page`, Jina Reader, source verification.
-- `research-crawl`: Firecrawl/Crawlee/Apify/Bright Data with `max_pages`, `max_cost_usd`, robots/TOS warnings, and cache.
-- `research-scholar`: OpenAlex, Semantic Scholar, Crossref, arXiv, PubMed, Europe PMC.
-- `research-docs`: local parser first, optional LlamaParse/Unstructured for complex scans/tables/charts.
-- `research-browser`: native Playwright first, Playwright MCP/Chrome DevTools MCP optional.
-- `research-rag`: local LanceDB cache, optional Qdrant server/MCP.
-- `research-memory`: native ORX notes, optional Zotero/OpenMemory/Zep.
+- Current profile surface: `orx research profiles ...` and `/web profiles ...` render read-only catalog/inspect/setup-plan metadata without fetching URLs, calling Brave, launching browsers, spawning processes, writing state, or exposing model tools.
+- `research-web`: available today through explicit chat `/web fetch`, `/fetch`, `/web search`, and `/search`; future adapters may add Tavily/Exa/Perplexity/Jina Reader only after source/citation boundaries are designed.
+- `research-browser`: available today through explicit chat `/web browse` and `/browse` when the local browser runtime is available; Playwright MCP/Chrome DevTools MCP remain future profile options.
+- `research-crawl`: catalog-only until Firecrawl/Crawlee/Apify/Bright Data style page/cost/host/robots/cache contracts are implemented.
+- `research-scholar`: catalog-only until OpenAlex, Semantic Scholar, Crossref, arXiv, PubMed, Europe PMC, PDF, and identifier contracts are implemented.
+- `research-docs`: catalog-only until official docs provider routing, allowlists, source tiers, and citation contracts are implemented.
+- `research-rag`: catalog-only until local LanceDB or optional Qdrant index storage/delete/readback contracts are implemented.
+- `research-memory`: catalog-only until native ORX notes and optional Zotero/OpenMemory/Zep retention, redaction, provenance, and retrieval contracts are implemented.
 
 Every research run should maintain an evidence ledger with source id, canonical URL/DOI/PMID/arXiv id, title, publisher/author, published date, fetched date, provider, query, content hash, extracted spans, and trust tier. Prefer primary sources and official APIs; label provider/model summaries as secondary until ORX fetches cited sources directly.
 

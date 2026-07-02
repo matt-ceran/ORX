@@ -246,7 +246,22 @@ import {
   resolveProfileConfigPath,
   saveCurrentProfile,
 } from "./profiles/index.js";
-import type { BrowserSnapshotDriver } from "./research/index.js";
+import {
+  RESEARCH_PROFILES_USAGE,
+  RESEARCH_USAGE,
+  findResearchProfile,
+  parseResearchReadinessJsonFlag,
+  renderMissingResearchProfile,
+  renderResearchInspectUsage,
+  renderResearchPlanUsage,
+  renderResearchProfileInspect,
+  renderResearchProfileInspectJson,
+  renderResearchProfiles,
+  renderResearchProfilesJson,
+  renderResearchSetupPlan,
+  renderResearchSetupPlanJson,
+  type BrowserSnapshotDriver,
+} from "./research/index.js";
 import { resolveSessionDirectory } from "./sessions/index.js";
 import {
   SCAN_USAGE,
@@ -335,6 +350,7 @@ const CLI_NAMESPACE_USAGES = {
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
   tests: "Usage: orx tests [list [--json]|status [--json]|run [target-id] [--json] [-- args...]]",
   code: "Usage: orx code [map|symbols|refs|imports|calls|ast-grep|tree-sitter|outline] [query-or-path]",
+  research: RESEARCH_USAGE,
   scanners: SCANNERS_USAGE,
   scan: SCAN_USAGE,
   diagnostics: DIAGNOSTICS_USAGE,
@@ -416,6 +432,8 @@ function getNamespaceHelpUsage(args: string[]): string | undefined {
       return CLI_NAMESPACE_USAGES.tests;
     case "code":
       return CLI_NAMESPACE_USAGES.code;
+    case "research":
+      return CLI_NAMESPACE_USAGES.research;
     case "scanner":
     case "scanners":
       return CLI_NAMESPACE_USAGES.scanners;
@@ -604,6 +622,10 @@ export async function runCli(
 
   if (first === "auth") {
     return runOpenRouterAuthCommand(args.slice(1), io, env);
+  }
+
+  if (first === "research") {
+    return runResearchCommand(args.slice(1), io);
   }
 
   const mcpConfigPath = resolveMcpConfigPath({ env, cwd: io.cwd });
@@ -935,6 +957,7 @@ function helpText(): string {
     "  hooks         List, inspect, trust, untrust, or run plugin hook definitions",
     "  tests         Discover or run native test targets",
     "  code          Render local code maps, symbol indexes, references, imports, calls, ast-grep searches, or tree-sitter parses/outlines/imports/refs/calls/repo-files/repo-outline/repo-symbols/repo-refs/repo-calls/repo-imports/repo-deps",
+    "  research      List, inspect, or plan research profiles",
     "  scanners      List, inspect, plan, or run local security scanner profiles",
     "  scan          Alias for a local scanner run",
     "  diagnostics  List, inspect, or run local diagnostics profiles",
@@ -1246,6 +1269,75 @@ function runCodeTreeSitterCommand(
     parsed.args.json ? renderCodeTreeSitterResultJson(result) : renderCodeTreeSitterResult(result, usage),
   );
   return result.ok ? 0 : 1;
+}
+
+function runResearchCommand(args: string[], io: CliIo): number {
+  const firstArg = args[0]?.toLowerCase();
+
+  if (isNamespaceHelp(args)) {
+    writeLine(io.stdout, RESEARCH_USAGE);
+    return 0;
+  }
+
+  const profileArgs = firstArg === "profiles" || firstArg === "profile"
+    ? args.slice(1)
+    : args;
+  const subcommandArg = profileArgs[0]?.toLowerCase();
+  const subcommand = subcommandArg === "--json" ? "list" : subcommandArg ?? "list";
+
+  if (subcommand === "list" || subcommand === "status") {
+    const jsonFlag = parseResearchReadinessJsonFlag(
+      subcommandArg === "list" || subcommandArg === "status" ? profileArgs.slice(1) : profileArgs,
+      RESEARCH_PROFILES_USAGE,
+    );
+    if (!jsonFlag.ok) {
+      writeLine(io.stderr, jsonFlag.message);
+      return 1;
+    }
+    writeLine(io.stdout, jsonFlag.json ? renderResearchProfilesJson() : renderResearchProfiles());
+    return 0;
+  }
+
+  if (subcommand === "inspect" || subcommand === "show") {
+    const profileId = profileArgs[1];
+    const jsonFlag = parseResearchReadinessJsonFlag(profileArgs.slice(2), RESEARCH_PROFILES_USAGE);
+    if (!profileId || !jsonFlag.ok) {
+      writeLine(io.stderr, renderResearchInspectUsage(RESEARCH_PROFILES_USAGE));
+      return 1;
+    }
+    const profile = findResearchProfile(profileId);
+    if (!profile) {
+      writeLine(io.stderr, renderMissingResearchProfile(profileId));
+      return 1;
+    }
+    writeLine(
+      io.stdout,
+      jsonFlag.json ? renderResearchProfileInspectJson(profile) : renderResearchProfileInspect(profile),
+    );
+    return 0;
+  }
+
+  if (subcommand === "plan" || subcommand === "setup-plan") {
+    const profileId = profileArgs[1];
+    const jsonFlag = parseResearchReadinessJsonFlag(profileArgs.slice(2), RESEARCH_PROFILES_USAGE);
+    if (!profileId || !jsonFlag.ok) {
+      writeLine(io.stderr, renderResearchPlanUsage(RESEARCH_PROFILES_USAGE));
+      return 1;
+    }
+    const profile = findResearchProfile(profileId);
+    if (!profile) {
+      writeLine(io.stderr, renderMissingResearchProfile(profileId));
+      return 1;
+    }
+    writeLine(
+      io.stdout,
+      jsonFlag.json ? renderResearchSetupPlanJson(profile) : renderResearchSetupPlan(profile),
+    );
+    return 0;
+  }
+
+  writeLine(io.stderr, RESEARCH_USAGE);
+  return 1;
 }
 
 async function runScannersCommand(args: string[], io: CliIo, env: NodeJS.ProcessEnv): Promise<number> {

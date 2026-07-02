@@ -1969,6 +1969,90 @@ test("cli code map renders a bounded repository overview without an API key", as
   }
 });
 
+test("cli research profile commands render read-only catalog and setup plans without an API key", async () => {
+  const cwd = createTempDir();
+
+  try {
+    const help = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "research", "--help"], {}, help.io), 0);
+    assert.match(help.stdout(), /^Usage: orx research /);
+    assert.equal(help.stderr(), "");
+
+    const list = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "research", "profiles"], {}, list.io), 0);
+    assert.match(list.stdout(), /Research profiles/);
+    assert.match(list.stdout(), /id=research-web state=available/);
+    assert.match(list.stdout(), /id=research-rag state=catalog_only/);
+    assert.equal(list.stderr(), "");
+
+    const listJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "research", "profiles", "--json"], {}, listJson.io), 0);
+    const listReport = JSON.parse(listJson.stdout()) as {
+      surface: string;
+      network: string;
+      profiles: Array<{ id: string; state: string }>;
+    };
+    assert.equal(listReport.surface, "orx.research_profiles");
+    assert.equal(listReport.network, "none_for_list_inspect_or_plan");
+    assert.equal(listReport.profiles.find((profile) => profile.id === "research-browser")?.state, "available");
+    assert.equal(listReport.profiles.find((profile) => profile.id === "research-crawl")?.state, "catalog_only");
+    assert.equal(listJson.stderr(), "");
+
+    const inspect = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "research", "profiles", "inspect", "research-web"], {}, inspect.io), 0);
+    assert.match(inspect.stdout(), /Research profile: research-web/);
+    assert.match(inspect.stdout(), /\/web fetch <url>/);
+    assert.match(inspect.stdout(), /network_boundary: operator-explicit fetch\/search only/);
+
+    const plan = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "research", "profiles", "plan", "research-crawl"], {}, plan.io), 0);
+    assert.match(plan.stdout(), /Research setup plan: research-crawl/);
+    assert.match(plan.stdout(), /status: catalog_only/);
+    assert.match(plan.stdout(), /process_spawn: none/);
+    assert.match(plan.stdout(), /crawl depth, page, host, redirect, and byte budgets are not implemented/);
+
+    const planJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "research", "setup-plan", "research-browser", "--json"], {}, planJson.io), 0);
+    const planReport = JSON.parse(planJson.stdout()) as {
+      surface: string;
+      status: string;
+      current_commands: string[];
+      authority: { network: string; process_spawn: string; state_writes: string };
+    };
+    assert.equal(planReport.surface, "orx.research_setup_plan");
+    assert.equal(planReport.status, "available_now");
+    assert.ok(planReport.current_commands.includes("/web browse <url>"));
+    assert.equal(planReport.authority.network, "none");
+    assert.equal(planReport.authority.process_spawn, "none");
+    assert.equal(planReport.authority.state_writes, "none");
+
+    const badOption = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "research", "profiles", "plan", "research-web", "--project", "x"], {}, badOption.io),
+      1,
+    );
+    assert.match(badOption.stderr(), /^Usage: orx research profiles \[plan\|setup-plan\] <profile> \[--json\]/);
+
+    const profileConfigPath = join(cwd, "profiles.json");
+    writeFileSync(profileConfigPath, "{}\n");
+    chmodSync(profileConfigPath, 0o666);
+    const profiled = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "--profile", "demo", "research", "profiles", "--json"],
+        { ORX_PROFILE_CONFIG_PATH: profileConfigPath },
+        profiled.io,
+      ),
+      0,
+    );
+    assert.equal(JSON.parse(profiled.stdout()).surface, "orx.research_profiles");
+    assert.equal(profiled.stderr(), "");
+    assert.equal(statSync(profileConfigPath).mode & 0o777, 0o666);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("cli scanner commands list, inspect, and run guarded local profiles with mocked binaries", async () => {
   const cwd = createTempDir();
   try {

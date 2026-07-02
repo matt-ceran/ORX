@@ -116,7 +116,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/generation <id>/);
   assert.match(output, /\/compact/);
   assert.match(output, /\/resume \[id\|prefix\|number\|latest\]/);
-  assert.match(output, /\/web \[fetch <url>\|search <query>\|browse <url>\]/);
+  assert.match(output, /\/web \[help\|fetch <url>\|search <query>\|browse <url>\|profiles/);
   assert.match(output, /\/fetch <url>/);
   assert.match(output, /\/search <query>/);
   assert.match(output, /\/browse <url>/);
@@ -255,6 +255,11 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/code i"), [["imports "], "i"]);
   assert.deepEqual(completeSlashCommandLine("/web b"), [["browse "], "b"]);
   assert.deepEqual(completeSlashCommandLine("/web h"), [["help "], "h"]);
+  assert.deepEqual(completeSlashCommandLine("/web p"), [["profiles "], "p"]);
+  assert.deepEqual(completeSlashCommandLine("/web profiles --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/web profiles i"), [["inspect "], "i"]);
+  assert.deepEqual(completeSlashCommandLine("/web profiles inspect research-"), [["research-web ", "research-browser ", "research-crawl ", "research-scholar ", "research-docs ", "research-rag ", "research-memory "], "research-"]);
+  assert.deepEqual(completeSlashCommandLine("/web profiles plan research-rag --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/mcp m"), [["model "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp p"), [["plan ", "presets "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan c"), [["cloudflare-api ", "cloudflare-docs ", "context7 "], "c"]);
@@ -2863,6 +2868,7 @@ test("web fetch records evidence, appends untrusted context, and sources lists m
   assert.match(harness.stdout(), /Web commands:/);
   assert.match(harness.stdout(), /\/web fetch <url>/);
   assert.match(harness.stdout(), /\/web browse <url>/);
+  assert.match(harness.stdout(), /\/web profiles \[list\|status\|inspect\|show\|plan\|setup-plan\] \[--json\]/);
 
   assert.equal(await handleSlashCommand("/web fetch https://example.com/research", harness.context), "continue");
   assert.deepEqual(seenUrls, ["https://example.com/research"]);
@@ -2896,6 +2902,60 @@ test("web fetch records evidence, appends untrusted context, and sources lists m
 
   assert.equal(handleSlashCommand("/status", harness.context), "continue");
   assert.match(harness.stdout(), /evidence_sources: 1/);
+});
+
+test("web profile slash commands render read-only catalog and setup plans", async () => {
+  const harness = createSlashHarness({
+    webFetch: async () => {
+      throw new Error("web profiles should not fetch");
+    },
+    webSearchFetch: async () => {
+      throw new Error("web profiles should not search");
+    },
+    browserSnapshot: async () => {
+      throw new Error("web profiles should not browse");
+    },
+  });
+
+  assert.equal(await handleSlashCommand("/web profiles", harness.context), "continue");
+  assert.match(harness.stdout(), /Research profiles/);
+  assert.match(harness.stdout(), /id=research-web state=available/);
+  assert.match(harness.stdout(), /id=research-memory state=catalog_only/);
+
+  const jsonStart = harness.stdout().length;
+  assert.equal(await handleSlashCommand("/web profiles --json", harness.context), "continue");
+  const listReport = JSON.parse(harness.stdout().slice(jsonStart)) as {
+    surface: string;
+    network: string;
+    profiles: Array<{ id: string; state: string }>;
+  };
+  assert.equal(listReport.surface, "orx.research_profiles");
+  assert.equal(listReport.network, "none_for_list_inspect_or_plan");
+  assert.equal(listReport.profiles.find((profile) => profile.id === "research-browser")?.state, "available");
+
+  const inspectStart = harness.stdout().length;
+  assert.equal(await handleSlashCommand("/web profiles inspect research-browser", harness.context), "continue");
+  const inspectOutput = harness.stdout().slice(inspectStart);
+  assert.match(inspectOutput, /Research profile: research-browser/);
+  assert.match(inspectOutput, /\/web browse <url>/);
+
+  const planStart = harness.stdout().length;
+  assert.equal(await handleSlashCommand("/web profiles setup-plan research-rag --json", harness.context), "continue");
+  const planReport = JSON.parse(harness.stdout().slice(planStart)) as {
+    surface: string;
+    status: string;
+    blockers: string[];
+    authority: { network: string; process_spawn: string; state_writes: string };
+  };
+  assert.equal(planReport.surface, "orx.research_setup_plan");
+  assert.equal(planReport.status, "catalog_only");
+  assert.equal(planReport.authority.network, "none");
+  assert.equal(planReport.authority.process_spawn, "none");
+  assert.equal(planReport.authority.state_writes, "none");
+  assert.ok(planReport.blockers.some((blocker) => blocker.includes("index storage")));
+
+  assert.equal(await handleSlashCommand("/web profiles plan research-web --project x", harness.context), "continue");
+  assert.match(harness.stderr(), /Usage: \/web profiles \[plan\|setup-plan\] <profile> \[--json\]/);
 });
 
 test("web browse records browser evidence and appends untrusted context", async () => {

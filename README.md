@@ -66,6 +66,10 @@ orx tests run
 orx tests run --json
 orx code map
 orx map src
+orx research profiles
+orx research profiles --json
+orx research profiles inspect research-web
+orx research profiles plan research-rag --json
 orx code symbols
 orx code calls
 orx code outline src/cli.ts
@@ -195,6 +199,9 @@ orx code tree-sitter repo-imports src
 orx code tree-sitter repo-deps src
 orx tree-sitter outline src/cli.ts
 orx tree-sitter src/cli.ts
+orx research profiles
+orx research profiles inspect research-browser
+orx research profiles setup-plan research-crawl --json
 orx diagnostics list
 orx diagnostics status --json
 orx diagnostics inspect typescript
@@ -238,6 +245,8 @@ The code map scans a bounded local tree, skips generated/vendor directories such
 The call graph reuses the same local bounds and redaction to infer JavaScript/TypeScript callable definitions and direct local call edges from a conservative lexical scan. It is not AST-backed; duplicate callee names are marked ambiguous instead of pretending to know the exact target.
 The ast-grep command runs an operator-invoked local `sg` or `ast-grep` binary with shell disabled, a cleaned environment, bounded/redacted output, and a path guard that keeps searches inside the current working directory. ORX does not install ast-grep and does not modify files; `--rewrite <template> --preview` passes ast-grep rewrite preview arguments without `--update-all` or other mutation flags. If neither `sg` nor `ast-grep` is on `PATH`, ORX exits nonzero and prints local setup guidance.
 The tree-sitter command runs operator-invoked local `tree-sitter parse` calls with shell disabled, a cleaned environment, bounded/redacted output, and path guards that keep targets inside the current working directory. `orx code outline <file>`, `orx outline <file>`, and `orx tree-sitter outline <file>` reuse guarded single-file parses and render bounded AST outlines of definition-like nodes, extracting names from tree-sitter ranges when the source file can be read. `orx code tree-sitter imports <file>` and `orx tree-sitter imports <file>` reuse the guarded parse to render bounded single-file AST import-like sources for static imports, re-exports, CommonJS `require(...)`, and dynamic `import(...)`. `orx code tree-sitter refs <file> <query>` and `orx tree-sitter refs <file> <query>` reuse the guarded parse to render exact single-file AST identifier matches for an identifier-like query. `orx code tree-sitter repo-files [path]` and `orx tree-sitter repo-files [path]` scan the bounded local source-file set and omissions used by the repo tree-sitter modes without parsing files or requiring the `tree-sitter` binary. `orx code tree-sitter repo-outline [path]`, `orx tree-sitter repo-outline [path]`, `orx code tree-sitter repo-symbols [path]`, and `orx tree-sitter repo-symbols [path]` scan bounded local source files, skip generated/vendor directories, run guarded parses per file, and render path-aware AST definition-like outline or symbol previews without claiming semantic symbol resolution. `orx code tree-sitter repo-refs <query> [path]` and `orx tree-sitter repo-refs <query> [path]` scan a bounded local source tree or file, skip generated/vendor directories, run guarded parses per file, and render exact cross-file AST identifier matches. These refs modes are not semantic reference resolution. `orx code tree-sitter calls <file>` and `orx tree-sitter calls <file>` reuse the guarded parse to render bounded single-file AST call edges from the nearest named enclosing definition to each detected call expression. `orx code tree-sitter repo-calls [path]` and `orx tree-sitter repo-calls [path]` scan bounded local source files, skip generated/vendor directories, run guarded parses per file, and render path-aware AST call-expression previews without claiming semantic call resolution. `orx code tree-sitter repo-imports [path]` and `orx tree-sitter repo-imports [path]` scan bounded local source files, skip generated/vendor directories, run guarded parses per file, and render path-aware AST import-source previews without claiming dependency resolution. `orx code tree-sitter repo-deps [path]` and `orx tree-sitter repo-deps [path]` scan bounded local source files, skip generated/vendor directories, run guarded parses per file, and resolve local relative AST import sources plus safe root `tsconfig.json` or `jsconfig.json` `paths`/`baseUrl` aliases against the scanned source set where possible while reporting external and unresolved-local imports separately; this is not package-manager, semantic, or full dependency resolution. Tree-sitter commands accept `--json` on CLI and slash aliases for ORX-owned structured metadata over the same bounded results; `repo-files --json` remains filesystem inventory only and does not invoke `tree-sitter`. ORX does not install tree-sitter, grammars, or parser packages, never mutates files, and keeps the lexical code-map, symbols, refs, imports, and calls commands available as the dependency-free fallback.
+
+Research profiles are read-only planning metadata. `orx research profiles [--json]`, `orx research profiles inspect <profile> [--json]`, `orx research profiles plan <profile> [--json]`, and `/web profiles ...` list what is available today and what remains catalog-only without fetching URLs, calling Brave, launching browsers, writing state, or exposing model tools. `research-web` maps to the existing explicit chat `/web fetch` and `/web search` commands, `research-browser` maps to `/web browse`, and `research-crawl`, `research-scholar`, `research-docs`, `research-rag`, and `research-memory` remain catalog-only until their source, storage, citation, and model-visible retrieval contracts are designed.
 
 Local diagnostics profiles are explicit operator commands, not model tools:
 
@@ -586,6 +595,7 @@ The chat UI keeps in-session message history for the current process, streams as
 /ast-grep <pattern> [path] [--lang <lang>]
 /tree-sitter [parse|outline|imports|refs|calls|repo-files|repo-outline|repo-symbols|repo-refs|repo-calls|repo-imports|repo-deps] <file-or-query> [query-or-path] [--json]
 /outline <file> [--json]
+/web [help|fetch <url>|search <query>|browse <url>|profiles [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]]]
 /scanners [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]]
 /scan <semgrep|trivy|codeql> <path> [--config <local-config-path>] [--query <local-query-or-suite>] [--json]
 /diagnostics [list [--json]|status [--json]|inspect <profile> [--json]|show <profile> [--json]|plan <profile> [--json]|setup-plan <profile> [--json]|run <typescript|pyright|eslint|ruff|mypy|gopls|clangd> [--project <local-project-path>] [--json]]

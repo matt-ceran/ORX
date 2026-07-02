@@ -261,6 +261,7 @@ import {
   createUntrustedSearchContextMessage,
   createUntrustedWebContextMessage,
   findEvidenceSourceById,
+  findResearchProfile,
   fetchUrl,
   formatBrowserSnapshotResult,
   formatCitationUsage,
@@ -274,6 +275,18 @@ import {
   formatResearchFetchError,
   formatSearchResults,
   nextEvidenceSourceId,
+  parseResearchReadinessJsonFlag,
+  renderMissingResearchProfile,
+  renderResearchInspectUsage,
+  renderResearchPlanUsage,
+  renderResearchProfileInspect,
+  renderResearchProfileInspectJson,
+  renderResearchProfiles,
+  renderResearchProfilesJson,
+  renderResearchSetupPlan,
+  renderResearchSetupPlanJson,
+  SLASH_WEB_PROFILES_USAGE,
+  SLASH_WEB_USAGE,
   snapshotBrowserUrl,
   searchWeb,
   type BrowserSnapshotDriver,
@@ -508,7 +521,18 @@ const OPENROUTER_MODEL_SHORTCUT_COMPLETIONS = [
   "openrouter/auto",
   "openrouter/fusion",
 ] as const;
-const WEB_SUBCOMMAND_COMPLETIONS = ["help", "fetch", "search", "browse"] as const;
+const WEB_SUBCOMMAND_COMPLETIONS = ["help", "fetch", "search", "browse", "profiles"] as const;
+const RESEARCH_PROFILE_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "plan", "setup-plan"] as const;
+const RESEARCH_PROFILE_COMPLETIONS = [
+  "research-web",
+  "research-browser",
+  "research-crawl",
+  "research-scholar",
+  "research-docs",
+  "research-rag",
+  "research-memory",
+] as const;
+const RESEARCH_PROFILE_OPTION_COMPLETIONS = ["--json"] as const;
 const MCP_SUBCOMMAND_COMPLETIONS = [
   "list",
   "status",
@@ -1269,8 +1293,8 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/web": {
-    usage: "/web [fetch <url>|search <query>|browse <url>]",
-    description: "Fetch, search, or browse as untrusted research context",
+    usage: SLASH_WEB_USAGE.replace(/^Usage:\s*/, ""),
+    description: "Fetch, search, browse, or plan research context",
     group: "Research",
     tier: "advanced",
     handler: async (command, context): Promise<SlashResult> => {
@@ -1883,7 +1907,25 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
     case "/history":
       return argIndex === 0 ? [...HISTORY_SUBCOMMAND_COMPLETIONS] : [];
     case "/web":
-      return argIndex === 0 ? [...WEB_SUBCOMMAND_COMPLETIONS] : [];
+      if (argIndex === 0) {
+        return [...WEB_SUBCOMMAND_COMPLETIONS];
+      }
+      if (firstArg === "profiles" || firstArg === "profile") {
+        const profileSubcommand = completedArgs[1]?.toLowerCase();
+        if (argIndex === 1) {
+          return [...RESEARCH_PROFILE_SUBCOMMAND_COMPLETIONS, ...RESEARCH_PROFILE_OPTION_COMPLETIONS];
+        }
+        if ((profileSubcommand === "list" || profileSubcommand === "status") && argIndex === 2) {
+          return [...RESEARCH_PROFILE_OPTION_COMPLETIONS];
+        }
+        if ((profileSubcommand === "inspect" || profileSubcommand === "show" || profileSubcommand === "plan" || profileSubcommand === "setup-plan") && argIndex === 2) {
+          return [...RESEARCH_PROFILE_COMPLETIONS];
+        }
+        if ((profileSubcommand === "inspect" || profileSubcommand === "show" || profileSubcommand === "plan" || profileSubcommand === "setup-plan") && argIndex === 3) {
+          return [...RESEARCH_PROFILE_OPTION_COMPLETIONS];
+        }
+      }
+      return [];
     case "/mcp":
       if (argIndex === 0) {
         return [...MCP_SUBCOMMAND_COMPLETIONS];
@@ -2456,7 +2498,70 @@ async function handleWebCommand(command: SlashCommand, context: SlashCommandCont
     return;
   }
 
-  writeLine(context.io.stderr, "Usage: /web [fetch <url>|search <query>|browse <url>]");
+  if (subcommand === "profiles" || subcommand === "profile") {
+    handleResearchProfilesCommand(command.args.slice(1), context);
+    return;
+  }
+
+  writeLine(context.io.stderr, SLASH_WEB_USAGE);
+}
+
+function handleResearchProfilesCommand(args: string[], context: SlashCommandContext): void {
+  const firstArg = args[0]?.toLowerCase();
+  const subcommand = firstArg === "--json" ? "list" : firstArg ?? "list";
+
+  if (subcommand === "list" || subcommand === "status") {
+    const jsonFlag = parseResearchReadinessJsonFlag(
+      firstArg === "list" || firstArg === "status" ? args.slice(1) : args,
+      SLASH_WEB_PROFILES_USAGE,
+    );
+    if (!jsonFlag.ok) {
+      writeLine(context.io.stderr, jsonFlag.message);
+      return;
+    }
+    writeLine(context.io.stdout, jsonFlag.json ? renderResearchProfilesJson() : renderResearchProfiles());
+    return;
+  }
+
+  if (subcommand === "inspect" || subcommand === "show") {
+    const profileId = args[1];
+    const jsonFlag = parseResearchReadinessJsonFlag(args.slice(2), SLASH_WEB_PROFILES_USAGE);
+    if (!profileId || !jsonFlag.ok) {
+      writeLine(context.io.stderr, renderResearchInspectUsage(SLASH_WEB_PROFILES_USAGE));
+      return;
+    }
+    const profile = findResearchProfile(profileId);
+    if (!profile) {
+      writeLine(context.io.stderr, renderMissingResearchProfile(profileId));
+      return;
+    }
+    writeLine(
+      context.io.stdout,
+      jsonFlag.json ? renderResearchProfileInspectJson(profile) : renderResearchProfileInspect(profile),
+    );
+    return;
+  }
+
+  if (subcommand === "plan" || subcommand === "setup-plan") {
+    const profileId = args[1];
+    const jsonFlag = parseResearchReadinessJsonFlag(args.slice(2), SLASH_WEB_PROFILES_USAGE);
+    if (!profileId || !jsonFlag.ok) {
+      writeLine(context.io.stderr, renderResearchPlanUsage(SLASH_WEB_PROFILES_USAGE));
+      return;
+    }
+    const profile = findResearchProfile(profileId);
+    if (!profile) {
+      writeLine(context.io.stderr, renderMissingResearchProfile(profileId));
+      return;
+    }
+    writeLine(
+      context.io.stdout,
+      jsonFlag.json ? renderResearchSetupPlanJson(profile) : renderResearchSetupPlan(profile),
+    );
+    return;
+  }
+
+  writeLine(context.io.stderr, SLASH_WEB_PROFILES_USAGE);
 }
 
 async function fetchWebUrl(rawUrl: string, context: SlashCommandContext): Promise<void> {
@@ -2554,6 +2659,7 @@ function webHelpText(): string {
     "  /web fetch <url>  Fetch and extract an explicit http/https URL as untrusted context.",
     "  /web search <query>  Search Brave web results as untrusted provider snippets.",
     "  /web browse <url>  Capture a browser DOM text snapshot as untrusted context.",
+    "  /web profiles [list|status|inspect|show|plan|setup-plan] [--json]  List, inspect, or plan research profiles without network.",
     "  /fetch <url>      Alias for /web fetch <url>.",
     "  /search <query>   Alias for /web search <query>.",
     "  /browse <url>     Alias for /web browse <url>.",
