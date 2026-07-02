@@ -86,6 +86,13 @@ import {
   renderChatHistoryCleared,
   type ChatHistoryEntry,
 } from "./history.js";
+import {
+  renderTtyAssistantTranscriptPrefix,
+  renderTtyToolCallBlock,
+  renderTtyToolResultBlock,
+  renderTtyUserTranscript,
+  sanitizeTtyTranscriptChunk,
+} from "./transcript.js";
 
 type WritableLike = Pick<NodeJS.WriteStream, "write">;
 
@@ -433,7 +440,7 @@ export async function runChat({
       ));
       activeAbort = new AbortController();
       recordPromptHistory(line);
-      writeLine(io.stdout, `\nyou: ${formatUserSubmissionForScrollback(line)}`);
+      writeLine(io.stdout, formatUserSubmissionForScrollback(line));
       await runLifecycleHooksAndWarn("user_prompt_submit", activeAbort.signal);
       const userMessage: OpenRouterMessage = { role: "user", content: line };
       const requestMessages = [...messages, userMessage];
@@ -491,22 +498,18 @@ export async function runChat({
                   io.stdout.write(formatAssistantLabel());
                   needsAssistantPrefix = false;
                 }
-                io.stdout.write(text);
+                io.stdout.write(formatAssistantText(text));
               },
               async onToolCall(toolCall) {
                 finishTtyActivityLine();
-                io.stdout.write(
-                  `\n${formatToolCallStart(toolCall, toolSummaryOptions())}\n`,
-                );
+                io.stdout.write(`\n${formatToolCallForScrollback(toolCall)}\n`);
                 startTtyActivity("tool", toolCall.function.name);
                 needsAssistantPrefix = true;
                 await runLifecycleHooksAndWarn("pre_tool_use", activeAbort?.signal);
               },
               async onToolResult(result) {
                 finishTtyActivityLine();
-                io.stdout.write(
-                  `${formatToolResult(result, toolSummaryOptions())}\n`,
-                );
+                io.stdout.write(`${formatToolResultForScrollback(result)}\n`);
                 startTtyActivity("assistant");
                 needsAssistantPrefix = true;
                 await runLifecycleHooksAndWarn("post_tool_use", activeAbort?.signal);
@@ -626,8 +629,53 @@ export async function runChat({
       return "assistant: ";
     }
 
-    const renderer = createTerminalRenderer({ stream: io.stdout, theme: activeConfig.theme });
-    return `${renderer.accent("assistant")}${renderer.dim(":")} `;
+    return renderTtyAssistantTranscriptPrefix({
+      stream: io.stdout,
+      theme: activeConfig.theme,
+      maxWidth: resolveTerminalWidth(io.stdout),
+    });
+  }
+
+  function formatAssistantText(text: string): string {
+    return useTtyScreen ? sanitizeTtyTranscriptChunk(text) : text;
+  }
+
+  function formatUserSubmissionForScrollback(input: string): string {
+    if (useTtyScreen) {
+      return renderTtyUserTranscript(input, {
+        stream: io.stdout,
+        theme: activeConfig.theme,
+        maxWidth: resolveTerminalWidth(io.stdout),
+      });
+    }
+
+    return formatPlainUserSubmissionForScrollback(input);
+  }
+
+  function formatToolCallForScrollback(toolCall: Parameters<typeof formatToolCallStart>[0]): string {
+    if (useTtyScreen) {
+      return renderTtyToolCallBlock(toolCall, {
+        stream: io.stdout,
+        theme: activeConfig.theme,
+        maxWidth: resolveTerminalWidth(io.stdout),
+        ...toolSummaryOptions(),
+      });
+    }
+
+    return formatToolCallStart(toolCall, toolSummaryOptions());
+  }
+
+  function formatToolResultForScrollback(result: Parameters<typeof formatToolResult>[0]): string {
+    if (useTtyScreen) {
+      return renderTtyToolResultBlock(result, {
+        stream: io.stdout,
+        theme: activeConfig.theme,
+        maxWidth: resolveTerminalWidth(io.stdout),
+        ...toolSummaryOptions(),
+      });
+    }
+
+    return formatToolResult(result, toolSummaryOptions());
   }
 
   function toolSummaryOptions(): TerminalRenderOptions & {
@@ -886,12 +934,12 @@ function normalizeSubmittedInput(input: string): string {
   return lines.join("\n");
 }
 
-function formatUserSubmissionForScrollback(input: string): string {
+function formatPlainUserSubmissionForScrollback(input: string): string {
   const [firstLine = "", ...rest] = input.split("\n");
   if (rest.length === 0) {
-    return firstLine;
+    return `\nyou: ${firstLine}`;
   }
-  return [firstLine, ...rest.map((line) => `     ${line}`)].join("\n");
+  return `\nyou: ${[firstLine, ...rest.map((line) => `     ${line}`)].join("\n")}`;
 }
 
 async function createChatSession(

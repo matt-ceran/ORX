@@ -38,7 +38,7 @@ export function formatToolResult(
     renderer.accent("[tool]"),
     result.toolCall.function.name,
     result.ok ? renderer.success("ok") : renderer.danger("failed"),
-    renderer.dim(`duration=${formatDuration(result.durationMs)}`),
+    renderer.dim(`duration=${formatToolDuration(result.durationMs)}`),
     ...details.map((detail) => renderer.dim(detail)),
   ].join(" ");
 }
@@ -62,7 +62,7 @@ export function formatToolArguments(
     .join(" ");
 }
 
-function formatToolResultDetails(
+export function formatToolResultDetails(
   result: ToolDispatchResult,
   options: ToolSummaryOptions,
 ): string[] {
@@ -404,7 +404,7 @@ function isObject(value: unknown): value is JsonObject {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function formatDuration(durationMs: number): string {
+export function formatToolDuration(durationMs: number): string {
   if (durationMs < 1_000) {
     return `${durationMs}ms`;
   }

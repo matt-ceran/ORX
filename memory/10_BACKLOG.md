@@ -1,6 +1,6 @@
 # Backlog
 
-Last updated: 2026-07-01
+Last updated: 2026-07-02
 
 ## P0
 
@@ -10,6 +10,7 @@ Urgent UX recovery:
 
 Completed:
 
+- Add TTY transcript product-pass polish: TTY chat renders user and assistant turns as clearer blocks, displays tool call starts/results as compact multi-line product blocks, sanitizes terminal-control characters in displayed TTY transcript chunks, preserves non-TTY/`NO_COLOR=1` one-line tool summaries, and includes an 80/120-column render probe script without adding browser/xterm dependencies.
 - Add structured Node test report ingestion: direct Node fallback requests native JUnit into a private temporary report file, parses bounded counts before stdout fallback, deletes the report directory, and strips inherited `NODE_TEST_*` control variables from child test runs.
 - Add structured Jest/Vitest/Playwright JSON test report ingestion: when package scripts already emit whole-object JSON result output to stdout or stderr, ORX parses bounded Jest/Vitest-style numeric result objects and Playwright `stats` objects before summary-line fallback, without adding reporter flags, report files, installs, network, or model-tool exposure changes.
 - Add captured Mocha JSON report parsing: when already-captured bounded whole-object Mocha JSON reporter output contains consistent `stats.tests`/`passes`/`failures`/`pending` counts and matching result arrays, ORX parses compact `source=mocha-json` counts before summary-line fallback without adding reporter flags, report files, installs, network, or model-tool exposure changes.

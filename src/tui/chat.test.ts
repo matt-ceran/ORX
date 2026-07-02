@@ -19,6 +19,7 @@ import { resolveChatTerminalModes, runChat } from "./chat.js";
 import { loadChatHistory } from "./history.js";
 
 const encoder = new TextEncoder();
+const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 
 test("chat keeps readline terminal mode when NO_COLOR disables the tty screen", () => {
   const stdin = { isTTY: true };
@@ -181,8 +182,8 @@ test("tty chat renders continuation composer for multiline input", async () => {
     assert.equal(requests.length, 1);
     assert.equal(requests[0].messages.at(-1)?.content, "First line\nSecond line");
     assert.match(stdout, /orx … /);
-    assert.match(stdout, /you: First line\n     Second line/);
-    assert.match(stdout, /assistant: TTY multiline reply/);
+    assert.match(stdout, /\nuser\n  First line\n  Second line/);
+    assert.match(stdout, /\nassistant\n  TTY multiline reply/);
     assert.equal(capture.stderr(), "");
   } finally {
     if (previousNoColor === undefined) {
@@ -1981,7 +1982,7 @@ test("tty chat renders bottom status composer instead of the repeated plain foot
     assert.match(stdout, /orx › /);
     assert.match(stdout, /work ⠋ assistant/);
     assert.match(rawStdout, /\r\x1b\[2K\x1b\[1F\x1b\[2K\x1b\[1F\x1b\[2K/);
-    assert.match(stdout, /assistant: TTY reply/);
+    assert.match(stdout, /\nassistant\n  TTY reply/);
     assert.match(stdout, /meta  route openrouter\/auto  tokens 3  cost \$0\.000200/);
     assert.doesNotMatch(stdout, /\nmetadata:\n/);
     assert.doesNotMatch(stdout, /requested_model:/);
@@ -2302,14 +2303,107 @@ test("tty chat renders activity while a tool is active", async () => {
     const stdout = stripAnsi(rawStdout);
     assert.equal(exitCode, 0);
     assert.equal(callCount, 2);
-    assert.match(rawStdout, /\x1b\[96m\[tool\]\x1b\[0m read_file/);
+    assert.match(rawStdout, /\x1b\[96mtool\x1b\[0m \x1b\[1mread_file\x1b\[0m/);
     assert.match(rawStdout, /\x1b\[92mok\x1b\[0m/);
     assert.match(stdout, /work ⠋ assistant/);
     assert.match(stdout, /work [⠙⠹⠸⠼⠴⠦⠧⠇⠏⠋] tool read_/);
+    assert.match(stdout, /╭─ tool read_file\n│  args path="sample\.txt"\n╰─ started/);
+    assert.match(stdout, /╭─ tool read_file ok \d+ms\n╰─ done/);
+    assert.match(stdout, /\nassistant\n  Read complete\./);
+    assert.doesNotMatch(stdout, /cwd: .* \| mode: .* \| model:/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat keeps plain tool summaries when NO_COLOR disables styled screen", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orx-chat-no-color-tool-cwd-"));
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const previousNoColor = process.env.NO_COLOR;
+  process.env.NO_COLOR = "1";
+  let callCount = 0;
+
+  try {
+    writeFileSync(join(cwd, "sample.txt"), "tool content\n");
+    const capture = createIo({
+      stdin: Readable.from(["Read sample\n", "/exit\n"]),
+      cwd,
+      tty: true,
+      columns: 104,
+      fetch: async (_input, init) => {
+        callCount += 1;
+        const body = JSON.parse(String(init?.body));
+
+        if (callCount === 1) {
+          assert.equal(body.messages.at(-1).content, "Read sample");
+          return new Response(
+            streamFrom([
+              sse({
+                choices: [
+                  {
+                    delta: {
+                      tool_calls: [
+                        {
+                          index: 0,
+                          id: "call_read",
+                          type: "function",
+                          function: {
+                            name: "read_file",
+                            arguments: JSON.stringify({ path: "sample.txt" }),
+                          },
+                        },
+                      ],
+                    },
+                    finish_reason: "tool_calls",
+                  },
+                ],
+              }),
+              "data: [DONE]\n\n",
+            ]),
+            { status: 200 },
+          );
+        }
+
+        assert.equal(body.messages.at(-1).role, "tool");
+        return new Response(
+          streamFrom([
+            sse({
+              choices: [
+                {
+                  delta: {
+                    content: "Read complete.",
+                  },
+                },
+              ],
+            }),
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    const stdout = capture.stdout();
+    assert.equal(exitCode, 0);
+    assert.equal(callCount, 2);
     assert.match(stdout, /\[tool\] read_file path="sample\.txt"/);
     assert.match(stdout, /\[tool\] read_file ok duration=\d+ms/);
-    assert.match(stdout, /assistant: Read complete\./);
-    assert.doesNotMatch(stdout, /cwd: .* \| mode: .* \| model:/);
+    assert.doesNotMatch(stdout, /╭─ tool read_file/);
+    assert.doesNotMatch(stdout, ANSI_PATTERN);
     assert.equal(capture.stderr(), "");
   } finally {
     if (previousNoColor === undefined) {

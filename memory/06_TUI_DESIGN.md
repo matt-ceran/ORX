@@ -1,6 +1,6 @@
 # TUI Design
 
-Last updated: 2026-06-29
+Last updated: 2026-07-02
 
 ## Interface Goals
 
@@ -47,6 +47,7 @@ Current MVP:
 
 - `orx chat` uses a readline-based terminal loop.
 - TTY chat uses a compact bottom status notch and `orx ›` composer instead of the older long header/footer. Non-TTY and `NO_COLOR=1` keep the plain `orx>` line-oriented fallback.
+- TTY transcript scrollback renders user and assistant turns as distinct blocks with better vertical rhythm, sanitizes terminal-control characters in displayed TTY transcript chunks, and renders tool call starts/results as compact multi-line product blocks. Non-TTY and `NO_COLOR=1` keep the script-safe plain transcript and one-line `[tool]` summaries.
 - The status notch shows cwd, mode, model, permissions, session id, local approximate context, OpenRouter metadata cost, and account credits after `/credits` has succeeded in the current process.
 - The TTY model badge uses compact route labels for OpenRouter routing shortcuts: `openrouter/auto` renders as `route auto`, and `openrouter/fusion` renders as `route fusion`. On wide TTY layouts exact `provider/model` ids render as separate `provider` and `model` badges; narrow layouts keep a single compact model badge. Full ids remain visible in plain status and request/config surfaces.
 - TTY render helpers support `default`, `mono`, and `vivid` themes. Theme can be set in config as `theme = "default" | "mono" | "vivid"`, overridden with `ORX_TTY_THEME`/`ORX_THEME`, or changed in chat with `/theme [default|mono|vivid]`. `NO_COLOR=1` and non-TTY output still force plain text.
@@ -58,6 +59,7 @@ Current MVP:
 - Readline Tab completion now covers slash command names, aliases, and deterministic arguments for common command families such as routing, web, MCP, plugins, skills, orchestration, resume, help, and palette filtering.
 - Multiline prompt continuation is implemented without a raw-mode rewrite: an input line ending with an unescaped `\` keeps collecting lines, TTY mode renders a continuation `orx …` composer, non-TTY mode renders `...>`, and the collected lines are submitted as one user message with internal newlines preserved.
 - Assistant responses stream inline as chunks arrive.
+- `scripts/probe-tty-render.mjs` provides a dependency-free built-output render probe for representative 80- and 120-column TTY transcript/status output. Browser/pixel terminal verification remains a later phase.
 - In-process user/assistant history is sent with follow-up turns.
 - Ctrl+C aborts an active response or exits when idle, and active TTY activity is cleared before the interruption message.
 - ANSI styling is light and TTY-only; non-TTY output and `NO_COLOR=1` remain plain text.
