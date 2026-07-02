@@ -135,7 +135,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/refs <query> \[--json\]/);
   assert.match(output, /\/imports \[query\]/);
   assert.match(output, /\/calls \[query\]/);
-  assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\]\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
@@ -150,7 +150,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|plan \[preset-or-profile\]\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|plan \[preset-or-profile\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -258,17 +258,22 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mcp m"), [["model "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp p"), [["plan ", "presets "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan c"), [["cloudflare-api ", "cloudflare-docs ", "context7 "], "c"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp plan d"), [["deepwiki "], "d"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan git"), [["github-readonly ", "github-write ", "gitlab-ci-write ", "gitlab-readonly "], "git"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan source"), [["sourcegraph-github-readonly "], "source"]);
   assert.deepEqual(completeSlashCommandLine("/mcp model e"), [["enable "], "e"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets i"), [["inspect ", "info "], "i"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets inspect d"), [["deepwiki "], "d"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect g"), [["github-readonly ", "github-write ", "gitlab-ci-write ", "gitlab-readonly "], "g"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets inspect deepwiki --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect github-w"), [["github-write "], "github-w"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect gitl"), [["gitlab-ci-write ", "gitlab-readonly "], "gitl"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets show m"), [["microsoft-learn "], "m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect s"), [["sentry-readonly ", "sourcegraph-github-readonly "], "s"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets inspect source"), [["sourcegraph-github-readonly "], "source"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets b"), [["browser "], "b"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp presets deepwiki --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/mcp allow-m"), [["allow-model-tool "], "allow-m"]);
   assert.deepEqual(completeSlashCommandLine("/mcp auth o"), [["openrouter "], "o"]);
   assert.deepEqual(completeSlashCommandLine("/mcp auth e"), [["env ", "env-file "], "e"]);
@@ -1908,7 +1913,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-  assert.match(alias.stdout(), /\/mcp \[list\|plan \[preset-or-profile\]\|catalog\|presets \[inspect\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(alias.stdout(), /\/mcp \[list\|plan \[preset-or-profile\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -4593,6 +4598,7 @@ test("mcp slash commands install provider presets", async () => {
     assert.equal(await handleSlashCommand("/mcp presets", harness.context), "continue");
     assert.match(harness.stdout(), /MCP provider presets/);
     assert.match(harness.stdout(), /id=context7/);
+    assert.match(harness.stdout(), /id=deepwiki/);
     assert.match(harness.stdout(), /id=browser/);
     assert.match(harness.stdout(), /id=figma/);
     assert.match(harness.stdout(), /id=github-write/);
@@ -4601,10 +4607,53 @@ test("mcp slash commands install provider presets", async () => {
     assert.match(harness.stdout(), /id=sentry-readonly/);
     assert.match(harness.stdout(), /id=sourcegraph-github-readonly/);
 
+    const jsonHarness = createSlashHarness({
+      mcpConfigPath,
+      mcpProfileCatalogPath: profileCatalogPath,
+    });
+    assert.equal(await handleSlashCommand("/mcp presets --json", jsonHarness.context), "continue");
+    const listReport = JSON.parse(jsonHarness.stdout()) as {
+      surface: string;
+      network: string;
+      presets: Array<{ id: string; profile_id: string; static_tool_count: number }>;
+    };
+    assert.equal(listReport.surface, "orx.mcp_provider_presets");
+    assert.equal(listReport.network, "none");
+    assert.deepEqual(
+      listReport.presets
+        .filter((preset) => preset.id === "deepwiki")
+        .map((preset) => `${preset.profile_id}:${preset.static_tool_count}`),
+      ["user:deepwiki:3"],
+    );
+
     assert.equal(await handleSlashCommand("/mcp presets inspect github-readonly", harness.context), "continue");
     assert.match(harness.stdout(), /MCP Provider Preset: github-readonly/);
     assert.match(harness.stdout(), /tools: none/);
     assert.match(harness.stdout(), /inspect_side_effects: none/);
+
+    const inspectJsonHarness = createSlashHarness({
+      mcpConfigPath,
+      mcpProfileCatalogPath: profileCatalogPath,
+    });
+    assert.equal(
+      await handleSlashCommand("/mcp presets inspect deepwiki --json", inspectJsonHarness.context),
+      "continue",
+    );
+    const inspectReport = JSON.parse(inspectJsonHarness.stdout()) as {
+      surface: string;
+      preset: { id: string; profile_id: string; static_tools: Array<{ name: string }> };
+      install: { result_state: string };
+      authority: { inspect_side_effects: string };
+    };
+    assert.equal(inspectReport.surface, "orx.mcp_provider_preset");
+    assert.equal(inspectReport.preset.id, "deepwiki");
+    assert.equal(inspectReport.preset.profile_id, "user:deepwiki");
+    assert.equal(inspectReport.install.result_state, "local_user_profile_disabled");
+    assert.equal(inspectReport.authority.inspect_side_effects, "none");
+    assert.deepEqual(
+      inspectReport.preset.static_tools.map((tool) => tool.name),
+      ["ask_question", "read_wiki_contents", "read_wiki_structure"],
+    );
 
     assert.equal(await handleSlashCommand("/mcp presets inspect github-write", harness.context), "continue");
     assert.match(harness.stdout(), /MCP Provider Preset: github-write/);

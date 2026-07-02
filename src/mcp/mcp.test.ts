@@ -41,7 +41,9 @@ import {
   listRemoteMcpTools,
   loadUserMcpProfileCatalog,
   loadMcpProfilesConfig,
+  renderMcpProviderPresetInspectJson,
   renderMcpProviderPresetInspect,
+  renderMcpProviderPresetsJson,
   renderMcpAuthEnvFileInitResult,
   renderMcpMacosKeychainResult,
   renderMcpProfileAuthReport,
@@ -356,6 +358,52 @@ test("MCP provider presets install local user catalog profiles", () => {
     assert.match(inspected, /result_state: local_user_profile_disabled/);
     assert.match(inspected, /inspect_side_effects: none/);
     assert.match(inspected, /install_enable_trust_grant_call_model_exposure: separate_explicit_steps/);
+
+    const renderedJson = JSON.parse(renderMcpProviderPresetsJson()) as {
+      surface: string;
+      network: string;
+      data_state_writes: string;
+      preset_count: number;
+      presets: Array<{
+        id: string;
+        profile_id: string;
+        static_tool_count: number;
+        static_tools: Array<{ name: string; risk: string; auth_required: boolean; billable: boolean }>;
+      }>;
+      authority: { install_enable_trust_grant_call_model_exposure: string };
+    };
+    assert.equal(renderedJson.surface, "orx.mcp_provider_presets");
+    assert.equal(renderedJson.network, "none");
+    assert.equal(renderedJson.data_state_writes, "none");
+    assert.equal(renderedJson.preset_count, listMcpProviderPresets().length);
+    assert.equal(
+      renderedJson.authority.install_enable_trust_grant_call_model_exposure,
+      "separate_explicit_steps",
+    );
+    const deepwikiJson = renderedJson.presets.find((preset) => preset.id === "deepwiki");
+    assert.ok(deepwikiJson);
+    assert.equal(deepwikiJson.profile_id, "user:deepwiki");
+    assert.equal(deepwikiJson.static_tool_count, 3);
+    assert.deepEqual(
+      deepwikiJson.static_tools.map((tool) => `${tool.name}:${tool.risk}:${tool.auth_required}:${tool.billable}`),
+      [
+        "ask_question:read:false:false",
+        "read_wiki_contents:read:false:false",
+        "read_wiki_structure:read:false:false",
+      ],
+    );
+
+    const inspectedJson = JSON.parse(renderMcpProviderPresetInspectJson(listMcpProviderPresets()[0]!)) as {
+      surface: string;
+      preset: { id: string; profile_id: string };
+      install: { result_state: string };
+      authority: { inspect_side_effects: string };
+    };
+    assert.equal(inspectedJson.surface, "orx.mcp_provider_preset");
+    assert.equal(inspectedJson.install.result_state, "local_user_profile_disabled");
+    assert.equal(inspectedJson.authority.inspect_side_effects, "none");
+    assert.ok(inspectedJson.preset.id);
+    assert.match(inspectedJson.preset.profile_id, /^user:/);
 
     const result = installMcpProviderPreset("microsoft-learn", {
       profileCatalogPath,

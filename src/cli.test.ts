@@ -3748,6 +3748,7 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(listed.stdout(), /id=browser/);
     assert.match(listed.stdout(), /id=cloudflare-api/);
     assert.match(listed.stdout(), /id=context7/);
+    assert.match(listed.stdout(), /id=deepwiki/);
     assert.match(listed.stdout(), /id=figma/);
     assert.match(listed.stdout(), /id=github-readonly/);
     assert.match(listed.stdout(), /id=github-write/);
@@ -3756,6 +3757,29 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(listed.stdout(), /id=microsoft-learn/);
     assert.match(listed.stdout(), /id=sentry-readonly/);
     assert.match(listed.stdout(), /id=sourcegraph-github-readonly/);
+
+    const listedJson = createIo({ cwd });
+    assert.equal(await runCli(["node", "cli", "mcp", "presets", "--json"], env, listedJson.io), 0);
+    const listedReport = JSON.parse(listedJson.stdout()) as {
+      surface: string;
+      network: string;
+      data_state_writes: string;
+      presets: Array<{ id: string; profile_id: string; static_tool_count: number }>;
+      authority: { install_enable_trust_grant_call_model_exposure: string };
+    };
+    assert.equal(listedReport.surface, "orx.mcp_provider_presets");
+    assert.equal(listedReport.network, "none");
+    assert.equal(listedReport.data_state_writes, "none");
+    assert.equal(
+      listedReport.authority.install_enable_trust_grant_call_model_exposure,
+      "separate_explicit_steps",
+    );
+    assert.deepEqual(
+      listedReport.presets
+        .filter((preset) => preset.id === "deepwiki")
+        .map((preset) => `${preset.profile_id}:${preset.static_tool_count}`),
+      ["user:deepwiki:3"],
+    );
 
     const presetInspect = createIo({ cwd });
     assert.equal(
@@ -3768,11 +3792,60 @@ test("cli mcp provider presets install local catalog profiles", async () => {
     assert.match(presetInspect.stdout(), /inspect_side_effects: none/);
     assert.match(presetInspect.stdout(), /install_enable_trust_grant_call_model_exposure: separate_explicit_steps/);
 
+    const presetInspectJson = createIo({ cwd });
+    assert.equal(
+      await runCli(
+        ["node", "cli", "mcp", "presets", "inspect", "deepwiki", "--json"],
+        env,
+        presetInspectJson.io,
+      ),
+      0,
+    );
+    const inspectReport = JSON.parse(presetInspectJson.stdout()) as {
+      surface: string;
+      preset: {
+        id: string;
+        profile_id: string;
+        static_tools: Array<{ name: string; auth_required: boolean; billable: boolean }>;
+      };
+      install: { command: string; result_state: string };
+      authority: { inspect_side_effects: string };
+    };
+    assert.equal(inspectReport.surface, "orx.mcp_provider_preset");
+    assert.equal(inspectReport.preset.id, "deepwiki");
+    assert.equal(inspectReport.preset.profile_id, "user:deepwiki");
+    assert.equal(inspectReport.install.command, "orx mcp add-preset deepwiki");
+    assert.equal(inspectReport.install.result_state, "local_user_profile_disabled");
+    assert.equal(inspectReport.authority.inspect_side_effects, "none");
+    assert.deepEqual(
+      inspectReport.preset.static_tools.map((tool) => `${tool.name}:${tool.auth_required}:${tool.billable}`),
+      [
+        "ask_question:false:false",
+        "read_wiki_contents:false:false",
+        "read_wiki_structure:false:false",
+      ],
+    );
+
     const shorthandInspect = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "presets", "github-readonly"], env, shorthandInspect.io), 0);
     assert.match(shorthandInspect.stdout(), /MCP Provider Preset: github-readonly/);
     assert.match(shorthandInspect.stdout(), /tools: none/);
     assert.match(shorthandInspect.stdout(), /remote_tool_review:/);
+
+    const shorthandInspectJson = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "presets", "github-readonly", "--json"], env, shorthandInspectJson.io),
+      0,
+    );
+    assert.equal(JSON.parse(shorthandInspectJson.stdout()).preset.id, "github-readonly");
+
+    const missingInspectPreset = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "presets", "inspect", "--json"], env, missingInspectPreset.io),
+      1,
+    );
+    assert.equal(missingInspectPreset.stdout(), "");
+    assert.match(missingInspectPreset.stderr(), /Usage: orx mcp presets inspect <preset> \[--json\]/);
 
     const githubWriteInspect = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "presets", "github-write"], env, githubWriteInspect.io), 0);

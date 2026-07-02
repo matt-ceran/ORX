@@ -336,8 +336,10 @@ orx hooks trust plugin:acme.example@1.0.0:format
 orx hooks run plugin:acme.example@1.0.0:format
 orx hooks untrust plugin:acme.example@1.0.0:format
 orx mcp presets
+orx mcp presets --json
 orx mcp presets inspect context7
 orx mcp presets inspect deepwiki
+orx mcp presets inspect deepwiki --json
 orx mcp presets inspect sentry-readonly
 orx mcp plan context7
 orx mcp add-preset context7
@@ -429,6 +431,8 @@ Plugin manifests may include optional inert `metadata` for risk display, such as
 
 Enabled plugins can declare MCP presets through `components.mcpServers`. ORX reads these declarations from the cached plugin snapshot, namespaces them as `plugin:<plugin-id>:<server-id>`, includes them in `/mcp list`, `/mcp inspect`, `/mcp auth`, `/mcp tools`, `/mcp call`, `/mcp remote-tools`, `/mcp enable`, `/mcp discover`, and `/status`, and hashes plugin manifest/component provenance for schema-change visibility. User MCP profiles can also be declared locally in `~/.orx/mcp/profile-catalog.json` or `ORX_MCP_PROFILE_CATALOG_PATH`; ORX namespaces them as `user:<profile-id>` and routes them through the same disabled-by-default enable/trust/hash/tool-grant gates as built-in and plugin profiles. `orx mcp presets` lists built-in provider templates, `orx mcp presets inspect <preset>` reviews a preset without writing catalog state, and `orx mcp add-preset <preset>` writes the selected template into the same private user catalog. Built-in presets include `context7`, `deepwiki`, `microsoft-learn`, `github-readonly`, `github-write`, `gitlab-readonly`, `gitlab-ci-write`, `sourcegraph-github-readonly`, `sentry-readonly`, `figma`, `browser`, `cloudflare-docs`, and `cloudflare-api`. The `deepwiki` preset is a no-auth read-only profile for public GitHub repository documentation and grounded repository questions through DeepWiki's official `/mcp` endpoint. The `sourcegraph-github-readonly` preset is a read-only/auth-required multi-repo planning profile for Sourcegraph-backed GitHub code search, navigation, and history; it declares no static tools until the operator enables/trusts the profile, reviews provider tool metadata, and imports or adds read-only declarations explicitly. OAuth-backed or dynamic-tool providers still require explicit enable/trust, provider credentials compatible with ORX's bearer-token path, and remote-tool review before calls. `orx mcp catalog`, `orx mcp add-profile`, `orx mcp remove-profile`, `orx mcp add-tool`, and `orx mcp remove-tool` edit that local catalog without hand-writing JSON, using private `0700` directories and `0600` files. `orx mcp import-remote-tools <profile>` and `/mcp import-remote-tools <profile>` can import reviewed names from a successful guarded `tools/list` result into a local `user:` catalog profile as read-only, non-billable declarations. Importing changes the local profile hash when new declarations are added, so the profile must be reviewed and re-enabled before calls or model grants use those tools. `orx mcp ...` also exposes local profile/policy inspection, profile enable/disable, per-tool grant/revoke, per-tool model grant/revoke, auth readiness, and explicit tool calls without requiring an OpenRouter chat API key. `orx mcp auth <profile>` and `/mcp auth <profile>` show the profile-specific bearer env name, fallback env status, managed env-file path, effective auth readiness, macOS Keychain opt-in status, hash state, current OAuth limitation, and provider-specific credential source/lifetime/scope/setup hints for recognized provider endpoints without network calls or secret persistence; no-auth profiles render credential mode, bearer, and Keychain state as `not_required` rather than missing. `orx mcp auth setup <profile>`, `orx mcp auth env <profile>`, `/mcp auth setup <profile>`, and `/mcp auth env <profile>` print copyable shell export placeholders for auth-required profiles plus the same provider guidance, never display token values, and make no network calls, subprocess calls, or config writes beyond normal redacted audit metadata. Provider guidance is selected only from exact parsed HTTPS MCP endpoint hosts/paths; unknown or spoofed profiles render generic bearer guidance. `orx mcp auth init <profile>`, `orx mcp auth env-file <profile>`, `/mcp auth init <profile>`, and `/mcp auth env-file <profile>` create a private `0600` commented shell env template under `~/.orx/mcp/auth-env` or `ORX_MCP_AUTH_ENV_DIR`, refuse symlink parent paths, do not overwrite existing files, and do not persist token values. On macOS, `orx mcp auth keychain [status|set|delete] <profile>` and `/mcp auth keychain ...` manage an optional Keychain bearer item through `/usr/bin/security`; `set` prompts through macOS Security, ORX never prints token values, and MCP calls read Keychain only after explicit `ORX_MCP_KEYCHAIN=1` opt-in. `orx mcp discover` and `/mcp discover` may contact enabled, trusted, unchanged `remote-http` endpoints through ORX's guarded DNS-vetted discovery transport, but they perform only the minimal initialize handshake. `orx mcp remote-tools` and `/mcp remote-tools` can list and hash remote `tools/list` metadata through the same guards; tool schemas are rendered only as hashes/summaries. `/mcp call <profile> <tool> [json]` and `orx mcp call <profile> <tool> [json]` call `tools/call` only for enabled/trusted/unchanged profiles when policy allows the declared tool and required bearer auth is supplied through `ORX_MCP_BEARER_<PROFILE>`, `ORX_MCP_BEARER_TOKEN`, or an opted-in macOS Keychain item. For `user:context7`, the profile-specific env name is `ORX_MCP_BEARER_USER_CONTEXT7`. Billable/write/destructive MCP tools require explicit per-tool grants bound to the current trusted profile hash, and stale grants are visible and denied. In interactive chat, `/mcp model enable` exposes one model-visible native tool, `mcp_call`, for read-only non-billable declared MCP tools that also have active model-tool grants; model-visible MCP text output is wrapped as untrusted remote data and cannot override system, developer, operator, ORX policy, or tool-permission instructions. `/mcp model disable` removes it again. One-shot `orx ask --mcp-tools` enables the same model-granted read-only bridge for that request only. Broad/billable/write model-loop MCP exposure remains inactive.
 
+`orx mcp presets --json`, `orx mcp presets inspect <preset> --json`, `/mcp presets --json`, and `/mcp presets inspect <preset> --json` emit ORX-owned structured preset metadata only; they do not install, enable, trust, grant, fetch, call, audit, expose model tools, or write catalog state.
+
 The `github-write` built-in preset targets GitHub's hosted MCP endpoint at `https://api.githubcopilot.com/mcp/`. It is auth-required, high-risk, write-capable=yes, and declares no static tools so the operator must enable/trust the profile, review remote tool metadata, and manually declare tools with the correct risk before any calls or grants.
 
 The `gitlab-readonly` built-in preset targets GitLab.com's hosted MCP endpoint at `https://gitlab.com/api/v4/mcp`. It is auth-required, medium-risk, write-capable=no, and declares no static tools until the operator enables/trusts the profile, reviews provider tool metadata, and imports or adds read-only declarations explicitly.
@@ -466,6 +470,9 @@ The same catalog can be edited through slash commands in chat:
 
 ```text
 /mcp presets
+/mcp presets --json
+/mcp presets inspect deepwiki
+/mcp presets inspect deepwiki --json
 /mcp presets inspect github-readonly
 /mcp presets inspect github-write
 /mcp plan github-write
@@ -510,7 +517,9 @@ npm run dev -- mcp auth keychain status openrouter
 npm run dev -- mcp auth keychain set openrouter
 npm run dev -- mcp allow-model-tool openrouter models-list
 npm run dev -- mcp presets
+npm run dev -- mcp presets --json
 npm run dev -- mcp presets inspect context7
+npm run dev -- mcp presets inspect deepwiki --json
 npm run dev -- mcp presets inspect github-write
 npm run dev -- mcp presets inspect sourcegraph-github-readonly
 npm run dev -- mcp presets inspect gitlab-readonly
@@ -571,7 +580,7 @@ The chat UI keeps in-session message history for the current process, streams as
 /skills [list|status|activate]
 /prompts [list|status|activate]
 /rules [list|status|activate]
-/mcp [list|plan [preset-or-profile]|catalog|presets [inspect]|add-preset|inspect|auth|auth setup|auth env|auth init|auth env-file|auth keychain|tools|enable|disable|add-profile|remove-profile|add-tool|remove-tool|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool|discover|remote-tools|import-remote-tools|call|model]
+/mcp [list|plan [preset-or-profile]|catalog|presets [--json|inspect <preset> [--json]]|add-preset|inspect|auth|auth setup|auth env|auth init|auth env-file|auth keychain|tools|enable|disable|add-profile|remove-profile|add-tool|remove-tool|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool|discover|remote-tools|import-remote-tools|call|model]
 /orchestrator [status|plan|openrouter <model>|clear]
 /delegate [help|status|plan|add|remove|clear|team|policy]
 /delegates [list|status|plan|policy|teams|save|use|inspect|delete]

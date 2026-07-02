@@ -89,7 +89,9 @@ npm run dev -- mcp auth keychain status openrouter
 npm run dev -- mcp auth keychain set openrouter
 npm run dev -- mcp allow-model-tool openrouter models-list
 npm run dev -- mcp presets
+npm run dev -- mcp presets --json
 npm run dev -- mcp presets inspect deepwiki
+npm run dev -- mcp presets inspect deepwiki --json
 npm run dev -- mcp presets inspect gitlab-readonly
 npm run dev -- mcp presets inspect github-write
 npm run dev -- mcp plan github-write

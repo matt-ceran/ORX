@@ -97,6 +97,8 @@ Current status as of 2026-06-28: local registry, cache, catalog install-by-id, p
 
 Later 2026-06-28 update: `orx mcp auth init|env-file <profile>` and matching slash commands now create private commented shell env templates under `~/.orx/mcp/auth-env` or `ORX_MCP_AUTH_ENV_DIR` without token persistence or overwriting existing files.
 
+Later 2026-07-02 update: `orx mcp presets [--json]`, `orx mcp presets inspect <preset> [--json]`, and matching slash commands now emit ORX-owned structured preset declaration metadata. These JSON list/inspect surfaces do not install, enable, trust, grant, fetch, call, audit, expose model tools, or write catalog state; `orx mcp add-preset` remains the explicit disabled local profile creation step.
+
 Later 2026-06-28 update: `orx mcp auth keychain [status|set|delete] <profile>` and matching slash commands now manage optional macOS Keychain bearer items; MCP calls use them only after explicit `ORX_MCP_KEYCHAIN=1`.
 
 Later 2026-06-30 update: non-minimal plugin scaffolds now include a root `AUTHORING.md` guide plus richer inert skill, prompt-command, rule, and docs templates. The guide is not declared as a runtime component, and integration placeholders remain empty (`hooks/hooks.json`, `mcp.json`, `command-schemas.json`, and `bin/`) so enabling a fresh scaffold still exposes no hook, MCP, executable-command, or bin entries until the author adds reviewed content.

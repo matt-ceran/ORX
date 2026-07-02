@@ -133,7 +133,9 @@ import {
   listRemoteMcpTools,
   renderMcpAuthEnvFileInitResult,
   renderMcpMacosKeychainResult,
+  renderMcpProviderPresetInspectJson,
   renderMcpProviderPresetInspect,
+  renderMcpProviderPresetsJson,
   renderMcpProviderPresets,
   renderMcpProfileAuthReport,
   renderMcpProfileAuthSetup,
@@ -313,7 +315,7 @@ const CLI_NAMESPACE_USAGES = {
   config: "Usage: orx config [show|path|init|set <key> <value> [--user|--local]]",
   profile: "Usage: orx profile [list|save <id> [options]|use <id>|inspect <id>|delete <id>]",
   history: "Usage: orx history [search <query>|clear]",
-  mcp: "Usage: orx mcp [list|plan [preset-or-profile]|catalog|presets [inspect <preset>]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+  mcp: "Usage: orx mcp [list|plan [preset-or-profile]|catalog|presets [--json|inspect <preset> [--json]]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   plugins: "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|doctor|audit|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
   bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
@@ -339,8 +341,8 @@ const CLI_API_COMMAND_USAGES = {
 
 const CLI_MCP_SUBCOMMAND_USAGES = {
   plan: "Usage: orx mcp plan [preset-or-profile]",
-  presets: "Usage: orx mcp presets [inspect <preset>]",
-  presetsInspect: "Usage: orx mcp presets inspect <preset>",
+  presets: "Usage: orx mcp presets [--json|inspect <preset> [--json]]",
+  presetsInspect: "Usage: orx mcp presets inspect <preset> [--json]",
   addPreset: "Usage: orx mcp add-preset <preset> [--id <profile-id>] [--url <url>] [--auth-required|--no-auth]",
 } as const;
 
@@ -2646,11 +2648,16 @@ async function runMcpCommand(
         );
         return 1;
       }
-      writeLine(io.stdout, renderMcpProviderPresetInspect(preset));
+      writeLine(
+        io.stdout,
+        presetArgs.json
+          ? renderMcpProviderPresetInspectJson(preset)
+          : renderMcpProviderPresetInspect(preset),
+      );
       return 0;
     }
 
-    writeLine(io.stdout, renderMcpProviderPresets());
+    writeLine(io.stdout, presetArgs.json ? renderMcpProviderPresetsJson() : renderMcpProviderPresets());
     return 0;
   }
 
@@ -3465,24 +3472,32 @@ function mcpAuthUsage(): string {
 function parseMcpPresetInspectArgs(
   args: string[],
 ):
-  | { kind: "list" }
-  | { kind: "inspect"; presetId: string }
+  | { kind: "list"; json: boolean }
+  | { kind: "inspect"; presetId: string; json: boolean }
   | { kind: "error"; message: string } {
   if (args.length === 1) {
-    return { kind: "list" };
+    return { kind: "list", json: false };
+  }
+  if (args.length === 2 && args[1] === "--json") {
+    return { kind: "list", json: true };
   }
   const action = args[1]?.toLowerCase();
   if (action === "inspect" || action === "show" || action === "info") {
     const presetId = args[2];
-    if (!presetId || args.length !== 3) {
-      return { kind: "error", message: "Usage: orx mcp presets inspect <preset>" };
+    const rest = args.slice(3);
+    if (!presetId || presetId.startsWith("-") || rest.length > 1 || (rest.length === 1 && rest[0] !== "--json")) {
+      return { kind: "error", message: "Usage: orx mcp presets inspect <preset> [--json]" };
     }
-    return { kind: "inspect", presetId };
+    return { kind: "inspect", presetId, json: rest[0] === "--json" };
   }
-  if (args.length === 2) {
-    return { kind: "inspect", presetId: args[1] ?? "" };
+  if (args.length === 2 || (args.length === 3 && args[2] === "--json")) {
+    const presetId = args[1] ?? "";
+    if (presetId.startsWith("-")) {
+      return { kind: "error", message: "Usage: orx mcp presets [--json|inspect <preset> [--json]]" };
+    }
+    return { kind: "inspect", presetId, json: args[2] === "--json" };
   }
-  return { kind: "error", message: "Usage: orx mcp presets [inspect <preset>]" };
+  return { kind: "error", message: "Usage: orx mcp presets [--json|inspect <preset> [--json]]" };
 }
 
 function parseMcpAddPresetArgs(args: string[]):

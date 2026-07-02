@@ -308,6 +308,32 @@ export function renderMcpProviderPresets(
   ].join("\n");
 }
 
+export function renderMcpProviderPresetsJson(
+  presets: McpProviderPreset[] = listMcpProviderPresets(),
+): string {
+  return JSON.stringify(
+    {
+      schema_version: 1,
+      surface: "orx.mcp_provider_presets",
+      operator_only: true,
+      model_tool: "none",
+      execution: "none",
+      network: "none",
+      data_state_writes: "none",
+      preset_count: presets.length,
+      presets: presets.map(mcpProviderPresetJson),
+      authority: {
+        preset_template: "declaration_only",
+        list_side_effects: "none",
+        install_enable_trust_grant_call_model_exposure: "separate_explicit_steps",
+      },
+      usage: "orx mcp presets [--json|inspect <preset> [--json]]",
+    },
+    null,
+    2,
+  );
+}
+
 export function renderMcpProviderPresetInspect(preset: McpProviderPreset): string {
   const lines = [
     `MCP Provider Preset: ${preset.id}`,
@@ -347,6 +373,55 @@ export function renderMcpProviderPresetInspect(preset: McpProviderPreset): strin
   );
 
   return lines.join("\n");
+}
+
+export function renderMcpProviderPresetInspectJson(preset: McpProviderPreset): string {
+  return JSON.stringify(
+    {
+      schema_version: 1,
+      surface: "orx.mcp_provider_preset",
+      operator_only: true,
+      model_tool: "none",
+      execution: "none",
+      network: "none",
+      data_state_writes: "none",
+      preset: mcpProviderPresetJson(preset),
+      install: {
+        command: `orx mcp add-preset ${preset.id}`,
+        result_state: "local_user_profile_disabled",
+      },
+      authority: {
+        preset_template: "declaration_only",
+        inspect_side_effects: "none",
+        install_enable_trust_grant_call_model_exposure: "separate_explicit_steps",
+      },
+    },
+    null,
+    2,
+  );
+}
+
+function mcpProviderPresetJson(preset: McpProviderPreset): Record<string, unknown> {
+  return {
+    id: preset.id,
+    name: preset.name,
+    profile_id: `user:${preset.profileId}`,
+    profile_local_id: preset.profileId,
+    url: preset.url,
+    auth_required: preset.authRequired,
+    risk_level: preset.riskLevel ?? "auto",
+    write_capable: preset.writeCapable === true,
+    tags: preset.tags,
+    notes: preset.notes,
+    static_tool_count: preset.tools.length,
+    static_tools: preset.tools.map((tool) => ({
+      name: tool.name,
+      risk: tool.risk,
+      auth_required: tool.authRequired,
+      billable: tool.billable,
+    })),
+    remote_tool_review_required: preset.tools.length === 0,
+  };
 }
 
 export function formatMcpProviderPresetIdForMessage(id: string): string {
