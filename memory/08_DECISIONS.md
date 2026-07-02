@@ -120,7 +120,7 @@ Reasoning: A usable plugin authoring workflow needs more than manual JSON editin
 
 ## 2026-06-28: Plugin Validation Is Read-Only Authoring Feedback
 
-Decision: ORX may provide `orx plugins validate <manifest-path-or-directory>` and `/plugins validate <manifest-path-or-directory>` as a manifest preview/check command, but validation must not register, install, enable, trust, grant, fetch, execute, or write plugin cache/registry state. It may parse and sanitize manifests, compute local manifest/component hashes, and warn about missing component paths using the same bounded local hashing logic used for plugin lock records.
+Decision: ORX may provide `orx plugins validate <manifest-path-or-directory> [--json]` and `/plugins validate <manifest-path-or-directory> [--json]` as a manifest preview/check command, but validation must not register, install, enable, trust, grant, fetch, execute, or write plugin cache/registry state. It may parse and sanitize manifests, compute local manifest/component hashes, and warn about missing component paths using the same bounded local hashing logic used for plugin lock records. JSON output may expose ORX-owned validation metadata for automation but must preserve the same unchanged-state authority boundary.
 
 Reasoning: Plugin authors need fast feedback before install, especially after scaffold generation, but validation should not become another authority boundary. Keeping it read-only lets operators inspect exactly what ORX would recognize while preserving the existing disabled-by-default install, enable, hash-trust, MCP grant, hook, and bin execution gates.
 
@@ -441,3 +441,9 @@ Reasoning: Real-key dogfood showed capable controller models may emit blank opti
 Decision: The runnable clangd diagnostics profile should use an installed local or PATH `clangd` binary through `clangd --log=error --check=<local-c-cpp-source-or-header-file>`, not LSP server mode.
 
 Reasoning: `--check` gives a deterministic single-file local diagnostics command shape that fits the existing explicit-operator, no-install, no-network, shell-disabled diagnostics boundary. `--log=error` preserves error diagnostics while avoiding clangd's default setup-log noise in bounded ORX output.
+
+## 2026-07-01: Plugin Review JSON Stays Read-Only
+
+Decision: `orx plugins review|doctor|audit [--json]` and matching slash commands may expose ORX-owned structured review metadata for automation, but must preserve the same local read-only authority as text review.
+
+Reasoning: Operators and scripts need machine-readable installed/enabled counts, catalog drift, trust state, MCP profile counts, aliases, and next commands. Emitting JSON must not broaden the review surface into install, enable, trust, grant, fetch, execute, chmod, catalog-write, registry/cache-write, audit-write, or model-tool behavior.

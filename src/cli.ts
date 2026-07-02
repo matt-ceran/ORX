@@ -132,6 +132,7 @@ import {
   loadUserMcpProfileCatalog,
   listRemoteMcpTools,
   parseMcpSetupPlanArgs,
+  parseUserMcpProfileCatalogArgs,
   renderMcpAuthEnvFileInitResult,
   renderMcpMacosKeychainResult,
   renderMcpProviderPresetInspectJson,
@@ -146,6 +147,7 @@ import {
   renderMcpSetupPlanJson,
   renderMcpStatus,
   renderUserMcpProfileCatalog,
+  renderUserMcpProfileCatalogJson,
   resolveMcpConfigPath,
   resolveMcpProfileCatalogPath,
   resolveMcpBearerCredential,
@@ -182,6 +184,8 @@ import {
   checkPluginCatalogUpdates,
   installPlugin,
   loadPluginCatalog,
+  parsePluginReviewArgs,
+  parsePluginValidationArgs,
   parsePluginCatalogAddGitArgs,
   parsePluginCatalogAddLocalArgs,
   parsePluginScaffoldArgs,
@@ -195,6 +199,7 @@ import {
   renderPluginCatalogUpdateReport,
   renderPluginScaffoldResult,
   renderPluginValidation,
+  renderPluginValidationJson,
   renderPluginHookInspect,
   renderPluginHookLifecycleResult,
   renderPluginHookRunResult,
@@ -203,6 +208,7 @@ import {
   renderPluginInspect,
   renderPluginList,
   renderPluginReview,
+  renderPluginReviewJson,
   resolvePluginBinsAuditLogPath,
   resolvePluginBinsConfigPath,
   resolvePluginHooksAuditLogPath,
@@ -317,8 +323,8 @@ const CLI_NAMESPACE_USAGES = {
   config: "Usage: orx config [show|path|init|set <key> <value> [--user|--local]]",
   profile: "Usage: orx profile [list|save <id> [options]|use <id>|inspect <id>|delete <id>]",
   history: "Usage: orx history [search <query>|clear]",
-  mcp: "Usage: orx mcp [list|plan [preset-or-profile] [--json]|catalog|presets [--json|inspect <preset> [--json]]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
-  plugins: "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|doctor|audit|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
+  mcp: "Usage: orx mcp [list|plan [preset-or-profile] [--json]|catalog [--json]|presets [--json|inspect <preset> [--json]]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+  plugins: "Usage: orx plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review [--json]|doctor [--json]|audit [--json]|commands|scaffold <directory>|validate <manifest-path-or-directory> [--json]|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
   bins: "Usage: orx bins [list|inspect <id>|trust <id>|untrust <id>|run <id> [args...]]",
   hooks: "Usage: orx hooks [list|inspect <id>|trust <id>|untrust <id>|run <id>]",
   tests: "Usage: orx tests [list [--json]|status [--json]|run [target-id] [--json] [-- args...]]",
@@ -351,10 +357,10 @@ const CLI_MCP_SUBCOMMAND_USAGES = {
 const CLI_PLUGIN_SUBCOMMAND_USAGES = {
   scaffold:
     "Usage: orx plugins scaffold <directory> [--name <id>] [--publisher <id>] [--version <version>] [--description <text>] [--with <components>] [--minimal]",
-  validate: "Usage: orx plugins validate <manifest-path-or-directory>",
+  validate: "Usage: orx plugins validate <manifest-path-or-directory> [--json]",
   install: "Usage: orx plugins install <manifest-path-or-directory-or-catalog-id>",
   register: "Usage: orx plugins register <manifest-path-or-directory-or-catalog-id>",
-  review: "Usage: orx plugins review|doctor|audit",
+  review: "Usage: orx plugins review|doctor|audit [--json]",
   catalog:
     "Usage: orx plugins catalog [list|inspect <id>|updates [id]|update <id>|add-local <manifest-path-or-directory>|add-git <id> <repository> <resolved-commit>|remove <id>]",
 } as const;
@@ -2272,20 +2278,20 @@ async function runPluginsCommand(
   }
 
   if (subcommand === "review" || subcommand === "doctor" || subcommand === "audit") {
-    if (args.length !== 1) {
+    const parsed = parsePluginReviewArgs(args);
+    if (!parsed) {
       writeLine(io.stderr, CLI_PLUGIN_SUBCOMMAND_USAGES.review);
       return 1;
     }
+    const review = createPluginReview({
+      registryPath: pluginRegistryPath,
+      catalogPath: pluginCatalogPath,
+      binsConfigPath: pluginBinsConfigPath,
+      hooksConfigPath: pluginHooksConfigPath,
+    });
     writeLine(
       io.stdout,
-      renderPluginReview(
-        createPluginReview({
-          registryPath: pluginRegistryPath,
-          catalogPath: pluginCatalogPath,
-          binsConfigPath: pluginBinsConfigPath,
-          hooksConfigPath: pluginHooksConfigPath,
-        }),
-      ),
+      parsed.json ? renderPluginReviewJson(review) : renderPluginReview(review),
     );
     return 0;
   }
@@ -2331,15 +2337,15 @@ async function runPluginsCommand(
   }
 
   if (subcommand === "validate" || subcommand === "check") {
-    const manifestPathText = args.slice(1).join(" ").trim();
-    if (!manifestPathText) {
-      writeLine(io.stderr, `Usage: orx plugins ${subcommand} <manifest-path-or-directory>`);
+    const parsed = parsePluginValidationArgs(args);
+    if (!parsed) {
+      writeLine(io.stderr, `Usage: orx plugins ${subcommand} <manifest-path-or-directory> [--json]`);
       return 1;
     }
 
     try {
-      const result = validatePluginManifestInput(manifestPathText, { cwd: io.cwd });
-      writeLine(io.stdout, renderPluginValidation(result));
+      const result = validatePluginManifestInput(parsed.input, { cwd: io.cwd });
+      writeLine(io.stdout, parsed.json ? renderPluginValidationJson(result) : renderPluginValidation(result));
       return 0;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -2625,16 +2631,16 @@ async function runMcpCommand(
   }
 
   if (subcommand === "catalog" || subcommand === "user-catalog") {
-    if (args.length !== 1) {
-      writeLine(io.stderr, "Usage: orx mcp catalog");
+    const parsed = parseUserMcpProfileCatalogArgs(args);
+    if (!parsed) {
+      writeLine(io.stderr, "Usage: orx mcp catalog [--json]");
       return 1;
     }
 
+    const catalog = loadUserMcpProfileCatalog({ profileCatalogPath: mcpProfileCatalogPath });
     writeLine(
       io.stdout,
-      renderUserMcpProfileCatalog(
-        loadUserMcpProfileCatalog({ profileCatalogPath: mcpProfileCatalogPath }),
-      ),
+      parsed.json ? renderUserMcpProfileCatalogJson(catalog) : renderUserMcpProfileCatalog(catalog),
     );
     return 0;
   }

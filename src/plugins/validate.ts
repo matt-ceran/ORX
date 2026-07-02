@@ -22,6 +22,11 @@ export interface PluginValidationResult {
   warnings: string[];
 }
 
+export interface PluginValidationParsedArgs {
+  input: string;
+  json: boolean;
+}
+
 const MANIFEST_FILE_NAME = "orx-plugin.json";
 
 export function validatePluginManifestInput(input: string, options: { cwd?: string } = {}): PluginValidationResult {
@@ -83,6 +88,73 @@ export function renderPluginValidation(result: PluginValidationResult): string {
   ].join("\n");
 }
 
+export function parsePluginValidationArgs(args: string[]): PluginValidationParsedArgs | undefined {
+  const operands = args.slice(1);
+  if (operands.length === 0) {
+    return undefined;
+  }
+
+  const json = operands.at(-1) === "--json";
+  const inputParts = json ? operands.slice(0, -1) : operands;
+  const input = inputParts.join(" ").trim();
+  if (!input || inputParts.includes("--json")) {
+    return undefined;
+  }
+
+  return { input, json };
+}
+
+export function renderPluginValidationJson(result: PluginValidationResult): string {
+  return JSON.stringify(
+    {
+      schema_version: 1,
+      surface: "orx.plugin_validation",
+      ok: result.ok,
+      operator_only: true,
+      model_tool: "none",
+      execution: "none",
+      network: "none",
+      data_state_writes: "none",
+      plugin_id: result.pluginId,
+      manifest_path: result.manifestPath,
+      manifest_hash: result.manifestHash,
+      manifest: {
+        schema_version: result.manifest.schemaVersion,
+        name: result.manifest.name,
+        version: result.manifest.version,
+        description: result.manifest.description,
+        publisher: result.manifest.publisher,
+        trust_tier: result.manifest.metadata?.trustTier,
+      },
+      source: pluginValidationSourceJson(result.manifest),
+      components: result.components.map(pluginValidationComponentJson),
+      component_count: result.components.length,
+      warning_count: result.warnings.length,
+      warnings: result.warnings,
+      permissions: {
+        filesystem: result.manifest.permissions.filesystem,
+        network: result.manifest.permissions.network,
+        env: result.manifest.permissions.env,
+        mcp: result.manifest.permissions.mcp,
+        counts: {
+          filesystem: result.manifest.permissions.filesystem.length,
+          network: result.manifest.permissions.network.length,
+          env: result.manifest.permissions.env.length,
+          mcp: result.manifest.permissions.mcp.length,
+        },
+      },
+      authority: {
+        validation_side_effects: "none",
+        registry_cache_catalog_trust_state: "unchanged",
+        install_enable_trust_grant_fetch_execute: "not_performed",
+      },
+      usage: "orx plugins validate <manifest-path-or-directory> [--json]",
+    },
+    null,
+    2,
+  );
+}
+
 function resolveManifestInput(input: string, cwd = process.cwd()): string {
   const trimmed = input.trim();
   if (!trimmed) {
@@ -129,6 +201,35 @@ function formatSource(manifest: PluginManifest): string {
   ]
     .filter((part): part is string => typeof part === "string")
     .join(" ");
+}
+
+function pluginValidationSourceJson(manifest: PluginManifest): Record<string, unknown> {
+  const source = manifest.source;
+  return {
+    type: source.type,
+    path: source.path,
+    repository: source.repository,
+    ref: source.ref,
+    resolved_commit: source.resolvedCommit,
+  };
+}
+
+function pluginValidationComponentJson(component: PluginValidationComponent): Record<string, unknown> {
+  return {
+    key: component.key,
+    path: component.path,
+    status: component.status,
+    hash: component.hash
+      ? {
+          path: component.hash.path,
+          kind: component.hash.kind,
+          hash: component.hash.hash,
+          truncated: component.hash.truncated === true,
+          omitted_entries: component.hash.omittedEntries,
+          omitted_bytes: component.hash.omittedBytes,
+        }
+      : undefined,
+  };
 }
 
 function isWithinDirectory(baseDirectory: string, targetPath: string): boolean {

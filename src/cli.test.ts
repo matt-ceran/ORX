@@ -3650,6 +3650,24 @@ test("cli mcp commands use user MCP profile catalog", async () => {
     assert.equal(await runCli(["node", "cli", "mcp", "catalog"], env, emptyCatalog.io), 0);
     assert.match(emptyCatalog.stdout(), /profiles: 0/);
 
+    const emptyCatalogJson = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "catalog", "--json"], env, emptyCatalogJson.io),
+      0,
+    );
+    const emptyCatalogReport = JSON.parse(emptyCatalogJson.stdout()) as {
+      surface: string;
+      exists: boolean;
+      profile_count: number;
+      data_state_writes: string;
+      authority: { catalog_read_side_effects: string };
+    };
+    assert.equal(emptyCatalogReport.surface, "orx.mcp_user_catalog");
+    assert.equal(emptyCatalogReport.exists, false);
+    assert.equal(emptyCatalogReport.profile_count, 0);
+    assert.equal(emptyCatalogReport.data_state_writes, "none");
+    assert.equal(emptyCatalogReport.authority.catalog_read_side_effects, "none");
+
     const addedProfile = createIo({ cwd });
     assert.equal(
       await runCli(
@@ -3692,6 +3710,57 @@ test("cli mcp commands use user MCP profile catalog", async () => {
       0,
     );
     assert.match(addedTool.stdout(), /User MCP tool user:context7\/resolve-library-id stored/);
+
+    const catalogJson = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "catalog", "--json"], env, catalogJson.io),
+      0,
+    );
+    const catalogReport = JSON.parse(catalogJson.stdout()) as {
+      surface: string;
+      path: string;
+      profile_count: number;
+      data_state_writes: string;
+      authority: Record<string, string>;
+      profiles: Array<{
+        id: string;
+        name: string;
+        state: string;
+        transport: string;
+        auth_required: boolean;
+        source: { kind: string; catalog_path: string; declaration_hash: string };
+        tools: Array<{ name: string; risk: string; auth_required: boolean; billable: boolean }>;
+      }>;
+    };
+    assert.equal(catalogReport.surface, "orx.mcp_user_catalog");
+    assert.equal(catalogReport.path, profileCatalogPath);
+    assert.equal(catalogReport.profile_count, 1);
+    assert.equal(catalogReport.data_state_writes, "none");
+    assert.equal(catalogReport.authority.catalog_read_side_effects, "none");
+    assert.equal(catalogReport.profiles[0].id, "user:context7");
+    assert.equal(catalogReport.profiles[0].name, "Context7 docs");
+    assert.equal(catalogReport.profiles[0].state, "disabled");
+    assert.equal(catalogReport.profiles[0].transport, "remote-http");
+    assert.equal(catalogReport.profiles[0].auth_required, true);
+    assert.equal(catalogReport.profiles[0].source.kind, "user");
+    assert.equal(catalogReport.profiles[0].source.catalog_path, profileCatalogPath);
+    assert.match(catalogReport.profiles[0].source.declaration_hash, /^sha256:[a-f0-9]{64}$/);
+    assert.deepEqual(catalogReport.profiles[0].tools, [
+      {
+        name: "resolve-library-id",
+        risk: "read",
+        auth_required: true,
+        billable: false,
+      },
+    ]);
+
+    const invalidCatalogJson = createIo({ cwd });
+    assert.equal(
+      await runCli(["node", "cli", "mcp", "catalog", "--json", "extra"], env, invalidCatalogJson.io),
+      1,
+    );
+    assert.equal(invalidCatalogJson.stdout(), "");
+    assert.match(invalidCatalogJson.stderr(), /Usage: orx mcp catalog \[--json\]/);
 
     const list = createIo({ cwd });
     assert.equal(await runCli(["node", "cli", "mcp", "list"], env, list.io), 0);
@@ -4616,6 +4685,42 @@ test("cli plugins scaffold creates an installable disabled plugin bundle", async
     assert.match(validated.stdout(), /registry_state: unchanged/);
     assert.match(validated.stdout(), /execution_state: no install, enable, trust, grant, fetch, or execution performed/);
 
+    const validatedJson = createNoFetchIo();
+    assert.equal(
+      await runCli(["node", "cli", "plugins", "validate", targetDirectory, "--json"], env, validatedJson.io),
+      0,
+    );
+    const validationReport = JSON.parse(validatedJson.stdout());
+    assert.equal(validationReport.surface, "orx.plugin_validation");
+    assert.equal(validationReport.plugin_id, "acme.new-plugin@0.1.0");
+    assert.equal(validationReport.operator_only, true);
+    assert.equal(validationReport.network, "none");
+    assert.equal(validationReport.execution, "none");
+    assert.equal(validationReport.data_state_writes, "none");
+    assert.ok(validationReport.component_count >= 4);
+    assert.ok(
+      validationReport.components.some(
+        (component: { key: string; status: string }) =>
+          component.key === "mcpServers" && component.status === "present",
+      ),
+    );
+    assert.equal(validationReport.authority.registry_cache_catalog_trust_state, "unchanged");
+
+    const invalidValidationArgs = createNoFetchIo();
+    assert.equal(
+      await runCli(
+        ["node", "cli", "plugins", "validate", targetDirectory, "--json", "extra"],
+        env,
+        invalidValidationArgs.io,
+      ),
+      1,
+    );
+    assert.equal(invalidValidationArgs.stdout(), "");
+    assert.match(
+      invalidValidationArgs.stderr(),
+      /Usage: orx plugins validate <manifest-path-or-directory> \[--json\]/,
+    );
+
     const listed = createNoFetchIo();
     assert.equal(await runCli(["node", "cli", "plugins", "list"], env, listed.io), 0);
     assert.match(listed.stdout(), /installed: 0/);
@@ -5252,10 +5357,42 @@ test("cli plugins install supports pinned git catalog entries without fetch", as
     assert.match(review.stdout(), /install_enable_trust_grant_fetch_execute: separate_explicit_steps/);
     assert.equal(readFileSync(registryPath, "utf8"), registryText);
 
+    const reviewJson = createNoFetchIo();
+    assert.equal(await runCli(["node", "cli", "plugins", "review", "--json"], env, reviewJson.io), 0);
+    const reviewReport = JSON.parse(reviewJson.stdout());
+    assert.equal(reviewReport.surface, "orx.plugin_review");
+    assert.equal(reviewReport.operator_only, true);
+    assert.equal(reviewReport.network, "none");
+    assert.equal(reviewReport.execution, "none");
+    assert.equal(reviewReport.data_state_writes, "none");
+    assert.equal(reviewReport.installed_count, 1);
+    assert.equal(reviewReport.enabled_count, 1);
+    assert.equal(reviewReport.catalog_update_available_count, 1);
+    assert.equal(reviewReport.plugins[0].id, "acme.git-cli-plugin@1.0.0");
+    assert.equal(reviewReport.plugins[0].source.type, "git");
+    assert.equal(reviewReport.plugins[0].source.resolved_commit, commit);
+    assert.equal(reviewReport.plugins[0].catalog.status, "update_available");
+    assert.equal(reviewReport.plugins[0].catalog.catalog_commit, nextCommit);
+    assert.deepEqual(reviewReport.plugins[0].next_actions, [
+      "orx plugins catalog update acme.git-cli-plugin@1.0.0",
+    ]);
+    assert.equal(reviewReport.authority.registry_catalog_cache_trust_state, "read_only");
+    assert.equal(readFileSync(registryPath, "utf8"), registryText);
+
     const doctor = createNoFetchIo();
-    assert.equal(await runCli(["node", "cli", "plugins", "doctor"], env, doctor.io), 0);
-    assert.match(doctor.stdout(), /Plugin Review/);
-    assert.match(doctor.stdout(), /catalog_updates_available: 1/);
+    assert.equal(await runCli(["node", "cli", "plugins", "doctor", "--json"], env, doctor.io), 0);
+    const doctorReport = JSON.parse(doctor.stdout());
+    assert.equal(doctorReport.surface, "orx.plugin_review");
+    assert.equal(doctorReport.catalog_update_available_count, 1);
+    assert.equal(readFileSync(registryPath, "utf8"), registryText);
+
+    const invalidReviewArgs = createNoFetchIo();
+    assert.equal(
+      await runCli(["node", "cli", "plugins", "audit", "--json", "extra"], env, invalidReviewArgs.io),
+      1,
+    );
+    assert.equal(invalidReviewArgs.stdout(), "");
+    assert.match(invalidReviewArgs.stderr(), /Usage: orx plugins review\|doctor\|audit \[--json\]/);
     assert.equal(readFileSync(registryPath, "utf8"), registryText);
 
     const applied = createNoFetchIo();

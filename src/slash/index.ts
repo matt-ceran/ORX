@@ -122,6 +122,7 @@ import {
   loadUserMcpProfileCatalog,
   listRemoteMcpTools,
   parseMcpSetupPlanArgs,
+  parseUserMcpProfileCatalogArgs,
   renderMcpAuthEnvFileInitResult,
   renderMcpMacosKeychainResult,
   renderMcpProviderPresetInspectJson,
@@ -136,6 +137,7 @@ import {
   renderMcpSetupPlanJson,
   renderMcpStatus,
   renderUserMcpProfileCatalog,
+  renderUserMcpProfileCatalogJson,
   resolveMcpBearerCredential,
   removeUserMcpProfile,
   removeUserMcpProfileTool,
@@ -193,6 +195,8 @@ import {
   installPlugin,
   isPluginCommandAliasName,
   loadPluginCatalog,
+  parsePluginReviewArgs,
+  parsePluginValidationArgs,
   parsePluginCatalogAddGitArgs,
   parsePluginCatalogAddLocalArgs,
   parsePluginScaffoldArgs,
@@ -212,10 +216,12 @@ import {
   renderPluginList,
   renderPluginPromptList,
   renderPluginReview,
+  renderPluginReviewJson,
   renderPluginRuleList,
   renderPluginScaffoldResult,
   renderPluginSkillList,
   renderPluginValidation,
+  renderPluginValidationJson,
   renderPromptActivation,
   renderRuleActivation,
   renderSkillActivation,
@@ -1352,7 +1358,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/mcp": {
-    usage: "/mcp [list|plan [preset-or-profile] [--json]|catalog|presets [--json|inspect <preset> [--json]]|add-preset|add-profile|add-tool|model|inspect|auth|auth setup|auth env|auth init|auth env-file|auth keychain|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
+    usage: "/mcp [list|plan [preset-or-profile] [--json]|catalog [--json]|presets [--json|inspect <preset> [--json]]|add-preset|add-profile|add-tool|model|inspect|auth|auth setup|auth env|auth init|auth env-file|auth keychain|tools|call|remote-tools|import-remote-tools|discover|enable|disable|allow-tool|revoke-tool|allow-model-tool|revoke-model-tool]",
     description: "Show and manage MCP profiles, local user catalogs, remote metadata, and tool grants",
     group: "Integrations",
     tier: "advanced",
@@ -1362,7 +1368,7 @@ const COMMANDS: Record<string, SlashDefinition> = {
     },
   },
   "/plugins": {
-    usage: "/plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
+    usage: "/plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review [--json]|doctor [--json]|audit [--json]|commands|scaffold <directory>|validate <manifest-path-or-directory> [--json]|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
     description: "Show catalog entries and update inert plugin registry state",
     group: "Integrations",
     tier: "advanced",
@@ -1890,6 +1896,9 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       ) {
         return ["--json"];
       }
+      if ((firstArg === "catalog" || firstArg === "user-catalog") && argIndex === 1) {
+        return ["--json"];
+      }
       if (firstArg === "auth" && argIndex === 1) {
         return [...MCP_AUTH_ACTION_COMPLETIONS, ...MCP_PROFILE_COMPLETIONS];
       }
@@ -1951,6 +1960,19 @@ function slashArgumentCompletionValues(commandName: string, completedArgs: strin
       }
       if (firstArg === "catalog" && argIndex === 1) {
         return [...PLUGIN_CATALOG_SUBCOMMAND_COMPLETIONS];
+      }
+      if (
+        (firstArg === "review" || firstArg === "doctor" || firstArg === "audit") &&
+        argIndex === 1
+      ) {
+        return ["--json"];
+      }
+      if (
+        (firstArg === "validate" || firstArg === "check") &&
+        argIndex >= 1 &&
+        !completedArgs.includes("--json")
+      ) {
+        return ["--json"];
       }
       return [];
     case "/plugin":
@@ -3225,16 +3247,20 @@ async function handlePluginsCommand(
   }
 
   if (subcommand === "review" || subcommand === "doctor" || subcommand === "audit") {
+    const parsed = parsePluginReviewArgs(command.args);
+    if (!parsed) {
+      writeLine(context.io.stderr, `Usage: /plugins ${subcommand} [--json]`);
+      return;
+    }
+    const review = createPluginReview({
+      registryPath: context.pluginRegistryPath,
+      catalogPath: context.pluginCatalogPath,
+      binsConfigPath: context.pluginBinsConfigPath,
+      hooksConfigPath: context.pluginHooksConfigPath,
+    });
     writeLine(
       context.io.stdout,
-      renderPluginReview(
-        createPluginReview({
-          registryPath: context.pluginRegistryPath,
-          catalogPath: context.pluginCatalogPath,
-          binsConfigPath: context.pluginBinsConfigPath,
-          hooksConfigPath: context.pluginHooksConfigPath,
-        }),
-      ),
+      parsed.json ? renderPluginReviewJson(review) : renderPluginReview(review),
     );
     return;
   }
@@ -3277,15 +3303,18 @@ async function handlePluginsCommand(
   }
 
   if (subcommand === "validate" || subcommand === "check") {
-    const manifestPathText = command.args.slice(1).join(" ").trim();
-    if (!manifestPathText) {
-      writeLine(context.io.stderr, `Usage: /plugins ${subcommand} <manifest-path-or-directory>`);
+    const parsed = parsePluginValidationArgs(command.args);
+    if (!parsed) {
+      writeLine(context.io.stderr, `Usage: /plugins ${subcommand} <manifest-path-or-directory> [--json]`);
       return;
     }
 
     try {
-      const result = validatePluginManifestInput(manifestPathText, { cwd: context.io.cwd });
-      writeLine(context.io.stdout, renderPluginValidation(result));
+      const result = validatePluginManifestInput(parsed.input, { cwd: context.io.cwd });
+      writeLine(
+        context.io.stdout,
+        parsed.json ? renderPluginValidationJson(result) : renderPluginValidation(result),
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       writeLine(context.io.stderr, message);
@@ -3364,7 +3393,7 @@ async function handlePluginsCommand(
 
   writeLine(
     context.io.stderr,
-    "Usage: /plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review|commands|scaffold <directory>|validate <manifest-path-or-directory>|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
+    "Usage: /plugins [catalog [list|inspect|updates|update|add-local|add-git|remove]|list|review [--json]|doctor [--json]|audit [--json]|commands|scaffold <directory>|validate <manifest-path-or-directory> [--json]|inspect <id>|register <manifest-path-or-directory-or-catalog-id>|install <manifest-path-or-directory-or-catalog-id>|enable <id>|disable <id>]",
   );
 }
 
@@ -4212,16 +4241,16 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
   }
 
   if (subcommand === "catalog" || subcommand === "user-catalog") {
-    if (command.args.length !== 1) {
-      writeLine(context.io.stderr, "Usage: /mcp catalog");
+    const parsed = parseUserMcpProfileCatalogArgs(command.args);
+    if (!parsed) {
+      writeLine(context.io.stderr, "Usage: /mcp catalog [--json]");
       return;
     }
 
+    const catalog = loadUserMcpProfileCatalog({ profileCatalogPath: context.mcpProfileCatalogPath });
     writeLine(
       context.io.stdout,
-      renderUserMcpProfileCatalog(
-        loadUserMcpProfileCatalog({ profileCatalogPath: context.mcpProfileCatalogPath }),
-      ),
+      parsed.json ? renderUserMcpProfileCatalogJson(catalog) : renderUserMcpProfileCatalog(catalog),
     );
     return;
   }
@@ -5026,7 +5055,7 @@ async function handleMcpCommand(command: SlashCommand, context: SlashCommandCont
 
   writeLine(
     context.io.stderr,
-    "Usage: /mcp [list|plan [preset-or-profile] [--json]|catalog|presets [--json|inspect <preset> [--json]]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
+    "Usage: /mcp [list|plan [preset-or-profile] [--json]|catalog [--json]|presets [--json|inspect <preset> [--json]]|add-preset <preset>|add-profile <id> <url>|remove-profile <profile>|add-tool <profile> <tool> <risk>|remove-tool <profile> <tool>|model <status|enable|disable>|inspect <profile>|auth <profile>|auth setup <profile>|auth env <profile>|auth init <profile>|auth env-file <profile>|auth keychain [status|set|delete] <profile>|tools <profile>|call <profile> <tool> [arguments-json]|remote-tools <profile>|import-remote-tools <profile>|discover <profile>|enable <profile>|disable <profile>|allow-tool <profile> <tool>|revoke-tool <profile> <tool>|allow-model-tool <profile> <tool>|revoke-model-tool <profile> <tool>]",
   );
 }
 

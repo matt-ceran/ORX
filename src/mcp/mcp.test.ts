@@ -53,6 +53,7 @@ import {
   renderMcpSetupPlan,
   renderMcpSetupPlanJson,
   renderUserMcpProfileCatalog,
+  renderUserMcpProfileCatalogJson,
   redactSecrets,
   removeUserMcpProfile,
   removeUserMcpProfileTool,
@@ -313,6 +314,57 @@ test("user MCP catalog mutation helpers write private profiles and tools", () =>
     let loaded = loadUserMcpProfileCatalog({ profileCatalogPath });
     assert.equal(loaded.profiles.length, 1);
     assert.match(renderUserMcpProfileCatalog(loaded), /profile=user:context7/);
+    const catalogJson = JSON.parse(renderUserMcpProfileCatalogJson(loaded)) as {
+      surface: string;
+      operator_only: boolean;
+      model_tool: string;
+      execution: string;
+      network: string;
+      data_state_writes: string;
+      path: string;
+      exists: boolean;
+      profile_count: number;
+      authority: Record<string, string>;
+      profiles: Array<{
+        id: string;
+        transport: string;
+        url: string;
+        auth_required: boolean;
+        tool_count: number;
+        source: { kind: string; catalog_path: string; declaration_hash: string };
+        tools: Array<{ name: string; risk: string; auth_required: boolean; billable: boolean }>;
+      }>;
+    };
+    assert.equal(catalogJson.surface, "orx.mcp_user_catalog");
+    assert.equal(catalogJson.operator_only, true);
+    assert.equal(catalogJson.model_tool, "none");
+    assert.equal(catalogJson.execution, "none");
+    assert.equal(catalogJson.network, "none");
+    assert.equal(catalogJson.data_state_writes, "none");
+    assert.equal(catalogJson.path, profileCatalogPath);
+    assert.equal(catalogJson.exists, true);
+    assert.equal(catalogJson.profile_count, 1);
+    assert.equal(catalogJson.profiles[0].id, "user:context7");
+    assert.equal(catalogJson.profiles[0].transport, "remote-http");
+    assert.equal(catalogJson.profiles[0].url, "https://mcp.context7.example/mcp");
+    assert.equal(catalogJson.profiles[0].auth_required, true);
+    assert.equal(catalogJson.profiles[0].tool_count, 1);
+    assert.equal(catalogJson.profiles[0].source.kind, "user");
+    assert.equal(catalogJson.profiles[0].source.catalog_path, profileCatalogPath);
+    assert.match(catalogJson.profiles[0].source.declaration_hash, /^sha256:[a-f0-9]{64}$/);
+    assert.deepEqual(catalogJson.profiles[0].tools, [
+      {
+        name: "resolve-library-id",
+        risk: "read",
+        auth_required: true,
+        billable: false,
+      },
+    ]);
+    assert.equal(catalogJson.authority.catalog_read_side_effects, "none");
+    assert.equal(
+      catalogJson.authority.install_enable_trust_grant_fetch_call_model_exposure,
+      "separate_explicit_steps",
+    );
     assert.deepEqual(
       loaded.profiles[0].tools.map((tool) => `${tool.name}:${tool.risk}:${tool.authRequired}`),
       ["resolve-library-id:read:true"],

@@ -135,8 +135,8 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/refs <query> \[--json\]/);
   assert.match(output, /\/imports \[query\]/);
   assert.match(output, /\/calls \[query\]/);
-  assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
-  assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
+  assert.match(output, /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog \[--json\]\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(output, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review \[--json\]\|doctor \[--json\]\|audit \[--json\]\|commands\|scaffold <directory>\|validate <manifest-path-or-directory> \[--json\]\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(output, /\/plugin \[list\|status\]/);
   assert.match(output, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(output, /\/hooks \[list\|inspect\|trust\|untrust\|run\]/);
@@ -150,7 +150,7 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.equal(handleSlashCommand("/help mcp", mcp.context), "continue");
   assert.match(mcp.stdout(), /Slash commands matching "mcp":/);
   assert.match(mcp.stdout(), /Integrations:/);
-  assert.match(mcp.stdout(), /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(mcp.stdout(), /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog \[--json\]\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
   assert.doesNotMatch(mcp.stdout(), /\/model <id-or-search>/);
 
   const sessions = createSlashHarness();
@@ -176,7 +176,7 @@ test("command palette renderer is a pure grouped listing surface", () => {
 
   assert.match(palette, /^Command palette matching "plugin":/);
   assert.match(palette, /Integrations:/);
-  assert.match(palette, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
+  assert.match(palette, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review \[--json\]\|doctor \[--json\]\|audit \[--json\]\|commands\|scaffold <directory>\|validate <manifest-path-or-directory> \[--json\]\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(palette, /\/plugin \[list\|status\]/);
   assert.match(palette, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(palette, /\/skills \[list\|status\|activate <id>\]/);
@@ -263,6 +263,8 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/mcp plan source"), [["sourcegraph-github-readonly "], "source"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/mcp plan context7 --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp catalog --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/mcp user-catalog --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/mcp model e"), [["enable "], "e"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/mcp presets i"), [["inspect ", "info "], "i"]);
@@ -291,6 +293,10 @@ test("slash command completer suggests command names, aliases, and deterministic
   assert.deepEqual(completeSlashCommandLine("/plugins c"), [["catalog ", "commands "], "c"]);
   assert.deepEqual(completeSlashCommandLine("/plugins r"), [["review ", "register "], "r"]);
   assert.deepEqual(completeSlashCommandLine("/plugins d"), [["doctor ", "disable "], "d"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins review --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins doctor --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins audit --"), [["--json "], "--"]);
+  assert.deepEqual(completeSlashCommandLine("/plugins validate ./plugin --"), [["--json "], "--"]);
   assert.deepEqual(completeSlashCommandLine("/orchestrator p"), [["plan "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/delegate p"), [["plan ", "policy "], "p"]);
   assert.deepEqual(completeSlashCommandLine("/delegate team s"), [
@@ -1904,7 +1910,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   assert.equal(handleSlashCommand("/commands plugin", harness.context), "continue");
   assert.match(harness.stdout(), /^Command palette matching "plugin":/);
   assert.match(harness.stdout(), /Integrations:/);
-  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review\|commands\|scaffold <directory>\|validate <manifest-path-or-directory>\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
+  assert.match(harness.stdout(), /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remove\]\|list\|review \[--json\]\|doctor \[--json\]\|audit \[--json\]\|commands\|scaffold <directory>\|validate <manifest-path-or-directory> \[--json\]\|inspect <id>\|register <manifest-path-or-directory-or-catalog-id>\|install <manifest-path-or-directory-or-catalog-id>\|enable <id>\|disable <id>\]/);
   assert.match(harness.stdout(), /\/plugin \[list\|status\]/);
   assert.match(harness.stdout(), /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
   assert.match(harness.stdout(), /\/skills \[list\|status\|activate <id>\]/);
@@ -1915,7 +1921,7 @@ test("commands slash command renders the deterministic plain palette in non-tty 
   const alias = createSlashHarness();
   assert.equal(handleSlashCommand("/palette mcp", alias.context), "continue");
   assert.match(alias.stdout(), /^Command palette matching "mcp":/);
-  assert.match(alias.stdout(), /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
+  assert.match(alias.stdout(), /\/mcp \[list\|plan \[preset-or-profile\] \[--json\]\|catalog \[--json\]\|presets \[--json\|inspect <preset> \[--json\]\]\|add-preset\|add-profile\|add-tool\|model\|inspect\|auth\|auth setup\|auth env\|auth init\|auth env-file\|auth keychain\|tools\|call\|remote-tools\|import-remote-tools\|discover\|enable\|disable\|allow-tool\|revoke-tool\|allow-model-tool\|revoke-model-tool\]/);
 });
 
 test("low-friction slash aliases dispatch to canonical commands", async () => {
@@ -4436,6 +4442,44 @@ test("plugins scaffold creates an installable bundle without registry changes", 
     assert.match(harness.stdout(), /registry_state: unchanged/);
     assert.equal(existsSync(registryPath), false);
 
+    const validateJson = createSlashHarness({
+      cwd,
+      pluginRegistryPath: registryPath,
+      fetch: async () => {
+        fetchCalls += 1;
+        throw new Error("plugin validate should not call fetch");
+      },
+    });
+    assert.equal(
+      await handleSlashCommand(`/plugins validate ${targetDirectory} --json`, validateJson.context),
+      "continue",
+    );
+    const validationReport = JSON.parse(validateJson.stdout());
+    assert.equal(validationReport.surface, "orx.plugin_validation");
+    assert.equal(validationReport.plugin_id, "acme.slash-plugin@0.1.0");
+    assert.equal(validationReport.operator_only, true);
+    assert.equal(validationReport.network, "none");
+    assert.equal(validationReport.execution, "none");
+    assert.equal(validationReport.data_state_writes, "none");
+    assert.equal(validationReport.component_count, 0);
+    assert.equal(validationReport.authority.validation_side_effects, "none");
+    assert.equal(validationReport.authority.registry_cache_catalog_trust_state, "unchanged");
+    assert.equal(existsSync(registryPath), false);
+
+    const invalidValidate = createSlashHarness({
+      cwd,
+      pluginRegistryPath: registryPath,
+    });
+    assert.equal(
+      await handleSlashCommand(`/plugins validate ${targetDirectory} --json extra`, invalidValidate.context),
+      "continue",
+    );
+    assert.equal(invalidValidate.stdout(), "");
+    assert.match(
+      invalidValidate.stderr(),
+      /Usage: \/plugins validate <manifest-path-or-directory> \[--json\]/,
+    );
+
     assert.equal(
       await handleSlashCommand(`/plugins install ${targetDirectory}`, harness.context),
       "continue",
@@ -4531,6 +4575,24 @@ test("mcp slash commands use user MCP profile catalog", async () => {
     assert.equal(await handleSlashCommand("/mcp catalog", harness.context), "continue");
     assert.match(harness.stdout(), /profiles: 0/);
 
+    const emptyCatalogJson = createSlashHarness({
+      mcpConfigPath: configPath,
+      mcpProfileCatalogPath: profileCatalogPath,
+    });
+    assert.equal(await handleSlashCommand("/mcp catalog --json", emptyCatalogJson.context), "continue");
+    const emptyCatalogReport = JSON.parse(emptyCatalogJson.stdout()) as {
+      surface: string;
+      exists: boolean;
+      profile_count: number;
+      data_state_writes: string;
+      authority: { catalog_read_side_effects: string };
+    };
+    assert.equal(emptyCatalogReport.surface, "orx.mcp_user_catalog");
+    assert.equal(emptyCatalogReport.exists, false);
+    assert.equal(emptyCatalogReport.profile_count, 0);
+    assert.equal(emptyCatalogReport.data_state_writes, "none");
+    assert.equal(emptyCatalogReport.authority.catalog_read_side_effects, "none");
+
     assert.equal(
       await handleSlashCommand(
         '/mcp add-profile context7 https://mcp.context7.example/mcp --name "Context7 docs" --auth-required',
@@ -4548,6 +4610,58 @@ test("mcp slash commands use user MCP profile catalog", async () => {
       "continue",
     );
     assert.match(harness.stdout(), /User MCP tool user:context7\/resolve-library-id stored/);
+
+    const catalogJson = createSlashHarness({
+      mcpConfigPath: configPath,
+      mcpProfileCatalogPath: profileCatalogPath,
+    });
+    assert.equal(await handleSlashCommand("/mcp catalog --json", catalogJson.context), "continue");
+    const catalogReport = JSON.parse(catalogJson.stdout()) as {
+      surface: string;
+      profile_count: number;
+      data_state_writes: string;
+      authority: Record<string, string>;
+      profiles: Array<{
+        id: string;
+        name: string;
+        state: string;
+        transport: string;
+        auth_required: boolean;
+        source: { kind: string; catalog_path: string; declaration_hash: string };
+        tools: Array<{ name: string; risk: string; auth_required: boolean; billable: boolean }>;
+      }>;
+    };
+    assert.equal(catalogReport.surface, "orx.mcp_user_catalog");
+    assert.equal(catalogReport.profile_count, 1);
+    assert.equal(catalogReport.data_state_writes, "none");
+    assert.equal(catalogReport.authority.catalog_read_side_effects, "none");
+    assert.equal(catalogReport.profiles[0].id, "user:context7");
+    assert.equal(catalogReport.profiles[0].name, "Context7 docs");
+    assert.equal(catalogReport.profiles[0].state, "disabled");
+    assert.equal(catalogReport.profiles[0].transport, "remote-http");
+    assert.equal(catalogReport.profiles[0].auth_required, true);
+    assert.equal(catalogReport.profiles[0].source.kind, "user");
+    assert.equal(catalogReport.profiles[0].source.catalog_path, profileCatalogPath);
+    assert.match(catalogReport.profiles[0].source.declaration_hash, /^sha256:[a-f0-9]{64}$/);
+    assert.deepEqual(catalogReport.profiles[0].tools, [
+      {
+        name: "resolve-library-id",
+        risk: "read",
+        auth_required: true,
+        billable: false,
+      },
+    ]);
+
+    const invalidCatalogJson = createSlashHarness({
+      mcpConfigPath: configPath,
+      mcpProfileCatalogPath: profileCatalogPath,
+    });
+    assert.equal(
+      await handleSlashCommand("/mcp catalog --json extra", invalidCatalogJson.context),
+      "continue",
+    );
+    assert.equal(invalidCatalogJson.stdout(), "");
+    assert.match(invalidCatalogJson.stderr(), /Usage: \/mcp catalog \[--json\]/);
 
     assert.equal(handleSlashCommand("/status", harness.context), "continue");
     assert.match(harness.stdout(), /mcp_user_profiles: 1/);
@@ -5317,9 +5431,48 @@ test("plugins install supports pinned git catalog entries without fetch", async 
     assert.match(harness.stdout(), /install_enable_trust_grant_fetch_execute: separate_explicit_steps/);
     assert.equal(readFileSync(registryPath, "utf8"), registryText);
 
+    const reviewJson = createSlashHarness({
+      cwd,
+      pluginCatalogPath: catalogPath,
+      pluginRegistryPath: registryPath,
+    });
+    assert.equal(await handleSlashCommand("/plugins review --json", reviewJson.context), "continue");
+    const reviewReport = JSON.parse(reviewJson.stdout());
+    assert.equal(reviewReport.surface, "orx.plugin_review");
+    assert.equal(reviewReport.operator_only, true);
+    assert.equal(reviewReport.network, "none");
+    assert.equal(reviewReport.execution, "none");
+    assert.equal(reviewReport.data_state_writes, "none");
+    assert.equal(reviewReport.installed_count, 1);
+    assert.equal(reviewReport.enabled_count, 1);
+    assert.equal(reviewReport.catalog_update_available_count, 1);
+    assert.equal(reviewReport.plugins[0].id, "acme.git-slash-plugin@1.0.0");
+    assert.equal(reviewReport.plugins[0].source.type, "git");
+    assert.equal(reviewReport.plugins[0].source.resolved_commit, commit);
+    assert.equal(reviewReport.plugins[0].catalog.status, "update_available");
+    assert.equal(reviewReport.plugins[0].catalog.catalog_commit, nextCommit);
+    assert.deepEqual(reviewReport.plugins[0].next_actions, [
+      "orx plugins catalog update acme.git-slash-plugin@1.0.0",
+    ]);
+    assert.equal(reviewReport.authority.registry_catalog_cache_trust_state, "read_only");
+    assert.equal(readFileSync(registryPath, "utf8"), registryText);
+
     assert.equal(await handleSlashCommand("/plugins audit", harness.context), "continue");
     assert.match(harness.stdout(), /Plugin Review/);
     assert.match(harness.stdout(), /catalog_updates_available: 1/);
+    assert.equal(readFileSync(registryPath, "utf8"), registryText);
+
+    const invalidReviewArgs = createSlashHarness({
+      cwd,
+      pluginCatalogPath: catalogPath,
+      pluginRegistryPath: registryPath,
+    });
+    assert.equal(
+      await handleSlashCommand("/plugins audit --json extra", invalidReviewArgs.context),
+      "continue",
+    );
+    assert.equal(invalidReviewArgs.stdout(), "");
+    assert.match(invalidReviewArgs.stderr(), /Usage: \/plugins audit \[--json\]/);
     assert.equal(readFileSync(registryPath, "utf8"), registryText);
 
     assert.equal(

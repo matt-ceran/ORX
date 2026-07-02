@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,7 @@ const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
 const nodeBin = process.execPath;
 const cliPath = join(repoRoot, "dist", "cli.js");
 const smokeCwd = join(tempRoot, "smoke-cwd");
+const pluginSmokeDir = join(tempRoot, "plugin-smoke");
 const codeSmokeRoot = join(tempRoot, "code-root");
 
 const steps = [
@@ -18,6 +19,12 @@ const steps = [
   ["typecheck", npmBin, ["run", "typecheck"]],
   ["full npm test", npmBin, ["test"]],
   ["global install verifier", npmBin, ["run", "verify:global-install"]],
+  [
+    "npm package dry-run contents",
+    npmBin,
+    ["pack", "--dry-run", "--json", "--ignore-scripts"],
+    { smoke: "packDryRun" },
+  ],
   [
     "built CLI smoke: doctor --json",
     nodeBin,
@@ -36,6 +43,18 @@ const steps = [
     nodeBin,
     [cliPath, "plugins", "review"],
     { smoke: "pluginsReview", cwd: smokeCwd },
+  ],
+  [
+    "built CLI smoke: plugins review --json",
+    nodeBin,
+    [cliPath, "plugins", "review", "--json"],
+    { smoke: "pluginsReviewJson", cwd: smokeCwd },
+  ],
+  [
+    "built CLI smoke: plugins validate --json",
+    nodeBin,
+    [cliPath, "plugins", "validate", pluginSmokeDir, "--json"],
+    { smoke: "pluginsValidateJson", cwd: smokeCwd },
   ],
   ["built CLI smoke: mcp presets", nodeBin, [cliPath, "mcp", "presets"], { smoke: "mcpPresets", cwd: smokeCwd }],
 ];
@@ -81,11 +100,38 @@ function prepareSmokeDirs() {
     join(tempRoot, "mcp", "auth-env"),
     join(tempRoot, "plugins"),
     join(tempRoot, "plugins", "cache"),
+    pluginSmokeDir,
     join(tempRoot, "delegation"),
     join(tempRoot, "audit"),
   ]) {
     mkdirSync(path, { recursive: true });
   }
+
+  writeFileSync(
+    join(pluginSmokeDir, "orx-plugin.json"),
+    JSON.stringify(
+      {
+        schemaVersion: "1",
+        name: "validate-smoke",
+        version: "1.0.0",
+        description: "Validate smoke plugin.",
+        publisher: "orx",
+        source: {
+          type: "local",
+          path: ".",
+        },
+        components: {},
+        permissions: {
+          filesystem: [],
+          network: [],
+          env: [],
+          mcp: [],
+        },
+      },
+      null,
+      2,
+    ),
+  );
 
   for (const entry of ["package.json", "README.md", "tsconfig.json", "src"]) {
     cpSync(join(repoRoot, entry), join(codeSmokeRoot, entry), { recursive: true });
@@ -176,6 +222,82 @@ function assertSmoke(kind, stdout) {
       data.summary.plugin_execution !== "none"
     ) {
       throw new Error("doctor --json smoke did not report no-network/no-plugin-execution boundaries");
+    }
+    return;
+  }
+
+  if (kind === "pluginsReviewJson") {
+    const data = JSON.parse(stdout);
+    if (data.schema_version !== 1 || data.surface !== "orx.plugin_review") {
+      throw new Error("plugins review --json schema metadata mismatch");
+    }
+    if (
+      data.operator_only !== true ||
+      data.network !== "none" ||
+      data.execution !== "none" ||
+      data.data_state_writes !== "none"
+    ) {
+      throw new Error("plugins review --json did not report read-only operator boundaries");
+    }
+    if (typeof data.installed_count !== "number" || !Array.isArray(data.plugins)) {
+      throw new Error("plugins review --json smoke missing review counts");
+    }
+    if (data.authority?.registry_catalog_cache_trust_state !== "read_only") {
+      throw new Error("plugins review --json smoke missing read-only authority");
+    }
+    return;
+  }
+
+  if (kind === "pluginsValidateJson") {
+    const data = JSON.parse(stdout);
+    if (data.schema_version !== 1 || data.surface !== "orx.plugin_validation") {
+      throw new Error("plugins validate --json schema metadata mismatch");
+    }
+    if (
+      data.operator_only !== true ||
+      data.network !== "none" ||
+      data.execution !== "none" ||
+      data.data_state_writes !== "none"
+    ) {
+      throw new Error("plugins validate --json did not report read-only operator boundaries");
+    }
+    if (data.plugin_id !== "orx.validate-smoke@1.0.0" || data.ok !== true) {
+      throw new Error("plugins validate --json smoke did not validate the smoke plugin");
+    }
+    if (data.authority?.registry_cache_catalog_trust_state !== "unchanged") {
+      throw new Error("plugins validate --json smoke missing unchanged-state authority");
+    }
+    return;
+  }
+
+  if (kind === "packDryRun") {
+    const packs = JSON.parse(stdout);
+    if (!Array.isArray(packs) || packs.length !== 1 || packs[0]?.name !== "orx") {
+      throw new Error("npm pack --dry-run did not report one orx package");
+    }
+    const filePaths = new Set((packs[0].files ?? []).map((file) => file?.path).filter(Boolean));
+    for (const required of ["package.json", "README.md", "RELEASE_NOTES.md", "LICENSE", "dist/cli.js"]) {
+      if (!filePaths.has(required)) {
+        throw new Error(`npm package dry-run missing required file: ${required}`);
+      }
+    }
+    for (const omitted of ["package-lock.json", "tsconfig.json", "scripts/verify-release.mjs"]) {
+      if (filePaths.has(omitted)) {
+        throw new Error(`npm package dry-run unexpectedly includes ${omitted}`);
+      }
+    }
+    for (const filePath of filePaths) {
+      if (
+        filePath.startsWith("src/") ||
+        filePath.startsWith("memory/") ||
+        filePath.startsWith(".orx/") ||
+        filePath.startsWith("scripts/")
+      ) {
+        throw new Error(`npm package dry-run unexpectedly includes private/source path: ${filePath}`);
+      }
+      if (/^dist\/.*\.(?:test|spec)\.(?:d\.ts|js|js\.map)$/.test(filePath)) {
+        throw new Error(`npm package dry-run unexpectedly includes compiled test artifact: ${filePath}`);
+      }
     }
     return;
   }

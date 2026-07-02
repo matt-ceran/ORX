@@ -69,8 +69,11 @@ export {
   type PluginScaffoldResult,
 } from "./scaffold.js";
 export {
+  parsePluginValidationArgs,
   renderPluginValidation,
+  renderPluginValidationJson,
   validatePluginManifestInput,
+  type PluginValidationParsedArgs,
   type PluginValidationComponent,
   type PluginValidationResult,
 } from "./validate.js";
@@ -110,9 +113,12 @@ export {
 } from "./render.js";
 export {
   createPluginReview,
+  parsePluginReviewArgs,
   renderPluginReview,
+  renderPluginReviewJson,
   type PluginReview,
   type PluginReviewOptions,
+  type PluginReviewParsedArgs,
 } from "./review.js";
 export {
   activatePluginSkill,
