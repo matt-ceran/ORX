@@ -8,6 +8,12 @@
   },
   "files": [
     "dist",
+    "!dist/**/*.test.d.ts",
+    "!dist/**/*.test.js",
+    "!dist/**/*.test.js.map",
+    "!dist/**/*.spec.d.ts",
+    "!dist/**/*.spec.js",
+    "!dist/**/*.spec.js.map",
     "README.md",
     "RELEASE_NOTES.md",
     "LICENSE"

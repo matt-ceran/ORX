@@ -295,6 +295,9 @@ function assertSmoke(kind, stdout) {
       ) {
         throw new Error(`npm package dry-run unexpectedly includes private/source path: ${filePath}`);
       }
+      if (/^dist\/.*\.(?:test|spec)\.(?:d\.ts|js|js\.map)$/.test(filePath)) {
+        throw new Error(`npm package dry-run unexpectedly includes compiled test artifact: ${filePath}`);
+      }
     }
     return;
   }

@@ -2163,9 +2163,9 @@ Added plugin validation JSON output:
 
 Added release package dry-run assertions:
 
-- `npm run verify:release` now includes a 12th bounded release-hardening check: `npm pack --dry-run --json --ignore-scripts` verifies the package manifest includes `package.json`, `README.md`, `RELEASE_NOTES.md`, `LICENSE`, and `dist/cli.js`.
-- The package assertion fails if the dry-run includes source/private/local-operational paths such as `src/`, `memory/`, `.orx/`, `scripts/`, `package-lock.json`, or `tsconfig.json`; build/test/global-install steps still run before it, and the check does not publish or call network by command selection.
-- Verification passed: isolated-home `npm run verify:release` with 12 steps, including `npm package dry-run contents`, plus existing built CLI smokes for doctor JSON, guide, code calls, plugin review, plugin review JSON, plugin validation JSON, and MCP presets.
+- `npm run verify:release` now includes a bounded release-hardening check: `npm pack --dry-run --json --ignore-scripts` verifies the package manifest includes `package.json`, `README.md`, `RELEASE_NOTES.md`, `LICENSE`, and `dist/cli.js`.
+- The package assertion fails if the dry-run includes source/private/local-operational paths such as `src/`, `memory/`, `.orx/`, `scripts/`, `package-lock.json`, `tsconfig.json`, or compiled `dist/**/*.test.*` / `dist/**/*.spec.*` artifacts; build/test/global-install steps still run before it, and the check does not publish or call network by command selection.
+- Verification passed: direct `npm pack --dry-run --json --ignore-scripts` manifest parse with 307 files and zero compiled test/spec artifacts, plus isolated-home `npm run verify:release` with 12 steps including `npm package dry-run contents` and existing built CLI smokes for doctor JSON, guide, code calls, plugin review, plugin review JSON, plugin validation JSON, and MCP presets.
 
 ## Next Likely Task
 
