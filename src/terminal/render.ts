@@ -38,10 +38,10 @@ export interface MeterOptions {
 const DEFAULT_ANSI_CODES: Record<TerminalStyle, string> = {
   bold: "\x1b[1m",
   dim: "\x1b[2m",
-  green: "\x1b[32m",
-  yellow: "\x1b[33m",
-  red: "\x1b[31m",
-  cyan: "\x1b[36m",
+  green: "\x1b[38;5;108m",
+  yellow: "\x1b[38;5;179m",
+  red: "\x1b[38;5;167m",
+  cyan: "\x1b[38;5;110m",
 };
 const THEME_ANSI_CODES: Record<OrxTheme, Record<TerminalStyle, string>> = {
   default: DEFAULT_ANSI_CODES,
@@ -56,10 +56,10 @@ const THEME_ANSI_CODES: Record<OrxTheme, Record<TerminalStyle, string>> = {
   vivid: {
     bold: "\x1b[1m",
     dim: "\x1b[2m",
-    green: "\x1b[92m",
-    yellow: "\x1b[93m",
-    red: "\x1b[91m",
-    cyan: "\x1b[96m",
+    green: "\x1b[38;5;114m",
+    yellow: "\x1b[38;5;221m",
+    red: "\x1b[38;5;203m",
+    cyan: "\x1b[38;5;75m",
   },
 };
 

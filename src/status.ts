@@ -20,6 +20,7 @@ import {
 } from "./plugins/index.js";
 import { getProfileStatusSummary } from "./profiles/index.js";
 import { createTerminalRenderer, type TerminalRenderOptions } from "./terminal/render.js";
+import { renderTerminalBlock } from "./terminal/ui.js";
 import { getTestAdapterSummary } from "./testing/index.js";
 
 export interface StatusOptions {
@@ -39,6 +40,7 @@ export interface StatusOptions {
   delegationAuditLogPath?: string;
   delegationState?: DelegationState;
   renderOptions?: TerminalRenderOptions;
+  layout?: "auto" | "plain" | "tty";
 }
 
 export function formatStatus({
@@ -58,6 +60,7 @@ export function formatStatus({
   delegationAuditLogPath,
   delegationState,
   renderOptions,
+  layout = "auto",
 }: StatusOptions): string {
   const renderer = createTerminalRenderer(renderOptions);
   const { config } = loadedConfig;
@@ -100,6 +103,14 @@ export function formatStatus({
       : "unavailable";
   const activeMcpProfiles =
     mcpStatus.activeProfileIds.length > 0 ? mcpStatus.activeProfileIds.join(",") : "none";
+  const mcpProfileLines = mcpStatus.profiles.map(
+    (profile) =>
+      `mcp_profile: ${formatMcpProfile(profile, mcpStatus.profileHashes[profile.id], {
+        trustedProfileHash: mcpStatus.trustedProfileHashes[profile.id],
+        updatedAt: mcpStatus.profileUpdatedAt[profile.id],
+        schemaChangePending: mcpStatus.pendingSchemaChangeProfileIds.includes(profile.id),
+      })}`,
+  );
   const lines = [
     renderer.bold("ORX status"),
     `cwd: ${cwd}`,
@@ -210,15 +221,241 @@ export function formatStatus({
     delegationStatus ? `orchestration_execution: ${delegationPolicyExecution}` : undefined,
     delegationStatus ? `delegate_count: ${delegationStatus.delegateCount}` : undefined,
     delegationStatus ? `delegate_task: ${delegateTaskModelExposure === "available_in_chat" ? "available_in_chat" : "unavailable"}` : undefined,
-    ...mcpStatus.profiles.map(
-      (profile) =>
-        `mcp_profile: ${formatMcpProfile(profile, mcpStatus.profileHashes[profile.id], {
-          trustedProfileHash: mcpStatus.trustedProfileHashes[profile.id],
-          updatedAt: mcpStatus.profileUpdatedAt[profile.id],
-          schemaChangePending: mcpStatus.pendingSchemaChangeProfileIds.includes(profile.id),
-        })}`,
-    ),
+    ...mcpProfileLines,
   ];
 
-  return lines.filter((line): line is string => typeof line === "string").join("\n");
+  const plain = lines.filter((line): line is string => typeof line === "string").join("\n");
+  const useTtyLayout = layout === "tty" || (layout === "auto" && shouldUseTtyStatusLayout(renderOptions));
+  if (!useTtyLayout) {
+    return plain;
+  }
+
+  return renderTtyStatus({
+    cwd,
+    configSource: formatConfigSources(loadedConfig.loadedFiles),
+    loadedConfig,
+    activeMcpProfiles,
+    mcpProfileCatalogPath,
+    mcpStatus,
+    mcpProfileLines,
+    pluginCacheDirectory,
+    pluginBinsAuditLogPath,
+    pluginBinsConfigPath,
+    pluginHooksAuditLogPath,
+    pluginHooksConfigPath,
+    pluginStatus,
+    pluginSkillStatus,
+    pluginPromptStatus,
+    pluginRuleStatus,
+    pluginMcpStatus,
+    pluginCommandAliasStatus,
+    pluginBinTrustStatus,
+    pluginHookTrustStatus,
+    profileStatus,
+    testStatus,
+    delegationTeamConfigPath,
+    delegationTeamStatus,
+    delegationPolicyPath,
+    delegationPolicy,
+    delegationPolicyExecution,
+    delegationAuditLogPath,
+    delegateTaskModelExposure,
+    delegationStatus,
+    renderOptions,
+  });
+}
+
+interface TtyStatusOptions {
+  cwd: string;
+  configSource: string;
+  loadedConfig: LoadedConfig;
+  activeMcpProfiles: string;
+  mcpProfileCatalogPath?: string;
+  mcpStatus: ReturnType<typeof getMcpStatusSummary>;
+  mcpProfileLines: string[];
+  pluginCacheDirectory?: string;
+  pluginBinsAuditLogPath?: string;
+  pluginBinsConfigPath?: string;
+  pluginHooksAuditLogPath?: string;
+  pluginHooksConfigPath?: string;
+  pluginStatus: ReturnType<typeof getPluginStatusSummary>;
+  pluginSkillStatus: ReturnType<typeof getEnabledPluginSkillSummary>;
+  pluginPromptStatus: ReturnType<typeof getEnabledPluginPromptSummary>;
+  pluginRuleStatus: ReturnType<typeof getEnabledPluginRuleSummary>;
+  pluginMcpStatus: ReturnType<typeof getEnabledPluginMcpProfileSummary>;
+  pluginCommandAliasStatus: ReturnType<typeof getEnabledPluginCommandAliasSummary>;
+  pluginBinTrustStatus: ReturnType<typeof getPluginBinTrustSummary>;
+  pluginHookTrustStatus: ReturnType<typeof getPluginHookTrustSummary>;
+  profileStatus: ReturnType<typeof getProfileStatusSummary>;
+  testStatus: ReturnType<typeof getTestAdapterSummary>;
+  delegationTeamConfigPath?: string;
+  delegationTeamStatus: ReturnType<typeof getDelegationTeamStatusSummary>;
+  delegationPolicyPath?: string;
+  delegationPolicy: ReturnType<typeof loadDelegationExecutionPolicy>;
+  delegationPolicyExecution: string;
+  delegationAuditLogPath?: string;
+  delegateTaskModelExposure: string;
+  delegationStatus?: ReturnType<typeof getDelegationStatusSummary>;
+  renderOptions?: TerminalRenderOptions;
+}
+
+function shouldUseTtyStatusLayout(renderOptions: TerminalRenderOptions | undefined): boolean {
+  if (renderOptions?.color === true) {
+    return true;
+  }
+
+  return Boolean((renderOptions?.stream as { isTTY?: boolean } | undefined)?.isTTY);
+}
+
+function renderTtyStatus({
+  cwd,
+  configSource,
+  loadedConfig,
+  activeMcpProfiles,
+  mcpProfileCatalogPath,
+  mcpStatus,
+  mcpProfileLines,
+  pluginCacheDirectory,
+  pluginBinsAuditLogPath,
+  pluginBinsConfigPath,
+  pluginHooksAuditLogPath,
+  pluginHooksConfigPath,
+  pluginStatus,
+  pluginSkillStatus,
+  pluginPromptStatus,
+  pluginRuleStatus,
+  pluginMcpStatus,
+  pluginCommandAliasStatus,
+  pluginBinTrustStatus,
+  pluginHookTrustStatus,
+  profileStatus,
+  testStatus,
+  delegationTeamConfigPath,
+  delegationTeamStatus,
+  delegationPolicyPath,
+  delegationPolicy,
+  delegationPolicyExecution,
+  delegationAuditLogPath,
+  delegateTaskModelExposure,
+  delegationStatus,
+  renderOptions,
+}: TtyStatusOptions): string {
+  const { config } = loadedConfig;
+  const keyState = loadedConfig.apiKeyPresent ? `yes (${loadedConfig.apiKeySource})` : "no";
+  const permissionState = `${config.permissions.approvalPolicy}/${config.permissions.sandboxMode}`;
+  const pluginAliasSummary = [
+    `commands=${pluginCommandAliasStatus.aliasCount}`,
+    `prompts=${pluginCommandAliasStatus.promptAliasCount}`,
+    `bins=${pluginCommandAliasStatus.binAliasCount}`,
+    `trusted_bins=${pluginCommandAliasStatus.trustedBinAliasCount}`,
+    `exec=${pluginCommandAliasStatus.execAliasCount}`,
+    `trusted_exec=${pluginCommandAliasStatus.trustedExecAliasCount}`,
+    `pending_exec=${pluginCommandAliasStatus.pendingExecAliasCount}`,
+    `missing_exec_bins=${pluginCommandAliasStatus.missingExecBinAliasCount}`,
+  ].join(" ");
+  const pluginContentSummary = [
+    `skills=${pluginSkillStatus.skillCount}${pluginSkillStatus.truncated ? " truncated" : ""}`,
+    `prompts=${pluginPromptStatus.promptCount}${pluginPromptStatus.truncated ? " truncated" : ""}`,
+    `rules=${pluginRuleStatus.ruleCount}${pluginRuleStatus.truncated ? " truncated" : ""}`,
+    `mcp=${pluginMcpStatus.profileCount}${pluginMcpStatus.truncated ? " truncated" : ""}`,
+  ].join(" ");
+  const blocks = [
+    renderTerminalBlock({
+      title: "ORX status",
+      subtitle: `${config.mode} ${config.model}`,
+      body: [
+        `cwd ${cwd}`,
+        `config ${configSource}`,
+        `model ${config.model}  mode ${config.mode}  fusion ${config.fusionPreset ?? "none"}`,
+        `theme ${config.theme ?? DEFAULT_THEME}  profile ${config.activeProfile ?? "none"}  saved_profiles ${profileStatus.count}`,
+        `api_key ${keyState}`,
+      ],
+      footer: `permissions ${permissionState}`,
+      tone: "accent",
+      renderOptions,
+    }),
+    renderTerminalBlock({
+      title: "runtime",
+      body: [
+        "shell_access enabled",
+        "network_tools enabled",
+        "destructive_command_warnings disabled",
+      ],
+      footer: "default posture is full local access",
+      tone: "success",
+      renderOptions,
+    }),
+    renderTerminalBlock({
+      title: "tests",
+      body: [
+        `targets ${testStatus.targetCount}${testStatus.truncated ? " truncated" : ""}  default ${testStatus.defaultTargetId ?? "none"}`,
+        `package_scripts ${testStatus.packageScriptCount}  node_targets ${testStatus.nodeTestTargetCount}`,
+        `frameworks node=${testStatus.frameworkCounts.node} vitest=${testStatus.frameworkCounts.vitest} jest=${testStatus.frameworkCounts.jest} playwright=${testStatus.frameworkCounts.playwright} ava=${testStatus.frameworkCounts.ava} unknown=${testStatus.frameworkCounts.unknown}`,
+      ],
+      tone: "accent",
+      renderOptions,
+    }),
+    renderTerminalBlock({
+      title: "MCP",
+      subtitle: `active ${activeMcpProfiles}`,
+      body: [
+        `catalog ${mcpProfileCatalogPath ?? "none"}`,
+        `user_profiles ${mcpStatus.profiles.filter((profile) => profile.source?.kind === "user").length}  active_servers ${mcpStatus.serverCount}  auth_servers ${mcpStatus.authBearingServerCount}`,
+        `tools write=${mcpStatus.writeEnabledToolCount} billable=${mcpStatus.billableToolCount} allowed=${mcpStatus.policyAllowedToolCount} denied=${mcpStatus.policyDeniedToolCount}`,
+        `configured denied=${mcpStatus.configuredDeniedToolCount} billable=${mcpStatus.configuredBillableToolCount} risky=${mcpStatus.configuredRiskyToolCount}`,
+        `grants tools=${mcpStatus.toolGrantCount} stale_tools=${mcpStatus.staleToolGrantCount} model=${mcpStatus.modelToolGrantCount} stale_model=${mcpStatus.staleModelToolGrantCount}`,
+        `risky_transports ${mcpStatus.riskyTransportCount}  pending_schema_changes ${mcpStatus.pendingSchemaChangeCount === 0 ? "none" : mcpStatus.pendingSchemaChangeCount}`,
+        `registry_hash ${mcpStatus.registryHash}`,
+      ],
+      tone: mcpStatus.pendingSchemaChangeCount > 0 ? "warning" : "accent",
+      renderOptions,
+    }),
+    renderTerminalBlock({
+      title: "plugins",
+      body: [
+        `installed ${pluginStatus.installedCount}  enabled ${pluginStatus.enabledCount}  cache ${pluginCacheDirectory ?? "default"}`,
+        `aliases ${pluginAliasSummary}`,
+        `content ${pluginContentSummary}`,
+        `bins runtime=explicit_trusted_operator_run definitions=${pluginBinTrustStatus.binCount}${pluginBinTrustStatus.truncated ? " truncated" : ""} trusted=${pluginBinTrustStatus.trustedCount} pending=${pluginBinTrustStatus.pendingTrustCount}`,
+        `hooks runtime=manual_and_lifecycle definitions=${pluginHookTrustStatus.hookCount}${pluginHookTrustStatus.truncated ? " truncated" : ""} trusted=${pluginHookTrustStatus.trustedCount} pending=${pluginHookTrustStatus.pendingTrustCount}`,
+        `bins_config ${pluginBinsConfigPath ?? "default"}  bins_audit ${pluginBinsAuditLogPath ?? "default"}`,
+        `hooks_config ${pluginHooksConfigPath ?? "default"}  hooks_audit ${pluginHooksAuditLogPath ?? "default"}`,
+      ],
+      tone:
+        pluginBinTrustStatus.pendingTrustCount > 0 || pluginHookTrustStatus.pendingTrustCount > 0
+          ? "warning"
+          : "accent",
+      renderOptions,
+    }),
+    renderTerminalBlock({
+      title: "delegation",
+      body: [
+        `teams ${delegationTeamStatus.count}  teams_path ${delegationTeamConfigPath ?? "default"}`,
+        `policy ${delegationPolicyExecution}  policy_path ${delegationPolicyPath ?? "default"}`,
+        `limits max_cost_usd=${delegationPolicy.maxTaskCostUsd} timeout_ms=${delegationPolicy.taskTimeoutMs} result_bytes=${delegationPolicy.maxResultBytes} concurrent=${delegationPolicy.maxConcurrentDelegates}`,
+        `credentials ${delegationPolicy.credentialForwarding}  persistence ${delegationPolicy.resultPersistence}  merge ${delegationPolicy.resultMerge}`,
+        `audit ${delegationAuditLogPath ?? "default"}`,
+        `delegate_task_runtime ${delegationPolicy.executionEnabled ? "policy_gated_openrouter_adapter" : "policy_enforced_disabled"}`,
+        `delegate_task_model_exposure ${delegateTaskModelExposure}`,
+        "delegate_task_adapter openrouter_available",
+        delegationStatus ? `controller ${delegationStatus.controller}` : undefined,
+        delegationStatus ? `delegates ${delegationStatus.delegateCount}` : undefined,
+      ].filter((line): line is string => typeof line === "string"),
+      tone: delegationPolicy.executionEnabled ? "warning" : "accent",
+      renderOptions,
+    }),
+  ];
+
+  if (mcpProfileLines.length > 0) {
+    blocks.push(
+      renderTerminalBlock({
+        title: "MCP profiles",
+        body: mcpProfileLines,
+        tone: "muted",
+        renderOptions,
+      }),
+    );
+  }
+
+  return blocks.join("\n");
 }

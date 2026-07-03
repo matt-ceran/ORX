@@ -9,6 +9,13 @@ import { getMcpStatusSummary } from "./mcp/index.js";
 import { createPluginReview } from "./plugins/index.js";
 import { getProfileStatusSummary } from "./profiles/index.js";
 import { getTestAdapterSummary } from "./testing/index.js";
+import type { TerminalRenderOptions } from "./terminal/render.js";
+import {
+  formatTerminalKeyValues,
+  renderTerminalBlock,
+  shouldUseHumanTtyLayout,
+  type TerminalLayout,
+} from "./terminal/ui.js";
 
 export interface DoctorOptions {
   cwd: string;
@@ -29,6 +36,11 @@ export interface DoctorReport {
   readiness: DoctorReadiness;
   strictReady: boolean;
   json: DoctorJsonReport;
+}
+
+export interface DoctorRenderOptions {
+  layout?: TerminalLayout;
+  renderOptions?: TerminalRenderOptions;
 }
 
 export interface DoctorJsonReport {
@@ -374,6 +386,190 @@ export function createDoctorReport({
     strictReady: json.strict_ready,
     json,
   };
+}
+
+export function renderDoctorReport(
+  report: DoctorReport,
+  options: DoctorRenderOptions = {},
+): string {
+  if (!shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    return report.text;
+  }
+
+  const renderOptions = options.renderOptions;
+  const json = report.json;
+  const activeMcpProfiles =
+    json.mcp.active_profiles.length > 0 ? json.mcp.active_profiles.join(", ") : "none";
+  const nextSteps =
+    json.next_steps.length === 0
+      ? ["none"]
+      : json.next_steps.map((step, index) => `${index + 1}. ${step}`);
+
+  return [
+    renderTerminalBlock({
+      title: "ORX doctor",
+      subtitle: json.summary.overall,
+      renderOptions,
+      body: [
+        formatTerminalKeyValues(
+          [
+            ["ready", json.summary.ready_to_use],
+            ["core", json.summary.core_cli],
+            ["chat", json.summary.chat],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["mcp", json.summary.mcp],
+            ["plugins", json.summary.plugins],
+            ["delegation", json.summary.delegation],
+          ],
+          { renderOptions },
+        ),
+        "network none  subprocesses none  remote_mcp none  plugin_execution none",
+      ],
+      footer: "no-network readiness check",
+    }),
+    renderTerminalBlock({
+      title: "runtime",
+      renderOptions,
+      body: [
+        formatTerminalKeyValues(
+          [
+            ["cwd", json.runtime.cwd],
+            ["config", json.runtime.config_source],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["mode", json.runtime.mode],
+            ["model", json.runtime.model],
+            ["fusion", json.runtime.fusion_preset ?? "none"],
+            ["theme", json.runtime.theme],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["api key", json.runtime.api_key_present ? "yes" : "no"],
+            ["source", json.runtime.api_key_source],
+            ["profile", json.runtime.active_profile ?? "none"],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["permissions", `${json.runtime.approval_policy}/${json.runtime.sandbox_mode}`],
+            ["saved profiles", String(json.runtime.saved_profiles)],
+            [
+              "tests",
+              `${json.runtime.test_targets}${json.runtime.test_targets_truncated ? " truncated" : ""}`,
+            ],
+            ["default test", json.runtime.test_default_target ?? "none"],
+          ],
+          { renderOptions },
+        ),
+      ],
+    }),
+    renderTerminalBlock({
+      title: "mcp",
+      renderOptions,
+      body: [
+        formatTerminalKeyValues(
+          [
+            ["active", activeMcpProfiles],
+            ["profiles", String(json.mcp.total_profiles)],
+            ["servers", String(json.mcp.active_servers)],
+            ["auth", String(json.mcp.auth_bearing_servers)],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["allowed", String(json.mcp.policy_allowed_tools)],
+            ["denied", String(json.mcp.policy_denied_tools)],
+            ["model grants", String(json.mcp.model_tool_grants)],
+            ["stale", String(json.mcp.stale_model_tool_grants)],
+            ["pending schema", String(json.mcp.pending_schema_changes)],
+          ],
+          { renderOptions },
+        ),
+        `next ${json.mcp.next}`,
+      ],
+    }),
+    renderTerminalBlock({
+      title: "plugins",
+      renderOptions,
+      body: [
+        formatTerminalKeyValues(
+          [
+            ["installed", String(json.plugins.installed)],
+            ["enabled", String(json.plugins.enabled)],
+            ["updates", String(json.plugins.catalog_updates_available)],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["bins", trustSummary(json.plugins.bin_trust)],
+            ["hooks", trustSummary(json.plugins.hook_trust)],
+            ["mcp profiles", String(json.plugins.plugin_mcp_profiles)],
+            ["aliases", String(json.plugins.command_aliases)],
+            [
+              "omissions",
+              `${json.plugins.omissions}${json.plugins.omissions_truncated ? " truncated" : ""}`,
+            ],
+          ],
+          { renderOptions },
+        ),
+        `next ${json.plugins.next}`,
+      ],
+    }),
+    renderTerminalBlock({
+      title: "delegation",
+      renderOptions,
+      body: [
+        formatTerminalKeyValues(
+          [
+            ["saved teams", String(json.delegation.saved_teams)],
+            ["policy", json.delegation.execution_policy],
+            ["runtime", json.delegation.delegate_task_runtime],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["max cost", `$${json.delegation.max_task_cost_usd}`],
+            ["timeout", `${json.delegation.timeout_ms}ms`],
+            ["bytes", String(json.delegation.max_result_bytes)],
+            ["credentials", json.delegation.credential_forwarding],
+            ["merge", json.delegation.result_merge],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["cli", json.delegation.delegate_task_cli_exposure],
+            ["chat", json.delegation.chat_readiness],
+            ["team", json.delegation.saved_team_availability],
+          ],
+          { renderOptions },
+        ),
+        `next ${json.delegation.next}`,
+      ],
+    }),
+    renderTerminalBlock({
+      title: "next steps",
+      renderOptions,
+      body: nextSteps,
+    }),
+  ].join("\n");
+}
+
+function trustSummary(counts: { trusted: number; pending: number; untrusted: number }): string {
+  return `${counts.trusted}/${counts.pending}/${counts.untrusted}`;
 }
 
 interface DoctorReadinessOptions {

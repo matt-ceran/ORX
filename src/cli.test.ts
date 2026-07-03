@@ -68,6 +68,7 @@ test("help, version, and status work without an API key", async () => {
   const cwd = createTempDir();
   try {
     const diagnosticEnv = {
+      ORX_CONFIG_PATH: join(cwd, "missing-config.toml"),
       ORX_MCP_CONFIG_PATH: join(cwd, "mcp", "profiles.json"),
       ORX_MCP_PROFILE_CATALOG_PATH: join(cwd, "mcp", "profile-catalog.json"),
       ORX_PLUGIN_REGISTRY_PATH: join(cwd, "plugins", "registry.json"),
@@ -297,6 +298,196 @@ test("help, version, and status work without an API key", async () => {
   }
 });
 
+test("tty CLI help and setup surfaces render sectioned terminal blocks", async () => {
+  const cwd = createTempDir();
+  const env = {
+    ORX_CONFIG_PATH: join(cwd, "config.toml"),
+    ORX_AUTH_ENV_DIR: join(cwd, "auth"),
+  };
+  try {
+    const help = createIo({ cwd, tty: true });
+    assert.equal(await runCli(["node", "cli", "help"], env, help.io), 0);
+    const helpOutput = stripAnsi(help.stdout());
+    assert.match(helpOutput, /^• ORX OpenRouter-native coding agent/);
+    assert.match(helpOutput, /• daily/);
+    assert.match(helpOutput, /• local tools/);
+    assert.match(helpOutput, /• integrations/);
+    assert.match(helpOutput, /• options/);
+    assert.doesNotMatch(helpOutput, /\nCommands:\n/);
+    assert.equal(help.stderr(), "");
+
+    const config = createIo({ cwd, tty: true });
+    assert.equal(await runCli(["node", "cli", "config"], env, config.io), 0);
+    const configOutput = stripAnsi(config.stdout());
+    assert.match(configOutput, /^• ORX config auto openrouter\/auto/);
+    assert.match(configOutput, /• config paths/);
+    assert.match(configOutput, /• editable keys/);
+    assert.doesNotMatch(configOutput, /\n  config_source:/);
+    assert.equal(config.stderr(), "");
+
+    const auth = createIo({ cwd, tty: true });
+    assert.equal(await runCli(["node", "cli", "auth"], env, auth.io), 0);
+    const authOutput = stripAnsi(auth.stdout());
+    assert.match(authOutput, /^• ORX OpenRouter auth missing key/);
+    assert.match(authOutput, /• boundaries/);
+    assert.match(authOutput, /• next/);
+    assert.doesNotMatch(authOutput, /\n  api_key_present:/);
+    assert.equal(auth.stderr(), "");
+
+    writeFileSync(
+      join(cwd, "package.json"),
+      JSON.stringify({
+        scripts: {
+          test: "node ./cli-test.mjs",
+        },
+      }),
+    );
+    writeFileSync(join(cwd, "cli-test.mjs"), "console.log('ok');\n");
+    const tests = createIo({ cwd, tty: true });
+    assert.equal(await runCli(["node", "cli", "tests", "list"], env, tests.io), 0);
+    const testsOutput = stripAnsi(tests.stdout());
+    assert.match(testsOutput, /^• Test Targets 1/);
+    assert.match(testsOutput, /  script:test  package-script/);
+    assert.match(testsOutput, /  └ orx tests run \[target-id\] \[--json\] \[-- args...\]/);
+    assert.doesNotMatch(testsOutput, /\n  targets:/);
+    assert.equal(tests.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("tty CLI readiness and local tooling surfaces render sectioned terminal blocks", async () => {
+  const cwd = createTempDir();
+  const env = {
+    OPENROUTER_API_KEY: "sk-or-v1-test-tty-ui",
+    ORX_MCP_CONFIG_PATH: join(cwd, "mcp", "profiles.json"),
+    ORX_MCP_PROFILE_CATALOG_PATH: join(cwd, "mcp", "profile-catalog.json"),
+    ORX_PLUGIN_REGISTRY_PATH: join(cwd, "plugins", "registry.json"),
+    ORX_PLUGIN_CATALOG_PATH: join(cwd, "plugins", "catalog.json"),
+    ORX_PLUGIN_BINS_CONFIG_PATH: join(cwd, "plugins", "bins.json"),
+    ORX_PLUGIN_HOOKS_CONFIG_PATH: join(cwd, "plugins", "hooks.json"),
+    ORX_PROFILE_CONFIG_PATH: join(cwd, "profiles.json"),
+    ORX_DELEGATION_TEAMS_PATH: join(cwd, "delegation", "teams.json"),
+    ORX_DELEGATION_POLICY_PATH: join(cwd, "delegation", "policy.json"),
+    ORX_DELEGATION_AUDIT_PATH: join(cwd, "audit", "delegation.jsonl"),
+  };
+
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(
+      join(cwd, "src", "index.ts"),
+      "export function greet(name: string) {\n  return `hello ${name}`;\n}\n",
+    );
+
+    const doctor = createIo({ cwd, tty: true });
+    assert.equal(await runCli(["node", "cli", "doctor"], env, doctor.io), 0);
+    const doctorOutput = stripAnsi(doctor.stdout());
+    assert.match(doctorOutput, /^• ORX doctor ready_for_interactive_coding/);
+    assert.match(doctorOutput, /• runtime/);
+    assert.match(doctorOutput, /• mcp/);
+    assert.match(doctorOutput, /• plugins/);
+    assert.match(doctorOutput, /• delegation/);
+    assert.match(doctorOutput, /• next steps/);
+    assert.doesNotMatch(doctorOutput, /\nsummary:\n/);
+    assert.doesNotMatch(doctorOutput, /\n  ready_to_use:/);
+    assert.doesNotMatch(doctorOutput, /sk-or-v1-test-tty-ui/);
+    assert.equal(doctor.stderr(), "");
+
+    const mcp = createIo({ cwd, tty: true });
+    assert.equal(await runCli(["node", "cli", "mcp"], env, mcp.io), 0);
+    const mcpOutput = stripAnsi(mcp.stdout());
+    assert.match(mcpOutput, /^• MCP 1 profiles/);
+    assert.match(mcpOutput, /• profiles/);
+    assert.match(mcpOutput, /• policy/);
+    assert.doesNotMatch(mcpOutput, /\n  active_profiles:/);
+    assert.doesNotMatch(mcpOutput, /\n  registry_hash:/);
+    assert.equal(mcp.stderr(), "");
+
+    const plugins = createIo({ cwd, tty: true });
+    assert.equal(await runCli(["node", "cli", "plugins", "review"], env, plugins.io), 0);
+    const pluginsOutput = stripAnsi(plugins.stdout());
+    assert.match(pluginsOutput, /^• Plugin Review 0 installed/);
+    assert.match(pluginsOutput, /• trust gates/);
+    assert.match(pluginsOutput, /• plugins/);
+    assert.match(pluginsOutput, /• authority/);
+    assert.doesNotMatch(pluginsOutput, /\n  installed:/);
+    assert.doesNotMatch(pluginsOutput, /\n  authority:\n/);
+    assert.equal(plugins.stderr(), "");
+
+    const code = createIo({ cwd, tty: true });
+    assert.equal(await runCli(["node", "cli", "code", "map", "src"], env, code.io), 0);
+    const codeOutput = stripAnsi(code.stdout());
+    assert.match(codeOutput, /^• Code Map/);
+    assert.match(codeOutput, /• languages/);
+    assert.match(codeOutput, /• key files/);
+    assert.match(codeOutput, /• entrypoints/);
+    assert.match(codeOutput, /• source files/);
+    assert.match(codeOutput, /path index\.ts  language TypeScript/);
+    assert.doesNotMatch(codeOutput, /\n  languages:\n/);
+    assert.doesNotMatch(codeOutput, /\n  source_files:\n/);
+    assert.equal(code.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("tty CLI code intelligence detail surfaces render sectioned terminal blocks", async () => {
+  const cwd = createTempDir();
+  try {
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(
+      join(cwd, "src", "util.ts"),
+      "export function helper(name: string) {\n  return name.trim();\n}\n",
+    );
+    writeFileSync(
+      join(cwd, "src", "index.ts"),
+      'import { helper } from "./util.js";\nexport function greet(name: string) {\n  return helper(name);\n}\ngreet("Ada");\n',
+    );
+
+    const symbols = createIo({ cwd, tty: true });
+    assert.equal(await runCli(["node", "cli", "code", "symbols", "greet"], {}, symbols.io), 0);
+    const symbolsOutput = stripAnsi(symbols.stdout());
+    assert.match(symbolsOutput, /^• Code Symbols/);
+    assert.match(symbolsOutput, /• exports/);
+    assert.match(symbolsOutput, /name greet  kind export  path src\/index\.ts/);
+    assert.doesNotMatch(symbolsOutput, /\n  exports:\n/);
+    assert.equal(symbols.stderr(), "");
+
+    const refs = createIo({ cwd, tty: true });
+    assert.equal(await runCli(["node", "cli", "code", "refs", "helper"], {}, refs.io), 0);
+    const refsOutput = stripAnsi(refs.stdout());
+    assert.match(refsOutput, /^• Code References/);
+    assert.match(refsOutput, /• matches/);
+    assert.match(refsOutput, /path src\/index\.ts/);
+    assert.match(refsOutput, /excerpt/);
+    assert.doesNotMatch(refsOutput, /\n  matches:\n/);
+    assert.equal(refs.stderr(), "");
+
+    const imports = createIo({ cwd, tty: true });
+    assert.equal(await runCli(["node", "cli", "code", "imports", "util"], {}, imports.io), 0);
+    const importsOutput = stripAnsi(imports.stdout());
+    assert.match(importsOutput, /^• Code Import Graph/);
+    assert.match(importsOutput, /• edges/);
+    assert.match(importsOutput, /from src\/index\.ts/);
+    assert.match(importsOutput, /specifier \.\/util\.js/);
+    assert.doesNotMatch(importsOutput, /\n  summary:\n/);
+    assert.equal(imports.stderr(), "");
+
+    const calls = createIo({ cwd, tty: true });
+    assert.equal(await runCli(["node", "cli", "code", "calls", "helper"], {}, calls.io), 0);
+    const callsOutput = stripAnsi(calls.stdout());
+    assert.match(callsOutput, /^• Code Call Graph/);
+    assert.match(callsOutput, /• definitions/);
+    assert.match(callsOutput, /• edges/);
+    assert.match(callsOutput, /to helper/);
+    assert.doesNotMatch(callsOutput, /\n  definitions:\n/);
+    assert.doesNotMatch(callsOutput, /\n  edges:\n/);
+    assert.equal(calls.stderr(), "");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("namespace help exits successfully without loading config", async () => {
   const cwd = createTempDir();
   const brokenConfigPath = join(cwd, "broken-config.toml");
@@ -406,7 +597,8 @@ test("API command flag help exits successfully without loading config", async ()
     assert.equal(profiledHelp.stderr(), "");
 
     const askPrompt = createIo({ cwd, fetch });
-    assert.equal(await runCli(["node", "cli", "ask", "help"], {}, askPrompt.io), 1);
+    const missingKeyEnv = { ORX_CONFIG_PATH: join(cwd, "missing-config.toml") };
+    assert.equal(await runCli(["node", "cli", "ask", "help"], missingKeyEnv, askPrompt.io), 1);
     assert.equal(askPrompt.stdout(), "");
     assert.match(askPrompt.stderr(), /OpenRouter API key not found/);
     assert.equal(fetchCalls, 0);
@@ -5991,28 +6183,34 @@ test("cli plugins install supports pinned git catalog entries without fetch", as
 });
 
 test("ask and chat require an OpenRouter API key", async () => {
-  const capture = createIo();
-  const exitCode = await runCli(["node", "cli", "ask", "Say hello"], {}, capture.io);
+  const cwd = createTempDir();
+  const env = { ORX_CONFIG_PATH: join(cwd, "missing-config.toml") };
+  try {
+    const capture = createIo();
+    const exitCode = await runCli(["node", "cli", "ask", "Say hello"], env, capture.io);
 
-  assert.equal(exitCode, 1);
-  assert.match(capture.stderr(), /OpenRouter API key not found/);
+    assert.equal(exitCode, 1);
+    assert.match(capture.stderr(), /OpenRouter API key not found/);
 
-  const chat = createIo({
-    stdin: Readable.from(["/exit\n"]),
-  });
-  const chatExitCode = await runCli(["node", "cli", "chat"], {}, chat.io);
+    const chat = createIo({
+      stdin: Readable.from(["/exit\n"]),
+    });
+    const chatExitCode = await runCli(["node", "cli", "chat"], env, chat.io);
 
-  assert.equal(chatExitCode, 1);
-  assert.match(chat.stderr(), /OpenRouter API key not found/);
+    assert.equal(chatExitCode, 1);
+    assert.match(chat.stderr(), /OpenRouter API key not found/);
 
-  const noArg = createIo({
-    stdin: Readable.from(["/exit\n"]),
-  });
-  const noArgExitCode = await runCli(["node", "cli"], {}, noArg.io);
+    const noArg = createIo({
+      stdin: Readable.from(["/exit\n"]),
+    });
+    const noArgExitCode = await runCli(["node", "cli"], env, noArg.io);
 
-  assert.equal(noArgExitCode, 1);
-  assert.match(noArg.stderr(), /OpenRouter API key not found/);
-  assert.doesNotMatch(noArg.stdout(), /Commands:/);
+    assert.equal(noArgExitCode, 1);
+    assert.match(noArg.stderr(), /OpenRouter API key not found/);
+    assert.doesNotMatch(noArg.stdout(), /Commands:/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("no-arg cli starts chat in the current working directory", async () => {
@@ -6706,8 +6904,8 @@ test("ask prints visible tool start and result summaries", async () => {
 
     assert.equal(exitCode, 0);
     assert.equal(readFileSync(join(cwd, "created.txt"), "utf8"), "SHOULD_NOT_APPEAR_IN_TOOL_SUMMARY\n");
-    assert.match(capture.stdout(), /\x1b\[96m\[tool\]\x1b\[0m apply_patch/);
-    assert.match(capture.stdout(), /\x1b\[92mok\x1b\[0m/);
+    assert.match(capture.stdout(), /\x1b\[38;5;75m\[tool\]\x1b\[0m apply_patch/);
+    assert.match(capture.stdout(), /\x1b\[38;5;114mok\x1b\[0m/);
     const stdout = stripAnsi(capture.stdout());
     assert.match(stdout, /\[tool\] apply_patch patch=<\d+B, 4 lines>/);
     assert.match(

@@ -2,6 +2,73 @@
 
 Last updated: 2026-07-02
 
+## TTY Composer Gray-Leak And Resize/Fast-Input Fix
+
+The TTY composer now uses a cleaner Codex-style separation between transcript blocks, status/footer rows, and the active input row.
+
+Changes:
+- Composer status rows now render as normal terminal text inside the `input` frame instead of full-width gray-highlighted rows.
+- Only the active `orx ›` or `orx …` prompt row receives the light gray ANSI background, and that row resets ANSI state before returning the cursor to readline.
+- The idle composer splits route/mode from cwd/git/permissions/session footer state, so the chat stats are organized below the input frame title instead of packed into one noisy row.
+- TTY submitted-line clearing now tracks buffered readline echoes, so rapid pasted commands are cleared as one input artifact before command output renders.
+- Resize redraws are suppressed while a submitted slash command is rendering, which prevents a composer frame from appearing in the middle of command output.
+- A deferred readline prompt scrub clears readline's own prompt refresh before ORX renders the next transcript or command block.
+- The installed `/Users/draingang/.local/bin/orx` symlink resolves to this checkout's `dist/cli.js`, so `npm run build` updates the normal local launcher.
+- CLI tests that assert missing API-key behavior now pass an explicit temp `ORX_CONFIG_PATH`, so they do not accidentally load the operator's real `~/.orx/config.toml`.
+
+Verification:
+- `npm run typecheck`
+- `node --import tsx --test src/tui/screen.test.ts src/tui/chat.test.ts`
+- `npm run build`
+- `npm run verify:tty-first-screen`
+- `node --import tsx --test --test-name-pattern "help, version|API command flag|ask and chat require" src/cli.test.ts`
+- `npm test`
+- `git diff --check`
+- Real PTY smoke with `expect`: launched built `dist/cli.js`, submitted `/status`, resized the terminal, submitted rapid buffered `/help`, `/status`, `/theme vivid`, `/status`, resized again, then exited.
+
+Next likely task: If we want the exact Codex footer placement with stats visually below the input row, implement a real scroll-region or raw-mode composer so the cursor can stay in the editor while status is independently pinned below it.
+The current readline-safe fix keeps prompt-as-final-row and removes the visible gray smear and resize/fast-input corruption without replacing the editor.
+
+## TTY Framed Composer Polish
+
+The TTY composer now renders as a gray ANSI-background `input` frame instead of a bare divider/prompt.
+
+Changes:
+- `renderTtyStatusComposer` now groups route/model/mode/context/cost/footer status rows inside the input frame instead of printing them after the prompt.
+- The active readline prompt row is always the final rendered line (`│ orx › ` or `│ orx … `), which prevents typed characters from landing in a status row and fixes the disappearing-letter class of redraw bugs.
+- Color-capable TTY composer rows use ANSI background `48;5;255` with black foreground while plain render tests and `NO_COLOR` fallback stay script-safe.
+- Chat clearing now resets ANSI attributes before removing composer rows, and multiline mode updates readline's prompt metadata when switching between normal and continuation composers.
+- The first-screen smoke now asserts the `input` frame, route status inside the frame, prompt visibility, and gray TTY background.
+
+Verification:
+- `npm run typecheck`
+- `node --import tsx --test src/tui/screen.test.ts`
+- `node --import tsx --test src/tui/chat.test.ts`
+- `npm run build`
+- `npm run verify:tty-first-screen`
+- Real PTY smoke with `expect`: launched built `dist/cli.js`, typed `/status`, submitted it, returned to the framed composer, then exited.
+
+Next likely task: Implement true scroll-region or raw-mode bottom anchoring if the composer needs to stay pinned below transcript output on every terminal size.
+The current patch keeps the readline-safe frame/prompt contract and avoids the prompt/status row collision without replacing the editor.
+
+## TUI Full-Screen Overhaul with Muted Colors
+
+The TTY interface has been overhauled to feel like a polished modern coding-agent CLI (Codex/Claude CLI style) with muted professional colors, lighter chrome, full-screen alt-screen mode, resize handling, and slash command autocomplete suggestions.
+
+Changes:
+- Color palette switched from garish basic ANSI (green/yellow/red/cyan) to muted 256-color tones: dusty blue accent (110), sage green (108), warm amber (179), muted coral (167). Vivid theme uses slightly brighter variants (75/114/221/203).
+- `renderTtyStartupCard` now uses thin dim horizontal rules instead of box borders (`╭─`/`╰─`/`│`). Header is `ORX  OpenRouter-native coding workbench` with bold accent.
+- `renderTtyStatusNotch` now renders as a compact single-line status bar (no box borders). Wide layouts put everything on one line, narrow layouts split across 2-3 lines.
+- `renderTtyComposerPrompt` now uses a thin rule + `orx ›` prompt instead of a box-bordered input frame.
+- `renderQueuedInputs` uses clean spacing without box borders.
+- New `src/tui/fullscreen.ts` module: alt-screen buffer entry/exit, scroll region management, cursor positioning, resize handling via terminal resize event.
+- `chat.ts` integrates full-screen manager: enters alt-screen on startup, exits on cleanup (clean terminal on exit), uses `clearAll` for Ctrl+L.
+- Slash command autocomplete: `slashCommandSuggestions()` exported from slash/index.ts, `renderTtyCommandSuggestions()` in screen.ts, debounced keypress handler in chat.ts shows dimmed `try  /help  /status  ...` suggestions when typing `/`.
+- Tests updated: `screen.test.ts` (14 tests rewritten for new layout), `chat.test.ts` (9 assertion updates for colors/layout), `render.test.ts` (color code updates), `ui.test.ts` (diff color updates), `cli.test.ts` (vivid color updates), `slash/index.test.ts` (vivid color updates), `assert-tty-first-screen.mjs` (new layout smoke).
+- Verification: typecheck clean, 580/583 tests pass (3 pre-existing cli.test.js failures unrelated to TUI), `git diff --check` clean, no em dashes, pseudo-TTY smoke confirms new layout with alt-screen and muted colors.
+
+Next likely task: Continue UI/UX polish - consider true scroll-region routing for transcript vs composer separation, or refine the autocomplete suggestion display positioning.
+
 ## Fast Phase 12 Handoff
 
 To continue Phase 12 in a fresh session, read:
@@ -14,11 +81,51 @@ To continue Phase 12 in a fresh session, read:
 
 Urgent UX recovery additions from user testing:
 
+- The UI/UX target is now explicitly a terminal-native coding workbench rather than a cosmetic block renderer: stable bottom composer, non-blocking input, visible queued follow-ups, transparent transcript activity, compact always-near session state, and low-noise monospaced styling.
+- The color-capable TTY first screen now renders a titled-divider `ORX · OpenRouter-native coding workbench` card with an aligned two-column grid for model, mode, cwd, permissions, key readiness, session id, and short key-command tips.
+  The status notch is gated off the fresh idle first screen, so it no longer opens with context/cost meter noise before there is useful activity.
+- The TTY composer now renders as a full-width `input` divider, with the readline prompt on the final line so the active input area is visually obvious.
+- Active-turn follow-ups now render as a `queued · N follow-ups` block with numbered entries and a `pending · runs after current turn` closer above the composer, distinct from sent user transcript blocks.
+- TTY chat now treats the status/composer as ephemeral bottom UI.
+  Submitted input and activity redraws clear the composer/status area in place on real terminals instead of leaving repeated status boxes in the transcript.
+- TTY chat now accepts user input while an assistant/tool turn is still active.
+  Follow-up messages and slash commands are queued, displayed above the composer as pending work, and then processed after the active turn finishes.
+- TTY bottom status now uses battery-style meters.
+  The context battery is based on ORX's local approximate context-byte budget.
+  The cost battery represents OpenRouter cost-metadata coverage and is paired with exact observed session cost when metadata is available, because ORX does not yet have a configured dollar budget.
+- TTY status now includes the git branch when the session snapshot already has one.
+- Interactive TTY model requests now prepend a short ORX coding-agent system instruction so generic provider models do not answer simple greetings with broad web-chatbot feature boilerplate.
 - Catalog-backed `/model` resolution is implemented. Unknown friendly names such as `/model deepseek v4` are refused without mutating state; exact provider/model slugs still work.
 - The first bottom-oriented TTY composer/status notch pass is implemented.
+- The interactive `orx` first screen now renders a compact ORX session panel above the bottom status/composer so the empty startup state no longer looks like only a bare prompt.
+- TTY chat scrollback now uses ORX terminal blocks for user messages, assistant streaming, tool calls/results, slash command stdout, and slash command stderr/warnings.
+- TTY slash command output is captured and re-rendered through the shared terminal block renderer while preserving TTY width/color properties for compact command-specific output.
+- `/models` and `orx models` now render a fixed-width table with numbered exact ids, names, context, prompt price, completion price, and an explicit `/model <id>` next step.
+- `orx status` now renders sectioned terminal blocks for human TTY streams, including uncolored block structure when `NO_COLOR=1`.
+- Slash `/status` continues to capture plain status text so it appears inside one outer command block instead of nested status blocks.
+- Direct human TTY surfaces now render `orx help`, `orx config`, `orx config path`, `orx auth`, `orx auth setup`, `orx auth init`, and `orx tests list` as ORX terminal blocks.
+- Slash-captured config, auth, and tests output stays plain so chat renders one outer command block instead of nested UI blocks.
+- Direct human TTY readiness and local-tooling surfaces now render `orx doctor`, `orx mcp`, `orx plugins review`, and `orx code map` as ORX terminal blocks.
+- Direct human TTY code-intelligence detail surfaces now render `orx code symbols`, `orx code refs`, `orx code imports`, and `orx code calls` as ORX terminal blocks.
+- Slash-captured MCP, plugin, and code output stays plain so chat renders one outer command block instead of nested UI blocks.
+- Shared terminal block wrapping now prefers natural separators such as slashes, pipes, punctuation, hyphens, underscores, and periods, which keeps paths and ids from splitting awkwardly.
+- UI revamp verification passed with `npm run typecheck`, focused source tests for `src/terminal/ui.test.ts`, `src/status.test.ts`, `src/tui/chat.test.ts`, `src/tui/screen.test.ts`, and `src/openrouter/live.test.ts`, isolated-home CLI/slash status tests, a direct `/models` table render smoke, a pseudo-TTY `orx status` smoke, isolated-home `npm test` with 558 tests, `git diff --check`, and isolated-home `npm run verify:release`.
+- The latest direct TTY setup-surface slice passed focused CLI source tests, pseudo-TTY smokes for help/config/auth/tests list, isolated-home `npm test` with 559 tests, `git diff --check`, and isolated-home `npm run verify:release`.
+- The latest direct TTY readiness/local-tooling slice passed focused CLI/source tests for doctor/MCP/plugin review/code map, pseudo-TTY smokes, isolated-home `npm test` with 560 tests, `git diff --check`, and isolated-home `npm run verify:release`.
+- The latest direct TTY code-intelligence detail slice passed focused CLI/source tests for symbols/refs/imports/calls, pseudo-TTY smokes, isolated-home `npm test` with 561 tests, `git diff --check`, and isolated-home `npm run verify:release`.
 - TTY-only assistant/tool activity animation is implemented in the bottom status composer; continue polishing richer command discovery and input ergonomics.
 - TTY command discovery now has `/commands [query]` / `/palette [query]`, a compact TTY palette, and Tab completion for slash command names and aliases.
 - Tab completion now also covers deterministic slash subcommands/arguments for `/mode`, `/fusion`, `/web`, `/mcp`, `/plugins`, `/plugin`, `/bins`, `/hooks`, `/skills`, `/scanners`, `/scan`, `/diagnostics`, `/diag`, `/orchestrator`, `/delegate`, `/resume`, `/help`, and `/commands`.
+- `/copy` is implemented as a chat slash command that copies the latest assistant text to the local clipboard when the platform has a supported clipboard command.
+  It currently supports macOS `pbcopy` and Windows `clip.exe`, reports empty or unsupported states without invoking a clipboard runner, does not expose copied content in command output, and remains discoverable through `/help copy`, `/help all`, `/commands`, and slash completion rather than expanding the default common help panel.
+- TTY Ctrl+O is implemented as a keyboard shortcut for the same latest-assistant clipboard copy behavior.
+  When idle it copies immediately and renders a `command /copy` block; when an assistant/tool turn is active it queues a visible `/copy` command and runs it after the turn finishes.
+- TTY Ctrl+R is implemented as a prompt-history search shortcut without a raw-mode rewrite.
+  When idle it opens `/history search ` in the composer; when an assistant/tool turn is active it queues a visible `/history` command and renders recent prompt history after the turn finishes.
+- TTY Ctrl+L clear-screen handling is implemented without a raw-mode rewrite.
+  It clears the visible terminal, redraws the ORX startup panel plus bottom status/composer, preserves active session state, and keeps active assistant waiting/queued follow-up behavior intact.
+- TTY `/diff` command output now renders through diff-aware terminal blocks.
+  Git diff additions are green, removals are red, hunk lines are highlighted, and stripped output plus non-TTY slash behavior remain plain/script-safe.
 - Line-based multiline prompt continuation is implemented: a trailing unescaped `\` keeps collecting input, TTY mode shows an `orx …` continuation composer, non-TTY mode shows `...>`, and the collected lines are submitted as one user message.
 - The TTY bottom status notch now uses compact route badges for OpenRouter routing shortcuts, rendering `openrouter/auto` as `route auto` and `openrouter/fusion` as `route fusion`. Wide TTY layouts split exact `provider/model` ids into separate provider/model badges, while narrow TTY layouts keep a single compact model badge; full model ids remain unchanged in config, request construction, plain status, and non-TTY output.
 - TTY theme controls are implemented through config `theme = "default" | "mono" | "vivid"`, environment overrides `ORX_TTY_THEME`/`ORX_THEME`, and `/theme [default|mono|vivid]`.
@@ -45,7 +152,7 @@ Urgent UX recovery additions from user testing:
 - Read-only MCP setup planning is implemented through `orx mcp plan [preset-or-profile] [--json]`, `orx mcp setup-plan [preset-or-profile] [--json]`, `/mcp plan [preset-or-profile] [--json]`, and `/mcp setup-plan [preset-or-profile] [--json]`. It accepts provider preset ids or installed MCP profile ids, reports whether the next step is preset install, enable/trust, auth setup, remote tool review/import, operator grants, or read-only model grants, and emits ORX-owned structured JSON plan metadata when requested. It performs no install/enable/trust/grant/fetch/call/model-exposure side effects; existing loose MCP state file permissions may still be tightened while local state is read.
 - MCP setup planner JSON verification passed with `npm run typecheck`, `npm run build`, focused source and compiled MCP/CLI/slash tests, built CLI smokes for preset/overview/rejected-order/redacted-unknown JSON, `git diff --check`, full `npm run verify:release` with a temporary `HOME`, and independent verifier `019f204b-312f-76e0-a636-626337d6b56c`.
 - Local user MCP catalog JSON output is implemented through `orx mcp catalog --json`, `orx mcp user-catalog --json`, `/mcp catalog --json`, and `/mcp user-catalog --json`. It reports schema version, surface, local path/existence, profile/tool/source metadata, omissions/truncation, and explicit authority fields while making no network calls and no state writes. Verification passed with `npm run typecheck`, focused source MCP/CLI/slash tests with 221 tests, `npm run build`, focused compiled MCP/CLI/slash tests with 221 tests, built CLI smokes for empty/populated/alias/invalid catalog JSON, `git diff --check`, and full `npm run verify:release` with a temporary `HOME`. Independent verifier `019f205b-06e6-7290-8b36-8f3687793740` found no blocking issues and confirmed read-only JSON behavior plus alias coverage.
-- Next likely task is another small no-network structured-output or onboarding-polish slice; keep using bounded implementor/verifier loops and commit/push each verified step before starting the next one.
+- Next likely task is continuing the broader UI/UX revamp across remaining dense command families, especially MCP preset/inspect/auth/detail surfaces, plugin catalog/scaffold/validate/detail surfaces, code tree-sitter/ast-grep surfaces, and local scanner/diagnostic/research setup surfaces.
 - Reviewed remote MCP tool import is implemented through `orx mcp import-remote-tools <profile>` and `/mcp import-remote-tools <profile>`. It is limited to local `user:` catalog profiles, uses the existing enabled/trusted/unchanged guarded `tools/list` path, stores sanitized read-only non-billable declarations only, skips unsupported names, audits hashes only, and leaves newly changed profiles behind the pending schema-change retrust gate.
 - MCP auth readiness inspection is implemented through `orx mcp auth <profile>` and `/mcp auth <profile>`. It shows profile-specific and fallback bearer env names, managed env-file path, set/unset status, effective readiness, profile hashes, provider-specific credential guidance for recognized exact MCP endpoints including Sourcegraph and GitLab, and OAuth limitations without network calls or secret persistence.
 - MCP auth setup guidance is implemented through `orx mcp auth setup <profile>`, `orx mcp auth env <profile>`, `/mcp auth setup <profile>`, and `/mcp auth env <profile>`. It prints copyable placeholder exports only for auth-required profiles, shows no-auth profiles as not requiring setup with `credential_mode`, `effective_bearer`, and Keychain status all rendered as `not_required`, renders provider-specific setup URLs/scope hints only after exact HTTPS host/path matching, never displays token values, and performs no network calls, subprocess calls, or config writes beyond normal redacted audit metadata.
@@ -117,6 +224,23 @@ Current files:
 - `memory/`
 
 ## Latest Work
+
+Completed Phase 12 visible TTY workbench recovery:
+
+- The fresh color-capable TTY launch now renders a sparse `ORX OpenRouter-native workbench` card instead of the older dense session box plus bare prompt.
+- The first screen shows model, mode, cwd, permissions, key readiness, a short key-command tip line, and the compact session id.
+- The idle status/footer shows route/model, mode, cwd, permissions, session id, and `ready`, and it suppresses context/cost battery meters until there is activity, credits, observed cost metadata, or transcript state.
+- The active composer now renders as an open `input focused` frame whose final line remains the readline prompt, preserving readline, prompt history, Tab completion, non-TTY, and `NO_COLOR` fallback behavior.
+- Active-turn queued follow-ups now render as numbered `queued follow-ups` above the composer, distinct from sent user transcript blocks.
+- Added focused pure render tests for fresh 80-column and 100-column first screens, idle/active assistant/active tool/multiline/queued composer states, `NO_COLOR`, narrow truncation, and queued visibility.
+- Added `npm run verify:tty-first-screen`, a built-CLI first-screen smoke helper that drives the compiled `runCli` launch path through TTY-shaped streams and asserts the visible first screen.
+- Verification passed: `npm run typecheck`, `node --import tsx --test src/tui/screen.test.ts`, `node --import tsx --test src/tui/chat.test.ts`, `node --import tsx --test src/terminal/ui.test.ts src/status.test.ts`, `npm run build`, `npm run verify:tty-first-screen`, isolated-home `HOME="$(mktemp -d)" OPENROUTER_API_KEY= npm test` with 580 tests, isolated-home `HOME="$(mktemp -d)" OPENROUTER_API_KEY= BRAVE_SEARCH_API_KEY= npm run verify:release`, `git diff --check`, and an em-dash scan over touched files.
+- The active `/Users/draingang/.local/bin/orx` resolves to this checkout's `dist/cli.js`; user-local reinstall with `npm install -g --prefix /Users/draingang/.local .` completed, and SHA-256 hashes for changed installed `dist` files matched the repo.
+- Installed smokes passed from `/tmp`: isolated-home pseudo-TTY `orx status` showed built-in defaults and `api_key no`, and an isolated `expect`-driven installed `orx` launch showed the new workbench first screen, accepted `/exit`, and rendered the `command /exit` block.
+- Existing ORX sessions must restart to pick up the new TTY UI.
+- Next likely work remains focused UI polish around remaining dense command/detail surfaces or richer transcript rendering, while preserving non-TTY and `NO_COLOR` fallback.
+
+Previous latest work:
 
 Added Atlassian, Linear, and Notion MCP provider presets:
 
@@ -2278,6 +2402,14 @@ Added release package dry-run assertions:
 - `npm run verify:release` now includes a bounded release-hardening check: `npm pack --dry-run --json --ignore-scripts` verifies the package manifest includes `package.json`, `README.md`, `RELEASE_NOTES.md`, `LICENSE`, and `dist/cli.js`.
 - The package assertion fails if the dry-run includes source/private/local-operational paths such as `src/`, `memory/`, `.orx/`, `scripts/`, `package-lock.json`, `tsconfig.json`, or compiled `dist/**/*.test.*` / `dist/**/*.spec.*` artifacts; build/test/global-install steps still run before it, and the check does not publish or call network by command selection.
 - Verification passed: direct `npm pack --dry-run --json --ignore-scripts` manifest parse with 307 files and zero compiled test/spec artifacts, plus isolated-home `npm run verify:release` with 12 steps including `npm package dry-run contents` and existing built CLI smokes for doctor JSON, guide, code calls, plugin review, plugin review JSON, plugin validation JSON, and MCP presets.
+
+Implemented and verified Phase 12 Ctrl+G editor prompt handoff:
+
+- Added `src/tui/editor.ts` to open an operator-configured local `VISUAL` or `EDITOR` on a private temporary prompt file, parse common editor command arguments, submit non-empty saved text, and clean up the temp directory.
+- Wired TTY Ctrl+G in `src/tui/chat.ts` so idle use opens the editor and active-turn use queues a visible `/editor` handoff that drains after the current assistant or tool turn.
+- Refactored chat submission through a shared internal input handler so edited prompts reuse normal slash command handling, multiline rendering, prompt history, session persistence, active-turn queue draining, and non-TTY fallback behavior.
+- Added TTY chat tests for Ctrl+G multiline editor submission, missing-editor warning output, and active-turn queued editor submission.
+- Verification passed: `npm run typecheck`, built focused `node --test dist/tui/chat.test.js` with 44 tests, isolated-home `npm test` with 578 tests, isolated-home `npm run verify:release` with 12 steps, user-local global reinstall via `npm install -g --prefix /Users/draingang/.local .`, installed-file SHA-256 checks for `dist/tui/chat.js`, `dist/tui/editor.js`, and `dist/tui/chat.test.js`, clean `/tmp` pseudo-TTY installed `orx status` smoke showing built-in defaults and `api_key no`, and installed pseudo-TTY chat launch smoke with `/exit`.
 
 ## Next Likely Task
 

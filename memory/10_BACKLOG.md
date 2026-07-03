@@ -6,10 +6,29 @@ Last updated: 2026-07-02
 
 Urgent UX recovery:
 
-- Continue TTY polish only if a future raw-mode editor can preserve script-safe fallback behavior.
+- Continue the UI/UX revamp across high-traffic CLI command surfaces that still render dense plain text outside interactive TTY chat.
+- Consider true scroll-region routing for transcript vs composer separation in full-screen mode.
+- Refine autocomplete suggestion display positioning (currently below prompt, may need cursor management improvements).
 
 Completed:
 
+- Fix CLI missing-key test isolation: negative API-key tests now use a temp missing `ORX_CONFIG_PATH`, preventing a real configured `~/.orx/config.toml` from making the full suite fail on configured developer machines.
+- Fix TTY composer gray smearing and resize/fast-input corruption: composer status rows now render as normal terminal text, only the active prompt row uses the light gray background, ANSI state resets before readline input, buffered submitted echoes are cleared together, resize redraw is gated during slash command rendering, and the first-screen plus PTY resize/rapid-command smokes cover the behavior.
+- Add gray framed TTY composer polish: route/model/mode/context/cost/footer status rows now render inside the `input` frame, color-capable TTY rows use a light gray ANSI background, and the active readline prompt is always the final composer line to prevent prompt/status redraw collisions.
+- TUI full-screen overhaul with muted 256-color palette: switched from garish basic ANSI to muted 256-color tones (dusty blue/sage green/warm amber/muted coral), replaced box borders with thin dim horizontal rules, added alt-screen full-screen manager with resize handling, added slash command autocomplete suggestions with debounced keypress handler.
+- Redesign TTY first screen as a calm workbench: titled-divider session card (`ORX · OpenRouter-native coding workbench`), aligned two-column grid for model/mode/cwd/perm/key/session, tips row, `ready` closer, full-width `input` divider, status notch gated off the fresh idle first screen, compact dot-separated status footer, and clearer queued follow-up wording while preserving non-TTY and `NO_COLOR` fallback.
+- Add Phase 12 visible TTY workbench recovery: fresh color-capable launches now show a sparse ORX workbench card, compact idle status/footer, open focused input frame, lower first-screen meter noise, and numbered queued follow-ups above the composer while preserving non-TTY and `NO_COLOR` fallback.
+- Add TTY Ctrl+R prompt-history shortcut: idle TTY chat opens `/history search ` in the composer, active turns queue a visible `/history` command, and history rendering reuses the existing prompt-only local history boundary.
+- Add TTY Ctrl+O clipboard shortcut: interactive TTY chat now copies the latest assistant output with Ctrl+O when idle, queues a visible `/copy` command when a turn is active, and reuses the same no-content-echo clipboard boundary as `/copy`.
+- Add diff-aware TTY command rendering: captured `/diff` output now colors additions green, removals red, and hunk lines yellow inside the ORX terminal block renderer while preserving raw plain non-TTY diff output.
+- Add TTY Ctrl+L clear-screen handling: interactive TTY chat now intercepts Ctrl+L, clears the visible terminal, redraws the ORX startup panel and bottom status/composer instead of readline's raw prompt, preserves the current session, and keeps active queued follow-ups working.
+- Add `/copy` chat command for latest assistant output: chat can copy the most recent assistant text to the local clipboard through supported OS commands, currently macOS `pbcopy` and Windows `clip.exe`, with empty-session and unsupported-platform messages, no model request, no copied-content echo, and help/palette discoverability.
+- Add ORX-native terminal block rendering for TTY chat scrollback: user messages, assistant streaming, tool calls/results, captured slash command stdout, captured slash command stderr/warnings, and compact assistant metadata now share one visual structure while non-TTY and `NO_COLOR=1` remain plain.
+- Add table-style model catalog output for `/models` and `orx models`: numbered exact ids, model names, context length, prompt price, completion price, omitted-count messaging, and a clear `/model <id>` next step replace the old pipe-delimited paragraph output.
+- Add sectioned `orx status` output for human TTY streams: runtime, tests, MCP, plugins, delegation, and MCP profiles render as terminal blocks, while non-TTY output and captured slash `/status` stay plain and script-safe.
+- Add sectioned direct TTY output for high-traffic setup and discovery surfaces: `orx help`, `orx config`, `orx config path`, `orx auth`, `orx auth setup`, `orx auth init`, and `orx tests list` now use ORX terminal blocks while plain defaults remain for scripts and slash command capture.
+- Add sectioned direct TTY output for high-traffic readiness and local-tooling surfaces: `orx doctor`, `orx mcp`, `orx plugins review`, and `orx code map` now use ORX terminal blocks while JSON, non-TTY output, and slash command capture remain script-safe.
+- Add sectioned direct TTY output for code-intelligence detail surfaces: `orx code symbols`, `orx code refs`, `orx code imports`, and `orx code calls` now use ORX terminal blocks while JSON, non-TTY output, and slash command capture remain script-safe.
 - Add structured Node test report ingestion: direct Node fallback requests native JUnit into a private temporary report file, parses bounded counts before stdout fallback, deletes the report directory, and strips inherited `NODE_TEST_*` control variables from child test runs.
 - Add structured Jest/Vitest/Playwright JSON test report ingestion: when package scripts already emit whole-object JSON result output to stdout or stderr, ORX parses bounded Jest/Vitest-style numeric result objects and Playwright `stats` objects before summary-line fallback, without adding reporter flags, report files, installs, network, or model-tool exposure changes.
 - Add captured Mocha JSON report parsing: when already-captured bounded whole-object Mocha JSON reporter output contains consistent `stats.tests`/`passes`/`failures`/`pending` counts and matching result arrays, ORX parses compact `source=mocha-json` counts before summary-line fallback without adding reporter flags, report files, installs, network, or model-tool exposure changes.
@@ -322,6 +341,10 @@ Next:
 - Add live budget, permission, timeout, and result-truncation enforcement for delegated tasks.
 - Add tests for slash parsing, config loading, and tool execution.
 - Completed Phase 12 UX Recovery Slice 4 grouped command help: common/advanced tiers, filtered help, palette renderer, aliases `/m` `/s` `/q` `/h`, and concise unknown-command guidance.
+- Completed Phase 12 TTY workbench slice: ephemeral bottom composer clearing, visible queued follow-ups during active assistant/tool turns, battery-style context and cost-metadata meters, git branch in the status notch, and a TTY-only ORX coding-agent system instruction for focused interactive replies.
+- Completed Phase 12 TTY shortcut slice: Ctrl+L clear-screen, Ctrl+O copy-latest, Ctrl+R prompt-history search, Ctrl+G local editor handoff, active-turn shortcut queueing, and focused TTY chat tests.
+- Continue remaining TTY workbench polish: richer slash command menu and paste/image affordances while preserving non-TTY fallback.
+- Add developer-native transcript formatting: Markdown rendering, syntax-highlighted code blocks, syntax-highlighted diffs, and lower-noise tool/file/shell result summaries.
 - Completed Phase 12 UX Recovery Slice 3 first TTY screen pass: pure `src/tui/screen.ts` renderer, compact bottom status/composer, long-footer suppression in TTY mode, width-aware truncation tests, and readline/NO_COLOR separation.
 - Completed Phase 12 UX Recovery Slice 2 no-arg launch: `orx` starts chat from cwd, explicit help remains `orx help`/`--help`/`-h`, no-key no-arg fails like `orx chat`, and cwd is persisted in session JSON.
 - Completed Phase 12 UX Recovery Slice 1 model resolver: catalog-backed `/model <id-or-search>`, safe friendly-name resolution, bounded multiple-match choices, explicit slug fallback on catalog outage, and redacted live metadata errors.

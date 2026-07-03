@@ -1,161 +1,178 @@
 # TUI Design
 
-Last updated: 2026-06-29
+Last updated: 2026-07-02
 
 ## Interface Goals
 
-The UI should feel like a professional terminal coding agent:
+The UI is a flat, marker-based terminal experience modeled on modern coding
+CLIs (Codex-class look, no borrowed branding, assets, or proprietary code):
 
-- responsive streaming output
-- bottom composer
-- compact status footer
-- colored tool-call blocks
-- syntax-highlighted diffs
-- clear model and mode badges
-- subtle spinner or progress animation
-- command palette for slash commands
+- flowing transcript with `•` bullets and 2-space indented bodies
+- generous vertical whitespace; no box borders anywhere
+- user messages as full-width grey bands prefixed with `›`
+- grey input band at the bottom with the readline cursor inside it
+- ONE color-coded stats line rendered BELOW the input band
+- tool results as `└` follow-up lines (green ok / red failed)
+- turn metadata as a dim `─`-prefixed line
+- muted professional color palette (256-color)
+- slash command autocomplete on the stats row
+- non-TTY and `NO_COLOR=1` output stays plain and script-safe
 
-Do not use Codex branding, exact assets, or proprietary UI code.
+## Color Palette
 
-## Urgent UX Recovery
+The TUI uses muted 256-color tones for a professional, low-glare aesthetic:
 
-The Phase 12 Slice 1 meter foundation is functional but not visually sufficient. The next UI slice should replace the current readline header/footer style with a TTY-only bottom composer and status notch inspired by modern coding CLIs such as Codex and Claude, without copying their branding or private implementation.
+- **default theme**: accent = dusty blue (110), success = sage green (108), warning = warm amber (179), danger = muted coral (167)
+- **vivid theme**: accent = sky blue (75), success = light green (114), warning = light amber (221), danger = salmon (203)
+- **mono theme**: bold/dim only, no color codes; the input band uses reverse video
+- **input band**: background 254, foreground 235 (default/vivid)
 
-Requirements:
-
-- no long raw status line at the top
-- no repeated full footer line after every assistant turn in TTY mode
-- width-aware bottom status/composer that stays aligned
-- activity spinner or subtle progress animation while the assistant/tools run; TTY-only assistant/tool activity is now implemented
-- color-coded badges for model, mode, permissions, context, cost, and credits
-- selectable TTY themes for default color, monochrome terminals, and higher-contrast color
-- accurate labels for approximate context, observed generation cost, and live credits
-- non-TTY and `NO_COLOR=1` fallback stays plain and script-safe
+Text colors are centralized in `src/terminal/render.ts` (`THEME_ANSI_CODES`);
+band colors live in `src/tui/screen.ts`.
 
 ## Core Layout
 
 ```text
-message scrollback
-tool output blocks
-diff summaries
-status / warning line
-composer
-footer: cwd | mode | model | cost | context | permissions
+ ORX  OpenRouter-native coding workbench
+
+  model    openrouter/auto            mode     auto
+  cwd      ~/Documents/ORX            perm     never/danger-full-access
+  key      yes (env)                  session  4f3a2b
+
+  /help commands · Ctrl+G editor · Ctrl+O copy · Ctrl+R history · Ctrl+L clear
+
+ › fix the failing tests                ← grey band (user msg in transcript)
+
+• Sure — the mock in src/foo.ts was stale;
+  I fixed it and all 42 tests pass.      ← assistant: dim bullet, body flows
+
+• tool shell command="npm test"          ← accent bullet + dim args
+  └ ok · exit=0 · duration=1.2s          ← green when ok, red when failed
+
+  ─ openrouter/auto · 63 tokens · $0.000214   ← dim turn-metadata line
+
+ › current input…                        ← grey full-width band, cursor inside
+  openrouter/auto · auto · ~/ORX · main · never/danger… · ctx 3% · $0.0002
 ```
 
-Current MVP:
+## Shared Block Language (`src/terminal/ui.ts`)
 
-- `orx chat` uses a readline-based terminal loop.
-- TTY chat uses a compact bottom status notch and `orx ›` composer instead of the older long header/footer. Non-TTY and `NO_COLOR=1` keep the plain `orx>` line-oriented fallback.
-- The status notch shows cwd, mode, model, permissions, session id, local approximate context, OpenRouter metadata cost, and account credits after `/credits` has succeeded in the current process.
-- The TTY model badge uses compact route labels for OpenRouter routing shortcuts: `openrouter/auto` renders as `route auto`, and `openrouter/fusion` renders as `route fusion`. On wide TTY layouts exact `provider/model` ids render as separate `provider` and `model` badges; narrow layouts keep a single compact model badge. Full ids remain visible in plain status and request/config surfaces.
-- TTY render helpers support `default`, `mono`, and `vivid` themes. Theme can be set in config as `theme = "default" | "mono" | "vivid"`, overridden with `ORX_TTY_THEME`/`ORX_THEME`, or changed in chat with `/theme [default|mono|vivid]`. `NO_COLOR=1` and non-TTY output still force plain text.
-- Saved profile controls persist named local config snapshots outside repos at `~/.orx/profiles.json`. Use `orx profile ...`, global `orx --profile <id>`, or chat `/profile [list|save <id> [options]|use|inspect|delete]` to manage/apply them. `profile save` captures the current config by default and supports inline non-secret overrides for model, mode, Fusion preset, theme, approval policy, and sandbox mode. Profiles do not store API keys or enable MCP/plugin executable surfaces.
-- Chat config controls mirror the safe CLI config surface through `/config show|path|set`. They render redacted config/path state, edit only supported non-secret keys, update the active chat snapshot after successful edits, and keep API keys/manual secret storage out of slash arguments.
-- Chat auth controls mirror the core OpenRouter auth helper surface through `/auth status|setup|env|init|env-file`. They report API-key readiness without values, print placeholder exports only, create private commented env templates when requested, do not auto-load env files, and redact secret-shaped unexpected arguments.
-- TTY prompt history is durable, local, and private. Readline chat preloads single-line entries from `~/.orx/history.json` or `ORX_CHAT_HISTORY_PATH`; only sanitized user prompts are stored, slash commands and secret-like input are skipped, non-TTY/scripted chat does not persist history, and `/history [search|clear]` plus `orx history [search|clear]` inspect or clear the same prompt-only file.
-- TTY chat shows a subtle `work <spinner> assistant` activity state while waiting for assistant output and `work <spinner> tool <name>` while native tools run. The activity composer clears in place before assistant/tool scrollback is printed.
-- Readline Tab completion now covers slash command names, aliases, and deterministic arguments for common command families such as routing, web, MCP, plugins, skills, orchestration, resume, help, and palette filtering.
-- Multiline prompt continuation is implemented without a raw-mode rewrite: an input line ending with an unescaped `\` keeps collecting lines, TTY mode renders a continuation `orx …` composer, non-TTY mode renders `...>`, and the collected lines are submitted as one user message with internal newlines preserved.
-- Assistant responses stream inline as chunks arrive.
-- In-process user/assistant history is sent with follow-up turns.
-- Ctrl+C aborts an active response or exits when idle, and active TTY activity is cleared before the interruption message.
-- ANSI styling is light and TTY-only; non-TTY output and `NO_COLOR=1` remain plain text.
+`renderTerminalBlock` renders `• title subtitle` (bullet + title toned,
+subtitle dim), a 2-space indented wrapped body, and a dim `  └ footer` line
+(omitted when there is no footer). This is used by chat command/warning
+capture blocks AND direct CLI surfaces (`orx status`, `orx help`, `orx
+doctor`, `orx mcp`, code intelligence commands, ...), so every surface shares
+the flat style. Diff bodies keep green/red/amber diff coloring.
 
-Target next iteration:
+## Composer Mechanics (`src/tui/screen.ts` + `src/tui/chat.ts`)
 
-```text
-message scrollback
-assistant and tool output
+- `renderTtyStatusComposer` emits: queued follow-up lines, a blank spacer
+  line, the grey band row, and the stats line — then repositions the cursor
+  up into the band (`ESC[1A ESC[4G`) and re-arms the band SGR so typed
+  characters stay grey. The stats line is a REAL row (written with `\n`), so
+  bottom-of-screen scrolling stays correct.
+- The readline prompt (`renderTtyReadlinePrompt`) embeds the band SGR with no
+  trailing reset; readline refreshes repaint the band and BCE paints
+  clear-to-EOL grey. Visible prompt width is `TTY_PROMPT_PREFIX_WIDTH` (3).
+- Clear math: the stats row is part of the composer line count.
+  - cursor on band row → step down one row (`TTY_COMPOSER_ROWS_BELOW_PROMPT`)
+    then clear the full count upward (`clearComposerFromPromptRow`)
+  - after Enter → cursor lands ON the stats row, so clear
+    `count + submittedRows − 1` (`clearSubmittedTtyComposer`)
+- Slash suggestions render as a single dim `try …` line that temporarily
+  replaces the stats row. A debounced keypress handler
+  (`refreshBelowPromptRow`) always repaints the below-band row (suggestions
+  or stats) because readline's own line refresh (backspace, history nav)
+  clears the screen below the prompt and takes the stats row with it.
+- The stats line degrades at narrow widths by dropping parts whole
+  (session → git → truncate cwd → drop cwd → drop perm) before per-part
+  ellipsis truncation.
+- Readline's output stream is wrapped (`wrapTtyReadlineOutput`). Readline
+  refreshes as cursor-to-col-1 → clear-screen-down → rewrite prompt+line;
+  with the band SGR armed, BCE terminals flood everything below the prompt
+  grey. The filter rewrites each `ESC[0J` to reset → clear → re-arm band →
+  `ESC[0K` so the input row stays a full-width grey band and nothing below
+  floods. The same wrapper MUTES readline echoes while the assistant is
+  streaming (turn active, no activity composer on screen) so typed
+  follow-ups cannot corrupt the streaming transcript block — they surface
+  in the queued list instead.
+- `writeBelowPromptRow` uses explicit cursor movement computed from
+  `rl.line`/`rl.cursor` (wrap-aware), NOT DECSC/DECRC — save/restore records
+  absolute coordinates and lands on the wrong row after the screen scrolls.
+  It also grey-fills from end-of-text on the last input row, erasing stats
+  residue left by terminal auto-wrap.
+- Every composer clear that starts from the band row (activity spinner
+  ticks, resize, shortcuts, idle Ctrl+C) MUST go through
+  `clearComposerFromPromptRow` so the stats row below the cursor is
+  included; clearing only `countLines` from the band row leaves one orphan
+  stats line per redraw and eats one transcript line above (the Phase-13
+  spinner-stacking bug).
 
-bottom status notch: model | mode | context | cost | credits | permissions
-bottom composer: orx › current input
-```
+## Stats Line Content
 
-Next TTY polish should focus only on optional future raw-mode editing if it can preserve the current script-safe fallback.
+`[spinner activity?] model · mode · cwd · git · perm · [ctx N% · $cost ·
+bal $credits | session]`
 
-## Slash Commands
+- spinner + activity label accent, only while an assistant/tool turn runs
+- model accent, mode green, cwd/git/session dim, permissions amber
+- ctx % auto-toned (green / amber ≥75% / red ≥90%) against ORX's local
+  approximate context-byte budget
+- cost = observed OpenRouter metadata dollars (green); credits appear after
+  `/credits` succeeds (`bal $…`)
+- battery bars were removed from the composer; `/status` keeps detailed
+  meters with explicit source labels
 
-Initial commands:
+## Transcript Semantics
 
-```text
-/model
-/help
-/models
-/mode auto
-/mode fusion
-/fusion
-/theme
-/auth
-/credits
-/cost
-/status
-/diff
-/shell
-/web
-/mcp
-/compact
-/profile
-/history
-/orchestrator
-/delegate
-/delegates
-/team
-/clear
-/new
-/quit
-```
+- user: grey band rows (`›` first row, 2-space continuation), mirrors the
+  composer band
+- assistant: dim `•`, text streams on the bullet line, wraps at 2-space
+  indent; closes with dim `  ─ model · tokens · cost`
+- tool call: accent `• tool <name>` + dim compact args; result `  └ ok/failed
+  · details` (green/red status word, dim details)
+- command capture: `• command /x` accent; warnings `• warning /x` amber
+- diffs keep green additions / red removals / amber hunk headers
 
-Implemented MVP commands:
+## Full-Screen Helpers
 
-```text
-/help
-/status
-/model <slug>
-/mode auto
-/mode fusion
-/fusion [preset]
-/auth [status|setup|env|init|env-file]
-/models
-/clear
-/new
-/quit
-/exit
-```
+`src/tui/fullscreen.ts` provides alt-screen entry/exit, scroll-region and
+cursor helpers, and the resize handler used to redraw the composer at the new
+width. Ctrl+L clears the visible terminal and redraws startup card + composer
+without resetting the session.
 
-Future orchestration commands:
+## Keyboard
 
-```text
-/orchestrator openrouter <model-slug>
-/orchestrator codex [profile]
-/delegate add <name> openrouter <model-slug>
-/delegate add <name> codex [options]
-/delegate add <name> devin [options]
-/delegate remove <name>
-/delegates
-/team save <name>
-/team load <name>
-```
+- Enter submits; trailing unescaped `\` continues a multiline prompt (band
+  marker switches to `…`)
+- Ctrl+C interrupts the active turn, or clears the composer and exits when idle
+- Ctrl+L clear/redraw · Ctrl+O copy latest assistant output · Ctrl+R history
+  search · Ctrl+G external editor (all queue as visible commands mid-turn)
+- Arrow keys navigate durable prompt history; Tab completes slash commands
 
-## Visual Semantics
+## Verification
 
-- Assistant text: primary terminal foreground.
-- User text: clear prompt block.
-- Tool call start: dim label plus spinner.
-- Tool success: green accent.
-- Tool failure: red accent.
-- Warnings: yellow accent.
-- Metadata: dim.
-- Meters: ASCII `#`/`-` bars with explicit source labels. Context meters are local approximate bytes versus ORX's configured budget, not provider-token context. Cost meters are OpenRouter metadata coverage/latest/known costs only. Credits meters are live OpenRouter account credits only after the credits endpoint is fetched.
-- Diffs: green additions, red removals.
-- Delegation: show the delegate name, adapter type, status, elapsed time, and cost or external budget when available.
+- `npm test` covers `src/terminal/ui.test.ts`, `src/tui/screen.test.ts`,
+  `src/tui/chat.test.ts` (composer, band, stats, queueing, themes, NO_COLOR)
+- `npm run verify:tty-first-screen` pins the flat first screen (no box
+  chrome, grey band 48;5;254, cursor reposition `ESC[1A ESC[4G`)
+- Real-PTY spot check: run the CLI inside `tmux -L <sock>` with a mocked
+  `globalThis.fetch` preloaded via `NODE_OPTIONS=--import`, then
+  `capture-pane` to inspect the rendered screen (see
+  `docs/superpowers/specs/2026-07-02-tui-codex-flat-restyle-design.md`)
+- The PTY mock MUST stream SSE chunks with real delays (~1s apart). An
+  instant mock never runs the activity spinner or mid-stream typing paths,
+  which is exactly where the spinner-stacking and echo-corruption bugs
+  lived. Probe at minimum: multi-second turn, typing + Enter during
+  streaming, backspace after the turn (checks the clear-screen-down
+  filter), wrapped input, resize, Ctrl+C.
 
-## Keyboard Expectations
+## Behavioral Notes That Still Hold
 
-- Enter submits.
-- Trailing unescaped `\` continues a multiline prompt and submits the collected lines together.
-- Shift+Enter can be added later if a raw-mode editor is introduced safely.
-- Ctrl+C interrupts the current task before quitting.
-- Arrow keys navigate durable prompt history in interactive readline/TTY chat.
-- Slash command menu filters as the user types.
-- Tab completes slash command names, aliases, and deterministic subcommands/arguments where ORX has stable choices.
+- Queued follow-ups render as dim `queued (N) · runs after current turn`
+  lines above the composer and are consumed after the active turn
+- TTY chat accepts input while a turn is active; echoes are cleared and
+  re-rendered through the composer clear math
+- Interactive TTY requests prepend a short ORX coding-agent system message
+- Prompt history is durable, local, sanitized (`~/.orx/history.json`)
+- Saved profiles, `/config`, `/auth`, `/theme`, `/models` behavior unchanged
+- Non-TTY and `NO_COLOR=1` keep the plain `orx>` line-oriented fallback

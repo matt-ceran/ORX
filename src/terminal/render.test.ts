@@ -16,7 +16,7 @@ test("terminal renderer disables color for non-tty and NO_COLOR", () => {
   assert.equal(plain.success("ok"), "ok");
 
   const colored = createTerminalRenderer({ color: true });
-  assert.equal(colored.success("ok"), "\x1b[32mok\x1b[0m");
+  assert.equal(colored.success("ok"), "\x1b[38;5;108mok\x1b[0m");
 });
 
 test("terminal renderer supports explicit color themes", () => {
@@ -27,10 +27,10 @@ test("terminal renderer supports explicit color themes", () => {
 
   const vivid = createTerminalRenderer({ color: true, theme: "vivid" });
   assert.equal(vivid.theme, "vivid");
-  assert.equal(vivid.success("ok"), "\x1b[92mok\x1b[0m");
-  assert.equal(vivid.warning("warn"), "\x1b[93mwarn\x1b[0m");
-  assert.equal(vivid.danger("bad"), "\x1b[91mbad\x1b[0m");
-  assert.equal(vivid.accent("orx"), "\x1b[96morx\x1b[0m");
+  assert.equal(vivid.success("ok"), "\x1b[38;5;114mok\x1b[0m");
+  assert.equal(vivid.warning("warn"), "\x1b[38;5;221mwarn\x1b[0m");
+  assert.equal(vivid.danger("bad"), "\x1b[38;5;203mbad\x1b[0m");
+  assert.equal(vivid.accent("orx"), "\x1b[38;5;75morx\x1b[0m");
 
   assert.equal(resolveTerminalTheme({ env: { ORX_TTY_THEME: "mono" } }), "mono");
   assert.equal(resolveTerminalTheme({ env: { ORX_THEME: "vivid" } }), "vivid");

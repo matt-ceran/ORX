@@ -126,6 +126,7 @@ test("help all shows common commands first plus advanced surfaces", () => {
   assert.match(output, /\/delegate \[help\|status\|plan\|add\|remove\|clear\|team\|policy\]/);
   assert.match(output, /\/delegates \[list\|status\|plan\|policy\|teams\|save\|use\|inspect\|delete\]/);
   assert.match(output, /\/tests \[list \[--json\]\|status \[--json\]\|run \[target-id\] \[--json\] \[-- args\.\.\.\]\]/);
+  assert.match(output, /\/copy\s+Copy the latest assistant output to the local clipboard/);
   assert.match(output, /\/code \[map\|symbols\|refs\|imports\|calls\|ast-grep\|tree-sitter\|outline\]/);
   assert.match(output, /\/ast-grep <pattern> \[path\] \[--lang <lang>\]/);
   assert.match(output, /\/scanners \[list \[--json\]\|status \[--json\]\|inspect <profile> \[--json\]\|show <profile> \[--json\]\|plan <profile> \[--json\]\|setup-plan <profile> \[--json\]\|run <semgrep\|trivy\|codeql\|osv-scanner> <path> \[--config <local-config-path>\] \[--query <local-query-or-suite>\] \[--json\]\]/);
@@ -169,6 +170,10 @@ test("help query filters by command fields, aliases, and groups", () => {
   assert.match(delegation, /List delegates, readiness, policy, or saved teams/);
   assert.doesNotMatch(delegation, /inert OpenRouter delegates/);
   assert.doesNotMatch(delegation, /inert delegates/);
+
+  const copy = renderSlashHelp("copy");
+  assert.match(copy, /\/copy\s+Copy the latest assistant output to the local clipboard/);
+  assert.doesNotMatch(copy, /\/status/);
 });
 
 test("command palette renderer is a pure grouped listing surface", () => {
@@ -2454,10 +2459,10 @@ test("theme applies to TTY slash palette and credits output", async () => {
 
   try {
     assert.equal(handleSlashCommand("/commands /status", harness.context), "continue");
-    assert.match(harness.stdout(), /\x1b\[96m\/status/);
+    assert.match(harness.stdout(), /\x1b\[38;5;75m\/status/);
 
     assert.equal(await handleSlashCommand("/credits", harness.context), "continue");
-    assert.match(harness.stdout(), /\x1b\[92m\[###---------\] 25\.00%/);
+    assert.match(harness.stdout(), /\x1b\[38;5;114m\[###---------\] 25\.00%/);
     assert.equal(harness.stderr(), "");
   } finally {
     if (previousNoColor === undefined) {
@@ -2490,6 +2495,72 @@ test("model command switches for an exact catalog-confirmed id", async () => {
   assert.equal(harness.config().fusionPreset, undefined);
   assert.match(harness.stdout(), /Model set to example\/test-model \(mode: exact\)\./);
   assert.equal(harness.stderr(), "");
+});
+
+test("copy command copies the latest assistant output without exposing content", async () => {
+  const calls: Array<{ command: string; args: string[]; input: string }> = [];
+  const harness = createSlashHarness({
+    clipboardPlatform: "darwin",
+    clipboardRunner: async (command, args, options) => {
+      calls.push({ command, args, input: options.input });
+      return { code: 0, stdout: "", stderr: "" };
+    },
+    messages: [
+      { role: "user", content: "first" },
+      { role: "assistant", content: "Older answer" },
+      { role: "user", content: "second" },
+      { role: "assistant", content: " Latest assistant answer. \n" },
+    ],
+  });
+
+  assert.equal(await handleSlashCommand("/copy", harness.context), "continue");
+
+  assert.deepEqual(calls, [
+    {
+      command: "/usr/bin/pbcopy",
+      args: [],
+      input: "Latest assistant answer.",
+    },
+  ]);
+  assert.match(harness.stdout(), /Copied latest assistant output to clipboard \(24 chars\)\./);
+  assert.doesNotMatch(harness.stdout(), /Latest assistant answer/);
+  assert.equal(harness.stderr(), "");
+});
+
+test("copy command reports missing assistant output before invoking clipboard", async () => {
+  let called = false;
+  const harness = createSlashHarness({
+    clipboardPlatform: "darwin",
+    clipboardRunner: async () => {
+      called = true;
+      return { code: 0, stdout: "", stderr: "" };
+    },
+    messages: [{ role: "user", content: "no assistant yet" }],
+  });
+
+  assert.equal(await handleSlashCommand("/copy", harness.context), "continue");
+
+  assert.equal(called, false);
+  assert.equal(harness.stdout(), "");
+  assert.match(harness.stderr(), /No assistant output is available to copy\./);
+});
+
+test("copy command reports unsupported clipboard platforms", async () => {
+  let called = false;
+  const harness = createSlashHarness({
+    clipboardPlatform: "linux",
+    clipboardRunner: async () => {
+      called = true;
+      return { code: 0, stdout: "", stderr: "" };
+    },
+    messages: [{ role: "assistant", content: "answer" }],
+  });
+
+  assert.equal(await handleSlashCommand("/copy", harness.context), "continue");
+
+  assert.equal(called, false);
+  assert.equal(harness.stdout(), "");
+  assert.match(harness.stderr(), /Clipboard copy is not supported on this platform yet\./);
 });
 
 test("model command resolves a friendly single match to an exact id", async () => {
@@ -6558,6 +6629,8 @@ function createSlashHarness(
     webSearchFetch?: typeof fetch;
     browserSnapshot?: SlashCommandContext["browserSnapshot"];
     browserResolveHost?: SlashCommandContext["browserResolveHost"];
+    clipboardPlatform?: NodeJS.Platform;
+    clipboardRunner?: SlashCommandContext["clipboardRunner"];
     astGrepRunner?: AstGrepRunner;
     treeSitterRunner?: TreeSitterRunner;
     scannerRunner?: ScannerProcessRunner;
@@ -6622,6 +6695,8 @@ function createSlashHarness(
       webSearchFetch: options.webSearchFetch,
       browserSnapshot: options.browserSnapshot,
       browserResolveHost: options.browserResolveHost,
+      clipboardPlatform: options.clipboardPlatform,
+      clipboardRunner: options.clipboardRunner,
       astGrepRunner: options.astGrepRunner,
       treeSitterRunner: options.treeSitterRunner,
       scannerRunner: options.scannerRunner,

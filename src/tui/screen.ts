@@ -11,7 +11,6 @@ import {
 } from "../terminal/meters.js";
 import {
   createTerminalRenderer,
-  formatMeter,
   shouldUseAnsiColor,
   type TerminalRenderOptions,
   type TerminalRenderer,
@@ -23,14 +22,20 @@ export interface TtyStatusComposerState {
   mode: string;
   permissions: PermissionConfig;
   sessionId?: string;
+  gitBranch?: string;
   messages: OpenRouterMessage[];
   contextBudget?: Partial<AgentContextBudget>;
   costMeterState: SessionCostMeterState;
   latestCredits?: OpenRouterCreditsInfo;
   activity?: TtyActivityState;
   input?: TtyInputState;
+  queuedInputs?: TtyQueuedInput[];
   width?: number;
   renderOptions?: TerminalRenderOptions;
+}
+
+export interface TtyStartupScreenState extends TtyStatusComposerState {
+  apiKeyStatus?: string;
 }
 
 export interface TtyActivityState {
@@ -43,15 +48,34 @@ export interface TtyInputState {
   mode: "normal" | "multiline";
 }
 
+export interface TtyQueuedInput {
+  text: string;
+  kind: "message" | "command";
+}
+
 const DEFAULT_SCREEN_WIDTH = 80;
 const MIN_SCREEN_WIDTH = 20;
 const MAX_SCREEN_WIDTH = 220;
-const WIDE_LAYOUT_WIDTH = 72;
-const SPLIT_PROVIDER_MODEL_WIDTH = 104;
-const INLINE_CREDITS_WIDTH = 152;
 const ANSI_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const CONTROL_PATTERN = /[\x00-\x1F\x7F]/g;
+const ANSI_RESET = "\x1b[0m";
+const BAND_BACKGROUND = "\x1b[48;5;254m";
+const BAND_FOREGROUND = "\x1b[38;5;235m";
+const BAND_MONO = "\x1b[7m";
 const ACTIVITY_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+
+/**
+ * Visible width of the composer prompt prefix (" › " / " … ").
+ * The readline prompt and the composer band must agree on this so the cursor
+ * lands exactly after the prefix when the composer repositions it.
+ */
+export const TTY_PROMPT_PREFIX_WIDTH = 3;
+
+/**
+ * Number of real terminal rows the composer renders BELOW the prompt row
+ * (the color-coded stats line). Composer clear math offsets by this.
+ */
+export const TTY_COMPOSER_ROWS_BELOW_PROMPT = 1;
 
 export function shouldUseTtyScreen(
   stdin: unknown,
@@ -70,67 +94,164 @@ export function resolveTerminalWidth(stream: unknown, fallback = DEFAULT_SCREEN_
   return normalizeWidth(typeof columns === "number" ? columns : fallback);
 }
 
+/**
+ * Renders the bottom composer:
+ *
+ *   [queued follow-ups]
+ *   (blank spacer line)
+ *   › input band            ← grey full-width band, readline cursor lives here
+ *   model · mode · cwd · …  ← color-coded stats line
+ *
+ * The string ends with cursor-movement escapes that place the cursor back on
+ * the band row directly after the prompt prefix, with the band colors armed
+ * so typed characters stay inside the band. The stats line is a real terminal
+ * row, so bottom-of-screen scrolling stays correct.
+ */
 export function renderTtyStatusComposer(state: TtyStatusComposerState): string {
-  return `${renderTtyStatusNotch(state)}\n${renderTtyComposerPrompt(state.renderOptions, state.input)}`;
-}
-
-export function renderTtyStatusNotch(state: TtyStatusComposerState): string {
   const width = normalizeWidth(state.width);
   const renderer = createTerminalRenderer(state.renderOptions);
-  const contextState = getContextState(state.messages, state.contextBudget);
+  const input = state.input ?? { mode: "normal" };
+  const lines = [
+    ...renderQueuedInputLines(state, renderer, width),
+    "",
+    renderComposerBand(input, renderer, width),
+    renderTtyStatusLine(state),
+  ];
+  const reposition = `\x1b[1A\x1b[${TTY_PROMPT_PREFIX_WIDTH + 1}G${bandOpenCodes(renderer)}`;
+  return `${lines.join("\n")}${reposition}`;
+}
+
+/**
+ * Renders the single color-coded stats line shown below the input band.
+ * Also used to restore the stats row after slash suggestions clear.
+ */
+export function renderTtyStatusLine(state: TtyStatusComposerState): string {
+  const width = normalizeWidth(state.width);
+  const renderer = createTerminalRenderer(state.renderOptions);
+  const showMeters = shouldShowMeterDetails(state);
   const activity = formatActivity(state.activity, renderer);
-  const splitProviderModel =
-    width >= (state.latestCredits ? INLINE_CREDITS_WIDTH : SPLIT_PROVIDER_MODEL_WIDTH);
-  const modelBadges = formatModelBadges(state.model, renderer, splitProviderModel);
-  const mode = keyValue("mode", state.mode, renderer, "success");
-  const context = keyValue("ctx", formatNotchContext(contextState, renderer, width), renderer);
-  const cost = keyValue("cost", formatNotchCost(state.costMeterState, renderer), renderer);
-  const credits = state.latestCredits
-    ? keyValue("credits", formatNotchCredits(state.latestCredits, renderer, width), renderer)
-    : undefined;
-  const cwd = keyValue("cwd", compactCwd(state.cwd), renderer);
-  const permissions = keyValue(
-    "perm",
+  const model = renderer.accent(compactModelLabel(state.model));
+  const mode = renderer.success(state.mode);
+  const cwd = renderer.dim(compactCwd(state.cwd));
+  const git = state.gitBranch ? renderer.dim(compactGitBranch(state.gitBranch)) : undefined;
+  const perm = renderer.warning(
     `${state.permissions.approvalPolicy}/${state.permissions.sandboxMode}`,
-    renderer,
-    "warning",
   );
-  const session = keyValue("session", compactSessionId(state.sessionId), renderer);
+  const session = showMeters ? undefined : renderer.dim(compactSessionId(state.sessionId));
+  const ctx = showMeters ? formatContextStat(state, renderer) : undefined;
+  const cost = showMeters ? formatCostStat(state.costMeterState, renderer) : undefined;
+  const credits = showMeters ? formatCreditsStat(state.latestCredits, renderer) : undefined;
 
-  if (credits && width < INLINE_CREDITS_WIDTH) {
-    return [
-      fitStatusLine("╭─ ", [renderer.bold("orx"), activity, ...modelBadges, mode], width),
-      fitStatusLine("│  ", [context, cost], width),
-      fitStatusLine("│  ", [credits], width),
-      fitStatusLine("╰─ ", [cwd, permissions, session], width),
-    ].join("\n");
+  // Degrade gracefully at narrow widths: drop low-value parts whole, then
+  // shorten the cwd, before resorting to per-part ellipsis truncation.
+  const assemble = (drop: number, cwdOverride?: string): Array<string | undefined> => [
+    activity,
+    model,
+    mode,
+    drop < 3 ? (cwdOverride ?? cwd) : undefined,
+    drop < 2 ? git : undefined,
+    drop < 4 ? perm : undefined,
+    ctx,
+    cost,
+    credits,
+    drop < 1 ? session : undefined,
+  ];
+
+  const tryFit = (drop: number, cwdOverride?: string): string | undefined => {
+    const parts = assemble(drop, cwdOverride).filter((part): part is string => Boolean(part));
+    const line = joinLine("  ", parts, " · ");
+    return visibleWidth(line) <= width ? line : undefined;
+  };
+
+  for (let drop = 0; drop <= 2; drop += 1) {
+    const line = tryFit(drop);
+    if (line !== undefined) {
+      return line;
+    }
   }
 
-  if (width >= WIDE_LAYOUT_WIDTH) {
-    return [
-      fitStatusLine(
-        "╭─ ",
-        [renderer.bold("orx"), activity, ...modelBadges, mode, context, cost, credits],
-        width,
-      ),
-      fitStatusLine("╰─ ", [cwd, permissions, session], width),
-    ].join("\n");
+  const withoutCwd = assemble(3).filter((part): part is string => Boolean(part));
+  const cwdRoom = width - visibleWidth(joinLine("  ", withoutCwd, " · ")) - visibleWidth(" · ");
+  if (cwdRoom >= 12) {
+    const truncatedCwd = renderer.dim(truncateVisible(compactCwd(state.cwd), cwdRoom));
+    const line = tryFit(2, truncatedCwd);
+    if (line !== undefined) {
+      return line;
+    }
   }
+
+  for (let drop = 3; drop <= 4; drop += 1) {
+    const line = tryFit(drop);
+    if (line !== undefined) {
+      return line;
+    }
+  }
+
+  return fitStatusLine("  ", assemble(4), width, " · ");
+}
+
+export function renderTtyFirstScreen(state: TtyStartupScreenState): string {
+  return `${renderTtyStartupCard(state)}\n${renderTtyStatusComposer(state)}`;
+}
+
+export function renderTtyStartupCard(state: TtyStartupScreenState): string {
+  const width = normalizeWidth(state.width);
+  const renderer = createTerminalRenderer(state.renderOptions);
+  const permissionText = `${state.permissions.approvalPolicy}/${state.permissions.sandboxMode}`;
+  const keyStatus = state.apiKeyStatus ?? "unknown";
+  const rows = [
+    renderCardGridRow(
+      { label: "model", value: compactModelLabel(state.model), tone: "accent" },
+      { label: "mode", value: state.mode, tone: "success" },
+      renderer,
+      width,
+    ),
+    renderCardGridRow(
+      { label: "cwd", value: compactCwd(state.cwd) },
+      { label: "perm", value: permissionText, tone: "warning" },
+      renderer,
+      width,
+    ),
+    renderCardGridRow(
+      { label: "key", value: keyStatus, tone: keyStatus.startsWith("yes") ? "success" : "warning" },
+      { label: "session", value: compactSessionId(state.sessionId) },
+      renderer,
+      width,
+    ),
+  ];
 
   return [
-    fitStatusLine("╭─ ", [renderer.bold("orx"), activity, ...modelBadges, mode], width),
-    fitStatusLine("│  ", [context, cost, credits], width),
-    fitStatusLine("╰─ ", [cwd, permissions, session], width),
+    ` ${renderer.bold(renderer.accent("ORX"))}  ${renderer.dim("OpenRouter-native coding workbench")}`,
+    "",
+    ...rows,
+    "",
+    fitStatusLine(
+      "  ",
+      [
+        renderer.dim("/help commands"),
+        renderer.dim("Ctrl+G editor"),
+        renderer.dim("Ctrl+O copy"),
+        renderer.dim("Ctrl+R history"),
+        renderer.dim("Ctrl+L clear"),
+      ],
+      width,
+      renderer.dim(" · "),
+    ),
   ].join("\n");
 }
 
-export function renderTtyComposerPrompt(
+/**
+ * Returns the readline prompt string for TTY mode. It carries the band colors
+ * (no trailing reset) so readline refreshes repaint the band and typed
+ * characters inherit it. Its visible width must equal TTY_PROMPT_PREFIX_WIDTH.
+ */
+export function renderTtyReadlinePrompt(
   renderOptions: TerminalRenderOptions = {},
   input: TtyInputState = { mode: "normal" },
 ): string {
   const renderer = createTerminalRenderer(renderOptions);
-  const prompt = input.mode === "multiline" ? "…" : "›";
-  return `${renderer.accent("orx")} ${prompt} `;
+  const marker = input.mode === "multiline" ? "…" : "›";
+  return `${bandOpenCodes(renderer)} ${marker} `;
 }
 
 export function renderPlainComposerPrompt(): string {
@@ -141,57 +262,217 @@ export function renderPlainContinuationPrompt(): string {
   return "...> ";
 }
 
-function formatNotchContext(
-  state: ReturnType<typeof getContextState>,
+/**
+ * Renders a user message as grey band rows for the transcript scrollback,
+ * mirroring the composer band the message was typed into.
+ */
+export function renderTtyUserBand(
+  text: string,
+  renderOptions: TerminalRenderOptions = {},
+  width = DEFAULT_SCREEN_WIDTH,
+): string {
+  const renderer = createTerminalRenderer(renderOptions);
+  const normalized = normalizeWidth(width);
+  const contentWidth = Math.max(1, normalized - TTY_PROMPT_PREFIX_WIDTH);
+  const rows: string[] = [];
+  const sourceLines = text.replace(/\r/g, "").split("\n");
+
+  for (const sourceLine of sourceLines) {
+    const clean = sourceLine.replace(ANSI_PATTERN, "").replace(CONTROL_PATTERN, " ");
+    let remaining = clean;
+    do {
+      rows.push(remaining.slice(0, contentWidth));
+      remaining = remaining.slice(contentWidth);
+    } while (remaining.length > 0);
+  }
+
+  return rows
+    .map((row, index) => {
+      const marker = index === 0 ? "›" : " ";
+      const content = ` ${marker} ${row}`;
+      if (!renderer.colorEnabled) {
+        return content.trimEnd();
+      }
+      return `${bandOpenCodes(renderer)}${padPlain(content, normalized)}${ANSI_RESET}`;
+    })
+    .join("\n");
+}
+
+/**
+ * Renders a compact dimmed suggestion line for slash command autocomplete.
+ * Shows up to `maxLines` lines, fitting as many suggestions as possible per
+ * line. Returns an empty string when there are no suggestions.
+ */
+export function renderTtyCommandSuggestions(
+  suggestions: string[],
+  renderOptions: TerminalRenderOptions = {},
+  width = DEFAULT_SCREEN_WIDTH,
+  maxLines = 1,
+): string {
+  if (suggestions.length === 0) {
+    return "";
+  }
+  const renderer = createTerminalRenderer(renderOptions);
+  const normalized = normalizeWidth(width);
+  const prefix = `  ${renderer.dim("try")} `;
+  const prefixWidth = visibleWidth(prefix);
+  const sep = "  ";
+  const sepWidth = visibleWidth(sep);
+
+  const lines: string[] = [];
+  let currentParts: string[] = [];
+  let currentWidth = prefixWidth;
+
+  for (const suggestion of suggestions) {
+    const partWidth = visibleWidth(suggestion);
+    const needed = currentParts.length > 0 ? sepWidth + partWidth : partWidth;
+    if (currentWidth + needed > normalized && currentParts.length > 0) {
+      lines.push(`${prefix}${currentParts.join(sep)}`);
+      currentParts = [];
+      currentWidth = prefixWidth;
+      if (lines.length >= maxLines) {
+        break;
+      }
+      currentParts.push(suggestion);
+      currentWidth = prefixWidth + partWidth;
+    } else {
+      currentParts.push(suggestion);
+      currentWidth += needed;
+    }
+  }
+  if (currentParts.length > 0 && lines.length < maxLines) {
+    lines.push(`${prefix}${currentParts.join(sep)}`);
+  }
+  if (lines.length === 0) {
+    return "";
+  }
+  return lines.join("\n");
+}
+
+/**
+ * The SGR codes that arm the input-band colors (empty when color is off).
+ * Exposed so chat.ts can sanitize readline's clear-screen-down writes, which
+ * would otherwise flood the screen below the prompt with the band background.
+ */
+export function ttyBandOpenCodes(renderOptions: TerminalRenderOptions = {}): string {
+  return bandOpenCodes(createTerminalRenderer(renderOptions));
+}
+
+function renderComposerBand(
+  input: TtyInputState,
   renderer: TerminalRenderer,
   width: number,
 ): string {
-  const meterWidth = width >= WIDE_LAYOUT_WIDTH ? 8 : 4;
-  return [
-    formatMeter(
-      {
-        current: state.approximateBytes,
-        total: state.budget.maxBytes,
-        width: meterWidth,
-      },
-      renderer,
-    ),
-    "approx",
-  ].join(" ");
+  const marker = input.mode === "multiline" ? "…" : "›";
+  const prefix = ` ${marker} `;
+  if (!renderer.colorEnabled) {
+    return prefix;
+  }
+
+  return `${bandOpenCodes(renderer)}${padPlain(prefix, width)}${ANSI_RESET}`;
 }
 
-function formatNotchCost(state: SessionCostMeterState, renderer: TerminalRenderer): string {
-  const totalTurns = state.costedTurnCount + state.uncostedTurnCount;
-  const coverage = totalTurns > 0 ? `${state.costedTurnCount}/${totalTurns}` : "n/a";
-  return [
-    colorMoney(formatMoney(state.knownSessionCost), renderer),
-    renderer.dim(`meta ${coverage}`),
-  ].join(" ");
+function bandOpenCodes(renderer: TerminalRenderer): string {
+  if (!renderer.colorEnabled) {
+    return "";
+  }
+
+  return renderer.theme === "mono" ? BAND_MONO : `${BAND_BACKGROUND}${BAND_FOREGROUND}`;
 }
 
-function formatNotchCredits(
-  credits: OpenRouterCreditsInfo,
+function renderQueuedInputLines(
+  state: TtyStatusComposerState,
   renderer: TerminalRenderer,
   width: number,
-): string {
-  const meterWidth = width >= WIDE_LAYOUT_WIDTH ? 8 : 4;
-  return [
-    formatMeter(
-      {
-        percent: credits.percentUsed,
-        current: credits.totalUsage,
-        total: credits.totalCredits,
-        width: meterWidth,
-        decimals: 1,
-      },
-      renderer,
-    ),
-    `rem ${colorMoney(formatMoney(credits.remainingCredits), renderer)}`,
-  ].join(" ");
+): string[] {
+  const queued = state.queuedInputs?.filter((entry) => entry.text.trim().length > 0) ?? [];
+  if (queued.length === 0) {
+    return [];
+  }
+
+  const visible = queued.slice(-3);
+  const hiddenCount = Math.max(0, queued.length - visible.length);
+  const heading = hiddenCount > 0
+    ? `queued (showing ${visible.length} of ${queued.length}) · runs after current turn`
+    : `queued (${queued.length}) · runs after current turn`;
+  const lines = [fitStatusLine("  ", [renderer.dim(heading)], width, " ")];
+  for (const [index, entry] of visible.entries()) {
+    const marker = entry.kind === "command" ? "/" : "›";
+    lines.push(
+      fitStatusLine(
+        "  ",
+        [renderer.dim(`${hiddenCount + index + 1} ${marker}`), compactQueuedInput(entry.text, width)],
+        width,
+        " ",
+      ),
+    );
+  }
+  return lines;
 }
 
-function colorMoney(value: string, renderer: TerminalRenderer): string {
-  return value === "n/a" ? value : renderer.success(value);
+function shouldShowMeterDetails(state: TtyStatusComposerState): boolean {
+  return Boolean(
+    state.activity ||
+      state.messages.length > 0 ||
+      state.latestCredits ||
+      state.costMeterState.knownSessionCost !== undefined ||
+      state.costMeterState.latestTurnCost !== undefined ||
+      state.costMeterState.costedTurnCount > 0 ||
+      state.costMeterState.uncostedTurnCount > 0,
+  );
+}
+
+function formatContextStat(
+  state: TtyStatusComposerState,
+  renderer: TerminalRenderer,
+): string | undefined {
+  const contextState = getContextState(state.messages, state.contextBudget);
+  if (contextState.budget.maxBytes <= 0) {
+    return undefined;
+  }
+
+  const percent = Math.min(
+    100,
+    Math.max(0, (contextState.approximateBytes / contextState.budget.maxBytes) * 100),
+  );
+  const text = `ctx ${formatPercent(percent)}`;
+  if (percent >= 90) {
+    return renderer.danger(text);
+  }
+  if (percent >= 75) {
+    return renderer.warning(text);
+  }
+  return renderer.success(text);
+}
+
+function formatCostStat(
+  state: SessionCostMeterState,
+  renderer: TerminalRenderer,
+): string | undefined {
+  if (state.knownSessionCost === undefined) {
+    return undefined;
+  }
+
+  return renderer.success(formatMoney(state.knownSessionCost));
+}
+
+function formatCreditsStat(
+  credits: OpenRouterCreditsInfo | undefined,
+  renderer: TerminalRenderer,
+): string | undefined {
+  if (!credits) {
+    return undefined;
+  }
+
+  return `${renderer.dim("bal")} ${renderer.success(formatMoney(credits.remainingCredits))}`;
+}
+
+function formatPercent(percent: number): string {
+  if (percent > 0 && percent < 1) {
+    return "<1%";
+  }
+
+  return `${Math.round(percent)}%`;
 }
 
 function formatActivity(
@@ -205,7 +486,7 @@ function formatActivity(
   const frame = ACTIVITY_FRAMES[normalizeActivityFrame(activity.frame)];
   const detail = compactActivityDetail(activity);
   const label = detail ? `${activity.kind} ${detail}` : activity.kind;
-  return `${renderer.dim("work")} ${renderer.accent(frame)} ${label}`;
+  return `${renderer.accent(frame)} ${label}`;
 }
 
 function compactActivityDetail(activity: TtyActivityState): string {
@@ -221,37 +502,25 @@ function compactActivityDetail(activity: TtyActivityState): string {
     .slice(0, 32);
 }
 
-function formatModelBadges(
-  model: string,
-  renderer: TerminalRenderer,
-  splitProvider: boolean,
-): string[] {
-  const clean = model
+function compactQueuedInput(text: string, width: number): string {
+  const budget = Math.max(12, width - 10);
+  const clean = text
     .replace(ANSI_PATTERN, "")
     .replace(CONTROL_PATTERN, " ")
     .replace(/\s+/g, " ")
     .trim();
-  if (!clean) {
-    return [keyValue("model", "unknown", renderer, "accent")];
+  if (clean.length <= budget) {
+    return clean;
   }
+  return `${clean.slice(0, budget - 1)}…`;
+}
 
-  if (clean === "openrouter/auto") {
-    return [keyValue("route", "auto", renderer, "accent")];
-  }
-
-  if (clean === "openrouter/fusion") {
-    return [keyValue("route", "fusion", renderer, "accent")];
-  }
-
-  const [provider, ...modelParts] = clean.split("/");
-  if (!provider || modelParts.length === 0 || !splitProvider) {
-    return [keyValue("model", clean, renderer, "accent")];
-  }
-
-  return [
-    keyValue("provider", provider, renderer, "accent"),
-    keyValue("model", modelParts.join("/"), renderer, "accent"),
-  ];
+function compactModelLabel(model: string): string {
+  return model
+    .replace(ANSI_PATTERN, "")
+    .replace(CONTROL_PATTERN, " ")
+    .replace(/\s+/g, " ")
+    .trim() || "unknown";
 }
 
 function normalizeActivityFrame(frame: number | undefined): number {
@@ -262,26 +531,127 @@ function normalizeActivityFrame(frame: number | undefined): number {
   return Math.abs(Math.floor(frame)) % ACTIVITY_FRAMES.length;
 }
 
-function keyValue(
-  key: string,
-  value: string,
-  renderer: TerminalRenderer,
-  tone?: "accent" | "success" | "warning",
-): string {
-  const renderedValue =
-    tone === "accent"
-      ? renderer.accent(value)
-      : tone === "success"
-        ? renderer.success(value)
-        : tone === "warning"
-          ? renderer.warning(value)
-          : value;
-  return `${renderer.dim(key)} ${renderedValue}`;
+type CardTone = "accent" | "success" | "warning" | "dim";
+
+interface CardCell {
+  label: string;
+  value: string;
+  tone?: CardTone;
 }
 
-function fitStatusLine(prefix: string, parts: Array<string | undefined>, width: number): string {
+const CARD_LABEL_COL = 9;
+
+function renderCardGridRow(
+  left: CardCell,
+  right: CardCell,
+  renderer: TerminalRenderer,
+  width: number,
+): string {
+  const prefix = "  ";
+  const sep = "  ";
+  const leftLabel = renderer.dim(padLabel(left.label, CARD_LABEL_COL));
+  const rightLabel = renderer.dim(padLabel(right.label, CARD_LABEL_COL));
+  const fixedWidth =
+    visibleWidth(prefix) + CARD_LABEL_COL + visibleWidth(sep) + CARD_LABEL_COL;
+  const minTwoCol = fixedWidth + 2;
+
+  if (width <= minTwoCol) {
+    return renderSingleCardRow(left, renderer, prefix, width);
+  }
+
+  const avail = width - fixedWidth;
+  const leftPlain = sanitizeValue(left.value);
+  const rightPlain = sanitizeValue(right.value);
+  let leftBudget: number;
+  let rightBudget: number;
+
+  if (leftPlain.length + rightPlain.length <= avail) {
+    leftBudget = leftPlain.length;
+    rightBudget = rightPlain.length;
+  } else {
+    const total = leftPlain.length + rightPlain.length;
+    leftBudget = Math.max(1, Math.floor((avail * leftPlain.length) / Math.max(1, total)));
+    rightBudget = Math.max(1, avail - leftBudget);
+    if (leftPlain.length <= leftBudget) {
+      rightBudget = avail - leftPlain.length;
+    } else if (rightPlain.length <= rightBudget) {
+      leftBudget = avail - rightPlain.length;
+    }
+  }
+
+  const leftValue = applyTone(truncateVisible(leftPlain, leftBudget), left.tone, renderer);
+  const rightValue = applyTone(truncateVisible(rightPlain, rightBudget), right.tone, renderer);
+  const leftColumnWidth = Math.max(
+    leftBudget,
+    Math.min(Math.floor(avail / 2), avail - rightBudget),
+  );
+  return `${prefix}${leftLabel}${padVisiblePart(leftValue, leftColumnWidth)}${sep}${rightLabel}${rightValue}`;
+}
+
+function renderSingleCardRow(
+  cell: CardCell,
+  renderer: TerminalRenderer,
+  prefix: string,
+  width: number,
+): string {
+  const label = renderer.dim(padLabel(cell.label, CARD_LABEL_COL));
+  const valueBudget = Math.max(0, width - visibleWidth(prefix) - CARD_LABEL_COL);
+  const value = applyTone(truncateVisible(sanitizeValue(cell.value), valueBudget), cell.tone, renderer);
+  return `${prefix}${label}${value}`;
+}
+
+function padLabel(label: string, width: number): string {
+  return label.length >= width ? label : `${label}${" ".repeat(width - label.length)}`;
+}
+
+function padPlain(value: string, width: number): string {
+  const visible = visibleWidth(value);
+  if (visible >= width) {
+    return value;
+  }
+
+  return `${value}${" ".repeat(width - visible)}`;
+}
+
+function padVisiblePart(value: string, width: number): string {
+  return padPlain(value, width);
+}
+
+function applyTone(
+  value: string,
+  tone: CardTone | undefined,
+  renderer: TerminalRenderer,
+): string {
+  if (!tone || value.length === 0) {
+    return value;
+  }
+  if (tone === "accent") {
+    return renderer.accent(value);
+  }
+  if (tone === "success") {
+    return renderer.success(value);
+  }
+  if (tone === "warning") {
+    return renderer.warning(value);
+  }
+  return renderer.dim(value);
+}
+
+function sanitizeValue(value: string): string {
+  return value
+    .replace(ANSI_PATTERN, "")
+    .replace(CONTROL_PATTERN, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function fitStatusLine(
+  prefix: string,
+  parts: Array<string | undefined>,
+  width: number,
+  separator = "  ",
+): string {
   const filtered = parts.filter((part): part is string => Boolean(part));
-  const separator = "  ";
   const nextParts = [...filtered];
 
   while (visibleWidth(joinLine(prefix, nextParts, separator)) > width) {
@@ -370,6 +740,14 @@ function compactSessionId(sessionId: string | undefined): string {
   }
 
   return sessionId;
+}
+
+function compactGitBranch(branch: string): string {
+  return branch
+    .replace(ANSI_PATTERN, "")
+    .replace(CONTROL_PATTERN, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeWidth(width: number | undefined): number {

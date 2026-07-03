@@ -1,6 +1,7 @@
 import { OPENROUTER_API_BASE } from "./client.js";
 import { formatCreditsUsageMeter } from "../terminal/meters.js";
 import type { TerminalRenderOptions, TerminalRenderer } from "../terminal/render.js";
+import { padVisible, truncatePlain } from "../terminal/ui.js";
 
 export interface OpenRouterLiveOptions {
   apiKey: string;
@@ -174,28 +175,75 @@ export async function getOpenRouterGeneration(
 export function formatOpenRouterModels(models: OpenRouterModelInfo[], query?: string): string {
   const filtered = filterModels(models, query);
   const rendered = filtered.slice(0, 20);
-  const lines = [
-    `OpenRouter models${query ? ` matching "${query}"` : ""}: ${filtered.length}`,
-  ];
+  const lines = [`OpenRouter models${query ? ` matching "${query}"` : ""}: ${filtered.length}`];
+  if (rendered.length > 0) {
+    lines.push("");
+    lines.push(formatModelTableHeader());
+    lines.push(formatModelTableDivider());
+  }
 
-  for (const model of rendered) {
-    lines.push(
-      [
-        `  ${model.id}`,
-        model.name ? `name: ${model.name}` : undefined,
-        `context: ${formatInteger(model.contextLength)}`,
-        formatPricing(model.pricing),
-      ]
-        .filter((part): part is string => Boolean(part))
-        .join(" | "),
-    );
+  for (const [index, model] of rendered.entries()) {
+    lines.push(formatModelTableRow(index + 1, model));
   }
 
   if (filtered.length > rendered.length) {
+    lines.push("");
     lines.push(`... ${filtered.length - rendered.length} more omitted; use a narrower filter.`);
   }
 
+  if (rendered.length > 0) {
+    lines.push("");
+    lines.push("Use /model <id> with an exact id from the first column.");
+  }
+
   return lines.join("\n");
+}
+
+const MODEL_INDEX_WIDTH = 3;
+const MODEL_ID_WIDTH = 34;
+const MODEL_NAME_WIDTH = 34;
+const MODEL_CONTEXT_WIDTH = 10;
+const MODEL_PRICE_WIDTH = 13;
+
+function formatModelTableHeader(): string {
+  return [
+    padVisible("#", MODEL_INDEX_WIDTH),
+    padVisible("id", MODEL_ID_WIDTH),
+    padVisible("name", MODEL_NAME_WIDTH),
+    padVisible("ctx", MODEL_CONTEXT_WIDTH),
+    padVisible("prompt", MODEL_PRICE_WIDTH),
+    "completion",
+  ].join("  ");
+}
+
+function formatModelTableDivider(): string {
+  return [
+    "-".repeat(MODEL_INDEX_WIDTH),
+    "-".repeat(MODEL_ID_WIDTH),
+    "-".repeat(MODEL_NAME_WIDTH),
+    "-".repeat(MODEL_CONTEXT_WIDTH),
+    "-".repeat(MODEL_PRICE_WIDTH),
+    "-".repeat(MODEL_PRICE_WIDTH),
+  ].join("  ");
+}
+
+function formatModelTableRow(index: number, model: OpenRouterModelInfo): string {
+  return [
+    padVisible(String(index), MODEL_INDEX_WIDTH),
+    padVisible(truncatePlain(model.id, MODEL_ID_WIDTH), MODEL_ID_WIDTH),
+    padVisible(truncatePlain(model.name ?? "unknown", MODEL_NAME_WIDTH), MODEL_NAME_WIDTH),
+    padVisible(formatInteger(model.contextLength), MODEL_CONTEXT_WIDTH),
+    padVisible(formatModelPrice(model.pricing?.prompt), MODEL_PRICE_WIDTH),
+    formatModelPrice(model.pricing?.completion),
+  ].join("  ");
+}
+
+function formatModelPrice(value: string | undefined): string {
+  if (!value || value === "0") {
+    return "free";
+  }
+
+  return `$${truncatePlain(value, MODEL_PRICE_WIDTH - 1)}`;
 }
 
 export function formatOpenRouterCredits(
@@ -318,21 +366,6 @@ function sanitizeErrorText(text: string, apiKey?: string): string {
     .replace(/sk-or-[A-Za-z0-9_-]+/g, "[redacted]")
     .replace(/(Authorization:\s*Bearer\s+)[^\s"'\\]+/gi, "$1[redacted]")
     .replace(/(Bearer\s+)[^\s"'\\]+/gi, "$1[redacted]");
-}
-
-function formatPricing(pricing: OpenRouterModelPricing | undefined): string | undefined {
-  if (!pricing) {
-    return undefined;
-  }
-
-  const parts = [
-    pricing.prompt ? `prompt=${pricing.prompt}` : undefined,
-    pricing.completion ? `completion=${pricing.completion}` : undefined,
-    pricing.request ? `request=${pricing.request}` : undefined,
-    pricing.image ? `image=${pricing.image}` : undefined,
-  ].filter((part): part is string => Boolean(part));
-
-  return parts.length > 0 ? `pricing: ${parts.join(", ")}` : undefined;
 }
 
 function formatInteger(value: number | undefined): string {

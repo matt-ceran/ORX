@@ -176,13 +176,13 @@ test("tty chat renders continuation composer for multiline input", async () => {
       sessionDirectory,
     });
 
-    const stdout = stripAnsi(capture.stdout());
+    const stdout = stripAnsi(capture.stdout()).replace(/\r/g, "");
     assert.equal(exitCode, 0);
     assert.equal(requests.length, 1);
     assert.equal(requests[0].messages.at(-1)?.content, "First line\nSecond line");
-    assert.match(stdout, /orx … /);
-    assert.match(stdout, /you: First line\n     Second line/);
-    assert.match(stdout, /assistant: TTY multiline reply/);
+    assert.match(stdout, / … /);
+    assert.match(stdout, / › First line +\n {3}Second line/);
+    assert.match(stdout, /• TTY multiline reply\n\n  ─ openrouter\/auto/);
     assert.equal(capture.stderr(), "");
   } finally {
     if (previousNoColor === undefined) {
@@ -270,6 +270,373 @@ test("tty chat persists searchable prompt history and clears it from slash comma
     assert.match(stdout, /No prompt history found/);
     assert.equal(loadChatHistory({ historyPath }).length, 0);
     assert.equal(secondRun.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat Ctrl+R opens prompt history search in the composer", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-history-search-sessions-"));
+  const cwd = mkdtempSync(join(tmpdir(), "orx-chat-history-search-cwd-"));
+  const historyPath = join(cwd, "history.json");
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+
+  try {
+    const firstRun = createIo({
+      stdin: Readable.from(["Remember provider preset setup\n", "/exit\n"]),
+      cwd,
+      tty: true,
+      columns: 88,
+      fetch: async () =>
+        new Response(
+          streamFrom([
+            'data: {"choices":[{"delta":{"content":"stored"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        ),
+    });
+
+    assert.equal(
+      await runChat({
+        apiKey: "test-key",
+        loadedConfig: baseLoadedConfig(),
+        io: firstRun.io,
+        sessionDirectory,
+        chatHistoryPath: historyPath,
+      }),
+      0,
+    );
+
+    const stdin = new Readable({
+      read() {},
+    });
+    const secondRun = createIo({
+      stdin,
+      cwd,
+      tty: true,
+      columns: 88,
+      fetch: async () => {
+        throw new Error("Ctrl+R history search should not call OpenRouter");
+      },
+    });
+
+    const run = runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: secondRun.io,
+      sessionDirectory,
+      chatHistoryPath: historyPath,
+    });
+
+    await waitForOutput(secondRun.stdout, / › /);
+    stdin.emit("keypress", "\u0012", { ctrl: true, name: "r" });
+    await waitForQueueRender();
+    stdin.push("provider\n");
+    stdin.push("/exit\n");
+    stdin.push(null);
+
+    assert.equal(await run, 0);
+    const stdout = stripAnsi(secondRun.stdout());
+    assert.match(stdout, /Prompt history matching "provider"/);
+    assert.match(stdout, /Remember provider preset setup/);
+    assert.match(stdout, /• command \/history \/history search provider/);
+    assert.equal(secondRun.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat Ctrl+R during an active turn queues prompt history", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-history-active-sessions-"));
+  const cwd = mkdtempSync(join(tmpdir(), "orx-chat-history-active-cwd-"));
+  const historyPath = join(cwd, "history.json");
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  const stdin = new Readable({
+    read() {},
+  });
+  const firstFetchStarted = createDeferred();
+  const firstResponseCanFinish = createDeferred();
+
+  try {
+    const capture = createIo({
+      stdin,
+      cwd,
+      tty: true,
+      columns: 96,
+      fetch: async () => {
+        firstFetchStarted.resolve();
+        return new Response(
+          delayedStreamFrom(
+            [
+              'data: {"model":"openrouter/auto","choices":[{"delta":{"content":"History active reply"}}]}\n\n',
+            ],
+            firstResponseCanFinish.promise,
+          ),
+          { status: 200 },
+        );
+      },
+    });
+
+    const run = runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      chatHistoryPath: historyPath,
+    });
+
+    stdin.push("Remember queued history\n");
+    await firstFetchStarted.promise;
+    stdin.emit("keypress", "\u0012", { ctrl: true, name: "r" });
+    await waitForQueueRender();
+    assert.match(stripAnsi(capture.stdout()), /queued \(1\) · runs after current turn\n {2}1 \/ \/history/);
+
+    firstResponseCanFinish.resolve();
+    await waitForOutput(capture.stdout, /Prompt history:/);
+    stdin.push("/exit\n");
+    stdin.push(null);
+
+    assert.equal(await run, 0);
+    const stdout = stripAnsi(capture.stdout());
+    assert.match(stdout, /• History active reply\n\n  ─ openrouter\/auto/);
+    assert.match(stdout, /• command \/history\n  Prompt history:/);
+    assert.match(stdout, /Remember queued history/);
+    assert.match(stdout, /└ Ctrl\+R/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat Ctrl+G opens editor and submits a multiline prompt", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-editor-sessions-"));
+  const cwd = mkdtempSync(join(tmpdir(), "orx-chat-editor-cwd-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  const stdin = new Readable({
+    read() {},
+  });
+  const editorCalls: Array<{ command: string; args: string[] }> = [];
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+
+  try {
+    const capture = createIo({
+      stdin,
+      cwd,
+      tty: true,
+      columns: 96,
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+        return new Response(
+          streamFrom([
+            'data: {"model":"openrouter/auto","choices":[{"delta":{"content":"Editor reply"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const run = runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      env: {
+        EDITOR: "test-editor --wait",
+        TMPDIR: cwd,
+      } as NodeJS.ProcessEnv,
+      editorRunner: async (command, args) => {
+        editorCalls.push({ command, args });
+        writeFileSync(args[args.length - 1], "Long editor prompt\nwith second line\n", "utf8");
+        return { code: 0 };
+      },
+    });
+
+    await waitForOutput(capture.stdout, / › /);
+    stdin.emit("keypress", "\u0007", { ctrl: true, name: "g" });
+    await waitForOutput(capture.stdout, /Editor reply/);
+    stdin.push("/exit\n");
+    stdin.push(null);
+
+    assert.equal(await run, 0);
+    assert.deepEqual(editorCalls.map((call) => [call.command, call.args[0]]), [["test-editor", "--wait"]]);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].messages.at(-1)?.content, "Long editor prompt\nwith second line");
+    const stdout = stripAnsi(capture.stdout()).replace(/\r/g, "");
+    assert.match(stdout, / › Long editor prompt +\n {3}with second line/);
+    assert.match(stdout, /• Editor reply\n\n  ─ openrouter\/auto/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat Ctrl+G warns when no editor is configured", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-editor-missing-sessions-"));
+  const cwd = mkdtempSync(join(tmpdir(), "orx-chat-editor-missing-cwd-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  const stdin = new Readable({
+    read() {},
+  });
+  let fetchCount = 0;
+
+  try {
+    const capture = createIo({
+      stdin,
+      cwd,
+      tty: true,
+      columns: 88,
+      fetch: async () => {
+        fetchCount += 1;
+        throw new Error("Ctrl+G without an editor should not call OpenRouter");
+      },
+    });
+
+    const run = runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      env: {
+        TMPDIR: cwd,
+      } as NodeJS.ProcessEnv,
+    });
+
+    await waitForOutput(capture.stdout, / › /);
+    stdin.emit("keypress", "\u0007", { ctrl: true, name: "g" });
+    await waitForOutput(capture.stdout, /Set VISUAL or EDITOR to use Ctrl\+G editor prompts\./);
+    stdin.push("/exit\n");
+    stdin.push(null);
+
+    assert.equal(await run, 0);
+    assert.equal(fetchCount, 0);
+    const stdout = stripAnsi(capture.stdout());
+    assert.match(stdout, /• warning editor/);
+    assert.match(stdout, /└ Ctrl\+G/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat Ctrl+G during an active turn queues editor submission", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-editor-active-sessions-"));
+  const cwd = mkdtempSync(join(tmpdir(), "orx-chat-editor-active-cwd-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  const stdin = new Readable({
+    read() {},
+  });
+  const firstFetchStarted = createDeferred();
+  const firstResponseCanFinish = createDeferred();
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+  let callCount = 0;
+
+  try {
+    const capture = createIo({
+      stdin,
+      cwd,
+      tty: true,
+      columns: 96,
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+        callCount += 1;
+
+        if (callCount === 1) {
+          firstFetchStarted.resolve();
+          return new Response(
+            delayedStreamFrom(
+              [
+                'data: {"model":"openrouter/auto","choices":[{"delta":{"content":"First editor reply"}}]}\n\n',
+              ],
+              firstResponseCanFinish.promise,
+            ),
+            { status: 200 },
+          );
+        }
+
+        return new Response(
+          streamFrom([
+            'data: {"model":"openrouter/auto","choices":[{"delta":{"content":"Queued editor reply"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const run = runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      env: {
+        EDITOR: "test-editor",
+        TMPDIR: cwd,
+      } as NodeJS.ProcessEnv,
+      editorRunner: async (_command, args) => {
+        writeFileSync(args[args.length - 1], "Queued editor prompt\n", "utf8");
+        return { code: 0 };
+      },
+    });
+
+    stdin.push("First prompt\n");
+    await firstFetchStarted.promise;
+    stdin.emit("keypress", "\u0007", { ctrl: true, name: "g" });
+    await waitForQueueRender();
+    assert.match(stripAnsi(capture.stdout()), /queued \(1\) · runs after current turn\n {2}1 \/ \/editor/);
+
+    firstResponseCanFinish.resolve();
+    await waitForOutput(capture.stdout, /Queued editor reply/);
+    stdin.push("/exit\n");
+    stdin.push(null);
+
+    assert.equal(await run, 0);
+    assert.equal(callCount, 2);
+    assert.equal(requests[0].messages.at(-1)?.content, "First prompt");
+    assert.equal(requests[1].messages.at(-1)?.content, "Queued editor prompt");
+    const stdout = stripAnsi(capture.stdout());
+    assert.match(stdout, /• First editor reply\n\n  ─ openrouter\/auto/);
+    assert.match(stdout, / › Queued editor prompt/);
+    assert.match(stdout, /• Queued editor reply\n\n  ─ openrouter\/auto/);
+    assert.equal(capture.stderr(), "");
   } finally {
     if (previousNoColor === undefined) {
       delete process.env.NO_COLOR;
@@ -405,6 +772,246 @@ test("chat diff command shows native working tree diff without a model request",
     assert.equal(capture.stderr(), "");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat diff command colors additions and removals while preserving plain text", async () => {
+  const cwd = createGitRepo();
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-tty-diff-sessions-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+
+  try {
+    writeFileSync(join(cwd, "tracked.txt"), "before\n");
+    git(cwd, "add", "tracked.txt");
+    git(cwd, "commit", "-m", "initial");
+    writeFileSync(join(cwd, "tracked.txt"), "after\n");
+
+    const capture = createIo({
+      stdin: Readable.from(["/diff\n", "/exit\n"]),
+      tty: true,
+      columns: 88,
+      fetch: async () => {
+        throw new Error("chat /diff should not call OpenRouter.");
+      },
+      cwd,
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      mcpConfigPath: join(sessionDirectory, "mcp", "profiles.json"),
+    });
+
+    const rawStdout = capture.stdout();
+    const stdout = stripAnsi(rawStdout);
+    assert.equal(exitCode, 0);
+    assert.match(stdout, /diff --git a\/tracked\.txt b\/tracked\.txt/);
+    assert.match(stdout, /-before/);
+    assert.match(stdout, /\+after/);
+    assert.match(rawStdout, /  \x1b\[38;5;167m-before\x1b\[0m/);
+    assert.match(rawStdout, /  \x1b\[38;5;108m\+after\x1b\[0m/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("chat copy command copies the latest assistant output without a model request", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-copy-sessions-"));
+  const clipboardCalls: Array<{ command: string; input: string }> = [];
+  let fetchCount = 0;
+
+  try {
+    const capture = createIo({
+      stdin: Readable.from(["Hello\n", "/copy\n", "/exit\n"]),
+      fetch: async () => {
+        fetchCount += 1;
+        return new Response(
+          streamFrom([
+            'data: {"model":"openrouter/auto","choices":[{"delta":{"content":"Copy this answer"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      clipboardPlatform: "darwin",
+      clipboardRunner: async (command, _args, options) => {
+        clipboardCalls.push({ command, input: options.input });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(fetchCount, 1);
+    assert.deepEqual(clipboardCalls, [
+      {
+        command: "/usr/bin/pbcopy",
+        input: "Copy this answer",
+      },
+    ]);
+    assert.match(capture.stdout(), /assistant: Copy this answer/);
+    assert.match(capture.stdout(), /Copied latest assistant output to clipboard \(16 chars\)\./);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat Ctrl+O copies the latest assistant output without a model request", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-copy-shortcut-sessions-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  const stdin = new Readable({
+    read() {},
+  });
+  const clipboardCalls: Array<{ command: string; input: string }> = [];
+  let fetchCount = 0;
+
+  try {
+    const capture = createIo({
+      stdin,
+      tty: true,
+      columns: 88,
+      fetch: async () => {
+        fetchCount += 1;
+        return new Response(
+          streamFrom([
+            'data: {"model":"openrouter/auto","choices":[{"delta":{"content":"Shortcut copy answer"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const run = runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      clipboardPlatform: "darwin",
+      clipboardRunner: async (command, _args, options) => {
+        clipboardCalls.push({ command, input: options.input });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+
+    stdin.push("Hello\n");
+    await waitForOutput(capture.stdout, /Shortcut copy answer/);
+    stdin.emit("keypress", "\u000f", { ctrl: true, name: "o" });
+    await waitForOutput(capture.stdout, /Copied latest assistant output to clipboard \(20 chars\)\./);
+    stdin.push("/exit\n");
+    stdin.push(null);
+
+    assert.equal(await run, 0);
+    assert.equal(fetchCount, 1);
+    assert.deepEqual(clipboardCalls, [
+      {
+        command: "/usr/bin/pbcopy",
+        input: "Shortcut copy answer",
+      },
+    ]);
+    const stdout = stripAnsi(capture.stdout());
+    assert.match(stdout, /• command \/copy/);
+    assert.match(stdout, /Copied latest assistant output to clipboard \(20 chars\)\./);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat Ctrl+O during an active turn queues copy after the assistant finishes", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-copy-shortcut-active-sessions-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  const stdin = new Readable({
+    read() {},
+  });
+  const firstFetchStarted = createDeferred();
+  const firstResponseCanFinish = createDeferred();
+  const clipboardCalls: Array<{ command: string; input: string }> = [];
+
+  try {
+    const capture = createIo({
+      stdin,
+      tty: true,
+      columns: 88,
+      fetch: async () => {
+        firstFetchStarted.resolve();
+        return new Response(
+          delayedStreamFrom(
+            [
+              'data: {"model":"openrouter/auto","choices":[{"delta":{"content":"Active copy answer"}}]}\n\n',
+            ],
+            firstResponseCanFinish.promise,
+          ),
+          { status: 200 },
+        );
+      },
+    });
+
+    const run = runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+      clipboardPlatform: "darwin",
+      clipboardRunner: async (command, _args, options) => {
+        clipboardCalls.push({ command, input: options.input });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+
+    stdin.push("Hello\n");
+    await firstFetchStarted.promise;
+    stdin.emit("keypress", "\u000f", { ctrl: true, name: "o" });
+    await waitForQueueRender();
+    assert.match(stripAnsi(capture.stdout()), /queued \(1\) · runs after current turn\n {2}1 \/ \/copy/);
+
+    firstResponseCanFinish.resolve();
+    await waitForOutput(capture.stdout, /Copied latest assistant output to clipboard \(18 chars\)\./);
+    stdin.push("/exit\n");
+    stdin.push(null);
+
+    assert.equal(await run, 0);
+    assert.deepEqual(clipboardCalls, [
+      {
+        command: "/usr/bin/pbcopy",
+        input: "Active copy answer",
+      },
+    ]);
+    const stdout = stripAnsi(capture.stdout());
+    assert.match(stdout, /• Active copy answer\n\n  ─ openrouter\/auto/);
+    assert.match(stdout, /• command \/copy\n  Copied latest assistant output to clipboard \(18 chars\)\.\n {2}└ Ctrl\+O/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
     rmSync(sessionDirectory, { recursive: true, force: true });
   }
 });
@@ -1977,22 +2584,75 @@ test("tty chat renders bottom status composer instead of the repeated plain foot
     const rawStdout = capture.stdout();
     const stdout = stripAnsi(rawStdout);
     assert.equal(exitCode, 0);
-    assert.match(stdout, /╭─ orx/);
-    assert.match(stdout, /orx › /);
-    assert.match(stdout, /work ⠋ assistant/);
+    assert.match(stdout, /^ ORX  OpenRouter-native coding workbench/);
+    assert.match(stdout, /model {4}openrouter\/auto/);
+    assert.match(stdout, /mode {5}auto/);
+    assert.match(stdout, /key {6}yes \(OPENROUTER_API_KEY\)/);
+    assert.match(stdout, /\/help commands/);
+    assert.match(stdout, / › /);
+    assert.match(stdout, /openrouter\/auto · auto · \/tmp\/orx-chat-test · never\/danger-full-access/);
+    assert.match(stdout, /⠋ assistant/);
     assert.match(
       rawStdout,
-      /\r\x1b\[2K\x1b\[1F\x1b\[2K\x1b\[1F\x1b\[2Kassistant: TTY reply/,
+      /\r\x1b\[2K[\s\S]*\n\x1b\[2m•\x1b\[0m /,
     );
-    assert.match(stdout, /assistant: TTY reply/);
-    assert.match(stdout, /route auto/);
-    assert.doesNotMatch(stdout, /model openrouter\/auto/);
-    assert.match(stdout, /mode auto/);
-    assert.match(stdout, /ctx \[[#-]{8}\] \d+\.\d% approx/);
-    assert.match(stdout, /cost \$0\.000200 meta 1\/1/);
-    assert.match(stdout, /perm never\/danger-full-access/);
+    assert.match(stdout, /• TTY reply\n\n  ─ openrouter\/auto · 3 tokens · \$0\.000200/);
+    assert.match(stdout, /ctx (\d+%|<1%)/);
+    assert.match(stdout, /\$0\.000200/);
+    assert.doesNotMatch(stdout, /[╭╰│▕░]/);
+    assert.match(stdout, /never\/danger-full-access/);
     assert.doesNotMatch(stdout, /cwd: .* \| mode: .* \| model:/);
     assert.doesNotMatch(stdout, /session: .* @ /);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat wraps long assistant output inside the message block", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-sessions-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+
+  try {
+    const capture = createIo({
+      stdin: Readable.from(["Hello\n", "/exit\n"]),
+      tty: true,
+      columns: 42,
+      fetch: async () =>
+        new Response(
+          streamFrom([
+            sse({
+              model: "openrouter/auto",
+              choices: [{ delta: { content: "This assistant response wraps " } }],
+            }),
+            sse({
+              choices: [{ delta: { content: "cleanly across the ORX block gutter." } }],
+            }),
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        ),
+    });
+
+    const exitCode = await runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    const stdout = stripAnsi(capture.stdout());
+    assert.equal(exitCode, 0);
+    assert.match(
+      stdout,
+      /• This assistant response wraps cleanly\n  across the ORX block gutter\.\n\n  ─ openrouter\/auto/,
+    );
     assert.equal(capture.stderr(), "");
   } finally {
     if (previousNoColor === undefined) {
@@ -2028,8 +2688,9 @@ test("tty chat renders compact command palette without a model request", async (
 
     const stdout = stripAnsi(capture.stdout());
     assert.equal(exitCode, 0);
+    assert.match(stdout, /• command \/commands \/commands plugin/);
     assert.match(stdout, /Command palette matching "plugin" \(7\)/);
-    assert.match(stdout, /\/plugins \[catalog \[list\|inspect\|updates\|update\|add-local\|add-git\|remo/);
+    assert.match(stdout, /\/plugins \[catalog/);
     assert.match(stdout, /\/plugin \[list\|status\]/);
     assert.match(stdout, /\/bins \[list\|inspect\|trust\|untrust\|run\]/);
     assert.match(stdout, /\/skills \[list\|status\|activate <id>\]/);
@@ -2037,6 +2698,71 @@ test("tty chat renders compact command palette without a model request", async (
     assert.match(stdout, /\/rules \[list\|status\|activate <id>\]/);
     assert.doesNotMatch(stdout, /Integrations:/);
     assert.doesNotMatch(stdout, /\/model <id-or-search>/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat Ctrl+L clears visible terminal and redraws ORX composer without resetting session", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-clear-sessions-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  const stdin = new Readable({
+    read() {},
+  });
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+
+  try {
+    const capture = createIo({
+      stdin,
+      tty: true,
+      columns: 88,
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+
+        return new Response(
+          streamFrom([
+            'data: {"model":"openrouter/auto","choices":[{"delta":{"content":"After clear"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const run = runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    await waitForQueueRender();
+    stdin.emit("keypress", "\f", { ctrl: true, name: "l" });
+    await waitForQueueRender();
+    stdin.push("Prompt after clear\n");
+    stdin.push("/exit\n");
+    stdin.push(null);
+
+    assert.equal(await run, 0);
+    const rawStdout = capture.stdout();
+    const clearIndex = rawStdout.indexOf("\x1b[1;1H\x1b[0J");
+    assert.notEqual(clearIndex, -1);
+    const afterClear = stripAnsi(rawStdout.slice(clearIndex));
+    assert.match(afterClear, /^ ORX  OpenRouter-native coding workbench/);
+    assert.match(afterClear, / › /);
+    assert.match(afterClear, /openrouter\/auto · auto/);
+    assert.match(afterClear, / › Prompt after clear/);
+    assert.match(afterClear, /• After clear\n\n  ─ openrouter\/auto/);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].messages.at(-1)?.content, "Prompt after clear");
     assert.equal(capture.stderr(), "");
   } finally {
     if (previousNoColor === undefined) {
@@ -2302,13 +3028,13 @@ test("tty chat renders activity while a tool is active", async () => {
     const stdout = stripAnsi(rawStdout);
     assert.equal(exitCode, 0);
     assert.equal(callCount, 2);
-    assert.match(rawStdout, /\x1b\[96m\[tool\]\x1b\[0m read_file/);
-    assert.match(rawStdout, /\x1b\[92mok\x1b\[0m/);
-    assert.match(stdout, /work ⠋ assistant/);
-    assert.match(stdout, /work [⠙⠹⠸⠼⠴⠦⠧⠇⠏⠋] tool read_/);
-    assert.match(stdout, /\[tool\] read_file path="sample\.txt"/);
-    assert.match(stdout, /\[tool\] read_file ok duration=\d+ms/);
-    assert.match(stdout, /assistant: Read complete\./);
+    assert.match(rawStdout, /\x1b\[38;5;75m•\x1b\[0m \x1b\[38;5;75mtool read_file\x1b\[0m/);
+    assert.match(rawStdout, /└\x1b\[0m \x1b\[38;5;114mok\x1b\[0m/);
+    assert.match(stdout, /⠋ assistant/);
+    assert.match(stdout, /[⠙⠹⠸⠼⠴⠦⠧⠇⠏⠋] tool read_/);
+    assert.match(stdout, /• tool read_file path="sample\.txt"/);
+    assert.match(stdout, /└ ok · duration=\d+ms/);
+    assert.match(stdout, /• Read complete\.\n\n  ─ openrouter\/auto/);
     assert.doesNotMatch(stdout, /cwd: .* \| mode: .* \| model:/);
     assert.equal(capture.stderr(), "");
   } finally {
@@ -2318,6 +3044,186 @@ test("tty chat renders activity while a tool is active", async () => {
       process.env.NO_COLOR = previousNoColor;
     }
     rmSync(cwd, { recursive: true, force: true });
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat shows queued input while the assistant is still working", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-queued-sessions-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  const stdin = new Readable({
+    read() {},
+  });
+  const firstFetchStarted = createDeferred();
+  const firstResponseCanFinish = createDeferred();
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+  let callCount = 0;
+
+  try {
+    const capture = createIo({
+      stdin,
+      tty: true,
+      columns: 96,
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+        callCount += 1;
+
+        if (callCount === 1) {
+          firstFetchStarted.resolve();
+          return new Response(
+            delayedStreamFrom(
+              [
+                'data: {"model":"openrouter/auto","choices":[{"delta":{"content":"First reply"}}]}\n\n',
+              ],
+              firstResponseCanFinish.promise,
+            ),
+            { status: 200 },
+          );
+        }
+
+        return new Response(
+          streamFrom([
+            'data: {"model":"openrouter/auto","choices":[{"delta":{"content":"Second reply"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const run = runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    stdin.push("First prompt\n");
+    await firstFetchStarted.promise;
+    stdin.push("Second prompt\n");
+    stdin.push("/exit\n");
+    await waitForQueueRender();
+
+    const queuedStdout = stripAnsi(capture.stdout());
+    assert.match(queuedStdout, /queued \(2\) · runs after current turn/);
+    assert.match(queuedStdout, / {2}1 › Second prompt/);
+    assert.match(queuedStdout, / {2}2 \/ \/exit/);
+
+    firstResponseCanFinish.resolve();
+    stdin.push(null);
+    assert.equal(await run, 0);
+
+    const stdout = stripAnsi(capture.stdout());
+    assert.equal(callCount, 2);
+    assert.equal(requests[0].messages.at(-1)?.content, "First prompt");
+    assert.equal(requests[1].messages.at(-1)?.content, "Second prompt");
+    assert.equal(requests[0].messages[0].role, "system");
+    assert.match(String(requests[0].messages[0].content), /You are ORX/);
+    assert.match(stdout, /• First reply\n\n  ─ openrouter\/auto/);
+    assert.match(stdout, /• Second reply\n\n  ─ openrouter\/auto/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("tty chat Ctrl+L during an active turn preserves queued follow-ups", async () => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), "orx-chat-clear-active-sessions-"));
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  const stdin = new Readable({
+    read() {},
+  });
+  const firstFetchStarted = createDeferred();
+  const firstResponseCanFinish = createDeferred();
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+  let callCount = 0;
+
+  try {
+    const capture = createIo({
+      stdin,
+      tty: true,
+      columns: 96,
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push({ messages: body.messages });
+        callCount += 1;
+
+        if (callCount === 1) {
+          firstFetchStarted.resolve();
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              async start(controller) {
+                await firstResponseCanFinish.promise;
+                controller.enqueue(
+                  encoder.encode(
+                    'data: {"model":"openrouter/auto","choices":[{"delta":{"content":"First active reply"}}]}\n\n',
+                  ),
+                );
+                controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+                controller.close();
+              },
+            }),
+            { status: 200 },
+          );
+        }
+
+        return new Response(
+          streamFrom([
+            'data: {"model":"openrouter/auto","choices":[{"delta":{"content":"Second active reply"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    const run = runChat({
+      apiKey: "test-key",
+      loadedConfig: baseLoadedConfig(),
+      io: capture.io,
+      sessionDirectory,
+    });
+
+    stdin.push("First active prompt\n");
+    await firstFetchStarted.promise;
+    stdin.emit("keypress", "\f", { ctrl: true, name: "l" });
+    await waitForQueueRender();
+    stdin.push("Second active prompt\n");
+    stdin.push("/exit\n");
+    await waitForQueueRender();
+
+    const clearIndex = capture.stdout().indexOf("\x1b[1;1H\x1b[0J");
+    assert.notEqual(clearIndex, -1);
+    const afterClear = stripAnsi(capture.stdout().slice(clearIndex));
+    assert.match(afterClear, /^ ORX  OpenRouter-native coding workbench/);
+    assert.match(afterClear, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] assistant/);
+    assert.match(stripAnsi(capture.stdout()), /queued \(2\) · runs after current turn/);
+
+    firstResponseCanFinish.resolve();
+    stdin.push(null);
+    assert.equal(await run, 0);
+
+    const stdout = stripAnsi(capture.stdout());
+    assert.equal(callCount, 2);
+    assert.equal(requests[0].messages.at(-1)?.content, "First active prompt");
+    assert.equal(requests[1].messages.at(-1)?.content, "Second active prompt");
+    assert.match(stdout, /• First active reply\n\n  ─ openrouter\/auto/);
+    assert.match(stdout, /• Second active reply\n\n  ─ openrouter\/auto/);
+    assert.equal(capture.stderr(), "");
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
     rmSync(sessionDirectory, { recursive: true, force: true });
   }
 });
@@ -2420,6 +3326,61 @@ function streamFrom(chunks: string[]): ReadableStream<Uint8Array> {
       }
       controller.close();
     },
+  });
+}
+
+function delayedStreamFrom(
+  chunks: string[],
+  closeAfter: Promise<void>,
+): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+      }
+      await closeAfter;
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
+    },
+  });
+}
+
+function createDeferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = () => {};
+  const promise = new Promise<void>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
+
+function waitForQueueRender(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 25);
+  });
+}
+
+function waitForOutput(
+  readOutput: () => string,
+  pattern: RegExp,
+  timeoutMs = 1_000,
+): Promise<void> {
+  const startedAt = Date.now();
+  return new Promise((resolve, reject) => {
+    const poll = () => {
+      if (pattern.test(stripAnsi(readOutput()))) {
+        resolve();
+        return;
+      }
+
+      if (Date.now() - startedAt >= timeoutMs) {
+        reject(new Error(`timed out waiting for output matching ${pattern}`));
+        return;
+      }
+
+      setTimeout(poll, 10);
+    };
+
+    poll();
   });
 }
 

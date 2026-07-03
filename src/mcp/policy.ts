@@ -18,6 +18,13 @@ import {
   type McpModelToolGrantRecord,
   type McpToolGrantRecord,
 } from "./config.js";
+import type { TerminalRenderOptions } from "../terminal/render.js";
+import {
+  formatTerminalKeyValues,
+  renderTerminalBlock,
+  shouldUseHumanTtyLayout,
+  type TerminalLayout,
+} from "../terminal/ui.js";
 
 export interface McpStatusSummary {
   activeProfileIds: string[];
@@ -42,6 +49,11 @@ export interface McpStatusSummary {
   staleToolGrantCount: number;
   modelToolGrantCount: number;
   staleModelToolGrantCount: number;
+}
+
+export interface McpStatusRenderOptions {
+  layout?: TerminalLayout;
+  renderOptions?: TerminalRenderOptions;
 }
 
 export type McpToolPolicyDecision =
@@ -741,7 +753,14 @@ export function revokeMcpModelToolGrant(
   };
 }
 
-export function renderMcpStatus(summary: McpStatusSummary = getMcpStatusSummary()): string {
+export function renderMcpStatus(
+  summary: McpStatusSummary = getMcpStatusSummary(),
+  options: McpStatusRenderOptions = {},
+): string {
+  if (shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    return renderMcpStatusTty(summary, options.renderOptions);
+  }
+
   const active = summary.activeProfileIds.length > 0 ? summary.activeProfileIds.join(",") : "none";
   const lines = [
     "MCP",
@@ -775,6 +794,95 @@ export function renderMcpStatus(summary: McpStatusSummary = getMcpStatusSummary(
   }
 
   return lines.join("\n");
+}
+
+function renderMcpStatusTty(
+  summary: McpStatusSummary,
+  renderOptions?: TerminalRenderOptions,
+): string {
+  const active = summary.activeProfileIds.length > 0 ? summary.activeProfileIds.join(", ") : "none";
+  const blocks = [
+    renderTerminalBlock({
+      title: "MCP",
+      subtitle: `${summary.profiles.length} profiles`,
+      renderOptions,
+      body: [
+        formatTerminalKeyValues(
+          [
+            ["active", active],
+            ["servers", String(summary.serverCount)],
+            ["auth", String(summary.authBearingServerCount)],
+            ["risky transports", String(summary.riskyTransportCount)],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["allowed tools", String(summary.policyAllowedToolCount)],
+            ["denied tools", String(summary.policyDeniedToolCount)],
+            ["write", String(summary.writeEnabledToolCount)],
+            ["billable", String(summary.billableToolCount)],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["tool grants", String(summary.toolGrantCount)],
+            ["stale", String(summary.staleToolGrantCount)],
+            ["model grants", String(summary.modelToolGrantCount)],
+            ["stale model", String(summary.staleModelToolGrantCount)],
+          ],
+          { renderOptions },
+        ),
+      ],
+      footer: "normal inference uses direct OpenRouter REST",
+    }),
+    renderTerminalBlock({
+      title: "profiles",
+      renderOptions,
+      body:
+        summary.profiles.length === 0
+          ? ["none"]
+          : summary.profiles.map((profile) =>
+              formatTerminalKeyValues(
+                [
+                  ["id", profile.id],
+                  ["state", profile.state],
+                  ["transport", profile.transport.kind],
+                  ["risk", profile.riskLevel],
+                  ["auth", profile.authRequired ? "yes" : "no"],
+                  ["write", profile.writeCapable ? "yes" : "no"],
+                  ["tools", String(profile.tools.length)],
+                  ["url", profile.transport.url],
+                ],
+                { renderOptions },
+              ),
+            ),
+    }),
+    renderTerminalBlock({
+      title: "policy",
+      renderOptions,
+      body: [
+        formatTerminalKeyValues(
+          [
+            ["default denied", String(summary.configuredDeniedToolCount)],
+            ["configured billable", String(summary.configuredBillableToolCount)],
+            ["configured risky", String(summary.configuredRiskyToolCount)],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["registry hash", summary.registryHash],
+            ["pending schema", formatSchemaChanges(summary.pendingSchemaChangeCount)],
+          ],
+          { renderOptions },
+        ),
+      ],
+    }),
+  ];
+
+  return blocks.join("\n");
 }
 
 export interface FormatMcpProfileOptions {

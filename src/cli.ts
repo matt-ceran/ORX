@@ -297,9 +297,16 @@ import {
   runSecurityScanner,
   type ScannerProcessRunner,
 } from "./security/index.js";
-import { createDoctorReport } from "./doctor.js";
+import { createDoctorReport, renderDoctorReport } from "./doctor.js";
 import { GUIDE_USAGE, renderOperatorGuide } from "./guide.js";
 import { formatStatus } from "./status.js";
+import type { TerminalRenderOptions } from "./terminal/render.js";
+import {
+  padVisible,
+  renderTerminalBlock,
+  shouldUseHumanTtyLayout,
+  type TerminalLayout,
+} from "./terminal/ui.js";
 import {
   discoverTestTargets,
   parseTestReadinessJsonFlag,
@@ -596,7 +603,7 @@ export async function runCli(
   const first = args[0];
 
   if (first === "help" || first === "--help" || first === "-h") {
-    writeLine(io.stdout, helpText());
+    writeLine(io.stdout, helpText({ renderOptions: { stream: io.stdout } }));
     return 0;
   }
 
@@ -859,7 +866,14 @@ export async function runCli(
       delegationTeamConfigPath,
       delegationPolicyPath,
     });
-    writeLine(io.stdout, doctorOptions.json ? JSON.stringify(report.json, null, 2) : report.text);
+    writeLine(
+      io.stdout,
+      doctorOptions.json
+        ? JSON.stringify(report.json, null, 2)
+        : renderDoctorReport(report, {
+            renderOptions: { stream: io.stdout, theme: loadedConfig.config.theme },
+          }),
+    );
     if (doctorOptions.strict && !report.strictReady) {
       writeLine(
         io.stderr,
@@ -958,7 +972,13 @@ export async function runCli(
   return 1;
 }
 
-function helpText(): string {
+function helpText(
+  options: { renderOptions?: TerminalRenderOptions; layout?: TerminalLayout } = {},
+): string {
+  if (shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    return renderTtyHelp(options.renderOptions);
+  }
+
   return [
     "ORX",
     "",
@@ -1013,6 +1033,88 @@ function helpText(): string {
     "  -h, --help              Show this help message",
     "  -v, --version           Show the current version",
   ].join("\n");
+}
+
+function renderTtyHelp(renderOptions?: TerminalRenderOptions): string {
+  return [
+    renderTerminalBlock({
+      title: "ORX",
+      subtitle: "OpenRouter-native coding agent",
+      body: [
+        ...formatHelpRows([
+          [BIN_NAME, "Start an interactive coding session in this directory"],
+          [`${BIN_NAME} ask "prompt"`, "Send one prompt and stream the answer"],
+          [`${BIN_NAME} models [query]`, "Search OpenRouter models"],
+          [`${BIN_NAME} status`, "Show runtime, config, permissions, and integrations"],
+        ]),
+      ],
+      footer: "default permissions never/danger-full-access",
+      tone: "accent",
+      renderOptions,
+    }),
+    renderTerminalBlock({
+      title: "daily",
+      body: formatHelpRows([
+        ["doctor", "No-network readiness check"],
+        ["guide", "No-network quickstart"],
+        ["auth", "OpenRouter API-key setup status"],
+        ["config", "Show or edit safe ORX config keys"],
+        ["profile", "List, inspect, save, use, or delete profiles"],
+        ["history", "Search or clear prompt history"],
+      ]),
+      renderOptions,
+    }),
+    renderTerminalBlock({
+      title: "local tools",
+      body: formatHelpRows([
+        ["tests", "Discover or run native test targets"],
+        ["code", "Maps, symbols, references, imports, calls, ast-grep, and tree-sitter"],
+        ["scanners", "List, inspect, plan, or run local security scanners"],
+        ["scan", "Alias for a local scanner run"],
+        ["diagnostics", "List, inspect, or run local diagnostics profiles"],
+        ["diag", "Alias for diagnostics"],
+      ]),
+      renderOptions,
+    }),
+    renderTerminalBlock({
+      title: "integrations",
+      body: formatHelpRows([
+        ["mcp", "Plan, inspect, enable, auth, call, and grant MCP policy"],
+        ["plugins", "Catalog, scaffold, validate, install, enable, or disable plugins"],
+        ["bins", "List, inspect, trust, untrust, or run plugin bins"],
+        ["hooks", "List, inspect, trust, untrust, or run plugin hooks"],
+        ["research", "Fetch, search, browse, or plan research profiles"],
+        ["web", "Alias for explicit web fetch, search, browse, and profiles"],
+        ["orchestrator", "Show delegation readiness or refuse session-less changes"],
+        ["delegate", "Show/refuse session delegate changes, policy, or saved teams"],
+        ["delegates", "Show delegate readiness, execution policy, or saved teams"],
+      ]),
+      renderOptions,
+    }),
+    renderTerminalBlock({
+      title: "options",
+      body: [
+        ...formatHelpRows([
+          ["--profile <id>", "Apply a saved ORX profile"],
+          ["--model <slug>", "Use an exact OpenRouter model slug with ask"],
+          ["--mode <mode>", "Use auto, fusion, or exact with ask"],
+          ["--fusion <preset>", "Use an OpenRouter Fusion preset with ask"],
+          ["--mcp-tools", "Expose model-granted read-only non-billable MCP tools"],
+        ]),
+      ],
+      footer: `${BIN_NAME} <namespace> help for focused usage`,
+      tone: "muted",
+      renderOptions,
+    }),
+  ].join("\n");
+}
+
+function formatHelpRows(rows: Array<[string, string]>): string[] {
+  const labelWidth = Math.min(
+    24,
+    Math.max(...rows.map(([label]) => label.length), 1),
+  );
+  return rows.map(([label, description]) => `${padVisible(label, labelWidth)}  ${description}`);
 }
 
 function runChatCommand(
@@ -1147,7 +1249,12 @@ async function runTestsCommand(args: string[], io: CliIo): Promise<number> {
       return 1;
     }
     const discovery = discoverTestTargets(io.cwd);
-    writeLine(io.stdout, jsonFlag.json ? renderTestTargetsJson(discovery) : renderTestTargets(discovery));
+    writeLine(
+      io.stdout,
+      jsonFlag.json
+        ? renderTestTargetsJson(discovery)
+        : renderTestTargets(discovery, { renderOptions: { stream: io.stdout } }),
+    );
     return 0;
   }
 
@@ -1211,14 +1318,24 @@ function runCodeCommand(args: string[], io: CliIo): number {
 function runCodeMapCommand(args: string[], io: CliIo): number {
   const parsed = parseCodeJsonArgs(args);
   const map = createCodeMap({ cwd: io.cwd, targetPath: parsed.value });
-  writeLine(io.stdout, parsed.json ? renderCodeMapJson(map) : renderCodeMap(map));
+  writeLine(
+    io.stdout,
+    parsed.json
+      ? renderCodeMapJson(map)
+      : renderCodeMap(map, { renderOptions: { stream: io.stdout } }),
+  );
   return 0;
 }
 
 function runCodeSymbolsCommand(args: string[], io: CliIo): number {
   const parsed = parseCodeJsonArgs(args);
   const index = createCodeSymbolIndex({ cwd: io.cwd, query: parsed.value });
-  writeLine(io.stdout, parsed.json ? renderCodeSymbolsJson(index) : renderCodeSymbols(index));
+  writeLine(
+    io.stdout,
+    parsed.json
+      ? renderCodeSymbolsJson(index)
+      : renderCodeSymbols(index, { renderOptions: { stream: io.stdout } }),
+  );
   return 0;
 }
 
@@ -1230,21 +1347,36 @@ function runCodeReferencesCommand(args: string[], io: CliIo): number {
     return 1;
   }
   const index = createCodeReferenceIndex({ cwd: io.cwd, query });
-  writeLine(io.stdout, parsed.json ? renderCodeReferencesJson(index) : renderCodeReferences(index));
+  writeLine(
+    io.stdout,
+    parsed.json
+      ? renderCodeReferencesJson(index)
+      : renderCodeReferences(index, { renderOptions: { stream: io.stdout } }),
+  );
   return 0;
 }
 
 function runCodeImportGraphCommand(args: string[], io: CliIo): number {
   const parsed = parseCodeJsonArgs(args);
   const graph = createCodeImportGraph({ cwd: io.cwd, query: parsed.value });
-  writeLine(io.stdout, parsed.json ? renderCodeImportGraphJson(graph) : renderCodeImportGraph(graph));
+  writeLine(
+    io.stdout,
+    parsed.json
+      ? renderCodeImportGraphJson(graph)
+      : renderCodeImportGraph(graph, { renderOptions: { stream: io.stdout } }),
+  );
   return 0;
 }
 
 function runCodeCallGraphCommand(args: string[], io: CliIo): number {
   const parsed = parseCodeJsonArgs(args);
   const graph = createCodeCallGraph({ cwd: io.cwd, query: parsed.value });
-  writeLine(io.stdout, parsed.json ? renderCodeCallGraphJson(graph) : renderCodeCallGraph(graph));
+  writeLine(
+    io.stdout,
+    parsed.json
+      ? renderCodeCallGraphJson(graph)
+      : renderCodeCallGraph(graph, { renderOptions: { stream: io.stdout } }),
+  );
   return 0;
 }
 
@@ -2170,12 +2302,26 @@ function runConfigCommand(
   }
 
   if (subcommand === "show" || subcommand === "status" || subcommand === "list") {
-    writeLine(io.stdout, renderConfigShow(loadedConfig, { cwd: io.cwd, env }));
+    writeLine(
+      io.stdout,
+      renderConfigShow(loadedConfig, {
+        cwd: io.cwd,
+        env,
+        renderOptions: { stream: io.stdout, theme: loadedConfig.config.theme },
+      }),
+    );
     return 0;
   }
 
   if (subcommand === "path" || subcommand === "paths") {
-    writeLine(io.stdout, renderConfigPaths(loadedConfig, { cwd: io.cwd, env }));
+    writeLine(
+      io.stdout,
+      renderConfigPaths(loadedConfig, {
+        cwd: io.cwd,
+        env,
+        renderOptions: { stream: io.stdout, theme: loadedConfig.config.theme },
+      }),
+    );
     return 0;
   }
 
@@ -2258,7 +2404,7 @@ function runOpenRouterAuthCommand(
     if (!acceptsNoArgs(subcommand)) {
       return 1;
     }
-    writeLine(io.stdout, renderOpenRouterAuthStatus(report));
+    writeLine(io.stdout, renderOpenRouterAuthStatus(report, { renderOptions: { stream: io.stdout } }));
     return 0;
   }
 
@@ -2266,7 +2412,7 @@ function runOpenRouterAuthCommand(
     if (!acceptsNoArgs(subcommand)) {
       return 1;
     }
-    writeLine(io.stdout, renderOpenRouterAuthSetup(report));
+    writeLine(io.stdout, renderOpenRouterAuthSetup(report, { renderOptions: { stream: io.stdout } }));
     return 0;
   }
 
@@ -2277,7 +2423,12 @@ function runOpenRouterAuthCommand(
     try {
       const result = initializeOpenRouterAuthEnvFile({ env, cwd: io.cwd });
       const updatedReport = createOpenRouterAuthReport({ env, cwd: io.cwd });
-      writeLine(io.stdout, renderOpenRouterAuthEnvFileInitResult(result, updatedReport));
+      writeLine(
+        io.stdout,
+        renderOpenRouterAuthEnvFileInitResult(result, updatedReport, {
+          renderOptions: { stream: io.stdout },
+        }),
+      );
       return 0;
     } catch (error) {
       writeLine(
@@ -2571,7 +2722,9 @@ async function runPluginsCommand(
     });
     writeLine(
       io.stdout,
-      parsed.json ? renderPluginReviewJson(review) : renderPluginReview(review),
+      parsed.json
+        ? renderPluginReviewJson(review)
+        : renderPluginReview(review, { renderOptions: { stream: io.stdout } }),
     );
     return 0;
   }
@@ -2887,7 +3040,7 @@ async function runMcpCommand(
         pendingSchemaChangeCount: summary.pendingSchemaChangeCount,
       },
     });
-    writeLine(io.stdout, renderMcpStatus(summary));
+    writeLine(io.stdout, renderMcpStatus(summary, { renderOptions: { stream: io.stdout } }));
     return 0;
   }
 

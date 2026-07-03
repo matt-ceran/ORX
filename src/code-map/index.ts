@@ -6,6 +6,13 @@ import {
 } from "node:fs";
 import { basename, extname, join, posix, relative, resolve } from "node:path";
 import { redactSecrets } from "../mcp/audit.js";
+import type { TerminalRenderOptions } from "../terminal/render.js";
+import {
+  formatTerminalKeyValues,
+  renderTerminalBlock,
+  shouldUseHumanTtyLayout,
+  type TerminalLayout,
+} from "../terminal/ui.js";
 export {
   CODE_AST_GREP_USAGE,
   SLASH_CODE_AST_GREP_USAGE,
@@ -59,6 +66,11 @@ export interface CodeMapOptions {
   maxEntries?: number;
   maxDepth?: number;
   maxSourceBytes?: number;
+}
+
+export interface CodeMapRenderOptions {
+  layout?: TerminalLayout;
+  renderOptions?: TerminalRenderOptions;
 }
 
 export interface CodeMap {
@@ -493,7 +505,11 @@ export function createCodeMap(options: CodeMapOptions = {}): CodeMap {
   };
 }
 
-export function renderCodeMap(map: CodeMap): string {
+export function renderCodeMap(map: CodeMap, options: CodeMapRenderOptions = {}): string {
+  if (shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    return renderCodeMapTty(map, options.renderOptions);
+  }
+
   const lines = [
     "Code Map",
     `  root: ${sanitizeInline(map.root)}`,
@@ -571,6 +587,153 @@ export function renderCodeMap(map: CodeMap): string {
   return lines.join("\n");
 }
 
+function renderCodeMapTty(map: CodeMap, renderOptions?: TerminalRenderOptions): string {
+  const blocks = [
+    renderTerminalBlock({
+      title: "Code Map",
+      subtitle: map.truncated ? "truncated" : undefined,
+      renderOptions,
+      body: [
+        formatTerminalKeyValues(
+          [
+            ["root", sanitizeInline(map.root)],
+            ["scanned", `${map.scannedFiles}${map.truncated ? " truncated" : ""}`],
+            ["source", String(map.sourceFiles.length)],
+          ],
+          { renderOptions },
+        ),
+      ],
+      footer: "orx code map [path] [--json]",
+    }),
+    renderTerminalBlock({
+      title: "languages",
+      renderOptions,
+      body:
+        map.languageCounts.length === 0
+          ? ["none"]
+          : map.languageCounts.map((entry) =>
+              formatTerminalKeyValues(
+                [
+                  ["language", sanitizeInline(entry.language)],
+                  ["files", String(entry.files)],
+                ],
+                { renderOptions },
+              ),
+            ),
+    }),
+    renderTerminalBlock({
+      title: "key files",
+      renderOptions,
+      body:
+        map.keyFiles.length === 0
+          ? ["none"]
+          : [
+              ...map.keyFiles.slice(0, 20).map((file) => sanitizeInline(file)),
+              ...(map.keyFiles.length > 20
+                ? [`${map.keyFiles.length - 20} more key files omitted`]
+                : []),
+            ],
+    }),
+    renderTerminalBlock({
+      title: "entrypoints",
+      renderOptions,
+      body:
+        map.entrypoints.length === 0
+          ? ["none"]
+          : [
+              ...map.entrypoints.slice(0, 20).map((entrypoint) =>
+                formatTerminalKeyValues(
+                  [
+                    ["kind", entrypoint.kind],
+                    ["label", sanitizeInline(entrypoint.label)],
+                    ["path", sanitizeInline(entrypoint.path)],
+                  ],
+                  { renderOptions },
+                ),
+              ),
+              ...(map.entrypoints.length > 20
+                ? [`${map.entrypoints.length - 20} more entrypoints omitted`]
+                : []),
+            ],
+    }),
+    renderTerminalBlock({
+      title: "source files",
+      renderOptions,
+      body:
+        map.sourceFiles.length === 0
+          ? ["none"]
+          : [
+              ...map.sourceFiles.slice(0, MAX_RENDERED_SOURCE_FILES).flatMap((file) => [
+                formatTerminalKeyValues(
+                  [
+                    ["path", sanitizeInline(file.path)],
+                    ["language", sanitizeInline(file.language)],
+                    ["bytes", String(file.bytes)],
+                  ],
+                  { renderOptions },
+                ),
+                `  ${formatListField("exports", file.exports, MAX_RENDERED_SYMBOLS)}`,
+                `  ${formatListField("imports", file.imports, MAX_RENDERED_IMPORTS)}`,
+              ]),
+              ...(map.sourceFiles.length > MAX_RENDERED_SOURCE_FILES
+                ? [`${map.sourceFiles.length - MAX_RENDERED_SOURCE_FILES} more source files omitted`]
+                : []),
+            ],
+    }),
+  ];
+
+  if (map.omissions.length > 0) {
+    blocks.push(
+      renderTerminalBlock({
+        title: "omitted",
+        tone: "warning",
+        renderOptions,
+        body: [
+          ...map.omissions.slice(0, MAX_RENDERED_OMISSIONS).map((omission) =>
+            formatTerminalKeyValues(
+              [
+                ["reason", sanitizeInline(omission.reason)],
+                ["path", omission.path ? sanitizeInline(omission.path) : undefined],
+              ],
+              { renderOptions },
+            ),
+          ),
+          ...(map.omissions.length > MAX_RENDERED_OMISSIONS
+            ? [`${map.omissions.length - MAX_RENDERED_OMISSIONS} more omissions omitted`]
+            : []),
+        ],
+      }),
+    );
+  }
+
+  return blocks.join("\n");
+}
+
+function renderCodeOmissionsBlock(
+  omissions: CodeMapOmission[],
+  renderOptions?: TerminalRenderOptions,
+): string {
+  return renderTerminalBlock({
+    title: "omitted",
+    tone: "warning",
+    renderOptions,
+    body: [
+      ...omissions.slice(0, MAX_RENDERED_OMISSIONS).map((omission) =>
+        formatTerminalKeyValues(
+          [
+            ["reason", sanitizeInline(omission.reason)],
+            ["path", omission.path ? sanitizeInline(omission.path) : undefined],
+          ],
+          { renderOptions },
+        ),
+      ),
+      ...(omissions.length > MAX_RENDERED_OMISSIONS
+        ? [`${omissions.length - MAX_RENDERED_OMISSIONS} more omissions omitted`]
+        : []),
+    ],
+  });
+}
+
 export function renderCodeMapJson(map: CodeMap): string {
   return JSON.stringify({
     schema_version: 1,
@@ -625,7 +788,14 @@ export function createCodeSymbolIndex(options: CodeSymbolIndexOptions = {}): Cod
   };
 }
 
-export function renderCodeSymbols(index: CodeSymbolIndex): string {
+export function renderCodeSymbols(
+  index: CodeSymbolIndex,
+  options: CodeMapRenderOptions = {},
+): string {
+  if (shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    return renderCodeSymbolsTty(index, options.renderOptions);
+  }
+
   const lines = [
     "Code Symbols",
     `  root: ${sanitizeInline(index.root)}`,
@@ -676,6 +846,61 @@ export function renderCodeSymbols(index: CodeSymbolIndex): string {
 
   lines.push("  usage: orx code symbols [query] [--json]");
   return lines.join("\n");
+}
+
+function renderCodeSymbolsTty(
+  index: CodeSymbolIndex,
+  renderOptions?: TerminalRenderOptions,
+): string {
+  const renderedCount = Math.min(index.symbols.length, MAX_RENDERED_CODE_SYMBOLS);
+  const omitted = Math.max(0, index.totalSymbols - renderedCount);
+  const blocks = [
+    renderTerminalBlock({
+      title: "Code Symbols",
+      subtitle: index.truncated ? "scan truncated" : undefined,
+      renderOptions,
+      body: [
+        formatTerminalKeyValues(
+          [
+            ["root", sanitizeInline(index.root)],
+            ["symbols", `${index.totalSymbols}${index.truncated ? " truncated" : ""}`],
+            ["returned", String(index.symbols.length)],
+            ["query", index.query ? sanitizeInline(index.query) : "all"],
+          ],
+          { renderOptions },
+        ),
+      ],
+      footer: "orx code symbols [query] [--json]",
+    }),
+    renderTerminalBlock({
+      title: "exports",
+      renderOptions,
+      body:
+        index.symbols.length === 0
+          ? ["none"]
+          : [
+              ...index.symbols.slice(0, MAX_RENDERED_CODE_SYMBOLS).map((symbol) =>
+                formatTerminalKeyValues(
+                  [
+                    ["name", sanitizeInline(symbol.name)],
+                    ["kind", symbol.kind],
+                    ["path", sanitizeInline(symbol.path)],
+                    ["line", String(symbol.line)],
+                    ["language", sanitizeInline(symbol.language)],
+                  ],
+                  { renderOptions },
+                ),
+              ),
+              ...(omitted > 0 ? [`${omitted} more symbols omitted`] : []),
+            ],
+    }),
+  ];
+
+  if (index.omissions.length > 0) {
+    blocks.push(renderCodeOmissionsBlock(index.omissions, renderOptions));
+  }
+
+  return blocks.join("\n");
 }
 
 export function renderCodeSymbolsJson(index: CodeSymbolIndex): string {
@@ -741,7 +966,14 @@ export function createCodeReferenceIndex(options: CodeReferenceIndexOptions = {}
   };
 }
 
-export function renderCodeReferences(index: CodeReferenceIndex): string {
+export function renderCodeReferences(
+  index: CodeReferenceIndex,
+  options: CodeMapRenderOptions = {},
+): string {
+  if (shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    return renderCodeReferencesTty(index, options.renderOptions);
+  }
+
   const lines = [
     "Code References",
     `  root: ${sanitizeInline(index.root)}`,
@@ -797,6 +1029,62 @@ export function renderCodeReferences(index: CodeReferenceIndex): string {
 
   lines.push("  usage: orx code refs <query> [--json]");
   return lines.join("\n");
+}
+
+function renderCodeReferencesTty(
+  index: CodeReferenceIndex,
+  renderOptions?: TerminalRenderOptions,
+): string {
+  const renderedCount = Math.min(index.references.length, MAX_RENDERED_CODE_REFERENCES);
+  const omitted = Math.max(0, index.totalReferences - renderedCount);
+  const blocks = [
+    renderTerminalBlock({
+      title: "Code References",
+      subtitle: index.truncated ? "scan truncated" : undefined,
+      renderOptions,
+      body: [
+        formatTerminalKeyValues(
+          [
+            ["root", sanitizeInline(index.root)],
+            ["references", `${index.totalReferences}${index.truncated ? " truncated" : ""}`],
+            ["returned", String(index.references.length)],
+            ["query", index.query ? sanitizeInline(index.query) : "missing"],
+          ],
+          { renderOptions },
+        ),
+      ],
+      footer: "orx code refs <query> [--json]",
+    }),
+    renderTerminalBlock({
+      title: "matches",
+      renderOptions,
+      body:
+        !index.query || index.references.length === 0
+          ? ["none"]
+          : [
+              ...index.references.slice(0, MAX_RENDERED_CODE_REFERENCES).flatMap((reference) => [
+                formatTerminalKeyValues(
+                  [
+                    ["query", sanitizeInline(reference.query)],
+                    ["path", sanitizeInline(reference.path)],
+                    ["line", String(reference.line)],
+                    ["column", String(reference.column)],
+                    ["language", sanitizeInline(reference.language)],
+                  ],
+                  { renderOptions },
+                ),
+                `  excerpt ${sanitizeInline(reference.excerpt)}`,
+              ]),
+              ...(omitted > 0 ? [`${omitted} more references omitted`] : []),
+            ],
+    }),
+  ];
+
+  if (index.omissions.length > 0) {
+    blocks.push(renderCodeOmissionsBlock(index.omissions, renderOptions));
+  }
+
+  return blocks.join("\n");
 }
 
 export function renderCodeReferencesJson(index: CodeReferenceIndex): string {
@@ -883,7 +1171,14 @@ export function createCodeImportGraph(options: CodeImportGraphOptions = {}): Cod
   };
 }
 
-export function renderCodeImportGraph(graph: CodeImportGraph): string {
+export function renderCodeImportGraph(
+  graph: CodeImportGraph,
+  options: CodeMapRenderOptions = {},
+): string {
+  if (shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    return renderCodeImportGraphTty(graph, options.renderOptions);
+  }
+
   const lines = [
     "Code Import Graph",
     `  root: ${sanitizeInline(graph.root)}`,
@@ -940,6 +1235,70 @@ export function renderCodeImportGraph(graph: CodeImportGraph): string {
 
   lines.push("  usage: orx code imports [query] [--json]");
   return lines.join("\n");
+}
+
+function renderCodeImportGraphTty(
+  graph: CodeImportGraph,
+  renderOptions?: TerminalRenderOptions,
+): string {
+  const renderedCount = Math.min(graph.edges.length, MAX_RENDERED_IMPORT_GRAPH_EDGES);
+  const omitted = Math.max(0, graph.totalEdges - renderedCount);
+  const blocks = [
+    renderTerminalBlock({
+      title: "Code Import Graph",
+      subtitle: graph.truncated ? "truncated" : undefined,
+      renderOptions,
+      body: [
+        formatTerminalKeyValues(
+          [
+            ["root", sanitizeInline(graph.root)],
+            ["imports", `${graph.totalEdges}${graph.truncated ? " truncated" : ""}`],
+            ["returned", String(graph.edges.length)],
+            ["query", graph.query ? sanitizeInline(graph.query) : "all"],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["files", String(graph.filesWithImports)],
+            ["local", String(graph.localEdges)],
+            ["external", String(graph.externalImports)],
+            ["unresolved", String(graph.unresolvedLocalImports)],
+          ],
+          { renderOptions },
+        ),
+      ],
+      footer: "orx code imports [query] [--json]",
+    }),
+    renderTerminalBlock({
+      title: "edges",
+      renderOptions,
+      body:
+        graph.edges.length === 0
+          ? ["none"]
+          : [
+              ...graph.edges.slice(0, MAX_RENDERED_IMPORT_GRAPH_EDGES).map((edge) =>
+                formatTerminalKeyValues(
+                  [
+                    ["from", sanitizeInline(edge.from)],
+                    ["to", sanitizeInline(edge.to ?? edge.kind)],
+                    ["specifier", sanitizeInline(edge.specifier)],
+                    ["kind", edge.kind],
+                    ["language", sanitizeInline(edge.language)],
+                  ],
+                  { renderOptions },
+                ),
+              ),
+              ...(omitted > 0 ? [`${omitted} more import edges omitted`] : []),
+            ],
+    }),
+  ];
+
+  if (graph.omissions.length > 0) {
+    blocks.push(renderCodeOmissionsBlock(graph.omissions, renderOptions));
+  }
+
+  return blocks.join("\n");
 }
 
 export function renderCodeImportGraphJson(graph: CodeImportGraph): string {
@@ -1090,7 +1449,14 @@ export function createCodeCallGraph(options: CodeCallGraphOptions = {}): CodeCal
   };
 }
 
-export function renderCodeCallGraph(graph: CodeCallGraph): string {
+export function renderCodeCallGraph(
+  graph: CodeCallGraph,
+  options: CodeMapRenderOptions = {},
+): string {
+  if (shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    return renderCodeCallGraphTty(graph, options.renderOptions);
+  }
+
   const lines = [
     "Code Call Graph",
     `  root: ${sanitizeInline(graph.root)}`,
@@ -1177,6 +1543,104 @@ export function renderCodeCallGraph(graph: CodeCallGraph): string {
 
   lines.push("  usage: orx code calls [query] [--json]");
   return lines.join("\n");
+}
+
+function renderCodeCallGraphTty(
+  graph: CodeCallGraph,
+  renderOptions?: TerminalRenderOptions,
+): string {
+  const renderedDefinitions = Math.min(
+    graph.definitions.length,
+    MAX_RENDERED_CALL_GRAPH_DEFINITIONS,
+  );
+  const omittedDefinitions = Math.max(0, graph.totalDefinitions - renderedDefinitions);
+  const renderedEdges = Math.min(graph.edges.length, MAX_RENDERED_CALL_GRAPH_EDGES);
+  const omittedEdges = Math.max(0, graph.totalEdges - renderedEdges);
+  const blocks = [
+    renderTerminalBlock({
+      title: "Code Call Graph",
+      subtitle: graph.truncated ? "truncated" : undefined,
+      renderOptions,
+      body: [
+        "mode conservative lexical JavaScript/TypeScript scan; not AST backed",
+        formatTerminalKeyValues(
+          [
+            ["root", sanitizeInline(graph.root)],
+            ["edges", `${graph.totalEdges}${graph.truncated ? " truncated" : ""}`],
+            ["query", graph.query ? sanitizeInline(graph.query) : "all"],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["definitions", String(graph.totalDefinitions)],
+            ["call sites", String(graph.totalCallSites)],
+            ["files", String(graph.filesWithCallEdges)],
+            ["ambiguous", String(graph.ambiguousEdges)],
+          ],
+          { renderOptions },
+        ),
+      ],
+      footer: "orx code calls [query] [--json]",
+    }),
+    renderTerminalBlock({
+      title: "definitions",
+      renderOptions,
+      body:
+        graph.definitions.length === 0
+          ? ["none"]
+          : [
+              ...graph.definitions.slice(0, MAX_RENDERED_CALL_GRAPH_DEFINITIONS).map((definition) =>
+                formatTerminalKeyValues(
+                  [
+                    ["name", sanitizeInline(definition.name)],
+                    ["kind", definition.kind],
+                    ["path", sanitizeInline(definition.path)],
+                    ["line", String(definition.line)],
+                    ["language", sanitizeInline(definition.language)],
+                  ],
+                  { renderOptions },
+                ),
+              ),
+              ...(omittedDefinitions > 0
+                ? [`${omittedDefinitions} more definitions omitted`]
+                : []),
+            ],
+    }),
+    renderTerminalBlock({
+      title: "edges",
+      renderOptions,
+      body:
+        graph.edges.length === 0
+          ? ["none"]
+          : [
+              ...graph.edges.slice(0, MAX_RENDERED_CALL_GRAPH_EDGES).map((edge) =>
+                formatTerminalKeyValues(
+                  [
+                    ["from", sanitizeInline(edge.fromName)],
+                    ["from path", sanitizeInline(edge.fromPath)],
+                    ["from line", edge.fromLine > 0 ? String(edge.fromLine) : "module"],
+                    ["to", sanitizeInline(edge.toName)],
+                    ["to path", edge.toPath ? sanitizeInline(edge.toPath) : undefined],
+                    ["to line", edge.toLine ? String(edge.toLine) : undefined],
+                    ["kind", edge.kind],
+                    ["candidates", edge.kind === "ambiguous" ? String(edge.candidateCount) : undefined],
+                    ["calls", String(edge.callCount)],
+                    ["lines", formatLineList(edge.lines, MAX_RENDERED_CALL_LINES)],
+                  ],
+                  { renderOptions },
+                ),
+              ),
+              ...(omittedEdges > 0 ? [`${omittedEdges} more call edges omitted`] : []),
+            ],
+    }),
+  ];
+
+  if (graph.omissions.length > 0) {
+    blocks.push(renderCodeOmissionsBlock(graph.omissions, renderOptions));
+  }
+
+  return blocks.join("\n");
 }
 
 export function renderCodeCallGraphJson(graph: CodeCallGraph): string {

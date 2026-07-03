@@ -3,6 +3,12 @@ import { homedir } from "node:os";
 import { dirname, join, parse as parsePath, relative, resolve, sep } from "node:path";
 import { loadConfig } from "../config/index.js";
 import type { LoadedConfig } from "../config/types.js";
+import type { TerminalRenderOptions } from "../terminal/render.js";
+import {
+  renderTerminalBlock,
+  shouldUseHumanTtyLayout,
+  type TerminalLayout,
+} from "../terminal/ui.js";
 
 export const OPENROUTER_AUTH_ENV_VAR = "OPENROUTER_API_KEY";
 export const OPENROUTER_AUTH_ENV_DIR_VAR = "ORX_AUTH_ENV_DIR";
@@ -46,6 +52,11 @@ export interface OpenRouterAuthOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   homeDir?: string;
+}
+
+export interface OpenRouterAuthRenderOptions {
+  layout?: TerminalLayout;
+  renderOptions?: TerminalRenderOptions;
 }
 
 export function createOpenRouterAuthReport(
@@ -147,10 +158,48 @@ export function initializeOpenRouterAuthEnvFile(
   };
 }
 
-export function renderOpenRouterAuthStatus(report: OpenRouterAuthReport): string {
+export function renderOpenRouterAuthStatus(
+  report: OpenRouterAuthReport,
+  options: OpenRouterAuthRenderOptions = {},
+): string {
   const nextSteps = report.apiKeyPresent
     ? ["orx doctor --strict", "orx"]
     : ["orx auth setup", "orx auth init", "orx doctor --strict"];
+
+  if (shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    return [
+      renderTerminalBlock({
+        title: "ORX OpenRouter auth",
+        subtitle: report.apiKeyPresent ? "ready" : "missing key",
+        body: [
+          `api_key ${yesNo(report.apiKeyPresent)} (${report.apiKeySource})`,
+          `config ${report.configStatus}`,
+          `env_var ${report.envVar}`,
+          `env_file ${report.envFilePath} exists=${yesNo(report.envFileExists)}`,
+          `env_file_auto_loaded ${yesNo(report.envFileAutoLoaded)}`,
+        ],
+        footer: "token display never",
+        tone: report.apiKeyPresent ? "success" : "warning",
+        renderOptions: options.renderOptions,
+      }),
+      renderTerminalBlock({
+        title: "boundaries",
+        body: [
+          `cli_secret_args_accepted ${yesNo(report.cliSecretArgsAccepted)}`,
+          `config_writes ${yesNo(report.configWrites)}`,
+          `network_calls ${report.networkCalls}`,
+          `subprocesses ${report.subprocesses}`,
+        ],
+        tone: "muted",
+        renderOptions: options.renderOptions,
+      }),
+      renderTerminalBlock({
+        title: "next",
+        body: nextSteps,
+        renderOptions: options.renderOptions,
+      }),
+    ].join("\n");
+  }
 
   return [
     "ORX OpenRouter auth",
@@ -170,7 +219,47 @@ export function renderOpenRouterAuthStatus(report: OpenRouterAuthReport): string
   ].join("\n");
 }
 
-export function renderOpenRouterAuthSetup(report: OpenRouterAuthReport): string {
+export function renderOpenRouterAuthSetup(
+  report: OpenRouterAuthReport,
+  options: OpenRouterAuthRenderOptions = {},
+): string {
+  if (shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    return [
+      renderTerminalBlock({
+        title: "ORX OpenRouter auth setup",
+        subtitle: report.apiKeyPresent ? "ready" : "missing key",
+        body: [
+          `api_key ${yesNo(report.apiKeyPresent)} (${report.apiKeySource})`,
+          `config ${report.configStatus}`,
+          `env_var ${report.envVar}`,
+          "token_display never",
+          "cli_secret_args refused",
+          "config_writes none",
+          `managed_env_file ${report.envFilePath}`,
+          `env_file_auto_loaded ${yesNo(report.envFileAutoLoaded)}`,
+          `network_calls ${report.networkCalls}`,
+          `subprocesses ${report.subprocesses}`,
+        ],
+        tone: report.apiKeyPresent ? "success" : "warning",
+        renderOptions: options.renderOptions,
+      }),
+      renderTerminalBlock({
+        title: "shell",
+        body: `export ${report.envVar}="<openrouter-api-key>"`,
+        renderOptions: options.renderOptions,
+      }),
+      renderTerminalBlock({
+        title: "next",
+        body: [
+          "set the environment variable in your shell, or source an edited env file",
+          "orx doctor --strict",
+          "orx",
+        ],
+        renderOptions: options.renderOptions,
+      }),
+    ].join("\n");
+  }
+
   return [
     "ORX OpenRouter auth setup",
     `  api_key_present: ${yesNo(report.apiKeyPresent)}`,
@@ -198,7 +287,40 @@ export function renderOpenRouterAuthSetup(report: OpenRouterAuthReport): string 
 export function renderOpenRouterAuthEnvFileInitResult(
   result: OpenRouterAuthEnvFileInitResult,
   report: OpenRouterAuthReport,
+  options: OpenRouterAuthRenderOptions = {},
 ): string {
+  if (shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    return [
+      renderTerminalBlock({
+        title: "ORX OpenRouter auth env file",
+        subtitle: result.created ? "created" : "existing",
+        body: [
+          `state_changed ${yesNo(result.created)}`,
+          `path ${result.path}`,
+          `env_var ${report.envVar}`,
+          `file_exists ${yesNo(result.existed || result.created)}`,
+          `api_key_written ${yesNo(result.apiKeyWritten)}`,
+          `template_exports_commented ${yesNo(result.templateExportsCommented)}`,
+          `directory_mode ${result.directoryMode}  file_mode ${result.fileMode}`,
+          `env_file_auto_loaded ${yesNo(report.envFileAutoLoaded)}`,
+          `network_calls ${report.networkCalls}  subprocesses ${report.subprocesses}`,
+        ],
+        footer: "config_writes none",
+        tone: result.created ? "success" : "accent",
+        renderOptions: options.renderOptions,
+      }),
+      renderTerminalBlock({
+        title: "next",
+        body: [
+          "edit the env file and uncomment the export line",
+          `source ${result.path}`,
+          "orx doctor --strict",
+        ],
+        renderOptions: options.renderOptions,
+      }),
+    ].join("\n");
+  }
+
   return [
     "ORX OpenRouter auth env file",
     `  state_changed: ${yesNo(result.created)}`,

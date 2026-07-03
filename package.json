@@ -24,6 +24,7 @@
     "dev": "tsx src/cli.ts",
     "test": "npm run build && node --test \"dist/**/*.test.js\"",
     "verify:global-install": "node scripts/verify-global-install.mjs",
+    "verify:tty-first-screen": "node scripts/assert-tty-first-screen.mjs",
     "verify:release": "node scripts/verify-release.mjs",
     "pack:dry-run": "npm pack --dry-run",
     "prepare": "npm run build"

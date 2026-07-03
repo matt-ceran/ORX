@@ -325,6 +325,10 @@ import {
   type ChatHistoryEntry,
 } from "../tui/history.js";
 import {
+  copyLatestAssistantMessageToClipboard,
+  type ClipboardCommandRunner,
+} from "../tui/clipboard.js";
+import {
   SLASH_SCAN_USAGE,
   SLASH_SCANNERS_USAGE,
   findScannerProfile,
@@ -414,6 +418,8 @@ export interface SlashCommandContext {
   webSearchFetch?: typeof fetch;
   browserSnapshot?: BrowserSnapshotDriver;
   browserResolveHost?: ResolveBrowserHost;
+  clipboardPlatform?: NodeJS.Platform;
+  clipboardRunner?: ClipboardCommandRunner;
   braveSearchApiKey?: string;
   astGrepRunner?: AstGrepRunner;
   treeSitterRunner?: TreeSitterRunner;
@@ -523,6 +529,25 @@ const CONFIG_SCOPE_COMPLETIONS = ["--user", "--local"] as const;
 const OPENROUTER_MODEL_SHORTCUT_COMPLETIONS = [
   "openrouter/auto",
   "openrouter/fusion",
+  "anthropic/claude-sonnet-4.5",
+  "anthropic/claude-opus-4.1",
+  "anthropic/claude-3.5-sonnet",
+  "anthropic/claude-3.5-haiku",
+  "openai/gpt-4.1",
+  "openai/gpt-4.1-mini",
+  "openai/gpt-4o",
+  "openai/gpt-4o-mini",
+  "openai/o3-mini",
+  "google/gemini-2.5-pro",
+  "google/gemini-2.5-flash",
+  "google/gemini-2.0-flash",
+  "meta-llama/llama-3.3-70b-instruct",
+  "deepseek/deepseek-chat",
+  "deepseek/deepseek-r1",
+  "mistralai/mistral-large",
+  "qwen/qwen-2.5-72b-instruct",
+  "x-ai/grok-3",
+  "x-ai/grok-3-mini",
 ] as const;
 const WEB_SUBCOMMAND_COMPLETIONS = ["help", "fetch", "search", "browse", "profiles"] as const;
 const RESEARCH_PROFILE_SUBCOMMAND_COMPLETIONS = ["list", "status", "inspect", "show", "plan", "setup-plan"] as const;
@@ -768,6 +793,29 @@ const COMMANDS: Record<string, SlashDefinition> = {
     aliases: ["/s"],
     handler: (_command, context) => {
       writeLine(context.io.stdout, renderInteractiveStatus(context));
+      return "continue";
+    },
+  },
+  "/copy": {
+    usage: "/copy",
+    description: "Copy the latest assistant output to the local clipboard",
+    group: "Workspace",
+    tier: "advanced",
+    handler: async (_command, context): Promise<SlashResult> => {
+      const result = await copyLatestAssistantMessageToClipboard(context.getMessages(), {
+        platform: context.clipboardPlatform,
+        runner: context.clipboardRunner,
+      });
+
+      if (!result.ok) {
+        writeLine(context.io.stderr, result.message);
+        return "continue";
+      }
+
+      writeLine(
+        context.io.stdout,
+        `Copied latest assistant output to clipboard (${result.charCount} chars).`,
+      );
       return "continue";
     },
   },
@@ -1692,6 +1740,78 @@ export function completeSlashCommandLine(line: string): [string[], string] {
   return [completions, context.fragment];
 }
 
+/**
+ * Returns up to `limit` slash command or argument suggestions matching the
+ * given input fragment. Uses fuzzy matching: first tries prefix matches, then
+ * falls back to substring/contains matches, then to fuzzy character-sequence
+ * matches. This means typing "claude sonnet" or "gpt4" or "sonnet4" will all
+ * find the right models even if the exact name is different.
+ */
+export function slashCommandSuggestions(line: string, limit = 10): string[] {
+  const context = slashCompletionContext(line);
+  if (!context) {
+    return [];
+  }
+
+  const values =
+    context.kind === "command"
+      ? slashCommandCompletionValues()
+      : slashArgumentCompletionValues(context.commandName, context.completedArgs);
+  const normalizedFragment = context.fragment.toLowerCase();
+  if (!normalizedFragment) {
+    return values.slice(0, limit).sort((left, right) => left.localeCompare(right));
+  }
+
+  // Rank completions: prefix > substring > fuzzy
+  const ranked = values
+    .map((completion) => ({
+      value: completion,
+      rank: fuzzyMatchRank(normalizedFragment, completion.toLowerCase()),
+    }))
+    .filter((entry) => entry.rank !== undefined)
+    .sort((a, b) => (a.rank! - b.rank!) || a.value.localeCompare(b.value));
+
+  return ranked.slice(0, limit).map((entry) => entry.value);
+}
+
+/**
+ * Returns a rank for how well `query` matches `target`.
+ * Lower is better. undefined means no match.
+ * 0 = exact match, 1 = prefix match, 2 = substring match,
+ * 3 = all query words appear as substrings, 4 = fuzzy subsequence match.
+ */
+function fuzzyMatchRank(query: string, target: string): number | undefined {
+  if (query === target) {
+    return 0;
+  }
+  if (target.startsWith(query)) {
+    return 1;
+  }
+  if (target.includes(query)) {
+    return 2;
+  }
+  // Check if all space-separated query parts appear as substrings
+  const queryParts = query.split(/\s+/).filter(Boolean);
+  if (queryParts.length > 1 && queryParts.every((part) => target.includes(part))) {
+    return 3;
+  }
+  // Fuzzy subsequence match: all query chars appear in order in target
+  if (isSubsequence(query, target)) {
+    return 4;
+  }
+  return undefined;
+}
+
+function isSubsequence(query: string, target: string): boolean {
+  let qi = 0;
+  for (let ti = 0; ti < target.length && qi < query.length; ti++) {
+    if (query[qi] === target[ti]) {
+      qi++;
+    }
+  }
+  return qi === query.length;
+}
+
 export function renderSlashHelp(query?: string): string {
   const normalizedQuery = normalizeHelpQuery(query ?? "");
 
@@ -2478,6 +2598,7 @@ function renderInteractiveStatus(context: SlashCommandContext): string {
       delegationAuditLogPath: context.delegationAuditLogPath,
       delegationState: getDelegationState(context),
       renderOptions: { stream: context.io.stdout, theme: context.getConfig().theme },
+      layout: "plain",
     }),
     `history_messages: ${context.getMessages().length}`,
     `evidence_sources: ${context.getEvidenceSources?.().length ?? 0}`,

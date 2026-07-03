@@ -11,6 +11,12 @@ import {
   TERMINAL_THEMES,
 } from "../constants.js";
 import type { LoadedConfig, OrxConfig, OrxMode, OrxTheme } from "./types.js";
+import type { TerminalRenderOptions } from "../terminal/render.js";
+import {
+  renderTerminalBlock,
+  shouldUseHumanTtyLayout,
+  type TerminalLayout,
+} from "../terminal/ui.js";
 
 type TomlValue = string | number | boolean | Date | TomlValue[] | TomlTable;
 type TomlTable = { [key: string]: TomlValue };
@@ -73,6 +79,8 @@ export interface ConfigInitResult {
 export interface RenderConfigOptions extends LoadConfigOptions {
   config?: OrxConfig;
   commandPrefix?: string;
+  layout?: TerminalLayout;
+  renderOptions?: TerminalRenderOptions;
 }
 
 const VALID_MODES = new Set<OrxMode>(["exact", "auto", "fusion"]);
@@ -326,6 +334,42 @@ export function renderConfigShow(
   options: RenderConfigOptions = {},
 ): string {
   const config = options.config ?? loadedConfig.config;
+  if (shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    return [
+      renderTerminalBlock({
+        title: "ORX config",
+        subtitle: `${config.mode} ${config.model}`,
+        body: [
+          `source ${formatConfigSources(loadedConfig.loadedFiles)}`,
+          `model ${config.model}  mode ${config.mode}  fusion ${config.fusionPreset ?? "none"}`,
+          `theme ${config.theme ?? "default"}  profile ${config.activeProfile ?? "none"}`,
+          `api_key ${loadedConfig.apiKeyPresent ? "present" : "missing"} (${loadedConfig.apiKeySource})`,
+        ],
+        footer: `permissions ${config.permissions.approvalPolicy}/${config.permissions.sandboxMode}`,
+        tone: loadedConfig.apiKeyPresent ? "success" : "warning",
+        renderOptions: options.renderOptions,
+      }),
+      renderTerminalBlock({
+        title: "config paths",
+        body: [
+          `local ${resolveLocalConfigPath(options)}`,
+          `user ${resolveUserConfigPath(options)}`,
+        ],
+        renderOptions: options.renderOptions,
+      }),
+      renderTerminalBlock({
+        title: "editable keys",
+        body: [
+          "model, mode, fusion_preset, theme, approval_policy, sandbox_mode",
+          "API keys stay in OPENROUTER_API_KEY or deliberate manual config edits",
+        ],
+        footer: "config set refuses secrets",
+        tone: "muted",
+        renderOptions: options.renderOptions,
+      }),
+    ].join("\n");
+  }
+
   return [
     "ORX config",
     `  config_source: ${formatConfigSources(loadedConfig.loadedFiles)}`,
@@ -352,6 +396,30 @@ export function renderConfigPaths(
   const localPath = resolveLocalConfigPath(options);
   const userPath = resolveUserConfigPath(options);
   const commandPrefix = options.commandPrefix ?? "orx config";
+  if (shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    return [
+      renderTerminalBlock({
+        title: "ORX config paths",
+        body: [
+          `effective ${loadedConfig ? formatConfigSources(loadedConfig.loadedFiles) : "not_evaluated_config_unreadable"}`,
+          `local ${localPath} exists=${existsSync(localPath) ? "yes" : "no"}`,
+          `user ${userPath} exists=${existsSync(userPath) ? "yes" : "no"}`,
+          `user_env_override ${options.env?.ORX_CONFIG_PATH ? "ORX_CONFIG_PATH" : "none"}`,
+        ],
+        renderOptions: options.renderOptions,
+      }),
+      renderTerminalBlock({
+        title: "edit",
+        body: [
+          `default ${commandPrefix} set <key> <value>`,
+          `local ${commandPrefix} set <key> <value> --local`,
+        ],
+        tone: "muted",
+        renderOptions: options.renderOptions,
+      }),
+    ].join("\n");
+  }
+
   return [
     "ORX config paths",
     `  effective_sources: ${

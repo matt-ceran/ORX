@@ -20,6 +20,13 @@ import {
   type InstalledPluginRecord,
   type PluginRegistryIoOptions,
 } from "./registry.js";
+import type { TerminalRenderOptions } from "../terminal/render.js";
+import {
+  formatTerminalKeyValues,
+  renderTerminalBlock,
+  shouldUseHumanTtyLayout,
+  type TerminalLayout,
+} from "../terminal/ui.js";
 
 export interface PluginReviewOptions extends PluginRegistryIoOptions {
   catalogPath?: string;
@@ -73,6 +80,11 @@ export interface PluginReview {
 
 export interface PluginReviewParsedArgs {
   json: boolean;
+}
+
+export interface PluginReviewRenderOptions {
+  layout?: TerminalLayout;
+  renderOptions?: TerminalRenderOptions;
 }
 
 export function createPluginReview(options: PluginReviewOptions = {}): PluginReview {
@@ -174,7 +186,14 @@ export function createPluginReview(options: PluginReviewOptions = {}): PluginRev
   };
 }
 
-export function renderPluginReview(review: PluginReview): string {
+export function renderPluginReview(
+  review: PluginReview,
+  options: PluginReviewRenderOptions = {},
+): string {
+  if (shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    return renderPluginReviewTty(review, options.renderOptions);
+  }
+
   const lines = [
     "Plugin Review",
     `  installed: ${review.installedCount}`,
@@ -213,6 +232,106 @@ export function renderPluginReview(review: PluginReview): string {
     "    install_enable_trust_grant_fetch_execute: separate_explicit_steps",
   );
   return lines.join("\n");
+}
+
+function renderPluginReviewTty(
+  review: PluginReview,
+  renderOptions?: TerminalRenderOptions,
+): string {
+  const blocks = [
+    renderTerminalBlock({
+      title: "Plugin Review",
+      subtitle: `${review.installedCount} installed`,
+      renderOptions,
+      body: [
+        formatTerminalKeyValues(
+          [
+            ["installed", String(review.installedCount)],
+            ["enabled", String(review.enabledCount)],
+            ["disabled", String(review.disabledCount)],
+            ["updates", String(review.updateAvailableCount)],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["mcp profiles", String(review.pluginMcpProfileCount)],
+            ["command aliases", String(review.aliasCount)],
+            ["omissions", `${review.omissionCount}${review.truncated ? " truncated" : ""}`],
+          ],
+          { renderOptions },
+        ),
+        "network none  execution none",
+      ],
+      footer: "install, enable, trust, grant, fetch, and execute stay explicit",
+    }),
+    renderTerminalBlock({
+      title: "trust gates",
+      renderOptions,
+      body: [
+        formatTerminalKeyValues(
+          [
+            ["bins trusted", String(totalTrustedBins(review))],
+            ["pending", String(review.pendingBinTrustCount)],
+            ["untrusted", String(review.untrustedBinCount)],
+          ],
+          { renderOptions },
+        ),
+        formatTerminalKeyValues(
+          [
+            ["hooks trusted", String(totalTrustedHooks(review))],
+            ["pending", String(review.pendingHookTrustCount)],
+            ["untrusted", String(review.untrustedHookCount)],
+          ],
+          { renderOptions },
+        ),
+      ],
+    }),
+    renderTerminalBlock({
+      title: "plugins",
+      renderOptions,
+      body:
+        review.entries.length === 0
+          ? ["none"]
+          : review.entries.flatMap((entry) => {
+              const plugin = entry.plugin;
+              const catalogStatus = entry.catalog?.status ?? "not_in_catalog";
+              const row = formatTerminalKeyValues(
+                [
+                  ["id", plugin.id],
+                  ["enabled", plugin.enabled ? "yes" : "no"],
+                  ["source", plugin.lock.source.type],
+                  ["catalog", catalogStatus],
+                  ["bins", trustCounts(entry.bins)],
+                  ["hooks", trustCounts(entry.hooks)],
+                  ["aliases", String(entry.aliases.total)],
+                  ["mcp", String(entry.mcpProfiles)],
+                ],
+                { renderOptions },
+              );
+              const actions = entry.actions.slice(0, 4).map((action) => `command ${action}`);
+              if (entry.actions.length > 4) {
+                actions.push(`command ${entry.actions.length - 4} more actions omitted`);
+              }
+              return [row, ...actions];
+            }),
+    }),
+    renderTerminalBlock({
+      title: "authority",
+      tone: "muted",
+      renderOptions,
+      body: [
+        "review local_registry_catalog_cache_trust_state_only",
+        "install_enable_trust_grant_fetch_execute separate_explicit_steps",
+      ],
+    }),
+  ];
+
+  return blocks.join("\n");
+}
+
+function trustCounts(counts: SurfaceCounts): string {
+  return `${counts.trusted}/${counts.pending}/${counts.untrusted}`;
 }
 
 export function parsePluginReviewArgs(args: string[]): PluginReviewParsedArgs | undefined {

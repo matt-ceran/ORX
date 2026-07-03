@@ -1,8 +1,91 @@
 # Decisions
 
-Last updated: 2026-06-29
+Last updated: 2026-07-02
 
 Use this file for durable technical and product decisions. Add newest decisions at the top.
+
+## 2026-07-02: Missing-Key CLI Tests Must Isolate User Config
+
+Decision: Tests that assert missing OpenRouter API-key behavior must pass an explicit temporary missing `ORX_CONFIG_PATH`.
+They should not rely on the default user config path, because configured developer machines may have `~/.orx/config.toml` with a valid key.
+
+Reasoning: ORX should still load the operator's normal config by default in product code, but negative-key tests need hermetic missing-config state.
+This keeps the full suite deterministic without changing runtime configuration behavior.
+
+## 2026-07-02: Composer Background Is Prompt-Only While Readline Owns Input
+
+Decision: Color-capable TTY composer status rows should render as normal terminal text, while the light gray ANSI background is limited to the active readline prompt row.
+The prompt row must reset ANSI attributes before returning the cursor to readline so submitted input, rapid buffered commands, and later command output do not inherit the gray background.
+ORX should track buffered readline echoes and suppress resize-triggered composer redraws while slash command output is rendering.
+
+Reasoning: Painting every composer row gray made ORX look smeared instead of separated, and leaving background SGR state active let fast input and resize events leak gray styling into later transcript output.
+Keeping the prompt final preserves readline history, completion, and multiline behavior, while echo tracking and resize gating fix the observed broken-frame class without a raw-mode rewrite.
+
+## 2026-07-02: Readline TTY Composer Keeps Prompt As Final Frame Row
+
+Decision: While interactive chat uses Node readline instead of a raw-mode editor, the active input prompt must be the final rendered row of the composer frame.
+Route, model, mode, context, cost, credits, cwd, permission, and session status may render inside the gray `input` frame, but they must render above the prompt row so typed characters never land in a status row.
+Color-capable TTY composer rows may use a light gray ANSI background, but clearing must reset ANSI attributes before removing or redrawing the frame.
+Non-TTY and `NO_COLOR=1` behavior remains plain and script-safe.
+
+Reasoning: Rendering status after the prompt made the terminal cursor land below the intended input area, which caused user-visible typing and redraw defects.
+Keeping the prompt as the final row preserves readline history, completion, and multiline behavior while making the input area visually organized.
+True bottom pinning with status below the prompt should wait for a raw-mode or scroll-region controller that can place the cursor independently.
+
+## 2026-07-02: TUI Full-Screen Overhaul With Muted 256-Color Palette
+
+Decision: The TTY interface is overhauled to use muted 256-color tones instead of basic ANSI colors, thin horizontal rules instead of box borders for the startup card/status/composer, and an alt-screen full-screen manager for clean entry/exit and resize handling.
+The default palette uses dusty blue (110) for accent, sage green (108) for success, warm amber (179) for warning, and muted coral (167) for danger.
+The vivid theme uses slightly brighter variants (75/114/221/203).
+Box borders (`╭─`/`╰─`/`│`) are replaced with thin dim `─` rules in the startup card, status notch, and composer.
+The full-screen manager (`src/tui/fullscreen.ts`) enters the alternate screen buffer on startup and exits on cleanup, providing a clean terminal on exit.
+Slash command autocomplete suggestions are shown as a dimmed `try  /help  /status  ...` line when the user types `/`, debounced at 80ms.
+
+Rationale: The user requested a "super user friendly interface" like Codex/Claude CLI with better colors, responsive resize, and autocomplete. The old basic ANSI colors were garish, the box borders were heavy, and there was no resize handling or autocomplete.
+
+## 2026-07-02: TUI Workbench Redesign With Calm Session Card And Full-Width Input Control
+
+Decision: The TTY first screen is redesigned to use a titled-divider session card (`ORX · OpenRouter-native coding workbench`), an aligned two-column grid for model/mode/cwd/perm/key/session, a tips row, a `ready` closer, and a full-width `input` divider above the prompt.
+The status notch is gated off the fresh idle first screen entirely so meter noise does not appear until there is activity, transcript state, credits, or observed cost.
+The status footer changes from labeled `key: value` pairs to a compact dot-separated strip (`cwd · git branch · perm · session`) that truncates each item proportionally at narrow widths.
+Queued follow-ups use a clearer `queued · N follow-ups` header and `pending · runs after current turn` closer.
+
+Reasoning: The previous three-box first screen duplicated model/mode/key info between the session card and status notch, making startup feel noisy and unintentional.
+A calm card-plus-composer layout with the status notch gated off makes the input area the obvious focus, reduces visual redundancy, and keeps meter detail for when it has honest data.
+
+## 2026-07-02: First Screen Uses A Sparse Workbench Layout
+
+Decision: The color-capable TTY first screen should render a sparse ORX workbench card, a compact idle status/footer, and an open focused input frame instead of a dense session box followed by a bare prompt.
+The idle first screen should show model, mode, cwd, permissions, key readiness, session id, and short key-command tips, but it should not show context or cost battery meters until there is activity, transcript state, credits, or observed cost metadata.
+Queued active-turn follow-ups should render as numbered pending work above the composer, separate from sent user transcript blocks.
+
+Reasoning: ORX should feel like a terminal-native coding-agent workbench on launch, while staying OpenRouter-native and script-safe.
+Keeping startup low-noise makes the active input target obvious, and delaying meter detail avoids fake precision before there is useful session activity.
+
+## 2026-07-02: TTY Keyboard Shortcuts Reuse Command Boundaries
+
+Decision: TTY keyboard shortcuts such as Ctrl+O and Ctrl+R should reuse existing ORX command behavior instead of introducing independent model-visible tools or separate side-effect paths.
+Ctrl+O copies the latest assistant output through the same clipboard helper and no-content-echo boundary as `/copy`; if a turn is active, it queues a visible `/copy` command and runs after the active turn finishes.
+Ctrl+R opens `/history search ` in the idle composer, or queues a visible `/history` command when a turn is active, while preserving the existing prompt-only local history boundary.
+
+Reasoning: Keyboard-first polish should make common operations faster without creating hidden authority paths.
+Reusing slash-command semantics keeps shortcut side effects visible in transcript blocks, preserves non-TTY/script behavior, and avoids corrupting active assistant/tool output.
+
+## 2026-07-02: Diff Coloring Is A TTY Presentation Layer
+
+Decision: Captured `/diff` output in interactive TTY chat may use the shared terminal block renderer's diff body mode to color additions, removals, hunk headers, and metadata.
+The slash command itself must continue writing the native git diff text, so non-TTY output, `NO_COLOR=1`, and script use remain plain and byte-oriented.
+
+Reasoning: ORX needs developer-native diff readability in the workbench without making `/diff` less useful for copy, logs, pipes, or tests.
+Keeping coloring at the TTY capture/rendering boundary preserves the raw workspace command contract while improving interactive scanability.
+
+## 2026-07-02: TTY Human Output Uses ORX-Native Blocks
+
+Decision: Interactive color-capable TTY chat output should route scrollback and slash-command output through shared ORX-native terminal blocks instead of raw role labels, loose command text, or one-off ad hoc formatting.
+Standalone human TTY command surfaces may also use uncolored block structure when `NO_COLOR=1`, but non-TTY output must stay plain and script-safe.
+
+Reasoning: The operator wants ORX to feel closer to modern coding CLIs while remaining independent from Codex branding and private internals.
+A shared block renderer gives user messages, assistant streaming, tool events, warnings, status sections, and command output one visual language, and it gives future command polish a reusable path instead of accumulating scattered formatting.
 
 ## 2026-06-29: Doctor JSON Mirrors Local Readiness Without Extra Effects
 
@@ -495,3 +578,35 @@ Reasoning: Saved profiles are for model/routing/session defaults, not local meta
 Decision: The runnable OSV-Scanner profile is limited to `osv-scanner scan source --recursive --format json --offline --no-resolve <path>` against a cwd-confined local file or directory. ORX must not pass `--download-offline-databases`, load OSV config files, accept `--query`, run image/license/fix modes, enable online vulnerability matching, or expose scanner runs as model tools.
 
 Reasoning: OSV-Scanner's documented full offline mode makes a useful local dependency-vulnerability scan possible, but database download/update behavior, package resolution, config overrides, and alternate modes would broaden the network/write/side-effect boundary. Keeping the command fixed preserves ORX's explicit-operator, no-install, no-network-by-command-selection scanner model.
+
+## 2026-07-02: TTY Chat Is A Non-Blocking Workbench
+
+Decision: ORX TTY chat should treat the composer and status notch as ephemeral bottom UI, allow follow-up messages and slash commands to queue while an assistant/tool turn is active, and render queued items visibly above the composer until they are consumed.
+
+Reasoning: The desired interface is a terminal-native coding workbench, not a prompt-output-prompt transcript. Visible queued input, stable composer state, inline tool/activity logs, and compact session state make the CLI feel responsive while the model is still working.
+
+## 2026-07-02: Usage Meters Must Stay Honest
+
+Decision: The context meter may render as a percentage battery because it has a real local approximate byte budget. The cost meter must show exact observed OpenRouter metadata dollars when available and use its battery only for cost-metadata coverage until ORX has a real configured spend budget.
+
+Reasoning: Animated meters improve perceived feedback, but fake cost percentages would mislead operators. ORX should prefer a clear `n/a` or coverage indicator over invented budget math.
+
+## 2026-07-02: Clipboard Copy Is Explicit And Local-Only
+
+Decision: `/copy` may copy the latest assistant output to the operator's local clipboard only after an explicit slash command. It should use direct OS clipboard commands where supported, avoid echoing copied content, report unsupported platforms plainly, and remain outside model-visible tools or autonomous actions.
+
+Reasoning: Copying assistant output is a useful coding-workbench control, but clipboard mutation is local operator state. Keeping it explicit, non-model-visible, and quiet preserves script safety and avoids surprising clipboard writes.
+
+## 2026-07-02: Keyboard Polish Should Preserve Readline Fallback
+
+Decision: TTY keyboard polish should intercept narrow, well-understood controls such as Ctrl+L inside the existing readline-based chat loop before any broader raw-mode editor rewrite.
+
+Reasoning: Ctrl+L can fix the visible workbench clear-screen behavior without changing input ownership for non-TTY, `NO_COLOR`, prompt history, Tab completion, or Ctrl+C handling. A raw-mode editor remains optional future work only if it can preserve those script-safe fallback guarantees.
+
+## 2026-07-02: Editor Handoff Uses Local Editor And Readline Turn Flow
+
+Decision: Ctrl+G in TTY chat may open an operator-configured local `VISUAL` or `EDITOR` on a temporary prompt file, then submit the saved text through ORX's existing chat input path.
+When a turn is active, Ctrl+G queues a visible `/editor` handoff and opens the editor only after the active assistant or tool turn finishes.
+
+Reasoning: Long prompts need a real editor affordance, but ORX should not take over terminal input with a broad raw-mode editor yet.
+Using the existing readline turn flow preserves non-TTY and `NO_COLOR` fallback behavior, prompt history, multiline rendering, slash-command handling, session persistence, and active-turn queue semantics.

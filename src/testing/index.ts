@@ -11,6 +11,12 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { redactSecrets } from "../mcp/audit.js";
+import type { TerminalRenderOptions } from "../terminal/render.js";
+import {
+  renderTerminalBlock,
+  shouldUseHumanTtyLayout,
+  type TerminalLayout,
+} from "../terminal/ui.js";
 import { runProcess, type RunProcessResult } from "../tools/process.js";
 
 export type TestTargetKind = "package-script" | "node-test";
@@ -102,6 +108,11 @@ export interface RunTestOptions {
   timeoutMs?: number;
   maxBytes?: number;
   signal?: AbortSignal;
+}
+
+export interface RenderTestTargetsOptions {
+  layout?: TerminalLayout;
+  renderOptions?: TerminalRenderOptions;
 }
 
 export type TestRunArgsParseResult =
@@ -252,7 +263,68 @@ export async function runTestTarget(options: RunTestOptions = {}): Promise<TestR
   }
 }
 
-export function renderTestTargets(discovery: TestDiscovery): string {
+export function renderTestTargets(
+  discovery: TestDiscovery,
+  options: RenderTestTargetsOptions = {},
+): string {
+  if (shouldUseHumanTtyLayout(options.renderOptions, options.layout)) {
+    const targetLines =
+      discovery.targets.length === 0
+        ? ["none"]
+        : discovery.targets.map((target) =>
+            [
+              target.id,
+              target.kind,
+              target.framework,
+              target.packageManager,
+              target.scriptName ? `script=${target.scriptName}` : undefined,
+              target.reporter ? `reporter=${JSON.stringify(target.reporter)}` : undefined,
+              target.fileCount !== undefined ? `files=${target.fileCount}` : undefined,
+              `command=${JSON.stringify([target.command, ...target.args].join(" "))}`,
+            ]
+              .filter((part): part is string => typeof part === "string" && part.length > 0)
+              .join("  "),
+          );
+    const blocks = [
+      renderTerminalBlock({
+        title: "Test Targets",
+        subtitle: `${discovery.targets.length}${discovery.truncated ? " truncated" : ""}`,
+        body: [
+          `default ${discovery.defaultTargetId ?? "none"}`,
+          ...targetLines,
+        ],
+        footer: "orx tests run [target-id] [--json] [-- args...]",
+        tone: discovery.targets.length > 0 ? "success" : "warning",
+        renderOptions: options.renderOptions,
+      }),
+    ];
+
+    if (discovery.omissions.length > 0) {
+      blocks.push(
+        renderTerminalBlock({
+          title: "omitted",
+          body: [
+            ...discovery.omissions.slice(0, 10).map((omission) =>
+              [
+                `reason=${JSON.stringify(omission.reason)}`,
+                omission.path ? `path=${JSON.stringify(sanitizeRenderedToken(omission.path))}` : undefined,
+              ]
+                .filter((part): part is string => typeof part === "string")
+                .join(" "),
+            ),
+            discovery.omissions.length > 10
+              ? `${discovery.omissions.length - 10} more omissions omitted`
+              : undefined,
+          ].filter((line): line is string => typeof line === "string"),
+          tone: "warning",
+          renderOptions: options.renderOptions,
+        }),
+      );
+    }
+
+    return blocks.join("\n");
+  }
+
   const lines = [
     "Test Targets",
     `  discovered_targets: ${discovery.targets.length}${discovery.truncated ? " (truncated)" : ""}`,
